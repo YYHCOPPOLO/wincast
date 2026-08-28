@@ -152,9 +152,7 @@ impl Renderer {
                 let blend = BLENDFUNCTION {
                     BlendOp: AC_SRC_OVER as u8,
                     BlendFlags: 0,
-                    // Frozen 0.40 scrim; D2D draws the opaque 26 DIP rounded mask.
-                    SourceConstantAlpha: (theme::colors::PANEL_SCRIM_DARK_ALPHA * 255.0).round()
-                        as u8,
+                    SourceConstantAlpha: LAYERED_SOURCE_CONSTANT_ALPHA,
                     AlphaFormat: AC_SRC_ALPHA as u8,
                 };
                 UpdateLayeredWindow(
@@ -248,14 +246,36 @@ fn paint_scrim(target: &ID2D1RenderTarget) -> windows::core::Result<()> {
             radiusX: radius,
             radiusY: radius,
         };
-        let color = D2D1_COLOR_F {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        };
+        let color = scrim_color();
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
         target.EndDraw(None, None)
+    }
+}
+
+/// Brush alpha is the frozen dark scrim; later D2D content stays fully opaque.
+pub(crate) const LAYERED_SOURCE_CONSTANT_ALPHA: u8 = 255;
+
+pub(crate) fn scrim_color() -> D2D1_COLOR_F {
+    D2D1_COLOR_F {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: theme::colors::PANEL_SCRIM_DARK_ALPHA,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scrim_alpha_is_baked_into_brush_not_source_constant() {
+        let c = scrim_color();
+        assert_eq!(c.r, 0.0);
+        assert_eq!(c.g, 0.0);
+        assert_eq!(c.b, 0.0);
+        assert_eq!(c.a, theme::colors::PANEL_SCRIM_DARK_ALPHA);
+        assert_eq!(LAYERED_SOURCE_CONSTANT_ALPHA, 255);
     }
 }

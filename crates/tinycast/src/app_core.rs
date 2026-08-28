@@ -1,12 +1,10 @@
 use tinycast_pure::palette_mode::PaletteMode;
-use tinycast_pure::palette_placement::{default_anchor, frame_for, target_screen};
+use tinycast_pure::palette_placement::{default_anchor, frame_for};
 use tinycast_pure::palette_state::PaletteState;
 
 use crate::palette::physical;
 use crate::palette::PaletteWindow;
-use crate::platform::screens::{
-    cursor_dip, cursor_monitor_dpi, dip_to_px, dip_to_px_with_dpi, screens_dip,
-};
+use crate::platform::screens::{cursor_target_screen, dip_to_px, dip_to_px_with_dpi};
 
 pub struct AppCore {
     pub palette: PaletteState,
@@ -109,20 +107,13 @@ impl AppCore {
         if self.palette_window.is_none() {
             return;
         }
-        let screens = screens_dip();
-        let cursor = cursor_dip();
-        let Some(screen) = target_screen(&screens, cursor, true)
-            .copied()
-            .or_else(|| screens.first().copied())
-        else {
+        let Some((screen, dpi)) = cursor_target_screen() else {
             return;
         };
         let anchor = default_anchor(screen);
         self.anchor = Some(anchor);
         let frame = frame_for(anchor, false);
-        // Window may still sit on the primary monitor; use the cursor
-        // monitor DPI so the first frame matches GetDpiForWindow after show.
-        let rect = physical::Rect::from_win32(dip_to_px_with_dpi(frame, cursor_monitor_dpi()));
+        let rect = physical::Rect::from_win32(dip_to_px_with_dpi(frame, dpi));
         self.anchor_px = Some(physical::Point {
             x: rect.x,
             y: rect.y,
