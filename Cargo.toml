@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/tinycast-pure"]
+members = ["crates/tinycast-pure", "crates/tinycast"]
 resolver = "2"
 
 [workspace.package]

@@ -1,0 +1,9 @@
+mod app_core;
+mod platform;
+
+fn main() {
+    if let Err(e) = platform::run() {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+}
