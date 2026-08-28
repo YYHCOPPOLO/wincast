@@ -43,6 +43,20 @@ pub mod fuzzy {
             }
             subsequence_score(&q.chars, &t.chars, &t.word_start)
         }
+
+        /// Exact or prefix from the start of `target`.
+        pub(super) fn score_from_start(query: &str, target: &str) -> Option<i32> {
+            Self::score(query, target).filter(|&s| s >= PREFIX_FLOOR)
+        }
+
+        /// Exact / prefix / word-start / substring. Subsequence does not count.
+        pub(super) fn score_literal(query: &str, target: &str) -> Option<i32> {
+            Self::score(query, target).filter(|&s| Self::is_literal(s))
+        }
+
+        pub(super) fn is_literal(score: i32) -> bool {
+            score > SUBSEQUENCE_CEILING
+        }
     }
 
     const PREFIX_FLOOR: i32 = 80_000;
@@ -234,5 +248,205 @@ pub mod fuzzy {
                     > FuzzyMatch::score("ng", "Ångström").unwrap()
             );
         }
+    }
+}
+
+use fuzzy::FuzzyMatch;
+
+#[derive(Clone, Debug, Default)]
+pub struct SearchFields {
+    pub user_alias: Option<String>,
+    pub display_name: String,
+    pub snippet_keyword: Option<String>,
+    pub alternate_names: Vec<String>,
+    pub bundle_id: Option<String>,
+    pub executable_name: Option<String>,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Band {
+    Alias = 6,
+    DisplayLiteral = 5,
+    AlternateLiteral = 4,
+    DisplaySub = 3,
+    AlternateSub = 2,
+    Bundle = 1,
+    Exe = 0,
+}
+
+pub const BAND_STRIDE: i32 = 10 * FuzzyMatch::MAXIMUM_SCORE;
+
+pub fn score(query: &str, fields: &SearchFields) -> Option<i32> {
+    let mut best = None;
+
+    if let Some(alias) = fields.user_alias.as_deref() {
+        if let Some(fuzzy) = FuzzyMatch::score_from_start(query, alias) {
+            consider(&mut best, Band::Alias, fuzzy);
+        } else if let Some(fuzzy) = FuzzyMatch::score_literal(query, alias) {
+            consider(&mut best, Band::AlternateLiteral, fuzzy);
+        }
+    }
+
+    if let Some(fuzzy) = FuzzyMatch::score(query, &fields.display_name) {
+        let band = if FuzzyMatch::is_literal(fuzzy) {
+            Band::DisplayLiteral
+        } else {
+            Band::DisplaySub
+        };
+        consider(&mut best, band, fuzzy);
+    }
+
+    if let Some(keyword) = fields.snippet_keyword.as_deref() {
+        if let Some(fuzzy) = FuzzyMatch::score_literal(query, keyword) {
+            consider(&mut best, Band::DisplayLiteral, fuzzy);
+        }
+    }
+
+    for name in &fields.alternate_names {
+        if let Some(fuzzy) = FuzzyMatch::score(query, name) {
+            let band = if FuzzyMatch::is_literal(fuzzy) {
+                Band::AlternateLiteral
+            } else {
+                Band::AlternateSub
+            };
+            consider(&mut best, band, fuzzy);
+        }
+    }
+
+    if let Some(bundle_id) = fields.bundle_id.as_deref() {
+        if let Some(fuzzy) = bundle_literal(query, bundle_id) {
+            consider(&mut best, Band::Bundle, fuzzy);
+        }
+    }
+
+    if let Some(exe) = fields.executable_name.as_deref() {
+        if let Some(fuzzy) = FuzzyMatch::score_literal(query, exe) {
+            consider(&mut best, Band::Exe, fuzzy);
+        }
+    }
+
+    best
+}
+
+fn consider(best: &mut Option<i32>, band: Band, fuzzy: i32) {
+    let total = (band as i32) * BAND_STRIDE + fuzzy;
+    *best = Some(best.map_or(total, |prev| prev.max(total)));
+}
+
+/// Literal match on the id with the leading DNS component stripped, plus exact on the full id.
+fn bundle_literal(query: &str, bundle_id: &str) -> Option<i32> {
+    let stripped = strip_leading_dns_component(bundle_id);
+    let via_stripped = FuzzyMatch::score_literal(query, stripped);
+    let via_full_exact =
+        FuzzyMatch::score(query, bundle_id).filter(|&s| s == FuzzyMatch::MAXIMUM_SCORE);
+    [via_stripped, via_full_exact].into_iter().flatten().max()
+}
+
+fn strip_leading_dns_component(id: &str) -> &str {
+    match id.split_once('.') {
+        Some((_, rest)) if !rest.is_empty() => rest,
+        _ => id,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fuzzy::FuzzyMatch;
+    use super::{score, Band, SearchFields, BAND_STRIDE};
+
+    fn fields(name: &str) -> SearchFields {
+        SearchFields {
+            display_name: name.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn band_stride_dwarfs_fuzzy_and_boost() {
+        assert_eq!(BAND_STRIDE, 1_000_000);
+        assert!(FuzzyMatch::MAXIMUM_SCORE * 10 == BAND_STRIDE);
+        assert!(4_500 < BAND_STRIDE / 100);
+    }
+
+    #[test]
+    fn alias_prefix_beats_display_exact() {
+        let mut f = fields("Terminal");
+        f.user_alias = Some("iterm".into());
+        let alias = score("ite", &f).unwrap();
+        let display = score("Terminal", &fields("Terminal")).unwrap();
+        assert!(alias > display);
+    }
+
+    #[test]
+    fn bundle_id_does_not_subsequence() {
+        let mut f = fields("Photos");
+        f.bundle_id = Some("com.apple.Photos".into());
+        assert_eq!(score("cop", &f), None);
+    }
+
+    #[test]
+    fn bundle_id_com_is_not_a_prefix_hit() {
+        let mut f = fields("Photos");
+        f.bundle_id = Some("com.apple.Photos".into());
+        assert_eq!(score("com", &f), None);
+    }
+
+    #[test]
+    fn bundle_id_full_exact_and_stripped_literal() {
+        let mut f = fields("Photos");
+        f.bundle_id = Some("com.apple.Photos".into());
+        let exact = score("com.apple.Photos", &f).unwrap();
+        let stripped = score("apple", &f).unwrap();
+        assert!(exact >= Band::Bundle as i32 * BAND_STRIDE);
+        assert!(exact < Band::AlternateSub as i32 * BAND_STRIDE);
+        assert!(stripped >= Band::Bundle as i32 * BAND_STRIDE);
+        assert!(stripped < Band::AlternateSub as i32 * BAND_STRIDE);
+    }
+
+    #[test]
+    fn alias_interior_is_alternate_literal_not_alias_band() {
+        let mut f = fields("X");
+        f.user_alias = Some("iterm".into());
+        let interior = score("term", &f).unwrap();
+        assert!(interior >= Band::AlternateLiteral as i32 * BAND_STRIDE);
+        assert!(interior < Band::Alias as i32 * BAND_STRIDE);
+        assert_eq!(score("irm", &f), None);
+    }
+
+    #[test]
+    fn exe_does_not_subsequence() {
+        let mut f = fields("X");
+        f.executable_name = Some("PhotosHelper".into());
+        assert_eq!(score("phr", &f), None);
+        assert!(score("Phot", &f).unwrap() >= Band::Exe as i32 * BAND_STRIDE);
+    }
+
+    #[test]
+    fn snippet_keyword_is_display_literal_band() {
+        let f = SearchFields {
+            display_name: "Meeting Notes".into(),
+            snippet_keyword: Some("!notes".into()),
+            ..Default::default()
+        };
+        assert!(score("!notes", &f).unwrap() >= Band::DisplayLiteral as i32 * BAND_STRIDE);
+    }
+
+    #[test]
+    fn display_subsequence_stays_in_display_sub_band() {
+        let sub = score("tml", &fields("Terminal")).unwrap();
+        assert!(sub >= Band::DisplaySub as i32 * BAND_STRIDE);
+        assert!(sub < Band::AlternateLiteral as i32 * BAND_STRIDE);
+    }
+
+    #[test]
+    fn alternate_literal_beats_display_subsequence() {
+        let mut alt = fields("xcxoxdxe");
+        alt.alternate_names = vec!["codeberg helper".into()];
+        let alt_lit = score("code", &alt).unwrap();
+        let display_sub = score("code", &fields("xcxoxdxe")).unwrap();
+        assert!(alt_lit > display_sub);
+        assert!(alt_lit >= Band::AlternateLiteral as i32 * BAND_STRIDE);
+        assert!(display_sub < Band::AlternateLiteral as i32 * BAND_STRIDE);
     }
 }
