@@ -1,6 +1,8 @@
 mod dpi;
 pub mod hotkey;
+pub(crate) mod launch_at_login;
 pub mod messages;
+pub(crate) mod paths;
 pub mod screens;
 mod single_instance;
 mod tray;

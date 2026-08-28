@@ -51,22 +51,36 @@ pub fn screen_dip_from_px(screen: ScreenPx) -> ScreenDip {
     }
 }
 
-/// Cursor monitor in DIP, chosen in pixel space (`MonitorFromPoint`).
-pub fn cursor_target_screen() -> Option<(ScreenDip, u32)> {
+/// Palette screen in DIP. Cursor hit-test is in pixels (`MonitorFromPoint`).
+pub fn cursor_target_screen(open_on_cursor: bool) -> Option<(ScreenDip, u32)> {
+    let screens = screens_px();
     unsafe {
         let mut pt = POINT::default();
         let _ = GetCursorPos(&mut pt);
-        let mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL);
-        let chosen = if !mon.is_invalid() {
-            screen_px_from_hmonitor(mon)
+        let chosen = if open_on_cursor {
+            let mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL);
+            if !mon.is_invalid() {
+                screen_px_from_hmonitor(mon)
+            } else {
+                None
+            }
+            .or_else(|| pick_target_screen((pt.x, pt.y), &screens, true))
         } else {
-            None
-        };
-        let chosen = chosen.or_else(|| {
-            let screens = screens_px();
-            target_screen_from_cursor_px((pt.x, pt.y), &screens)
-        })?;
+            pick_target_screen((pt.x, pt.y), &screens, false)
+        }?;
         Some((screen_dip_from_px(chosen), chosen.dpi))
+    }
+}
+
+fn pick_target_screen(
+    cursor: (i32, i32),
+    screens: &[ScreenPx],
+    open_on_cursor: bool,
+) -> Option<ScreenPx> {
+    if open_on_cursor {
+        target_screen_from_cursor_px(cursor, screens)
+    } else {
+        screens.iter().copied().find(|s| s.origin_is_primary)
     }
 }
 
@@ -229,5 +243,10 @@ mod tests {
 
         let miss = target_screen_from_cursor_px((-10, -10), &[primary, secondary]).unwrap();
         assert!(miss.origin_is_primary);
+
+        let follow = pick_target_screen((2000, 10), &[primary, secondary], true).unwrap();
+        assert!(!follow.origin_is_primary);
+        let primary_only = pick_target_screen((2000, 10), &[primary, secondary], false).unwrap();
+        assert!(primary_only.origin_is_primary);
     }
 }

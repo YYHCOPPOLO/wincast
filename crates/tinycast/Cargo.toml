@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 tinycast-pure = { path = "../tinycast-pure" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
@@ -16,6 +18,7 @@ windows = { version = "0.58", features = [
   "Win32_Graphics_Dxgi_Common",
   "Win32_System_Com",
   "Win32_System_LibraryLoader",
+  "Win32_System_Registry",
   "Win32_UI_Controls",
   "Win32_UI_HiDpi",
   "Win32_UI_Input_Ime",

@@ -3,6 +3,7 @@ use tinycast_pure::palette_placement::{default_anchor, frame_for};
 use tinycast_pure::palette_state::{escape_outcome, EscapeOutcome, PaletteState};
 use tinycast_pure::settings_tab::SettingsTab;
 
+use crate::app_settings::AppSettings;
 use crate::palette::physical;
 use crate::palette::PaletteWindow;
 use crate::platform::screens::{cursor_target_screen, dip_to_px, dip_to_px_with_dpi};
@@ -174,7 +175,8 @@ impl AppCore {
         if self.palette_window.is_none() {
             return;
         }
-        let Some((screen, dpi)) = cursor_target_screen() else {
+        let open_on_cursor = AppSettings::load().open_on_cursor_screen;
+        let Some((screen, dpi)) = cursor_target_screen(open_on_cursor) else {
             return;
         };
         let anchor = default_anchor(screen);

@@ -101,6 +101,8 @@ dependencies = [
 name = "tinycast"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "tinycast-pure",
  "windows",
 ]
