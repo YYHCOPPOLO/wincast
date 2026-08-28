@@ -52,9 +52,11 @@ impl AppCore {
     pub fn hide_palette(&mut self) {
         self.palette_visible = false;
         self.expanded = false;
+        self.palette.is_composing = false;
         self.anchor = None;
         self.anchor_px = None;
         if let Some(window) = &self.palette_window {
+            window.reset_search();
             window.hide();
         }
     }
@@ -72,6 +74,27 @@ impl AppCore {
         }
     }
 
+    pub fn expand_select_first(&mut self) {
+        self.palette.selection = 0;
+        self.expand_palette();
+    }
+
+    pub fn set_query(&mut self, text: String) {
+        self.palette.query = text;
+        if !self.palette.query.is_empty() {
+            self.expand_palette();
+        }
+        self.invalidate_palette();
+    }
+
+    pub fn set_composing(&mut self, composing: bool) {
+        if self.palette.is_composing == composing {
+            return;
+        }
+        self.palette.is_composing = composing;
+        self.invalidate_palette();
+    }
+
     pub fn append_query_char(&mut self, c: char) {
         if c.is_control() {
             return;
@@ -79,6 +102,13 @@ impl AppCore {
         self.palette.query.push(c);
         if !self.palette.query.is_empty() {
             self.expand_palette();
+        }
+        self.invalidate_palette();
+    }
+
+    fn invalidate_palette(&self) {
+        if let Some(window) = &self.palette_window {
+            window.invalidate();
         }
     }
 
@@ -119,6 +149,7 @@ impl AppCore {
             y: rect.y,
         });
         if let Some(window) = &self.palette_window {
+            window.reset_search();
             window.show_at(rect);
         }
     }
@@ -156,5 +187,24 @@ mod tests {
         c.append_query_char('a');
         assert_eq!(c.palette.query, "a");
         assert!(c.expanded);
+    }
+
+    #[test]
+    fn set_query_expands_when_non_empty() {
+        let mut c = AppCore::new();
+        c.toggle_palette();
+        c.set_query("abc".into());
+        assert_eq!(c.palette.query, "abc");
+        assert!(c.expanded);
+    }
+
+    #[test]
+    fn down_arrow_selects_row_zero_and_expands() {
+        let mut c = AppCore::new();
+        c.toggle_palette();
+        c.palette.selection = 3;
+        c.expand_select_first();
+        assert!(c.expanded);
+        assert_eq!(c.palette.selection, 0);
     }
 }

@@ -28,6 +28,15 @@ impl PaletteState {
         self.focus_token = self.focus_token.wrapping_add(1);
         self.is_composing = false;
     }
+
+    pub fn should_draw_placeholder(&self) -> bool {
+        should_draw_placeholder(self)
+    }
+}
+
+/// D2D placeholder is shown only when the field is empty and IME has no marked text.
+pub fn should_draw_placeholder(s: &PaletteState) -> bool {
+    s.query.is_empty() && !s.is_composing
 }
 
 #[cfg(test)]
@@ -45,5 +54,22 @@ mod tests {
         assert_eq!(s.selection, 0);
         assert_eq!(s.mode, PaletteMode::Clipboard);
         assert_ne!(s.focus_token, t0);
+    }
+
+    #[test]
+    fn placeholder_hidden_while_composing_even_if_query_empty() {
+        let mut s = PaletteState::new();
+        s.is_composing = true;
+        assert!(s.query.is_empty());
+        assert!(!should_draw_placeholder(&s));
+        assert!(!s.should_draw_placeholder());
+    }
+
+    #[test]
+    fn placeholder_shown_when_query_empty_and_not_composing() {
+        let s = PaletteState::new();
+        assert!(s.query.is_empty());
+        assert!(!s.is_composing);
+        assert!(should_draw_placeholder(&s));
     }
 }

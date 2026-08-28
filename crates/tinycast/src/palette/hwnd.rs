@@ -1,12 +1,16 @@
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
+use tinycast_pure::palette_state::should_draw_placeholder;
 use windows::core::w;
-use windows::Win32::Foundation::{FALSE, HWND, LPARAM, LRESULT, TRUE, WPARAM};
+use windows::Win32::Foundation::{COLORREF, FALSE, HWND, LPARAM, LRESULT, TRUE, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMSBT_TRANSIENTWINDOW,
     DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
     DWMWCP_ROUND,
 };
-use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, InvalidateRect};
+use windows::Win32::Graphics::Gdi::{
+    BeginPaint, EndPaint, GetStockObject, InvalidateRect, SetBkMode, SetTextColor, HDC, NULL_BRUSH,
+    TRANSPARENT,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -14,13 +18,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_DOWN;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, IsWindow, LoadCursorW,
     RegisterClassW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SW_HIDE, WM_CHAR, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_POPUP,
+    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW,
+    SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WM_CHAR, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE,
+    WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use super::d2d::Renderer;
+use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
 use crate::platform::screens::dip_scalar_to_px;
@@ -34,6 +39,7 @@ pub struct PaletteWindow {
 struct PaletteInner {
     host: HWND,
     renderer: Renderer,
+    edit: Option<SearchEdit>,
 }
 
 impl PaletteWindow {
@@ -59,6 +65,7 @@ impl PaletteWindow {
             let inner = Box::new(PaletteInner {
                 host,
                 renderer: Renderer::new()?,
+                edit: None,
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -86,6 +93,13 @@ impl PaletteWindow {
             // per-pixel alpha via UpdateLayeredWindow keeps the 0.40 scrim
             // and 26 DIP corners without a solid gray slab.
             (*ptr).renderer.set_layered(hwnd, true);
+            match SearchEdit::create(hwnd, host) {
+                Ok(edit) => (*ptr).edit = Some(edit),
+                Err(err) => {
+                    let _ = DestroyWindow(hwnd);
+                    return Err(err);
+                }
+            }
             Ok(Self { hwnd })
         }
     }
@@ -103,6 +117,44 @@ impl PaletteWindow {
             );
             let _ = SetForegroundWindow(self.hwnd);
             let _ = InvalidateRect(self.hwnd, None, FALSE);
+            self.layout_search();
+            self.focus_search();
+        }
+    }
+
+    pub fn reset_search(&self) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                if let Some(edit) = (*inner).edit.as_ref() {
+                    edit.set_text("");
+                }
+            }
+        }
+    }
+
+    pub fn focus_search(&self) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                if let Some(edit) = (*inner).edit.as_ref() {
+                    edit.focus();
+                }
+            }
+        }
+    }
+
+    pub fn invalidate(&self) {
+        unsafe {
+            let _ = InvalidateRect(self.hwnd, None, FALSE);
+        }
+    }
+
+    fn layout_search(&self) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                if let Some(edit) = (*inner).edit.as_mut() {
+                    edit.layout(self.hwnd);
+                }
+            }
         }
     }
 
@@ -199,6 +251,13 @@ unsafe fn core_from_host(host: HWND) -> Option<*mut AppCore> {
     }
 }
 
+unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
+    let placeholder = core_from_host((*inner).host)
+        .map(|core| should_draw_placeholder(&(*core).palette))
+        .unwrap_or(false);
+    (*inner).renderer.paint(hwnd, placeholder);
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_NCCREATE => {
@@ -214,8 +273,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let width = (lparam.0 as u32) & 0xffff;
                 let height = ((lparam.0 as u32) >> 16) & 0xffff;
                 (*inner).renderer.resize(hwnd, width, height);
+                if let Some(edit) = (*inner).edit.as_mut() {
+                    edit.layout(hwnd);
+                }
                 if (*inner).renderer.is_layered() {
-                    (*inner).renderer.paint(hwnd);
+                    paint_palette(hwnd, inner);
                 }
             }
             LRESULT(0)
@@ -224,14 +286,37 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
             let _hdc = BeginPaint(hwnd, &mut ps);
             if let Some(inner) = inner_from(hwnd) {
-                (*inner).renderer.paint(hwnd);
+                paint_palette(hwnd, inner);
             }
             let _ = EndPaint(hwnd, &ps);
+            LRESULT(0)
+        }
+        WM_CTLCOLOREDIT => {
+            let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
+            unsafe {
+                SetBkMode(hdc, TRANSPARENT);
+                SetTextColor(hdc, COLORREF(0x00FFFFFF));
+            }
+            LRESULT(unsafe { GetStockObject(NULL_BRUSH) }.0 as isize)
+        }
+        WM_COMMAND => {
+            let notify = ((wparam.0 as u32) >> 16) & 0xffff;
+            if notify == EN_CHANGE {
+                if let Some(inner) = inner_from(hwnd) {
+                    if let Some(core) = core_from_host((*inner).host) {
+                        let edit = HWND(lparam.0 as *mut core::ffi::c_void);
+                        (*core).set_query(super::edit::window_text(edit));
+                    }
+                }
+            }
             LRESULT(0)
         }
         WM_DPICHANGED => {
             if let Some(inner) = inner_from(hwnd) {
                 (*inner).renderer.discard_target();
+                if let Some(edit) = (*inner).edit.as_mut() {
+                    edit.layout(hwnd);
+                }
                 if let Some(core) = core_from_host((*inner).host) {
                     (*core).relayout_palette();
                 }
@@ -242,7 +327,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if wparam.0 as u16 == VK_DOWN.0 {
                 if let Some(inner) = inner_from(hwnd) {
                     if let Some(core) = core_from_host((*inner).host) {
-                        (*core).expand_palette();
+                        (*core).expand_select_first();
                     }
                 }
             }

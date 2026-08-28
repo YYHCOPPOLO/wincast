@@ -1,4 +1,5 @@
 mod d2d;
+mod edit;
 mod hwnd;
 
 pub use hwnd::PaletteWindow;
