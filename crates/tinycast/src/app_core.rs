@@ -1,15 +1,19 @@
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
 use tinycast_pure::palette_state::{escape_outcome, EscapeOutcome, PaletteState};
+use tinycast_pure::settings_tab::SettingsTab;
 
 use crate::palette::physical;
 use crate::palette::PaletteWindow;
 use crate::platform::screens::{cursor_target_screen, dip_to_px, dip_to_px_with_dpi};
+use crate::surfaces::SettingsWindow;
 
 pub struct AppCore {
     pub palette: PaletteState,
     pub palette_visible: bool,
     pub palette_window: Option<PaletteWindow>,
+    pub settings_window: Option<SettingsWindow>,
+    pub settings_tab: SettingsTab,
     expanded: bool,
     anchor: Option<tinycast_pure::palette_placement::PaletteAnchor>,
     anchor_px: Option<physical::Point>,
@@ -21,6 +25,8 @@ impl AppCore {
             palette: PaletteState::new(),
             palette_visible: false,
             palette_window: None,
+            settings_window: None,
+            settings_tab: SettingsTab::General,
             expanded: false,
             anchor: None,
             anchor_px: None,
@@ -35,6 +41,22 @@ impl AppCore {
         self.anchor_px = None;
         if let Some(window) = &self.palette_window {
             window.hide();
+        }
+    }
+
+    pub fn open_settings(&mut self) {
+        if let Some(window) = &self.settings_window {
+            window.show();
+        }
+    }
+
+    pub fn select_settings_tab(&mut self, tab: SettingsTab) {
+        if self.settings_tab == tab {
+            return;
+        }
+        self.settings_tab = tab;
+        if let Some(window) = &self.settings_window {
+            window.invalidate();
         }
     }
 
@@ -233,5 +255,32 @@ mod tests {
         assert!(c.palette_visible);
         c.handle_escape();
         assert!(!c.palette_visible);
+    }
+
+    #[test]
+    fn default_selected_settings_tab_is_general() {
+        let c = AppCore::new();
+        assert_eq!(c.settings_tab, SettingsTab::General);
+    }
+
+    #[test]
+    fn open_settings_does_not_change_palette_visibility() {
+        let mut c = AppCore::new();
+        c.open_settings();
+        assert!(!c.palette_visible);
+        c.toggle_palette();
+        assert!(c.palette_visible);
+        c.open_settings();
+        assert!(c.palette_visible);
+        assert_eq!(c.settings_tab, SettingsTab::General);
+    }
+
+    #[test]
+    fn select_settings_tab_stores_enum() {
+        let mut c = AppCore::new();
+        c.select_settings_tab(SettingsTab::Ai);
+        assert_eq!(c.settings_tab, SettingsTab::Ai);
+        c.select_settings_tab(SettingsTab::About);
+        assert_eq!(c.settings_tab, SettingsTab::About);
     }
 }

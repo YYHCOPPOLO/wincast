@@ -156,7 +156,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
-        WM_OPEN_SETTINGS => LRESULT(0),
+        WM_OPEN_SETTINGS => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).open_settings();
+            }
+            LRESULT(0)
+        }
         WM_QUIT_APP => {
             let _ = DestroyWindow(hwnd);
             LRESULT(0)
@@ -164,6 +169,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_DESTROY => {
             if let Some(core) = core_from(hwnd) {
                 (*core).palette_window = None;
+                (*core).settings_window = None;
             }
             remove_icon(hwnd);
             PostQuitMessage(0);

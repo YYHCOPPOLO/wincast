@@ -145,6 +145,12 @@ mod tests {
     }
 
     #[test]
+    fn default_settings_tab_is_general() {
+        assert_eq!(SettingsTab::General.title(), "General");
+        assert_eq!(SettingsSection::Features.tabs()[0].title(), "AI");
+    }
+
+    #[test]
     fn settings_tab_titles_match_v0102() {
         assert_eq!(SettingsTab::General.title(), "General");
         assert_eq!(SettingsTab::Applications.title(), "Applications");

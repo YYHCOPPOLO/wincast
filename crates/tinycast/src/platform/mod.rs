@@ -19,6 +19,7 @@ pub fn run() -> windows::core::Result<()> {
     core.start();
     let host = tray::create(&mut core)?;
     core.palette_window = Some(crate::palette::PaletteWindow::create(host)?);
+    core.settings_window = Some(crate::surfaces::SettingsWindow::create(host)?);
     pump()
 }
 
