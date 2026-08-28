@@ -1,8 +1,10 @@
 //! Decision layer. Must not depend on `windows`.
 
+pub mod alias;
 pub mod app_entry;
 pub mod app_settings_key;
 pub mod command_id;
+pub mod favorites;
 pub mod hotkey;
 pub mod launcher_ranking;
 pub mod palette_mode;
@@ -12,3 +14,4 @@ pub mod palette_state;
 pub mod search_relevance;
 pub mod settings_tab;
 pub mod theme;
+pub mod visibility;
