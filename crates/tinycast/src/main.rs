@@ -1,4 +1,5 @@
 mod app_core;
+mod palette;
 mod platform;
 
 fn main() {

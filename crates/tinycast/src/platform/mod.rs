@@ -1,14 +1,23 @@
 mod dpi;
 pub mod messages;
+pub mod screens;
 mod single_instance;
 mod tray;
 
 pub fn run() -> windows::core::Result<()> {
     dpi::apply()?;
+    unsafe {
+        windows::Win32::System::Com::CoInitializeEx(
+            None,
+            windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
+        )
+        .ok()?;
+    }
     let _instance = single_instance::acquire()?;
     let mut core = crate::app_core::AppCore::new();
     core.start();
-    let _hwnd = tray::create(&mut core)?;
+    let host = tray::create(&mut core)?;
+    core.palette_window = Some(crate::palette::PaletteWindow::create(host)?);
     pump()
 }
 

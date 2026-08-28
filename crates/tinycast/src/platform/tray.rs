@@ -162,6 +162,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_DESTROY => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).palette_window = None;
+            }
             remove_icon(hwnd);
             PostQuitMessage(0);
             LRESULT(0)
