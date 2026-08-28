@@ -289,6 +289,8 @@ Effect 用假时钟、假 FS、假 HTTP。UI 像素不以截图当门；面板�
 6. HTTP AI + Quick Actions；更新检查
 7. Extensions 页占位（无运行时）
 
+每刀对应一份 `docs/superpowers/plans/` 计划。该计划里的全部任务做完后 **只 review 一次**，不要每个 task 审一次。详见仓库根目录 `AGENTS.md`。
+
 每刀结束后量一次 exe 与 RSS。
 
 ## 14. 明确不做（v1）

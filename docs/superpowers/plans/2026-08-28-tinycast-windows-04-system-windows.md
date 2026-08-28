@@ -1,6 +1,6 @@
 # System Actions, Window Management, and Hotkeys Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Implement **every task in this plan file** first. **Do not review after each task.** When the last task is committed, review this plan's full commit range once. See `AGENTS.md`. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Full `SystemAction` and 34 `WindowCommand` catalogs plus combo / double-tap / Hyper key engines, matching v0.10.2 names and rules.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-Index constraints apply. Window layout math is in DIP top-left origin; convert to pixels only in the mover. Virtual desktops use public APIs — no HID forgery. `toggle-stage-manager` stays in the catalog and HUDs that it is unavailable. Confirmations: Restart/Shut Down/Log Out say `PC`. Empty Recycle Bin confirms. Fail quiet on window commands when the target cannot move.
+Index constraints apply, including **one review after this entire plan**, not after each task (`AGENTS.md`). Window layout math is in DIP top-left origin; convert to pixels only in the mover. Virtual desktops use public APIs — no HID forgery. `toggle-stage-manager` stays in the catalog and HUDs that it is unavailable. Confirmations: Restart/Shut Down/Log Out say `PC`. Empty Recycle Bin confirms. Fail quiet on window commands when the target cannot move.
 
 Default: `windowManagementEnabled = false`. System actions publish on.
 

@@ -1,6 +1,6 @@
 # Launcher Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Implement **every task in this plan file** first. **Do not review after each task.** When the last task is committed, review this plan's full commit range once. See `AGENTS.md`. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The palette lists and launches Windows apps (and built-in command rows) with v0.10.2 fuzzy bands, frecency, favorites, aliases, and visibility.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-Plan index Global Constraints apply. Band arithmetic is a contract, not tuning:
+Plan index Global Constraints apply, including **one review after this entire plan**, not after each task (`AGENTS.md`). Band arithmetic is a contract, not tuning:
 
 ```
 FuzzyMatch::MAXIMUM_SCORE = 100_000

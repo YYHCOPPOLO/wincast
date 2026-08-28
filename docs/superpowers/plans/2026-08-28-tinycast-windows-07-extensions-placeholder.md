@@ -1,6 +1,6 @@
 # Extensions Settings Placeholder Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Implement **every task in this plan file** first. **Do not review after each task.** When the last task is committed, review this plan's full commit range once. See `AGENTS.md`. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Keep the v0.10.2 Extensions settings tab and palette mode bit without shipping a JS runtime.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-Index constraints apply. Backup already excludes `extensionsEnabled`, registries, package manager, custom search paths. Do not add a JS crate in this plan.
+Index constraints apply, including **one review after this entire plan**, not after each task (`AGENTS.md`). Backup already excludes `extensionsEnabled`, registries, package manager, custom search paths. Do not add a JS crate in this plan.
 
 ---
 

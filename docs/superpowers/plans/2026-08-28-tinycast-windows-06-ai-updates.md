@@ -1,6 +1,6 @@
 # HTTP AI, Quick Actions, and Updates Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Implement **every task in this plan file** first. **Do not review after each task.** When the last task is committed, review this plan's full commit range once. See `AGENTS.md`. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** v0.10.2 AI Chat and Quick Actions over HTTP (no Apple Intelligence), plus Check for Updates against this Windows repo's GitHub Releases.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-Index constraints apply. **No Apple Intelligence case, setting, or credential field.** `aiEnabled` and all `ai*` keys are backup-excluded. Off means fully off: no command, no DB open, no Tab stop, cancel stream. HTTPS required; plain HTTP only for localhost/127.0.0.1/::1. Keys never logged. Unavailable local model must not fail-over onto a billed endpoint (there is no local model — do not invent one). ChatGPT subscription: Connect only if `codex` exists; otherwise Settings links to install docs.
+Index constraints apply, including **one review after this entire plan**, not after each task (`AGENTS.md`). **No Apple Intelligence case, setting, or credential field.** `aiEnabled` and all `ai*` keys are backup-excluded. Off means fully off: no command, no DB open, no Tab stop, cancel stream. HTTPS required; plain HTTP only for localhost/127.0.0.1/::1. Keys never logged. Unavailable local model must not fail-over onto a billed endpoint (there is no local model — do not invent one). ChatGPT subscription: Connect only if `codex` exists; otherwise Settings links to install docs.
 
 ---
 

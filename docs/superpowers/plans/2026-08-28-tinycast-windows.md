@@ -1,6 +1,6 @@
 # Tinycast for Windows — Plan Index
 
-> **For agentic workers:** Execute the numbered plans **in order**. Each plan is independently testable. REQUIRED SUB-SKILL for a given plan file: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Do not start plan N+1 until plan N's tests pass.
+> **For agentic workers:** Execute the numbered plans **in order**. Each plan is independently testable. REQUIRED SUB-SKILL for a given plan file: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Implement **every task in the current plan**, then review that plan **once**. Do not review after each task. Do not start plan N+1 until plan N's tests pass and that plan-level review is done. See `AGENTS.md`.
 
 **Goal:** Ship a Windows Tinycast whose user-visible behavior matches v0.10.2, minus Apple Intelligence and the Raycast extension runtime.
 
@@ -14,6 +14,7 @@
 
 Copied from the spec. Every task in every plan inherits these:
 
+- **Review:** one review per plan file, after all of that plan's tasks are committed. Never per-task. `AGENTS.md` overrides the Superpowers per-task review loop.
 - Independent rewrite. Do not copy Tinycast Swift sources. Behavior oracle is Tinycast **v0.10.2** `docs/` plus shipped catalogs.
 - Bundle `com.tinycast.win`. Display name `Tinycast`.
 - Windows 11 24H2+ (build 26100+), `x86_64-pc-windows-msvc` only.
