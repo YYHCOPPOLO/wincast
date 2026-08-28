@@ -17,12 +17,13 @@ use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{VK_DOWN, VK_ESCAPE};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, IsWindow, IsWindowVisible,
-    KillTimer, LoadCursorW, RegisterClassW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GWLP_USERDATA,
-    HWND_TOPMOST, IDC_ARROW, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WA_INACTIVE, WM_ACTIVATE,
-    WM_CHAR, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HOTKEY,
-    WM_KEYDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetAncestor, GetForegroundWindow,
+    GetWindowLongPtrW, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW,
+    RegisterClassW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GA_ROOT, GWLP_USERDATA, HWND_TOPMOST,
+    IDC_ARROW, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WA_INACTIVE, WM_ACTIVATE, WM_CHAR,
+    WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HOTKEY, WM_KEYDOWN,
+    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
@@ -31,10 +32,12 @@ use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
 use crate::platform::hotkey::{self, TOGGLE_PALETTE_ID};
+use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
 
 const CLASS: windows::core::PCWSTR = w!("TinycastPalette");
 const ANIM_TIMER_ID: usize = 1;
+const RESIGN_TIMER_ID: usize = 2;
 const ANIM_TICK_MS: u32 = 16;
 const ENTER_SCALE: f32 = 0.94;
 
@@ -449,6 +452,37 @@ unsafe fn tick_anim(hwnd: HWND) {
     }
 }
 
+fn resign_should_hide(palette_visible: bool, foreground_is_self: bool) -> bool {
+    palette_visible && !foreground_is_self
+}
+
+fn foreground_is_palette_or_child(palette: HWND) -> bool {
+    let fg = unsafe { GetForegroundWindow() };
+    if fg.0.is_null() {
+        return false;
+    }
+    if fg == palette {
+        return true;
+    }
+    unsafe { GetAncestor(fg, GA_ROOT) == palette }
+}
+
+unsafe fn apply_resign(hwnd: HWND) {
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    let Some(core) = core_from_host((*inner).host) else {
+        return;
+    };
+    if !resign_should_hide(
+        (*core).palette_visible,
+        foreground_is_palette_or_child(hwnd),
+    ) {
+        return;
+    }
+    (*core).hide_palette();
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_NCCREATE => {
@@ -552,25 +586,28 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_ACTIVATE => {
             if (wparam.0 as u32) & 0xffff == WA_INACTIVE {
-                if let Some(inner) = inner_from(hwnd) {
-                    if let Some(core) = core_from_host((*inner).host) {
-                        if (*core).palette_visible {
-                            (*core).hide_palette();
-                        }
-                    }
-                }
+                // Defer hide: tray click deactivates us before WM_TOGGLE_PALETTE.
+                let _ = SetTimer(hwnd, RESIGN_TIMER_ID, 1, None);
             }
             LRESULT(0)
         }
         WM_TIMER => {
             if wparam.0 == ANIM_TIMER_ID {
                 tick_anim(hwnd);
+            } else if wparam.0 == RESIGN_TIMER_ID {
+                let _ = KillTimer(hwnd, RESIGN_TIMER_ID);
+                let _ = PostMessageW(hwnd, WM_RESIGN_PALETTE, WPARAM(0), LPARAM(0));
             }
+            LRESULT(0)
+        }
+        WM_RESIGN_PALETTE => {
+            apply_resign(hwnd);
             LRESULT(0)
         }
         WM_DESTROY => {
             hotkey::unregister_toggle_palette(hwnd);
             let _ = KillTimer(hwnd, ANIM_TIMER_ID);
+            let _ = KillTimer(hwnd, RESIGN_TIMER_ID);
             LRESULT(0)
         }
         WM_NCDESTROY => {
@@ -582,5 +619,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resign_hides_only_when_visible_and_focus_left() {
+        assert!(resign_should_hide(true, false));
+        assert!(!resign_should_hide(true, true));
+        assert!(!resign_should_hide(false, false));
+        assert!(!resign_should_hide(false, true));
     }
 }
