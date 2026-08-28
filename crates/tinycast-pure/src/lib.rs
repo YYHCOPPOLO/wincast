@@ -2,6 +2,7 @@
 
 pub mod app_settings_key;
 pub mod hotkey;
+pub mod launcher_ranking;
 pub mod palette_mode;
 pub mod palette_placement;
 pub mod palette_row_index;
