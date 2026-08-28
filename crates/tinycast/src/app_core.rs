@@ -1,6 +1,6 @@
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
-use tinycast_pure::palette_state::PaletteState;
+use tinycast_pure::palette_state::{escape_outcome, EscapeOutcome, PaletteState};
 
 use crate::palette::physical;
 use crate::palette::PaletteWindow;
@@ -58,6 +58,21 @@ impl AppCore {
         if let Some(window) = &self.palette_window {
             window.reset_search();
             window.hide();
+        }
+    }
+
+    pub fn handle_escape(&mut self) {
+        let launcher = self.palette.mode == PaletteMode::Launcher;
+        match escape_outcome(&self.palette.query, launcher) {
+            EscapeOutcome::ClearQuery => {
+                self.palette.query.clear();
+                self.palette.is_composing = false;
+                if let Some(window) = &self.palette_window {
+                    window.reset_search();
+                }
+                self.invalidate_palette();
+            }
+            EscapeOutcome::Hide => self.hide_palette(),
         }
     }
 
@@ -206,5 +221,17 @@ mod tests {
         c.expand_select_first();
         assert!(c.expanded);
         assert_eq!(c.palette.selection, 0);
+    }
+
+    #[test]
+    fn escape_clears_query_then_hides() {
+        let mut c = AppCore::new();
+        c.toggle_palette();
+        c.set_query("abc".into());
+        c.handle_escape();
+        assert_eq!(c.palette.query, "");
+        assert!(c.palette_visible);
+        c.handle_escape();
+        assert!(!c.palette_visible);
     }
 }

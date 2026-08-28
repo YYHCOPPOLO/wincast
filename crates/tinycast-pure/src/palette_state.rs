@@ -39,6 +39,23 @@ pub fn should_draw_placeholder(s: &PaletteState) -> bool {
     s.query.is_empty() && !s.is_composing
 }
 
+#[derive(Debug, PartialEq)]
+pub enum EscapeOutcome {
+    ClearQuery,
+    Hide,
+}
+
+/// Esc: non-empty query clears; empty query hides.
+/// `launcher` is unused until Tab-ring modes exist.
+pub fn escape_outcome(query: &str, launcher: bool) -> EscapeOutcome {
+    let _ = launcher;
+    if !query.is_empty() {
+        EscapeOutcome::ClearQuery
+    } else {
+        EscapeOutcome::Hide
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,5 +88,12 @@ mod tests {
         assert!(s.query.is_empty());
         assert!(!s.is_composing);
         assert!(should_draw_placeholder(&s));
+    }
+
+    #[test]
+    fn escape_clears_query_before_hiding() {
+        // pure policy
+        assert_eq!(escape_outcome("abc", true), EscapeOutcome::ClearQuery);
+        assert_eq!(escape_outcome("", true), EscapeOutcome::Hide);
     }
 }

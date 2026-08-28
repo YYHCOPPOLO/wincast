@@ -11,7 +11,7 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::Ime::{
     ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, GCS_COMPSTR,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{SetFocus, VK_DOWN};
+use windows::Win32::UI::Input::KeyboardAndMouse::{SetFocus, VK_DOWN, VK_ESCAPE};
 use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
 };
@@ -236,6 +236,12 @@ unsafe extern "system" fn edit_subclass(
     let host = HWND(dwrefdata as *mut core::ffi::c_void);
     match msg {
         WM_ERASEBKGND => LRESULT(1),
+        WM_KEYDOWN if wparam.0 as u16 == VK_ESCAPE.0 => {
+            if let Some(core) = core_from_host(host) {
+                (*core).handle_escape();
+            }
+            LRESULT(0)
+        }
         WM_KEYDOWN if wparam.0 as u16 == VK_DOWN.0 => {
             if let Some(core) = core_from_host(host) {
                 (*core).expand_select_first();

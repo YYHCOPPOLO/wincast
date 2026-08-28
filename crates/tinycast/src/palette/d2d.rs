@@ -4,13 +4,15 @@ use windows::Win32::Foundation::{
     COLORREF, D2DERR_RECREATE_TARGET, HANDLE, HWND, POINT, RECT, SIZE,
 };
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_U,
+    D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F,
+    D2D_SIZE_U,
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1RenderTarget,
-    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
-    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_ROUNDED_RECT,
+    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT,
+    D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
@@ -103,9 +105,9 @@ impl Renderer {
         }
     }
 
-    pub fn paint(&mut self, hwnd: HWND, placeholder: bool) {
+    pub fn paint(&mut self, hwnd: HWND, placeholder: bool, source_alpha: u8) {
         if self.layered {
-            let _ = self.paint_layered(hwnd, placeholder);
+            let _ = self.paint_layered(hwnd, placeholder, source_alpha);
             return;
         }
         if self.hwnd_target.is_none() {
@@ -113,7 +115,7 @@ impl Renderer {
             self.resize(hwnd, w, h);
         }
         let Some(target) = &self.hwnd_target else {
-            let _ = self.paint_layered(hwnd, placeholder);
+            let _ = self.paint_layered(hwnd, placeholder, source_alpha);
             return;
         };
         if let Err(err) = paint_scene(target, &self.text_format, placeholder) {
@@ -123,7 +125,12 @@ impl Renderer {
         }
     }
 
-    fn paint_layered(&mut self, hwnd: HWND, placeholder: bool) -> windows::core::Result<()> {
+    fn paint_layered(
+        &mut self,
+        hwnd: HWND,
+        placeholder: bool,
+        source_alpha: u8,
+    ) -> windows::core::Result<()> {
         if !self.layered {
             self.set_layered(hwnd, true);
         }
@@ -176,7 +183,7 @@ impl Renderer {
                 let blend = BLENDFUNCTION {
                     BlendOp: AC_SRC_OVER as u8,
                     BlendFlags: 0,
-                    SourceConstantAlpha: LAYERED_SOURCE_CONSTANT_ALPHA,
+                    SourceConstantAlpha: source_alpha,
                     AlphaFormat: AC_SRC_ALPHA as u8,
                 };
                 UpdateLayeredWindow(
@@ -280,8 +287,67 @@ fn paint_scene(
         if placeholder {
             let _ = paint_placeholder(target, text_format);
         }
+        let _ = paint_footer(target, size.width, size.height);
         target.EndDraw(None, None)
     }
+}
+
+fn paint_footer(target: &ID2D1RenderTarget, width: f32, height: f32) -> windows::core::Result<()> {
+    if height < theme::size::COMPACT_HEIGHT + theme::size::BOTTOM_BAR_HEIGHT {
+        return Ok(());
+    }
+    let bar_h = theme::size::BOTTOM_BAR_HEIGHT;
+    let bar_y = height - bar_h;
+    let chrome = D2D1_COLOR_F {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: theme::colors::SELECTION_DARK_ALPHA,
+    };
+    let brush = unsafe { target.CreateSolidColorBrush(&chrome, None)? };
+    unsafe {
+        target.DrawLine(
+            D2D_POINT_2F { x: 0.0, y: bar_y },
+            D2D_POINT_2F { x: width, y: bar_y },
+            &brush,
+            theme::size::HAIRLINE,
+            None,
+        );
+    }
+
+    let inset = theme::spacing::XXL;
+    let menu_d = theme::size::MENU_BUTTON;
+    let menu_r = menu_d / 2.0;
+    let ellipse = D2D1_ELLIPSE {
+        point: D2D_POINT_2F {
+            x: inset + menu_r,
+            y: bar_y + bar_h / 2.0,
+        },
+        radiusX: menu_r,
+        radiusY: menu_r,
+    };
+    unsafe {
+        target.FillEllipse(&ellipse, &brush);
+    }
+
+    let cap_h = theme::size::BAR_BUTTON_HEIGHT;
+    let cap_w = theme::size::SHORTCUT_RECORDER;
+    let cap_y = bar_y + (bar_h - cap_h) / 2.0;
+    let cap_x = width - inset - cap_w;
+    let capsule = D2D1_ROUNDED_RECT {
+        rect: D2D_RECT_F {
+            left: cap_x,
+            top: cap_y,
+            right: cap_x + cap_w,
+            bottom: cap_y + cap_h,
+        },
+        radiusX: cap_h / 2.0,
+        radiusY: cap_h / 2.0,
+    };
+    unsafe {
+        target.FillRoundedRectangle(&capsule, &brush);
+    }
+    Ok(())
 }
 
 fn paint_placeholder(

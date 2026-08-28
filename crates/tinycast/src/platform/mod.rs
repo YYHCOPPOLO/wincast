@@ -1,4 +1,5 @@
 mod dpi;
+pub mod hotkey;
 pub mod messages;
 pub mod screens;
 mod single_instance;

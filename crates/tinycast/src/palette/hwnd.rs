@@ -1,5 +1,6 @@
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
 use tinycast_pure::palette_state::should_draw_placeholder;
+use tinycast_pure::theme;
 use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, FALSE, HWND, LPARAM, LRESULT, TRUE, WPARAM};
 use windows::Win32::Graphics::Dwm::{
@@ -14,23 +15,28 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::VK_DOWN;
+use windows::Win32::UI::Input::KeyboardAndMouse::{VK_DOWN, VK_ESCAPE};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, IsWindow, LoadCursorW,
-    RegisterClassW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW,
-    SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WM_CHAR, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY,
-    WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE,
-    WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, IsWindow, IsWindowVisible,
+    KillTimer, LoadCursorW, RegisterClassW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GWLP_USERDATA,
+    HWND_TOPMOST, IDC_ARROW, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WA_INACTIVE, WM_ACTIVATE,
+    WM_CHAR, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HOTKEY,
+    WM_KEYDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
-use super::d2d::Renderer;
+use super::d2d::{Renderer, LAYERED_SOURCE_CONSTANT_ALPHA};
 use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
+use crate::platform::hotkey::{self, TOGGLE_PALETTE_ID};
 use crate::platform::screens::dip_scalar_to_px;
 
 const CLASS: windows::core::PCWSTR = w!("TinycastPalette");
+const ANIM_TIMER_ID: usize = 1;
+const ANIM_TICK_MS: u32 = 16;
+const ENTER_SCALE: f32 = 0.94;
 
 pub struct PaletteWindow {
     pub hwnd: HWND,
@@ -40,6 +46,21 @@ struct PaletteInner {
     host: HWND,
     renderer: Renderer,
     edit: Option<SearchEdit>,
+    rest_frame: physical::Rect,
+    anim: Option<PaletteAnim>,
+    present_alpha: u8,
+}
+
+#[derive(Clone, Copy)]
+struct PaletteAnim {
+    kind: PaletteAnimKind,
+    start: std::time::Instant,
+}
+
+#[derive(Clone, Copy)]
+enum PaletteAnimKind {
+    Enter,
+    Exit,
 }
 
 impl PaletteWindow {
@@ -66,6 +87,14 @@ impl PaletteWindow {
                 host,
                 renderer: Renderer::new()?,
                 edit: None,
+                rest_frame: physical::Rect {
+                    x: 0,
+                    y: 0,
+                    w: 0,
+                    h: 0,
+                },
+                anim: None,
+                present_alpha: LAYERED_SOURCE_CONSTANT_ALPHA,
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -100,25 +129,42 @@ impl PaletteWindow {
                     return Err(err);
                 }
             }
+            if let Err(err) = hotkey::register_toggle_palette(hwnd) {
+                // Combo may already be taken (ERROR_HOTKEY_ALREADY_REGISTERED); tray still toggles.
+                eprintln!("{err}");
+            }
             Ok(Self { hwnd })
         }
     }
 
     pub fn show_at(&self, frame_px: physical::Rect) {
         unsafe {
+            let Some(inner) = inner_from(self.hwnd) else {
+                return;
+            };
+            (*inner).rest_frame = frame_px;
+            (*inner).anim = Some(PaletteAnim {
+                kind: PaletteAnimKind::Enter,
+                start: std::time::Instant::now(),
+            });
+            let (scale, alpha) = scale_alpha(PaletteAnimKind::Enter, 0.0);
+            (*inner).present_alpha = alpha;
+            let frame = scaled_rect(frame_px, scale);
             let _ = SetWindowPos(
                 self.hwnd,
                 HWND_TOPMOST,
-                frame_px.x,
-                frame_px.y,
-                frame_px.w,
-                frame_px.h,
+                frame.x,
+                frame.y,
+                frame.w,
+                frame.h,
                 SWP_SHOWWINDOW,
             );
             let _ = SetForegroundWindow(self.hwnd);
-            let _ = InvalidateRect(self.hwnd, None, FALSE);
             self.layout_search();
             self.focus_search();
+            if SetTimer(self.hwnd, ANIM_TIMER_ID, ANIM_TICK_MS, None) == 0 {
+                finish_anim(self.hwnd, inner);
+            }
         }
     }
 
@@ -160,7 +206,35 @@ impl PaletteWindow {
 
     pub fn hide(&self) {
         unsafe {
-            let _ = ShowWindow(self.hwnd, SW_HIDE);
+            let Some(inner) = inner_from(self.hwnd) else {
+                let _ = ShowWindow(self.hwnd, SW_HIDE);
+                return;
+            };
+            if let Some(PaletteAnim {
+                kind: PaletteAnimKind::Exit,
+                ..
+            }) = (*inner).anim
+            {
+                return;
+            }
+            if !IsWindowVisible(self.hwnd).as_bool() && (*inner).anim.is_none() {
+                return;
+            }
+            if (*inner).rest_frame.w <= 0 || (*inner).rest_frame.h <= 0 {
+                (*inner).anim = None;
+                (*inner).present_alpha = LAYERED_SOURCE_CONSTANT_ALPHA;
+                let _ = ShowWindow(self.hwnd, SW_HIDE);
+                return;
+            }
+            (*inner).anim = Some(PaletteAnim {
+                kind: PaletteAnimKind::Exit,
+                start: std::time::Instant::now(),
+            });
+            if SetTimer(self.hwnd, ANIM_TIMER_ID, ANIM_TICK_MS, None) == 0 {
+                finish_anim(self.hwnd, inner);
+            } else {
+                apply_anim_frame(self.hwnd, inner);
+            }
         }
     }
 
@@ -172,13 +246,26 @@ impl PaletteWindow {
             } else {
                 compact_size()
             };
+            let rest = physical::Rect {
+                x: anchor_px.x,
+                y: anchor_px.y,
+                w: dip_scalar_to_px(w_dip, dpi),
+                h: dip_scalar_to_px(h_dip, dpi),
+            };
+            if let Some(inner) = inner_from(self.hwnd) {
+                (*inner).rest_frame = rest;
+                if (*inner).anim.is_some() {
+                    apply_anim_frame(self.hwnd, inner);
+                    return;
+                }
+            }
             let _ = SetWindowPos(
                 self.hwnd,
                 HWND_TOPMOST,
-                anchor_px.x,
-                anchor_px.y,
-                dip_scalar_to_px(w_dip, dpi),
-                dip_scalar_to_px(h_dip, dpi),
+                rest.x,
+                rest.y,
+                rest.w,
+                rest.h,
                 SWP_NOACTIVATE,
             );
             let _ = InvalidateRect(self.hwnd, None, FALSE);
@@ -190,6 +277,7 @@ impl Drop for PaletteWindow {
     fn drop(&mut self) {
         unsafe {
             if IsWindow(self.hwnd).as_bool() {
+                hotkey::unregister_toggle_palette(self.hwnd);
                 let _ = DestroyWindow(self.hwnd);
             }
         }
@@ -255,7 +343,110 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     let placeholder = core_from_host((*inner).host)
         .map(|core| should_draw_placeholder(&(*core).palette))
         .unwrap_or(false);
-    (*inner).renderer.paint(hwnd, placeholder);
+    (*inner)
+        .renderer
+        .paint(hwnd, placeholder, (*inner).present_alpha);
+}
+
+fn scaled_rect(rest: physical::Rect, scale: f32) -> physical::Rect {
+    let w = ((rest.w as f32) * scale).round().max(1.0) as i32;
+    let h = ((rest.h as f32) * scale).round().max(1.0) as i32;
+    physical::Rect {
+        x: rest.x + (rest.w - w) / 2,
+        y: rest.y + (rest.h - h) / 2,
+        w,
+        h,
+    }
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t.clamp(0.0, 1.0)
+}
+
+fn scale_alpha(kind: PaletteAnimKind, t: f32) -> (f32, u8) {
+    let rest_alpha = LAYERED_SOURCE_CONSTANT_ALPHA as f32;
+    match kind {
+        PaletteAnimKind::Enter => (
+            lerp(ENTER_SCALE, 1.0, t),
+            lerp(0.0, rest_alpha, t).round() as u8,
+        ),
+        PaletteAnimKind::Exit => (
+            lerp(1.0, ENTER_SCALE, t),
+            lerp(rest_alpha, 0.0, t).round() as u8,
+        ),
+    }
+}
+
+fn anim_t(anim: &PaletteAnim) -> (f32, bool) {
+    let dur = std::time::Duration::from_secs_f32(match anim.kind {
+        PaletteAnimKind::Enter => theme::duration::ENTER_SECS,
+        PaletteAnimKind::Exit => theme::duration::EXIT_SECS,
+    });
+    let elapsed = anim.start.elapsed();
+    if elapsed >= dur {
+        (1.0, true)
+    } else {
+        (elapsed.as_secs_f32() / dur.as_secs_f32(), false)
+    }
+}
+
+unsafe fn apply_anim_frame(hwnd: HWND, inner: *mut PaletteInner) {
+    let Some(anim) = (*inner).anim else {
+        return;
+    };
+    let (t, _) = anim_t(&anim);
+    let (scale, alpha) = scale_alpha(anim.kind, t);
+    (*inner).present_alpha = alpha;
+    let frame = scaled_rect((*inner).rest_frame, scale);
+    let _ = SetWindowPos(
+        hwnd,
+        HWND_TOPMOST,
+        frame.x,
+        frame.y,
+        frame.w,
+        frame.h,
+        SWP_NOACTIVATE,
+    );
+}
+
+unsafe fn finish_anim(hwnd: HWND, inner: *mut PaletteInner) {
+    let Some(anim) = (*inner).anim.take() else {
+        return;
+    };
+    let _ = KillTimer(hwnd, ANIM_TIMER_ID);
+    (*inner).present_alpha = LAYERED_SOURCE_CONSTANT_ALPHA;
+    match anim.kind {
+        PaletteAnimKind::Enter => {
+            let rest = (*inner).rest_frame;
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                rest.x,
+                rest.y,
+                rest.w,
+                rest.h,
+                SWP_NOACTIVATE,
+            );
+        }
+        PaletteAnimKind::Exit => {
+            let _ = ShowWindow(hwnd, SW_HIDE);
+        }
+    }
+}
+
+unsafe fn tick_anim(hwnd: HWND) {
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    let Some(anim) = (*inner).anim else {
+        return;
+    };
+    let (_, done) = anim_t(&anim);
+    if done {
+        finish_anim(hwnd, inner);
+    } else {
+        apply_anim_frame(hwnd, inner);
+    }
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -324,7 +515,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_KEYDOWN => {
-            if wparam.0 as u16 == VK_DOWN.0 {
+            if wparam.0 as u16 == VK_ESCAPE.0 {
+                if let Some(inner) = inner_from(hwnd) {
+                    if let Some(core) = core_from_host((*inner).host) {
+                        (*core).handle_escape();
+                    }
+                }
+            } else if wparam.0 as u16 == VK_DOWN.0 {
                 if let Some(inner) = inner_from(hwnd) {
                     if let Some(core) = core_from_host((*inner).host) {
                         (*core).expand_select_first();
@@ -343,7 +540,39 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
-        WM_DESTROY => LRESULT(0),
+        WM_HOTKEY => {
+            if wparam.0 as i32 == TOGGLE_PALETTE_ID {
+                if let Some(inner) = inner_from(hwnd) {
+                    if let Some(core) = core_from_host((*inner).host) {
+                        (*core).toggle_palette();
+                    }
+                }
+            }
+            LRESULT(0)
+        }
+        WM_ACTIVATE => {
+            if (wparam.0 as u32) & 0xffff == WA_INACTIVE {
+                if let Some(inner) = inner_from(hwnd) {
+                    if let Some(core) = core_from_host((*inner).host) {
+                        if (*core).palette_visible {
+                            (*core).hide_palette();
+                        }
+                    }
+                }
+            }
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            if wparam.0 == ANIM_TIMER_ID {
+                tick_anim(hwnd);
+            }
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            hotkey::unregister_toggle_palette(hwnd);
+            let _ = KillTimer(hwnd, ANIM_TIMER_ID);
+            LRESULT(0)
+        }
         WM_NCDESTROY => {
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut PaletteInner;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
