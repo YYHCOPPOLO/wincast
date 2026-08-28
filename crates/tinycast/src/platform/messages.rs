@@ -3,3 +3,4 @@ pub const WM_TOGGLE_PALETTE: u32 = 0x8000 + 2;
 pub const WM_OPEN_SETTINGS: u32 = 0x8000 + 3;
 pub const WM_QUIT_APP: u32 = 0x8000 + 4;
 pub const WM_RESIGN_PALETTE: u32 = 0x8000 + 5;
+pub const WM_APP_INDEX: u32 = 0x8000 + 6;

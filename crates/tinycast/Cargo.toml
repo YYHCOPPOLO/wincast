@@ -29,4 +29,13 @@ windows = { version = "0.58", features = [
   # 0.58 gates CreateMutexW on these.
   "Win32_System_Threading",
   "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_System_Environment",
+  "Win32_System_WinRT",
+  "ApplicationModel",
+  "ApplicationModel_Core",
+  "Management_Deployment",
+  "Foundation_Collections",
+  "Foundation",
 ] }

@@ -1,9 +1,11 @@
+use tinycast_pure::app_entry::AppEntry;
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
 use tinycast_pure::palette_state::{escape_outcome, EscapeOutcome, PaletteState};
 use tinycast_pure::settings_tab::SettingsTab;
 
 use crate::app_settings::AppSettings;
+use crate::features::launcher::service::app_index::AppIndex;
 use crate::palette::physical;
 use crate::palette::PaletteWindow;
 use crate::platform::screens::{cursor_target_screen, dip_to_px, dip_to_px_with_dpi};
@@ -15,6 +17,8 @@ pub struct AppCore {
     pub palette_window: Option<PaletteWindow>,
     pub settings_window: Option<SettingsWindow>,
     pub settings_tab: SettingsTab,
+    pub entries: Vec<AppEntry>,
+    pub app_index: AppIndex,
     expanded: bool,
     anchor: Option<tinycast_pure::palette_placement::PaletteAnchor>,
     anchor_px: Option<physical::Point>,
@@ -28,6 +32,8 @@ impl AppCore {
             palette_window: None,
             settings_window: None,
             settings_tab: SettingsTab::General,
+            entries: Vec::new(),
+            app_index: AppIndex::new(),
             expanded: false,
             anchor: None,
             anchor_px: None,
@@ -42,6 +48,14 @@ impl AppCore {
         self.anchor_px = None;
         if let Some(window) = &self.palette_window {
             window.hide();
+        }
+        self.app_index.start();
+    }
+
+    pub fn install_app_index(&mut self) {
+        if let Some(entries) = self.app_index.take_latest() {
+            self.entries = entries;
+            self.invalidate_palette();
         }
     }
 
@@ -284,5 +298,32 @@ mod tests {
         assert_eq!(c.settings_tab, SettingsTab::Ai);
         c.select_settings_tab(SettingsTab::About);
         assert_eq!(c.settings_tab, SettingsTab::About);
+    }
+
+    #[test]
+    fn start_begins_scan_and_install_stores_entries() {
+        use crate::features::launcher::service::app_index::fold_apps;
+        use crate::features::launcher::service::app_index::ResolvedApp;
+
+        let mut c = AppCore::new();
+        c.start();
+        assert!(c.entries.is_empty());
+        let gen = c.app_index.generation();
+        c.app_index.publish(
+            gen,
+            fold_apps(vec![ResolvedApp {
+                name: "Notepad".into(),
+                aumid: None,
+                target: Some(r"C:\Windows\System32\notepad.exe".into()),
+                executable_name: Some("notepad.exe".into()),
+                alternate_names: Vec::new(),
+            }]),
+        );
+        c.install_app_index();
+        assert!(c.entries.iter().any(|e| e.name == "Notepad"));
+        assert!(c
+            .entries
+            .iter()
+            .any(|e| e.kind == tinycast_pure::app_entry::AppKind::SystemSettings));
     }
 }

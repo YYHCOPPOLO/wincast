@@ -18,10 +18,11 @@ pub fn run() -> windows::core::Result<()> {
     }
     let _instance = single_instance::acquire()?;
     let mut core = crate::app_core::AppCore::new();
-    core.start();
     let host = tray::create(&mut core)?;
     core.palette_window = Some(crate::palette::PaletteWindow::create(host)?);
     core.settings_window = Some(crate::surfaces::SettingsWindow::create(host)?);
+    core.app_index.set_host(host);
+    core.start();
     pump()
 }
 

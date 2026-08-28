@@ -13,7 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_RBUTTONUP, WNDCLASSW,
 };
 
-use super::messages::{WM_OPEN_SETTINGS, WM_QUIT_APP, WM_TOGGLE_PALETTE, WM_TRAY};
+use super::messages::{WM_APP_INDEX, WM_OPEN_SETTINGS, WM_QUIT_APP, WM_TOGGLE_PALETTE, WM_TRAY};
 use crate::app_core::AppCore;
 
 const TRAY_ID: u32 = 1;
@@ -159,6 +159,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_OPEN_SETTINGS => {
             if let Some(core) = core_from(hwnd) {
                 (*core).open_settings();
+            }
+            LRESULT(0)
+        }
+        WM_APP_INDEX => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).install_app_index();
             }
             LRESULT(0)
         }

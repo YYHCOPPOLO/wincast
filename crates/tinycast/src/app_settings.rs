@@ -12,7 +12,7 @@ pub enum Appearance {
     Dark,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
     #[serde(rename = "compactMode")]
@@ -23,6 +23,8 @@ pub struct AppSettings {
     pub appearance: Appearance,
     #[serde(rename = "launchAtLogin")]
     pub launch_at_login: bool,
+    #[serde(default = "default_search_scopes", rename = "launcherSearchScopes")]
+    pub launcher_search_scopes: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -32,8 +34,18 @@ impl Default for AppSettings {
             open_on_cursor_screen: true,
             appearance: Appearance::System,
             launch_at_login: false,
+            launcher_search_scopes: default_search_scopes(),
         }
     }
+}
+
+fn default_search_scopes() -> Vec<String> {
+    vec![
+        r"%ProgramData%\Microsoft\Windows\Start Menu\Programs".into(),
+        r"%APPDATA%\Microsoft\Windows\Start Menu\Programs".into(),
+        r"%ProgramFiles%".into(),
+        r"%ProgramFiles(x86)%".into(),
+    ]
 }
 
 impl AppSettings {
@@ -81,6 +93,7 @@ mod tests {
             open_on_cursor_screen: false,
             appearance: Appearance::Dark,
             launch_at_login: false,
+            launcher_search_scopes: default_search_scopes(),
         };
         let j = serde_json::to_value(&s).unwrap();
         assert_eq!(j["compactMode"], true);
@@ -90,6 +103,10 @@ mod tests {
         assert_eq!(j[AppSettingsKey::OpenOnCursorScreen.as_str()], false);
         assert_eq!(j[AppSettingsKey::Appearance.as_str()], "dark");
         assert_eq!(j["launchAtLogin"], false);
+        assert_eq!(
+            j[AppSettingsKey::SearchScopes.as_str()],
+            serde_json::json!(default_search_scopes())
+        );
     }
 
     #[test]
@@ -100,6 +117,7 @@ mod tests {
         assert!(s.open_on_cursor_screen);
         assert_eq!(s.appearance, Appearance::System);
         assert!(!s.launch_at_login);
+        assert_eq!(s.launcher_search_scopes, default_search_scopes());
     }
 
     #[test]
@@ -119,6 +137,7 @@ mod tests {
             open_on_cursor_screen: false,
             appearance: Appearance::Light,
             launch_at_login: false,
+            launcher_search_scopes: default_search_scopes(),
         };
         s.write_json(&roaming, &local).unwrap();
         assert!(local.is_dir());

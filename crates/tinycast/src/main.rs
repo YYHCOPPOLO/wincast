@@ -1,5 +1,6 @@
 mod app_core;
 mod app_settings;
+mod features;
 mod palette;
 mod platform;
 mod surfaces;

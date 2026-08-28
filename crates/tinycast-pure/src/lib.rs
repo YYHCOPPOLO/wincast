@@ -13,6 +13,7 @@ pub mod palette_placement;
 pub mod palette_row_index;
 pub mod palette_state;
 pub mod search_relevance;
+pub mod search_scopes;
 pub mod settings_tab;
 pub mod theme;
 pub mod visibility;
