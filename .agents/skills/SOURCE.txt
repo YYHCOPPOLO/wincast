@@ -1,0 +1,4 @@
+repo: https://github.com/obra/superpowers
+commit: b36e0829c6d0140e93cfef2ca599b1b07d4a7797
+branch: main
+cloned: 2026-08-28T15:13:32+08:00
