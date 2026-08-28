@@ -15,7 +15,6 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::{VK_DOWN, VK_ESCAPE};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetAncestor, GetForegroundWindow,
     GetWindowLongPtrW, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW,
@@ -23,14 +22,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GA_ROOT, GWLP_USERDATA, HWND_TOPMOST,
     IDC_ARROW, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WA_INACTIVE, WM_ACTIVATE, WM_CHAR,
     WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HOTKEY, WM_KEYDOWN,
-    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE,
+    WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
-use super::d2d::{Renderer, LAYERED_SOURCE_CONSTANT_ALPHA};
+use super::d2d::{PaintParams, Renderer, LAYERED_SOURCE_CONSTANT_ALPHA};
 use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
+use crate::features::launcher::ui::list::{client_point_to_dip, IconCache};
 use crate::platform::hotkey::{self, TOGGLE_PALETTE_ID};
 use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
@@ -52,6 +52,7 @@ struct PaletteInner {
     rest_frame: physical::Rect,
     anim: Option<PaletteAnim>,
     present_alpha: u8,
+    icons: IconCache,
 }
 
 #[derive(Clone, Copy)]
@@ -98,6 +99,7 @@ impl PaletteWindow {
                 },
                 anim: None,
                 present_alpha: LAYERED_SOURCE_CONSTANT_ALPHA,
+                icons: IconCache::new(),
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -226,6 +228,7 @@ impl PaletteWindow {
             if (*inner).rest_frame.w <= 0 || (*inner).rest_frame.h <= 0 {
                 (*inner).anim = None;
                 (*inner).present_alpha = LAYERED_SOURCE_CONSTANT_ALPHA;
+                (*inner).icons.drop_all();
                 let _ = ShowWindow(self.hwnd, SW_HIDE);
                 return;
             }
@@ -343,12 +346,25 @@ unsafe fn core_from_host(host: HWND) -> Option<*mut AppCore> {
 }
 
 unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
-    let placeholder = core_from_host((*inner).host)
-        .map(|core| should_draw_placeholder(&(*core).palette))
-        .unwrap_or(false);
-    (*inner)
-        .renderer
-        .paint(hwnd, placeholder, (*inner).present_alpha);
+    let inner = &mut *inner;
+    let (placeholder, items, scroll, appearance) = core_from_host(inner.host)
+        .map(|core| {
+            (
+                should_draw_placeholder(&(*core).palette),
+                (*core).launcher_paint_items(),
+                (*core).list_scroll(),
+                (*core).appearance_key(),
+            )
+        })
+        .unwrap_or((false, Vec::new(), 0.0, 0));
+    let params = PaintParams {
+        placeholder,
+        items: &items,
+        scroll,
+        cache: &mut inner.icons,
+        appearance,
+    };
+    inner.renderer.paint(hwnd, params, inner.present_alpha);
 }
 
 fn scaled_rect(rest: physical::Rect, scale: f32) -> physical::Rect {
@@ -432,6 +448,7 @@ unsafe fn finish_anim(hwnd: HWND, inner: *mut PaletteInner) {
             );
         }
         PaletteAnimKind::Exit => {
+            (*inner).icons.drop_all();
             let _ = ShowWindow(hwnd, SW_HIDE);
         }
     }
@@ -454,6 +471,13 @@ unsafe fn tick_anim(hwnd: HWND) {
 
 fn resign_should_hide(palette_visible: bool, foreground_is_self: bool) -> bool {
     palette_visible && !foreground_is_self
+}
+
+fn lparam_point(lp: LPARAM) -> (i32, i32) {
+    let v = lp.0 as u32;
+    let x = v as u16 as i16 as i32;
+    let y = (v >> 16) as u16 as i16 as i32;
+    (x, y)
 }
 
 fn foreground_is_palette_or_child(palette: HWND) -> bool {
@@ -549,17 +573,31 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_KEYDOWN => {
-            if wparam.0 as u16 == VK_ESCAPE.0 {
-                if let Some(inner) = inner_from(hwnd) {
-                    if let Some(core) = core_from_host((*inner).host) {
-                        (*core).handle_escape();
+            if let Some(inner) = inner_from(hwnd) {
+                if let Some(core) = core_from_host((*inner).host) {
+                    let _ = (*core).handle_key(wparam.0 as u16);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
+            if let Some(inner) = inner_from(hwnd) {
+                if let Some(core) = core_from_host((*inner).host) {
+                    let dpi = GetDpiForWindow(hwnd);
+                    let (_x, y) = lparam_point(lparam);
+                    let (_, y_dip) = client_point_to_dip(_x, y, dpi);
+                    if (*core).select_at_y(y_dip) && msg == WM_LBUTTONDBLCLK {
+                        (*core).activate_selected();
                     }
                 }
-            } else if wparam.0 as u16 == VK_DOWN.0 {
-                if let Some(inner) = inner_from(hwnd) {
-                    if let Some(core) = core_from_host((*inner).host) {
-                        (*core).expand_select_first();
-                    }
+            }
+            LRESULT(0)
+        }
+        WM_MOUSEWHEEL => {
+            if let Some(inner) = inner_from(hwnd) {
+                if let Some(core) = core_from_host((*inner).host) {
+                    let delta = ((wparam.0 as u32) >> 16) as i16;
+                    (*core).scroll_list(delta);
                 }
             }
             LRESULT(0)

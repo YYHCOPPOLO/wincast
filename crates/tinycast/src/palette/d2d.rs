@@ -17,7 +17,8 @@ use windows::Win32::Graphics::Direct2D::{
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
     DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
-    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_WORD_WRAPPING_NO_WRAP,
+    DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_WORD_WRAPPING_NO_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
@@ -30,11 +31,23 @@ use windows::Win32::UI::WindowsAndMessaging::{
     ULW_ALPHA, WS_EX_LAYERED,
 };
 
+use crate::features::launcher::ui::list::{self, IconCache, ListFonts, PaintItem};
+
 pub struct Renderer {
     factory: ID2D1Factory,
+    dwrite: IDWriteFactory,
     text_format: IDWriteTextFormat,
+    list_fonts: ListFonts,
     hwnd_target: Option<ID2D1HwndRenderTarget>,
     layered: bool,
+}
+
+pub struct PaintParams<'a> {
+    pub placeholder: bool,
+    pub items: &'a [PaintItem],
+    pub scroll: f32,
+    pub cache: &'a mut IconCache,
+    pub appearance: u8,
 }
 
 impl Renderer {
@@ -42,24 +55,25 @@ impl Renderer {
         let factory: ID2D1Factory =
             unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)? };
         let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
-        let text_format = unsafe {
-            dwrite.CreateTextFormat(
-                w!("Segoe UI"),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                super::edit::SEARCH_FONT_DIP,
-                w!("en-US"),
-            )?
+        let text_format = make_text_format(
+            &dwrite,
+            super::edit::SEARCH_FONT_DIP,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            false,
+            false,
+        )?;
+        let list_fonts = ListFonts {
+            title: make_text_format(&dwrite, 15.0, DWRITE_FONT_WEIGHT_REGULAR, false, false)?,
+            trailing: make_text_format(&dwrite, 12.0, DWRITE_FONT_WEIGHT_REGULAR, true, false)?,
+            header: make_text_format(&dwrite, 11.0, DWRITE_FONT_WEIGHT_SEMI_BOLD, false, false)?,
+            chip: make_text_format(&dwrite, 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
+            keycap: make_text_format(&dwrite, 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
         };
-        unsafe {
-            text_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
-            text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-        }
         Ok(Self {
             factory,
+            dwrite,
             text_format,
+            list_fonts,
             hwnd_target: None,
             layered: false,
         })
@@ -105,9 +119,9 @@ impl Renderer {
         }
     }
 
-    pub fn paint(&mut self, hwnd: HWND, placeholder: bool, source_alpha: u8) {
+    pub fn paint(&mut self, hwnd: HWND, params: PaintParams<'_>, source_alpha: u8) {
         if self.layered {
-            let _ = self.paint_layered(hwnd, placeholder, source_alpha);
+            let _ = self.paint_layered(hwnd, params, source_alpha);
             return;
         }
         if self.hwnd_target.is_none() {
@@ -115,10 +129,17 @@ impl Renderer {
             self.resize(hwnd, w, h);
         }
         let Some(target) = &self.hwnd_target else {
-            let _ = self.paint_layered(hwnd, placeholder, source_alpha);
+            let _ = self.paint_layered(hwnd, params, source_alpha);
             return;
         };
-        if let Err(err) = paint_scene(target, &self.text_format, placeholder) {
+        if let Err(err) = paint_scene(
+            target,
+            &self.dwrite,
+            &self.text_format,
+            &self.list_fonts,
+            params,
+            dpi_of(hwnd),
+        ) {
             if err.code() == D2DERR_RECREATE_TARGET {
                 self.hwnd_target = None;
             }
@@ -128,7 +149,7 @@ impl Renderer {
     fn paint_layered(
         &mut self,
         hwnd: HWND,
-        placeholder: bool,
+        params: PaintParams<'_>,
         source_alpha: u8,
     ) -> windows::core::Result<()> {
         if !self.layered {
@@ -138,6 +159,7 @@ impl Renderer {
         if width == 0 || height == 0 {
             return Ok(());
         }
+        let dpi = dpi_of(hwnd);
         unsafe {
             let mem_dc = CreateCompatibleDC(HDC::default());
             if mem_dc.is_invalid() {
@@ -164,9 +186,8 @@ impl Renderer {
             )?;
             let prev = SelectObject(mem_dc, dib);
             let result = (|| {
-                let target: ID2D1DCRenderTarget = self
-                    .factory
-                    .CreateDCRenderTarget(&target_properties(dpi_of(hwnd)))?;
+                let target: ID2D1DCRenderTarget =
+                    self.factory.CreateDCRenderTarget(&target_properties(dpi))?;
                 let bind = RECT {
                     left: 0,
                     top: 0,
@@ -174,7 +195,14 @@ impl Renderer {
                     bottom: height as i32,
                 };
                 target.BindDC(mem_dc, &bind)?;
-                paint_scene(&target, &self.text_format, placeholder)?;
+                paint_scene(
+                    &target,
+                    &self.dwrite,
+                    &self.text_format,
+                    &self.list_fonts,
+                    params,
+                    dpi,
+                )?;
                 let src = POINT { x: 0, y: 0 };
                 let size = SIZE {
                     cx: width as i32,
@@ -255,10 +283,43 @@ fn create_hwnd_target(
     unsafe { factory.CreateHwndRenderTarget(&target_properties(dpi), &hwnd_props) }
 }
 
+fn make_text_format(
+    dwrite: &IDWriteFactory,
+    size: f32,
+    weight: windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT,
+    trailing: bool,
+    center: bool,
+) -> windows::core::Result<IDWriteTextFormat> {
+    let format = unsafe {
+        dwrite.CreateTextFormat(
+            w!("Segoe UI"),
+            None,
+            weight,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            size,
+            w!("en-US"),
+        )?
+    };
+    unsafe {
+        format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+        format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+        if trailing {
+            format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING)?;
+        } else if center {
+            format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+        }
+    }
+    Ok(format)
+}
+
 fn paint_scene(
     target: &ID2D1RenderTarget,
+    dwrite: &IDWriteFactory,
     text_format: &IDWriteTextFormat,
-    placeholder: bool,
+    list_fonts: &ListFonts,
+    params: PaintParams<'_>,
+    dpi: f32,
 ) -> windows::core::Result<()> {
     unsafe {
         target.BeginDraw();
@@ -284,9 +345,21 @@ fn paint_scene(
         let color = scrim_color();
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
-        if placeholder {
+        if params.placeholder {
             let _ = paint_placeholder(target, text_format);
         }
+        let _ = list::paint(
+            target,
+            dwrite,
+            list_fonts,
+            params.items,
+            params.scroll,
+            size.width,
+            size.height,
+            params.cache,
+            dpi,
+            params.appearance,
+        );
         let _ = paint_footer(target, size.width, size.height);
         target.EndDraw(None, None)
     }

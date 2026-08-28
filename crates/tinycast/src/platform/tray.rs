@@ -176,6 +176,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if let Some(core) = core_from(hwnd) {
                 (*core).palette_window = None;
                 (*core).settings_window = None;
+                (*core).about_window = None;
+                (*core).support_window = None;
             }
             remove_icon(hwnd);
             PostQuitMessage(0);

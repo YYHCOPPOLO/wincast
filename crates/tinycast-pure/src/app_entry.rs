@@ -28,6 +28,32 @@ impl AppKind {
             _ => None,
         }
     }
+
+    pub fn section_title(self) -> &'static str {
+        match self {
+            AppKind::Application => "Applications",
+            AppKind::SystemSettings => "System Settings",
+            AppKind::Quicklink => "Quicklinks",
+            AppKind::Snippet => "Snippets",
+            AppKind::SystemAction => "System Actions",
+            AppKind::WindowCommand => "Window Management",
+            AppKind::CustomCommand => "Custom Commands",
+            AppKind::Command => "Commands",
+        }
+    }
+
+    pub fn kind_label(self) -> &'static str {
+        match self {
+            AppKind::Application => "Application",
+            AppKind::SystemSettings => "System Settings",
+            AppKind::Quicklink => "Quicklink",
+            AppKind::Snippet => "Snippet",
+            AppKind::SystemAction => "System Action",
+            AppKind::WindowCommand => "Window Management",
+            AppKind::CustomCommand => "Custom Command",
+            AppKind::Command => "Command",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -96,5 +122,22 @@ mod tests {
         assert_eq!(AppKind::named_by("Favorites"), None);
         assert_eq!(AppKind::named_by("snippets"), None);
         assert_eq!(AppKind::named_by("Window Commands"), None);
+    }
+
+    #[test]
+    fn section_title_matches_named_by_labels() {
+        assert_eq!(AppKind::Application.section_title(), "Applications");
+        assert_eq!(AppKind::SystemSettings.section_title(), "System Settings");
+        assert_eq!(AppKind::Command.section_title(), "Commands");
+        assert_eq!(AppKind::Application.kind_label(), "Application");
+        assert_eq!(AppKind::Command.kind_label(), "Command");
+        assert_eq!(
+            AppKind::named_by(AppKind::Application.section_title()),
+            Some(AppKind::Application)
+        );
+        assert_eq!(
+            AppKind::named_by(AppKind::SystemSettings.section_title()),
+            Some(AppKind::SystemSettings)
+        );
     }
 }

@@ -32,6 +32,44 @@ pub struct LauncherSection {
     pub rows: Vec<AppEntry>,
 }
 
+impl LauncherSectionKind {
+    pub fn title(self) -> &'static str {
+        match self {
+            LauncherSectionKind::Favorites => "Favorites",
+            LauncherSectionKind::Results => "Results",
+            LauncherSectionKind::Kind(kind) => kind.section_title(),
+        }
+    }
+}
+
+/// Flattened list: section headers then rows. `Results` has no header.
+#[derive(Clone, Debug)]
+pub enum LauncherListItem<'a> {
+    Header(LauncherSectionKind),
+    Row(&'a AppEntry),
+}
+
+pub fn list_items(sections: &[LauncherSection]) -> Vec<LauncherListItem<'_>> {
+    let mut out = Vec::new();
+    for section in sections {
+        if section.kind != LauncherSectionKind::Results {
+            out.push(LauncherListItem::Header(section.kind));
+        }
+        for row in &section.rows {
+            out.push(LauncherListItem::Row(row));
+        }
+    }
+    out
+}
+
+/// Headers consume no selection index.
+pub fn selectable_rows(sections: &[LauncherSection]) -> Vec<&AppEntry> {
+    sections
+        .iter()
+        .flat_map(|section| section.rows.iter())
+        .collect()
+}
+
 pub fn is_category_listing(query: &str) -> bool {
     AppKind::named_by(query).is_some()
 }
@@ -198,7 +236,10 @@ fn results_section(rows: Vec<AppEntry>) -> Vec<LauncherSection> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_category_listing, ordered_results, LauncherSection, LauncherSectionKind};
+    use super::{
+        is_category_listing, list_items, ordered_results, selectable_rows, LauncherListItem,
+        LauncherSection, LauncherSectionKind,
+    };
     use crate::app_entry::{AppEntry, AppKind};
     use crate::favorites::FavoritesStore;
     use crate::launcher_ranking::LauncherRankingStore;
@@ -466,5 +507,43 @@ mod tests {
         let fav = FavoritesStore::default();
         let sections = ordered_results(&[code, other], "code", now, &rank, &vis, &fav, false);
         assert_eq!(ids(&sections[0]), ["app:code", "app:other"]);
+    }
+
+    #[test]
+    fn headers_are_not_selectable() {
+        let entries = [
+            entry("app:notepad", AppKind::Application, "Notepad"),
+            entry("command:quit", AppKind::Command, "Quit Tinycast"),
+        ];
+        let rank = empty_rank();
+        let vis = VisibilityStore::default();
+        let fav = FavoritesStore::default();
+        let sections = ordered_results(&entries, "", 0, &rank, &vis, &fav, true);
+        let items = list_items(&sections);
+        assert!(matches!(
+            items[0],
+            LauncherListItem::Header(LauncherSectionKind::Kind(AppKind::Application))
+        ));
+        let rows = selectable_rows(&sections);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, "app:notepad");
+        assert_eq!(rows[1].id, "command:quit");
+        assert_eq!(LauncherSectionKind::Favorites.title(), "Favorites");
+        assert_eq!(
+            LauncherSectionKind::Kind(AppKind::SystemSettings).title(),
+            "System Settings"
+        );
+    }
+
+    #[test]
+    fn ranked_results_have_no_header() {
+        let entries = [entry("app:notepad", AppKind::Application, "Notepad")];
+        let rank = empty_rank();
+        let vis = VisibilityStore::default();
+        let fav = FavoritesStore::default();
+        let sections = ordered_results(&entries, "not", 0, &rank, &vis, &fav, false);
+        let items = list_items(&sections);
+        assert_eq!(items.len(), 1);
+        assert!(matches!(items[0], LauncherListItem::Row(_)));
     }
 }

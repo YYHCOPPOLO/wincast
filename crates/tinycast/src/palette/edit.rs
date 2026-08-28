@@ -11,16 +11,16 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::Ime::{
     ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, GCS_COMPSTR,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{SetFocus, VK_DOWN, VK_ESCAPE};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, SetFocus, VK_CONTROL};
 use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow,
     SendMessageW, SetWindowPos, SetWindowTextW, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL,
-    ES_LEFT, GWLP_USERDATA, HWND_TOP, SWP_NOACTIVATE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ERASEBKGND,
-    WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_NCDESTROY,
-    WM_SETFONT, WS_CHILD, WS_VISIBLE,
+    ES_LEFT, GWLP_USERDATA, HWND_TOP, SWP_NOACTIVATE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR,
+    WM_ERASEBKGND, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
+    WM_MOUSEWHEEL, WM_NCDESTROY, WM_SETFONT, WS_CHILD, WS_VISIBLE,
 };
 
 use crate::app_core::AppCore;
@@ -225,6 +225,10 @@ fn composing_from_ime(hwnd: HWND) -> bool {
     composition_bytes(hwnd) > 0 || has_marked_text(hwnd)
 }
 
+fn ctrl_down() -> bool {
+    unsafe { GetKeyState(VK_CONTROL.0 as i32) < 0 }
+}
+
 unsafe extern "system" fn edit_subclass(
     hwnd: HWND,
     msg: u32,
@@ -236,15 +240,25 @@ unsafe extern "system" fn edit_subclass(
     let host = HWND(dwrefdata as *mut core::ffi::c_void);
     match msg {
         WM_ERASEBKGND => LRESULT(1),
-        WM_KEYDOWN if wparam.0 as u16 == VK_ESCAPE.0 => {
+        WM_KEYDOWN => {
             if let Some(core) = core_from_host(host) {
-                (*core).handle_escape();
+                if (*core).handle_key(wparam.0 as u16) {
+                    return LRESULT(0);
+                }
             }
-            LRESULT(0)
+            DefSubclassProc(hwnd, msg, wparam, lparam)
         }
-        WM_KEYDOWN if wparam.0 as u16 == VK_DOWN.0 => {
+        WM_CHAR => {
+            let code = wparam.0 as u32;
+            if code == 13 || code == 10 || ctrl_down() {
+                return LRESULT(0);
+            }
+            DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
+        WM_MOUSEWHEEL => {
             if let Some(core) = core_from_host(host) {
-                (*core).expand_select_first();
+                let delta = ((wparam.0 as u32) >> 16) as i16;
+                (*core).scroll_list(delta);
             }
             LRESULT(0)
         }

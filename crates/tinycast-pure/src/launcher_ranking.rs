@@ -106,6 +106,11 @@ impl LauncherRankingStore {
     }
 }
 
+/// Empty-query favorite slots and category listings must not train frecency.
+pub fn should_record_ranking(query: &str, category_listing: bool) -> bool {
+    !query.is_empty() && !category_listing
+}
+
 fn score(record: &RankingRecord, now: i64) -> i32 {
     let age_secs = now.saturating_sub(record.last_used).max(0) as f64;
     let age_in_days = age_secs / SECONDS_PER_DAY;
@@ -170,7 +175,7 @@ fn load_records(path: &Path) -> HashMap<String, HashMap<String, RankingRecord>> 
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize, LauncherRankingStore};
+    use super::{normalize, should_record_ranking, LauncherRankingStore};
     use std::path::PathBuf;
 
     fn temp_path(label: &str) -> PathBuf {
@@ -189,6 +194,13 @@ mod tests {
         let path = temp_path(label);
         let _ = std::fs::remove_file(&path);
         (LauncherRankingStore::load(path.clone()), path)
+    }
+
+    #[test]
+    fn empty_query_does_not_record_ranking_on_activate_policy() {
+        assert!(!should_record_ranking("", false));
+        assert!(should_record_ranking("not", false));
+        assert!(!should_record_ranking("Applications", true));
     }
 
     #[test]

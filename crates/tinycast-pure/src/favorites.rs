@@ -39,6 +39,15 @@ impl FavoritesStore {
         self.ids.get(i).map(String::as_str)
     }
 
+    /// Physical number-row virtual keys (`0`..=`9`). Numpad keys are not slots.
+    pub fn digit_from_vk(vk: u16) -> Option<u8> {
+        match vk {
+            0x30 => Some(0),
+            0x31..=0x39 => Some((vk - 0x30) as u8),
+            _ => None,
+        }
+    }
+
     pub fn toggle(&mut self, id: String) {
         if id.is_empty() {
             return;
@@ -90,6 +99,15 @@ mod tests {
         assert_eq!(f.slot(0), Some("app:10"));
         assert_eq!(f.slot(11), None);
         assert_eq!(f.ids.len(), 11);
+    }
+
+    #[test]
+    fn digit_from_vk_is_physical_number_row() {
+        assert_eq!(FavoritesStore::digit_from_vk(0x31), Some(1));
+        assert_eq!(FavoritesStore::digit_from_vk(0x39), Some(9));
+        assert_eq!(FavoritesStore::digit_from_vk(0x30), Some(0));
+        assert_eq!(FavoritesStore::digit_from_vk(0x60), None);
+        assert_eq!(FavoritesStore::digit_from_vk(0x61), None);
     }
 
     #[test]
