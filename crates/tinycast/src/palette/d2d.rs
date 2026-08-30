@@ -49,6 +49,7 @@ pub struct PaintParams<'a> {
     pub appearance: u8,
     pub footer: FooterPaint<'a>,
     pub menu: Option<MenuPaint<'a>>,
+    pub clipboard_preview: Option<&'a str>,
 }
 
 impl Renderer {
@@ -363,18 +364,33 @@ fn paint_scene(
         if params.placeholder {
             let _ = paint_placeholder(target, text_format);
         }
+        let list_w = if params.clipboard_preview.is_some() {
+            theme::size::CLIPBOARD_LIST_WIDTH.min(size.width)
+        } else {
+            size.width
+        };
         let _ = list::paint(
             target,
             dwrite,
             list_fonts,
             params.items,
             params.scroll,
-            size.width,
+            list_w,
             size.height,
             params.cache,
             dpi,
             params.appearance,
         );
+        if let Some(preview) = params.clipboard_preview {
+            let _ = paint_clipboard_preview(
+                target,
+                list_fonts,
+                preview,
+                list_w,
+                size.width,
+                size.height,
+            );
+        }
         let _ = menu::paint_footer(
             target,
             dwrite,
@@ -388,6 +404,71 @@ fn paint_scene(
         }
         target.EndDraw(None, None)
     }
+}
+
+fn paint_clipboard_preview(
+    target: &ID2D1RenderTarget,
+    fonts: &ListFonts,
+    preview: &str,
+    list_w: f32,
+    panel_w: f32,
+    panel_h: f32,
+) -> windows::core::Result<()> {
+    let top = theme::size::COMPACT_HEIGHT;
+    let bottom = (panel_h - theme::size::BOTTOM_BAR_HEIGHT).max(top);
+    let line = unsafe {
+        target.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.18,
+            },
+            None,
+        )?
+    };
+    unsafe {
+        target.DrawLine(
+            windows::Win32::Graphics::Direct2D::Common::D2D_POINT_2F { x: list_w, y: top },
+            windows::Win32::Graphics::Direct2D::Common::D2D_POINT_2F {
+                x: list_w,
+                y: bottom,
+            },
+            &line,
+            theme::size::HAIRLINE,
+            None,
+        );
+    }
+    let text_brush = unsafe {
+        target.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.86,
+            },
+            None,
+        )?
+    };
+    let pad = theme::spacing::XL;
+    let rect = D2D_RECT_F {
+        left: list_w + pad,
+        top: top + pad,
+        right: panel_w - pad,
+        bottom: bottom - pad,
+    };
+    let wide: Vec<u16> = preview.chars().take(2000).collect::<String>().encode_utf16().collect();
+    unsafe {
+        target.DrawText(
+            &wide,
+            &fonts.title,
+            &rect,
+            &text_brush,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
+    Ok(())
 }
 
 fn paint_placeholder(

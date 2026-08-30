@@ -123,6 +123,7 @@ pub enum OpenMenu {
     #[default]
     None,
     Actions,
+    ClipboardFilter,
 }
 
 impl OpenMenu {
@@ -133,7 +134,7 @@ impl OpenMenu {
     pub fn toggle_actions(self) -> Self {
         match self {
             OpenMenu::Actions => OpenMenu::None,
-            OpenMenu::None => OpenMenu::Actions,
+            OpenMenu::None | OpenMenu::ClipboardFilter => OpenMenu::Actions,
         }
     }
 }

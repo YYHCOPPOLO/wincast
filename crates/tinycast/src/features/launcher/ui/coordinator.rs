@@ -2,12 +2,8 @@ use tinycast_pure::app_entry::{AppEntry, AppKind};
 use tinycast_pure::launcher_ranking::{should_record_ranking, LauncherRankingStore};
 
 use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::Foundation::{GlobalFree, HANDLE, HWND};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER};
-use windows::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
-};
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::UI::Shell::{
     IApplicationActivationManager, ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC,
     SHELLEXECUTEINFOW,
@@ -25,6 +21,7 @@ pub enum LaunchSpec {
     OpenAbout,
     OpenSupport,
     OpenCalculatorHistory,
+    OpenClipboardHistory,
     Noop,
 }
 
@@ -73,6 +70,7 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:about" => LaunchSpec::OpenAbout,
             "command:support" => LaunchSpec::OpenSupport,
             "command:calculator-history" => LaunchSpec::OpenCalculatorHistory,
+            "command:clipboard-history" => LaunchSpec::OpenClipboardHistory,
             _ => LaunchSpec::Noop,
         },
         _ => LaunchSpec::Noop,
@@ -125,29 +123,7 @@ pub fn reveal_path(entry: &AppEntry) -> Option<String> {
 }
 
 pub fn copy_text(text: &str) -> windows::core::Result<()> {
-    let mut wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let bytes = wide.len() * 2;
-    unsafe {
-        OpenClipboard(HWND::default())?;
-        let _ = EmptyClipboard();
-        let handle = GlobalAlloc(GMEM_MOVEABLE, bytes)?;
-        let ptr = GlobalLock(handle);
-        if ptr.is_null() {
-            let _ = GlobalFree(handle);
-            let _ = CloseClipboard();
-            return Err(windows::core::Error::from_win32());
-        }
-        std::ptr::copy_nonoverlapping(wide.as_mut_ptr(), ptr as *mut u16, wide.len());
-        let _ = GlobalUnlock(handle);
-        let hg = HANDLE(handle.0);
-        if SetClipboardData(13, hg).is_err() {
-            let _ = GlobalFree(handle);
-            let _ = CloseClipboard();
-            return Err(windows::core::Error::from_win32());
-        }
-        CloseClipboard()?;
-    }
-    Ok(())
+    crate::platform::clipboard::write_text_marked(text)
 }
 
 pub fn show_in_folder(path: &str) -> windows::core::Result<()> {
@@ -181,6 +157,7 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::OpenAbout
         | LaunchSpec::OpenSupport
         | LaunchSpec::OpenCalculatorHistory
+        | LaunchSpec::OpenClipboardHistory
         | LaunchSpec::Noop => Ok(()),
     }
 }
@@ -343,7 +320,7 @@ mod tests {
         assert_eq!(launch_spec(&CommandID::AiChat.as_entry()), LaunchSpec::Noop);
         assert_eq!(
             launch_spec(&CommandID::ClipboardHistory.as_entry()),
-            LaunchSpec::Noop
+            LaunchSpec::OpenClipboardHistory
         );
         assert_eq!(
             launch_spec(&CommandID::CalculatorHistory.as_entry()),

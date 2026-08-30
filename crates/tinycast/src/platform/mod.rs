@@ -7,6 +7,8 @@ pub mod screens;
 mod single_instance;
 mod tray;
 pub(crate) mod winhttp;
+pub(crate) mod clipboard;
+pub(crate) mod paster;
 
 pub fn run() -> windows::core::Result<()> {
     dpi::apply()?;

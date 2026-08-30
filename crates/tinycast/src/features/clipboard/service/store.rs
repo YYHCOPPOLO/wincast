@@ -101,6 +101,18 @@ impl ClipboardStore {
         id
     }
 
+    pub fn pinned_item(
+        &self,
+        index: usize,
+        query: &str,
+        filter: ClipboardFilter,
+    ) -> Option<ClipboardItem> {
+        self.search(query, filter)
+            .into_iter()
+            .filter(|i| i.is_pinned())
+            .nth(index)
+    }
+
     pub fn search(&self, query: &str, filter: ClipboardFilter) -> Vec<ClipboardItem> {
         let q = query.trim();
         let rows = if q.is_empty() {

@@ -176,6 +176,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
+        0x031D => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).capture_clipboard();
+            }
+            LRESULT(0)
+        }
         WM_QUIT_APP => {
             let _ = DestroyWindow(hwnd);
             LRESULT(0)

@@ -32,6 +32,9 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 use crate::app_settings::AppSettings;
 use crate::features::calculator::service::rates::CurrencyRateStore;
 use crate::features::calculator::ui::{card, coordinator as calc_coordinator};
+use crate::features::clipboard::service::manager as clip_manager;
+use crate::features::clipboard::service::store::{ClipboardFilter, ClipboardStore};
+use crate::features::clipboard::ui::screen as clip_screen;
 use crate::features::launcher::service::app_index::AppIndex;
 use crate::features::launcher::settings::items::{
     commands_catalog, commit_alias_text, hotkey_action_key,
@@ -70,6 +73,9 @@ pub struct AppCore {
     pub settings: AppSettings,
     pub currency_rates: CurrencyRateStore,
     pub calc_history: CalculatorHistoryStore,
+    pub clipboard: ClipboardStore,
+    clipboard_filter: ClipboardFilter,
+    previous_hwnd: HWND,
     host: HWND,
     list_scroll: f32,
     expanded: bool,
@@ -101,6 +107,9 @@ impl AppCore {
             settings: AppSettings::load(),
             currency_rates: CurrencyRateStore::new(),
             calc_history: CalculatorHistoryStore::load(store_path("calculator-history.json")),
+            clipboard: ClipboardStore::open(crate::platform::paths::local_dir()),
+            clipboard_filter: ClipboardFilter::All,
+            previous_hwnd: HWND::default(),
             host: HWND::default(),
             list_scroll: 0.0,
             expanded: false,
@@ -126,6 +135,27 @@ impl AppCore {
         self.close_menu();
         self.app_index.start();
         self.currency_rates.start(self.host);
+        clip_manager::listen(self.host);
+        if self.settings.clipboard_retention_days > 0 {
+            self.clipboard
+                .prune_unpinned_older_than(self.settings.clipboard_retention_days * 86_400);
+        }
+    }
+
+    pub fn capture_clipboard(&mut self) {
+        clip_manager::capture(&mut self.clipboard, &self.settings);
+        if self.palette.mode == PaletteMode::Clipboard {
+            self.clamp_selection();
+            self.invalidate_palette();
+        }
+    }
+
+    pub fn clipboard_preview(&self) -> Option<String> {
+        if self.palette.mode != PaletteMode::Clipboard {
+            return None;
+        }
+        let rows = self.clipboard.search(&self.palette.query, self.clipboard_filter);
+        Some(clip_screen::preview_text(rows.get(self.palette.selection)))
     }
 
     pub fn install_rates(&mut self) {
@@ -148,6 +178,12 @@ impl AppCore {
     }
 
     pub fn launcher_paint_items(&self) -> Vec<PaintItem> {
+        if self.palette.mode == PaletteMode::Clipboard {
+            let rows = self
+                .clipboard
+                .search(&self.palette.query, self.clipboard_filter);
+            return clip_screen::paint_items(&rows, self.palette.selection);
+        }
         if self.palette.mode == PaletteMode::CalculatorHistory {
             return self.calc_history_paint_items();
         }
@@ -184,7 +220,7 @@ impl AppCore {
     }
 
     pub fn menu_paint(&self) -> Option<MenuPaint<'_>> {
-        if self.menu != OpenMenu::Actions || self.menu_items.is_empty() {
+        if !self.menu.is_open() || self.menu_items.is_empty() {
             return None;
         }
         Some(MenuPaint {
@@ -283,6 +319,7 @@ impl AppCore {
         if self.palette_visible {
             self.hide_palette();
         } else {
+            self.remember_previous_hwnd();
             self.palette.prepare(PaletteMode::Launcher);
             self.palette_visible = true;
             self.expanded = false;
@@ -391,6 +428,16 @@ impl AppCore {
             self.toggle_actions();
             return true;
         }
+        if self.palette.mode == PaletteMode::Clipboard {
+            if vk == 0x50 && ctrl_down() && !shift_down() && !alt_down() {
+                self.toggle_clipboard_filter_menu();
+                return true;
+            }
+            if vk == 0xBE && ctrl_down() && !shift_down() && !alt_down() {
+                self.toggle_clipboard_pin();
+                return true;
+            }
+        }
         if vk == 0x46 && ctrl_down() && shift_down() && !alt_down() {
             if self.expanded {
                 self.toggle_favorite_selected();
@@ -449,7 +496,11 @@ impl AppCore {
         }
         if ctrl_down() {
             if let Some(n) = FavoritesStore::digit_from_vk(vk) {
-                self.activate_favorite_slot(n);
+                if self.palette.mode == PaletteMode::Clipboard {
+                    self.activate_clipboard_pin_slot(n);
+                } else {
+                    self.activate_favorite_slot(n);
+                }
                 return true;
             }
         }
@@ -545,6 +596,10 @@ impl AppCore {
             }
             return;
         }
+        if self.palette.mode == PaletteMode::Clipboard {
+            self.paste_clipboard_at(row_index);
+            return;
+        }
         let sections = self.sections();
         let Some(entry) = selectable_rows(&sections).get(row_index).cloned() else {
             return;
@@ -593,6 +648,7 @@ impl AppCore {
                 }
             }
             LaunchSpec::OpenCalculatorHistory => self.open_calculator_history(),
+            LaunchSpec::OpenClipboardHistory => self.open_clipboard_history(),
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -795,7 +851,14 @@ impl AppCore {
             ID_UNINSTALL => {
                 self.close_menu();
             }
-            _ => self.close_menu(),
+            other => {
+                if let Some(filter) = clip_screen::filter_from_id(other) {
+                    self.clipboard_filter = filter;
+                    self.palette.selection = 0;
+                    self.list_scroll = 0.0;
+                }
+                self.close_menu();
+            }
         }
     }
 
@@ -823,7 +886,9 @@ impl AppCore {
     }
 
     fn selected_entry(&self) -> Option<AppEntry> {
-        if self.palette.mode == PaletteMode::CalculatorHistory {
+        if self.palette.mode == PaletteMode::CalculatorHistory
+            || self.palette.mode == PaletteMode::Clipboard
+        {
             return None;
         }
         let index = if self.calc_result().is_some() {
@@ -997,6 +1062,10 @@ impl AppCore {
                 self.calc_result().is_some(),
                 self.calc_history.search(&self.palette.query).len(),
             ),
+            PaletteMode::Clipboard => self
+                .clipboard
+                .search(&self.palette.query, self.clipboard_filter)
+                .len(),
             PaletteMode::Launcher => selectable_count(
                 self.calc_result().is_some(),
                 selectable_rows(&self.sections()).len(),
@@ -1040,9 +1109,135 @@ impl AppCore {
         if self.palette.mode == PaletteMode::CalculatorHistory {
             return "Copy Answer";
         }
+        if self.palette.mode == PaletteMode::Clipboard {
+            return "Paste";
+        }
         self.selected_entry()
             .map(|e| e.kind.open_verb())
             .unwrap_or("Open")
+    }
+
+    fn remember_previous_hwnd(&mut self) {
+        let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+        if !fg.is_invalid() {
+            self.previous_hwnd = fg;
+        }
+    }
+
+    fn open_clipboard_history(&mut self) {
+        self.close_menu();
+        let was_visible = self.palette_visible;
+        if !was_visible {
+            self.remember_previous_hwnd();
+        }
+        self.palette.prepare(PaletteMode::Clipboard);
+        self.palette_visible = true;
+        self.expanded = true;
+        self.list_scroll = 0.0;
+        if was_visible {
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+            }
+            self.relayout_palette();
+            self.invalidate_palette();
+        } else {
+            self.show_palette_window();
+            self.expand_palette();
+        }
+    }
+
+    fn clipboard_rows(&self) -> Vec<crate::features::clipboard::service::store::ClipboardItem> {
+        self.clipboard
+            .search(&self.palette.query, self.clipboard_filter)
+    }
+
+    fn paste_clipboard_at(&mut self, index: usize) {
+        let Some(item) = self.clipboard_rows().get(index).cloned() else {
+            return;
+        };
+        if !item.is_pinned() {
+            self.clipboard.promote(item.id);
+        }
+        let previous = self.previous_hwnd;
+        match item.kind {
+            crate::features::clipboard::service::store::ClipKind::Text => {
+                if let Some(text) = item.text {
+                    self.hide_palette();
+                    crate::platform::paster::paste_text(&text, previous);
+                }
+            }
+            crate::features::clipboard::service::store::ClipKind::Image => {
+                self.hide_palette();
+                crate::platform::paster::paste_into(previous);
+            }
+        }
+    }
+
+    fn toggle_clipboard_pin(&mut self) {
+        let Some(item) = self.clipboard_rows().get(self.palette.selection).cloned() else {
+            return;
+        };
+        self.clipboard.toggle_pin(item.id);
+        self.clamp_selection();
+        self.invalidate_palette();
+    }
+
+    fn activate_clipboard_pin_slot(&mut self, n: u8) {
+        let index = if n == 0 { 9usize } else { (n as usize).saturating_sub(1) };
+        let Some(item) = self
+            .clipboard
+            .pinned_item(index, &self.palette.query, self.clipboard_filter)
+        else {
+            return;
+        };
+        let rows = self.clipboard_rows();
+        if let Some(pos) = rows.iter().position(|r| r.id == item.id) {
+            self.paste_clipboard_at(pos);
+        }
+    }
+
+    fn toggle_clipboard_filter_menu(&mut self) {
+        if self.menu == OpenMenu::ClipboardFilter {
+            self.close_menu();
+            return;
+        }
+        self.menu_header = clip_screen::filter_title(self.clipboard_filter).to_string();
+        self.menu_items = vec![
+            tinycast_pure::palette_menu::MenuItem {
+                id: "clip-filter-all",
+                label: "All Types",
+                shortcut: None,
+            },
+            tinycast_pure::palette_menu::MenuItem {
+                id: "clip-filter-text",
+                label: "Text Only",
+                shortcut: None,
+            },
+            tinycast_pure::palette_menu::MenuItem {
+                id: "clip-filter-images",
+                label: "Images Only",
+                shortcut: None,
+            },
+            tinycast_pure::palette_menu::MenuItem {
+                id: "clip-filter-links",
+                label: "Links Only",
+                shortcut: None,
+            },
+            tinycast_pure::palette_menu::MenuItem {
+                id: "clip-filter-emails",
+                label: "Emails Only",
+                shortcut: None,
+            },
+        ];
+        self.menu_selection = match self.clipboard_filter {
+            ClipboardFilter::All => 0,
+            ClipboardFilter::Text => 1,
+            ClipboardFilter::Images => 2,
+            ClipboardFilter::Links => 3,
+            ClipboardFilter::Emails => 4,
+        };
+        self.menu = OpenMenu::ClipboardFilter;
+        self.invalidate_palette();
     }
 
     fn open_calculator_history(&mut self) {

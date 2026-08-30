@@ -45,6 +45,10 @@ pub struct AppSettings {
     pub extensions_enabled: bool,
     #[serde(default, rename = "quicklinksEnabled")]
     pub quicklinks_enabled: bool,
+    #[serde(default = "default_retention_days", rename = "clipboardRetentionDays")]
+    pub clipboard_retention_days: i64,
+    #[serde(default = "default_disabled_apps", rename = "clipboardDisabledApps")]
+    pub clipboard_disabled_apps: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -64,6 +68,8 @@ impl Default for AppSettings {
             quick_actions_enabled: false,
             extensions_enabled: false,
             quicklinks_enabled: false,
+            clipboard_retention_days: default_retention_days(),
+            clipboard_disabled_apps: default_disabled_apps(),
         }
     }
 }
@@ -82,6 +88,17 @@ impl AppSettings {
             quicklinks_enabled: self.quicklinks_enabled,
         }
     }
+}
+
+fn default_retention_days() -> i64 {
+    90
+}
+
+fn default_disabled_apps() -> Vec<String> {
+    crate::features::clipboard::service::manager::DEFAULT_DISABLED_APPS
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect()
 }
 
 fn default_search_scopes() -> Vec<String> {
