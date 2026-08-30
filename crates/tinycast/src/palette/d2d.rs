@@ -43,6 +43,7 @@ pub struct Renderer {
 
 pub struct PaintParams<'a> {
     pub placeholder: bool,
+    pub placeholder_text: &'a str,
     pub items: &'a [PaintItem],
     pub scroll: f32,
     pub cache: &'a mut IconCache,
@@ -370,7 +371,7 @@ fn paint_scene(
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
         if params.placeholder {
-            let _ = paint_placeholder(target, text_format);
+            let _ = paint_placeholder(target, text_format, params.placeholder_text);
         }
         if let Some(hint) = params.tab_hint {
             let trailing = params
@@ -627,6 +628,7 @@ fn paint_tab_hint(
 fn paint_placeholder(
     target: &ID2D1RenderTarget,
     text_format: &IDWriteTextFormat,
+    label: &str,
 ) -> windows::core::Result<()> {
     let (x, y, w, h) = super::edit::search_field_dip();
     let rect = D2D_RECT_F {
@@ -642,7 +644,7 @@ fn paint_placeholder(
         a: 0.55,
     };
     let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
-    let text: Vec<u16> = super::edit::PLACEHOLDER_LAUNCHER.encode_utf16().collect();
+    let text: Vec<u16> = label.encode_utf16().collect();
     unsafe {
         target.DrawText(
             &text,

@@ -48,6 +48,9 @@ use crate::features::launcher::ui::list::{
     clamp_scroll, content_height, ensure_visible, list_bottom, list_top, paint_items, row_y,
     selectable_at_y, slots_of, PaintItem, ROW_HEIGHT,
 };
+use crate::features::snippets::service::injector;
+use crate::features::snippets::service::repository::SnippetRepository;
+use crate::features::snippets::ui::coordinator as snippet_coordinator;
 use crate::palette::menu::{FooterPaint, MenuPaint};
 use crate::palette::physical;
 use crate::palette::PaletteWindow;
@@ -55,7 +58,7 @@ use crate::platform::clock::{local_naive_unix, unix_now};
 use crate::platform::messages::WM_QUIT_APP;
 use crate::platform::paths;
 use crate::platform::screens::{cursor_target_screen, dip_to_px, dip_to_px_with_dpi};
-use crate::surfaces::{SettingsWindow, StubWindow};
+use crate::surfaces::{MessageHud, SettingsWindow, StubWindow};
 
 pub struct AppCore {
     pub palette: PaletteState,
@@ -77,6 +80,10 @@ pub struct AppCore {
     pub calc_history: CalculatorHistoryStore,
     pub clipboard: ClipboardStore,
     clipboard_filter: ClipboardFilter,
+    snippet_repo: SnippetRepository,
+    snippet_records: Vec<tinycast_pure::snippet::StoredSnippet>,
+    argument_session: Option<snippet_coordinator::ArgumentSession>,
+    hud: Option<MessageHud>,
     previous_hwnd: HWND,
     host: HWND,
     list_scroll: f32,
@@ -111,6 +118,10 @@ impl AppCore {
             calc_history: CalculatorHistoryStore::load(store_path("calculator-history.json")),
             clipboard: ClipboardStore::open(crate::platform::paths::local_dir()),
             clipboard_filter: ClipboardFilter::All,
+            snippet_repo: SnippetRepository::in_roaming(),
+            snippet_records: Vec::new(),
+            argument_session: None,
+            hud: None,
             previous_hwnd: HWND::default(),
             host: HWND::default(),
             list_scroll: 0.0,
@@ -139,6 +150,10 @@ impl AppCore {
         self.currency_rates.start(self.host);
         clip_manager::listen(self.host);
         self.apply_clipboard_retention();
+        self.apply_snippets_enabled();
+        if self.hud.is_none() && !self.host.is_invalid() {
+            self.hud = MessageHud::create(self.host).ok();
+        }
     }
 
     pub fn cycle_clipboard_retention(&mut self) {
@@ -233,7 +248,11 @@ impl AppCore {
     }
 
     pub fn tab_hint(&self) -> Option<&'static str> {
-        match tab_from(self.palette.mode, self.settings.ai_enabled, false) {
+        match tab_from(
+            self.palette.mode,
+            self.settings.ai_enabled,
+            self.palette.mode == PaletteMode::QuicklinkArguments,
+        ) {
             TabHop::Clipboard => Some("Clipboard"),
             TabHop::Launcher => Some("Launcher"),
             TabHop::Ai => {
@@ -267,6 +286,27 @@ impl AppCore {
         self.app_index.set_host(host);
     }
 
+    pub fn install_snippets(&mut self) {
+        if !self.settings.snippets_enabled {
+            return;
+        }
+        if let Ok(snap) = self.snippet_repo.load() {
+            self.snippet_records = snap.records;
+            self.clamp_selection();
+            self.invalidate_palette();
+            self.invalidate_settings();
+        }
+    }
+
+    pub fn search_placeholder(&self) -> String {
+        if self.palette.mode == PaletteMode::QuicklinkArguments {
+            if let Some(session) = &self.argument_session {
+                return session.current_name().to_string();
+            }
+        }
+        crate::palette::edit::PLACEHOLDER_LAUNCHER.to_string()
+    }
+
     pub fn install_app_index(&mut self) {
         if let Some(entries) = self.app_index.take_latest() {
             self.entries = entries;
@@ -277,6 +317,15 @@ impl AppCore {
     }
 
     pub fn launcher_paint_items(&self) -> Vec<PaintItem> {
+        if self.palette.mode == PaletteMode::QuicklinkArguments {
+            if let Some(session) = &self.argument_session {
+                return snippet_coordinator::paint_argument_items(
+                    session,
+                    &self.palette.query,
+                    self.palette.selection,
+                );
+            }
+        }
         if self.palette.mode == PaletteMode::Clipboard {
             let rows = self
                 .clipboard
@@ -429,6 +478,7 @@ impl AppCore {
     }
 
     pub fn hide_palette(&mut self) {
+        self.argument_session = None;
         self.close_menu();
         self.palette_visible = false;
         self.expanded = false;
@@ -522,6 +572,13 @@ impl AppCore {
     pub fn handle_key(&mut self, vk: u16) -> bool {
         if vk == VK_ESCAPE.0 {
             self.handle_escape();
+            return true;
+        }
+        if vk == 0x08
+            && self.palette.mode == PaletteMode::QuicklinkArguments
+            && self.palette.query.is_empty()
+        {
+            self.step_back_argument();
             return true;
         }
         if vk == 0x09 {
@@ -668,6 +725,10 @@ impl AppCore {
         if !self.palette_visible {
             return;
         }
+        if self.palette.mode == PaletteMode::QuicklinkArguments {
+            self.commit_argument();
+            return;
+        }
         if !self.expanded {
             self.expand_select_first();
             return;
@@ -753,6 +814,7 @@ impl AppCore {
             }
             LaunchSpec::OpenCalculatorHistory => self.open_calculator_history(),
             LaunchSpec::OpenClipboardHistory => self.open_clipboard_history(),
+            LaunchSpec::ExpandSnippet(id) => self.begin_snippet_expansion(&id),
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -812,6 +874,14 @@ impl AppCore {
     fn catalog(&self) -> Vec<AppEntry> {
         let flags = self.feature_flags();
         let mut entries = self.entries.clone();
+        if self.settings.snippets_enabled && self.settings.snippets_show_in_launcher {
+            entries.extend(
+                self.snippet_records
+                    .iter()
+                    .filter(|record| record.enabled)
+                    .map(snippet_coordinator::snippet_entry),
+            );
+        }
         entries.extend(
             CommandID::all()
                 .iter()
@@ -1192,6 +1262,11 @@ impl AppCore {
                 .clipboard
                 .search(&self.palette.query, self.clipboard_filter)
                 .len(),
+            PaletteMode::QuicklinkArguments => self
+                .argument_session
+                .as_ref()
+                .map(|s| s.filtered_options(&self.palette.query).len())
+                .unwrap_or(0),
             PaletteMode::Launcher => selectable_count(
                 self.calc_result().is_some(),
                 selectable_rows(&self.sections()).len(),
@@ -1238,6 +1313,9 @@ impl AppCore {
         if self.palette.mode == PaletteMode::Clipboard {
             return "Paste";
         }
+        if self.palette.mode == PaletteMode::QuicklinkArguments {
+            return "Continue";
+        }
         self.selected_entry()
             .map(|e| e.kind.open_verb())
             .unwrap_or("Open")
@@ -1247,7 +1325,11 @@ impl AppCore {
         if !self.palette_visible {
             return;
         }
-        let hop = tab_from(self.palette.mode, self.settings.ai_enabled, false);
+        let hop = tab_from(
+            self.palette.mode,
+            self.settings.ai_enabled,
+            self.palette.mode == PaletteMode::QuicklinkArguments,
+        );
         let query = self.palette.query.clone();
         match hop {
             TabHop::StayForArguments => return,
@@ -1484,6 +1566,178 @@ impl AppCore {
         self.list_scroll = clamp_scroll(self.list_scroll, content_height(&slots), view_h);
     }
 
+    fn apply_snippets_enabled(&mut self) {
+        if self.settings.snippets_enabled {
+            if let Ok(snap) = self.snippet_repo.load() {
+                self.snippet_records = snap.records;
+            }
+            if !self.host.is_invalid() {
+                self.snippet_repo.start_watch(self.host);
+            }
+        } else {
+            self.snippet_repo.stop_watch();
+            self.snippet_records.clear();
+        }
+        self.invalidate_palette();
+    }
+
+    fn begin_snippet_expansion(&mut self, entry_id: &str) {
+        let Some(path) = snippet_coordinator::path_from_entry_id(entry_id) else {
+            return;
+        };
+        let Some(record) = self
+            .snippet_records
+            .iter()
+            .find(|r| r.path.to_string_lossy() == path)
+            .cloned()
+        else {
+            return;
+        };
+        let ctx = snippet_coordinator::expansion_context(
+            self.clipboard.recent_text(20),
+            None,
+            crate::platform::clock::local_naive_unix(),
+            user_locale(),
+        );
+        let output = snippet_coordinator::expand_record(
+            &record,
+            &self.snippet_records,
+            &ctx,
+            &Default::default(),
+        );
+        if output.arguments.is_empty() {
+            self.deliver_snippet(&record, output);
+            return;
+        }
+        self.argument_session = Some(snippet_coordinator::ArgumentSession {
+            snippet_path: path.to_string(),
+            snippet_name: record.name.clone(),
+            show_confirmation: record.show_confirmation,
+            specs: output.arguments,
+            values: std::collections::HashMap::new(),
+            index: 0,
+            clipboard: ctx.clipboard,
+            selection: ctx.selection,
+            now: ctx.now,
+            locale: ctx.locale,
+            tz: ctx.tz,
+        });
+        self.palette.prepare(PaletteMode::QuicklinkArguments);
+        self.palette_visible = true;
+        self.expanded = true;
+        if let Some(window) = &self.palette_window {
+            window.reset_search();
+        }
+        self.relayout_palette();
+        self.invalidate_palette();
+    }
+
+    fn commit_argument(&mut self) {
+        let Some(session) = self.argument_session.as_mut() else {
+            return;
+        };
+        let options = session.filtered_options(&self.palette.query);
+        let value = if !options.is_empty() {
+            options
+                .get(self.palette.selection)
+                .cloned()
+                .unwrap_or_else(|| self.palette.query.clone())
+        } else {
+            self.palette.query.clone()
+        };
+        if session.current_options().is_empty() && value.is_empty() {
+            return;
+        }
+        let done = session.commit(value);
+        if done {
+            self.finish_argument_session();
+        } else {
+            self.palette.query.clear();
+            self.palette.selection = 0;
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+            }
+            self.invalidate_palette();
+        }
+    }
+
+    fn step_back_argument(&mut self) {
+        let Some(session) = self.argument_session.as_mut() else {
+            return;
+        };
+        match session.back() {
+            None => self.hide_palette(),
+            Some(prev) => {
+                self.palette.query = prev.clone();
+                self.palette.selection = 0;
+                if let Some(window) = &self.palette_window {
+                    window.set_search_text(&prev);
+                }
+                self.invalidate_palette();
+            }
+        }
+    }
+
+    fn finish_argument_session(&mut self) {
+        let Some(session) = self.argument_session.take() else {
+            return;
+        };
+        let Some(record) = self
+            .snippet_records
+            .iter()
+            .find(|r| r.path.to_string_lossy() == session.snippet_path)
+            .cloned()
+        else {
+            self.hide_palette();
+            return;
+        };
+        let ctx = snippet_coordinator::expansion_context(
+            session.clipboard,
+            session.selection,
+            session.now,
+            session.locale,
+        );
+        let output =
+            snippet_coordinator::expand_record(&record, &self.snippet_records, &ctx, &session.values);
+        let _ = session.tz;
+        self.deliver_snippet_with(
+            &session.snippet_name,
+            session.show_confirmation,
+            output,
+        );
+    }
+
+    fn deliver_snippet(
+        &mut self,
+        record: &tinycast_pure::snippet::StoredSnippet,
+        output: tinycast_pure::template::ExpandOutput,
+    ) {
+        self.deliver_snippet_with(&record.name, record.show_confirmation, output);
+    }
+
+    fn deliver_snippet_with(
+        &mut self,
+        name: &str,
+        show_hud: bool,
+        output: tinycast_pure::template::ExpandOutput,
+    ) {
+        let previous = self.previous_hwnd;
+        self.hide_palette();
+        injector::inject_into(previous, &output.text, output.cursor);
+        if show_hud {
+            self.show_message_hud(name);
+        }
+    }
+
+    fn show_message_hud(&mut self, message: &str) {
+        if self.hud.is_none() && !self.host.is_invalid() {
+            self.hud = MessageHud::create(self.host).ok();
+        }
+        if let Some(hud) = &self.hud {
+            hud.show(message);
+        }
+    }
+
     fn post_host(&self, msg: u32) {
         if self.host.is_invalid() {
             return;
@@ -1508,6 +1762,16 @@ fn shift_down() -> bool {
 
 fn alt_down() -> bool {
     unsafe { GetKeyState(VK_MENU.0 as i32) < 0 }
+}
+
+fn user_locale() -> String {
+    let mut buf = [0u16; 85];
+    let n = unsafe { windows::Win32::Globalization::GetUserDefaultLocaleName(&mut buf) };
+    if n > 1 {
+        String::from_utf16_lossy(&buf[..n as usize - 1])
+    } else {
+        "en".into()
+    }
 }
 
 #[cfg(test)]
@@ -1632,6 +1896,33 @@ mod tests {
         assert_eq!(c.settings_tab, SettingsTab::Ai);
         c.select_settings_tab(SettingsTab::About);
         assert_eq!(c.settings_tab, SettingsTab::About);
+    }
+
+    #[test]
+    fn snippet_rows_appear_when_enabled_and_shown() {
+        use tinycast_pure::snippet::{SnippetSourceRevision, StoredSnippet};
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.favorites = tinycast_pure::favorites::FavoritesStore::default();
+        c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.settings.snippets_enabled = true;
+        c.settings.snippets_show_in_launcher = true;
+        c.snippet_records = vec![StoredSnippet {
+            path: std::path::PathBuf::from("Meeting Notes.md"),
+            name: "Meeting Notes".into(),
+            keyword: Some("!notes".into()),
+            enabled: true,
+            show_confirmation: false,
+            body: "Hi".into(),
+            source_revision: SnippetSourceRevision::new(""),
+        }];
+        c.toggle_palette();
+        c.set_query("!notes".into());
+        let items = c.launcher_paint_items();
+        assert!(items.iter().any(|item| matches!(
+            item,
+            crate::features::launcher::ui::list::PaintItem::Row { title, .. } if title == "Meeting Notes"
+        )));
     }
 
     #[test]

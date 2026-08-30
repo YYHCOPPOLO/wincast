@@ -15,7 +15,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use super::messages::{
     WM_APP_INDEX, WM_CLIPBOARDUPDATE, WM_CLIPBOARD_IMAGE, WM_OPEN_SETTINGS, WM_QUIT_APP, WM_RATES,
-    WM_TOGGLE_PALETTE, WM_TRAY,
+    WM_SNIPPETS, WM_TOGGLE_PALETTE, WM_TRAY,
 };
 use crate::app_core::AppCore;
 
@@ -186,6 +186,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_CLIPBOARD_IMAGE => {
             if let Some(core) = core_from(hwnd) {
                 (*core).install_clipboard_images();
+            }
+            LRESULT(0)
+        }
+        WM_SNIPPETS => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).install_snippets();
             }
             LRESULT(0)
         }

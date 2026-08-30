@@ -175,10 +175,14 @@ impl PaletteWindow {
     }
 
     pub fn reset_search(&self) {
+        self.set_search_text("");
+    }
+
+    pub fn set_search_text(&self, text: &str) {
         unsafe {
             if let Some(inner) = inner_from(self.hwnd) {
                 if let Some(edit) = (*inner).edit.as_ref() {
-                    edit.set_text("");
+                    edit.set_text(text);
                 }
             }
         }
@@ -366,6 +370,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     let Some(core) = core_from_host(inner.host) else {
         let params = PaintParams {
             placeholder: false,
+            placeholder_text: "",
             items: &[],
             scroll: 0.0,
             cache: &mut inner.icons,
@@ -383,6 +388,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         return;
     };
     let placeholder = should_draw_placeholder(&(*core).palette);
+    let placeholder_owned = (*core).search_placeholder();
     let items = (*core).launcher_paint_items();
     let scroll = (*core).list_scroll();
     let appearance = (*core).appearance_key();
@@ -394,6 +400,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     layout_edit(hwnd, inner, (*core).search_trailing_width());
     let params = PaintParams {
         placeholder,
+        placeholder_text: placeholder_owned.as_str(),
         items: &items,
         scroll,
         cache: &mut inner.icons,

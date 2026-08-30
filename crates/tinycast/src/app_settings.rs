@@ -33,6 +33,8 @@ pub struct AppSettings {
     pub notes_enabled: bool,
     #[serde(default, rename = "snippetsEnabled")]
     pub snippets_enabled: bool,
+    #[serde(default = "default_true", rename = "snippetsShowInLauncher")]
+    pub snippets_show_in_launcher: bool,
     #[serde(default, rename = "windowManagementEnabled")]
     pub window_management_enabled: bool,
     #[serde(default, rename = "calendarEnabled")]
@@ -62,6 +64,7 @@ impl Default for AppSettings {
             file_search_enabled: false,
             notes_enabled: false,
             snippets_enabled: false,
+            snippets_show_in_launcher: true,
             window_management_enabled: false,
             calendar_enabled: false,
             ai_enabled: false,
@@ -88,6 +91,10 @@ impl AppSettings {
             quicklinks_enabled: self.quicklinks_enabled,
         }
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_retention_days() -> i64 {
@@ -174,6 +181,7 @@ mod tests {
         assert_eq!(j[AppSettingsKey::AiEnabled.as_str()], false);
         assert_eq!(j[AppSettingsKey::NotesEnabled.as_str()], false);
         assert_eq!(j[AppSettingsKey::SnippetsEnabled.as_str()], false);
+        assert_eq!(j[AppSettingsKey::SnippetsShowInLauncher.as_str()], true);
         assert_eq!(j[AppSettingsKey::WindowManagementEnabled.as_str()], false);
         assert_eq!(j[AppSettingsKey::CalendarEnabled.as_str()], false);
         assert_eq!(j[AppSettingsKey::QuickActionsEnabled.as_str()], false);
@@ -194,6 +202,7 @@ mod tests {
         assert!(!s.file_search_enabled);
         assert!(!s.notes_enabled);
         assert!(!s.snippets_enabled);
+        assert!(s.snippets_show_in_launcher);
         assert!(!s.window_management_enabled);
         assert!(!s.calendar_enabled);
         assert!(!s.ai_enabled);

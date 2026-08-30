@@ -22,6 +22,7 @@ pub enum LaunchSpec {
     OpenSupport,
     OpenCalculatorHistory,
     OpenClipboardHistory,
+    ExpandSnippet(String),
     Noop,
 }
 
@@ -73,6 +74,7 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:clipboard-history" => LaunchSpec::OpenClipboardHistory,
             _ => LaunchSpec::Noop,
         },
+        AppKind::Snippet => LaunchSpec::ExpandSnippet(entry.id.clone()),
         _ => LaunchSpec::Noop,
     }
 }
@@ -158,6 +160,7 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::OpenSupport
         | LaunchSpec::OpenCalculatorHistory
         | LaunchSpec::OpenClipboardHistory
+        | LaunchSpec::ExpandSnippet(_)
         | LaunchSpec::Noop => Ok(()),
     }
 }

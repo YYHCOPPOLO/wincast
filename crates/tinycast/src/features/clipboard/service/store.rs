@@ -132,6 +132,14 @@ impl ClipboardStore {
             .position(|item| item.id == id)
     }
 
+    pub fn recent_text(&self, limit: usize) -> Vec<String> {
+        self.items
+            .iter()
+            .filter_map(|item| item.text.clone())
+            .take(limit)
+            .collect()
+    }
+
     pub fn search(&self, query: &str, filter: ClipboardFilter) -> Vec<ClipboardItem> {
         let q = query.trim();
         let rows = if q.is_empty() {

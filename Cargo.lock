@@ -294,6 +294,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tinycast-pure",
+ "unicode-segmentation",
  "windows",
 ]
 

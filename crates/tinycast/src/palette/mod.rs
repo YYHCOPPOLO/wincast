@@ -1,5 +1,5 @@
 pub(crate) mod d2d;
-mod edit;
+pub(crate) mod edit;
 mod hwnd;
 pub(crate) mod menu;
 
