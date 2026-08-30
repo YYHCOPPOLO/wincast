@@ -1,6 +1,7 @@
 //! Decision layer. Must not depend on `windows`.
 
 pub mod alias;
+pub mod calc;
 pub mod app_entry;
 pub mod app_settings_key;
 pub mod command_id;
