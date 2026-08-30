@@ -23,6 +23,8 @@ pub struct AppSettings {
     pub open_on_cursor_screen: bool,
     #[serde(rename = "appearance")]
     pub appearance: Appearance,
+    #[serde(default = "default_skin", rename = "emojiSkinTone")]
+    pub emoji_skin_tone: String,
     #[serde(rename = "launchAtLogin")]
     pub launch_at_login: bool,
     #[serde(default = "default_search_scopes", rename = "launcherSearchScopes")]
@@ -65,6 +67,7 @@ impl Default for AppSettings {
             compact_mode: true,
             open_on_cursor_screen: true,
             appearance: Appearance::System,
+            emoji_skin_tone: default_skin(),
             launch_at_login: false,
             launcher_search_scopes: default_search_scopes(),
             file_search_enabled: false,
@@ -104,6 +107,10 @@ impl AppSettings {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_skin() -> String {
+    "none".into()
 }
 
 fn default_retention_days() -> i64 {

@@ -405,6 +405,22 @@ impl AppCore {
     }
 
     pub fn launcher_paint_items(&self) -> Vec<PaintItem> {
+        if self.palette.mode == PaletteMode::Emoji {
+            let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
+            let hits = tinycast_pure::emoji::search_emoji_with_tone(&self.palette.query, tone);
+            return hits
+                .into_iter()
+                .enumerate()
+                .map(|(i, e)| PaintItem::Row {
+                    title: format!("{}  {}", e.glyph, e.name),
+                    alias: None,
+                    trailing: String::new(),
+                    keycap: None,
+                    icon_source: None,
+                    selected: i == self.palette.selection,
+                })
+                .collect();
+        }
         if self.palette.mode == PaletteMode::Quicklinks {
             let q = self.palette.query.to_lowercase();
             let mut items = Vec::new();
@@ -834,6 +850,18 @@ impl AppCore {
         if !self.palette_visible {
             return;
         }
+        if self.palette.mode == PaletteMode::Emoji {
+            let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
+            let hits = tinycast_pure::emoji::search_emoji_with_tone(&self.palette.query, tone);
+            if let Some(emoji) = hits.get(self.palette.selection) {
+                let previous = self.previous_hwnd;
+                let glyph = emoji.glyph.clone();
+                let _ = crate::features::launcher::ui::coordinator::copy_text(&glyph);
+                self.hide_palette();
+                crate::platform::paster::paste_into(previous);
+            }
+            return;
+        }
         if self.palette.mode == PaletteMode::Quicklinks {
             let q = self.palette.query.to_lowercase();
             let links: Vec<_> = self
@@ -941,6 +969,7 @@ impl AppCore {
             LaunchSpec::RunCustomCommand(id) => self.run_custom_command(&id),
             LaunchSpec::OpenQuicklink(id) => self.open_quicklink(&id),
             LaunchSpec::SearchQuicklinks => self.open_quicklinks_search(),
+            LaunchSpec::SearchEmoji => self.open_emoji(),
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -1400,6 +1429,10 @@ impl AppCore {
                 .clipboard
                 .search(&self.palette.query, self.clipboard_filter)
                 .len(),
+            PaletteMode::Emoji => {
+                let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
+                tinycast_pure::emoji::search_emoji_with_tone(&self.palette.query, tone).len()
+            }
             PaletteMode::Quicklinks => {
                 let q = self.palette.query.to_lowercase();
                 self.quicklinks
@@ -1710,6 +1743,28 @@ impl AppCore {
         let slots = slots_of(&items);
         let view_h = list_bottom(theme::size::PANEL_HEIGHT) - list_top();
         self.list_scroll = clamp_scroll(self.list_scroll, content_height(&slots), view_h);
+    }
+
+    fn open_emoji(&mut self) {
+        self.close_menu();
+        let was_visible = self.palette_visible;
+        if !was_visible {
+            self.remember_previous_hwnd();
+        }
+        self.palette.prepare(PaletteMode::Emoji);
+        self.palette_visible = true;
+        self.expanded = true;
+        self.list_scroll = 0.0;
+        if was_visible {
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+            }
+            self.relayout_palette();
+            self.invalidate_palette();
+        } else {
+            self.show_palette_window();
+            self.expand_palette();
+        }
     }
 
     fn open_quicklinks_search(&mut self) {

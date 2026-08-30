@@ -6,6 +6,7 @@ pub mod clipboard_text;
 pub mod app_entry;
 pub mod app_settings_key;
 pub mod command_id;
+pub mod emoji;
 pub mod custom_command;
 pub mod favorites;
 pub mod feature_flags;

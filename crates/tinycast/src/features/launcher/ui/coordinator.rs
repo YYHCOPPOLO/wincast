@@ -26,6 +26,7 @@ pub enum LaunchSpec {
     RunCustomCommand(String),
     OpenQuicklink(String),
     SearchQuicklinks,
+    SearchEmoji,
     Noop,
 }
 
@@ -76,6 +77,7 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:calculator-history" => LaunchSpec::OpenCalculatorHistory,
             "command:clipboard-history" => LaunchSpec::OpenClipboardHistory,
             "command:search-quicklinks" => LaunchSpec::SearchQuicklinks,
+            "command:search-emoji" => LaunchSpec::SearchEmoji,
             _ => LaunchSpec::Noop,
         },
         AppKind::Snippet => LaunchSpec::ExpandSnippet(entry.id.clone()),
@@ -170,6 +172,7 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::RunCustomCommand(_)
         | LaunchSpec::OpenQuicklink(_)
         | LaunchSpec::SearchQuicklinks
+        | LaunchSpec::SearchEmoji
         | LaunchSpec::Noop => Ok(()),
     }
 }
