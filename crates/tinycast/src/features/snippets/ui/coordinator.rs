@@ -5,7 +5,7 @@ use tinycast_pure::app_entry::{AppEntry, AppKind};
 use tinycast_pure::search_relevance::SearchFields;
 use tinycast_pure::snippet::StoredSnippet;
 use tinycast_pure::template::{
-    expand_snippet, ArgumentSpec, ExpandContext, ExpandOutput, TemplateSnippet,
+    expand_snippet, uses_selection, ArgumentSpec, ExpandContext, ExpandOutput, TemplateSnippet,
 };
 
 use crate::features::launcher::ui::list::PaintItem;
@@ -175,6 +175,18 @@ pub fn expansion_context(
     }
 }
 
+/// UIA / synthetic Ctrl+C only when `{selection}` or `{selectedText}` is in the body.
+pub fn capture_if_uses_selection(
+    body: &str,
+    capture: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    if uses_selection(body) {
+        capture()
+    } else {
+        None
+    }
+}
+
 fn uuid_v4() -> String {
     match unsafe { windows::Win32::System::Com::CoCreateGuid() } {
         Ok(g) => format!(
@@ -257,6 +269,33 @@ mod tests {
         let ctx = expansion_context(vec!["clip".into()], Some("sel".into()), 1, "en".into());
         assert_eq!(ctx.selection.as_deref(), Some("sel"));
         assert_eq!(ctx.clipboard, ["clip"]);
+    }
+
+    #[test]
+    fn keyword_does_not_capture_when_template_omits_selection() {
+        let mut captured = false;
+        let got = capture_if_uses_selection("hello {clipboard}", || {
+            captured = true;
+            Some("would-ctrl-c".into())
+        });
+        assert!(!captured);
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn keyword_captures_when_template_uses_selection_or_selected_text() {
+        let mut captured = 0usize;
+        let sel = capture_if_uses_selection("x {selection} y", || {
+            captured += 1;
+            Some("sel".into())
+        });
+        let text = capture_if_uses_selection("{selectedText}", || {
+            captured += 1;
+            Some("sel".into())
+        });
+        assert_eq!(captured, 2);
+        assert_eq!(sel.as_deref(), Some("sel"));
+        assert_eq!(text.as_deref(), Some("sel"));
     }
 
     #[test]

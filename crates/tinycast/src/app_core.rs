@@ -544,7 +544,9 @@ impl AppCore {
         if injector::insertion_refused(fg) {
             return;
         }
-        let selection = injector::capture_selection(fg, true);
+        let selection = snippet_coordinator::capture_if_uses_selection(&record.body, || {
+            injector::capture_selection(fg, true)
+        });
         let ctx = snippet_coordinator::expansion_context(
             self.clipboard.recent_text(20),
             selection,
@@ -2175,7 +2177,9 @@ impl AppCore {
         };
         let ctx = snippet_coordinator::expansion_context(
             self.clipboard.recent_text(20),
-            injector::capture_selection(self.previous_hwnd, !self.palette_visible),
+            snippet_coordinator::capture_if_uses_selection(&record.body, || {
+                injector::capture_selection(self.previous_hwnd, !self.palette_visible)
+            }),
             crate::platform::clock::local_naive_unix(),
             user_locale(),
         );
