@@ -9,13 +9,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetWindowLongPtrW, LoadIconW, PostMessageW, PostQuitMessage, RegisterClassW,
     SetForegroundWindow, SetWindowLongPtrW, TrackPopupMenu, CREATESTRUCTW, GWLP_USERDATA,
     HWND_MESSAGE, IDI_APPLICATION, MF_STRING, TPM_RETURNCMD, TPM_RIGHTBUTTON, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_CONTEXTMENU, WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCCREATE,
+    WINDOW_STYLE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY, WM_LBUTTONDBLCLK,
+    WM_LBUTTONUP, WM_NCCREATE,
     WM_RBUTTONUP, WNDCLASSW,
 };
 
 use super::messages::{
     WM_APP_INDEX, WM_CLIPBOARDUPDATE, WM_CLIPBOARD_IMAGE, WM_CUSTOM_COMMAND_FAILED, WM_OPEN_SETTINGS,
-    WM_QUIT_APP, WM_RATES, WM_SNIPPETS, WM_SNIPPET_KEYWORD, WM_TOGGLE_PALETTE, WM_TRAY,
+    WM_HOTKEY_ACTION, WM_QUIT_APP, WM_RATES, WM_SNIPPETS, WM_SNIPPET_KEYWORD, WM_TOGGLE_PALETTE,
+    WM_TRAY,
 };
 use crate::app_core::AppCore;
 
@@ -207,12 +209,28 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
+        WM_HOTKEY | WM_HOTKEY_ACTION => {
+            if msg == WM_HOTKEY {
+                crate::features::hotkeys::service::center::on_hotkey_id(wparam.0 as i32);
+            }
+            if let Some(core) = core_from(hwnd) {
+                (*core).on_hotkey_action();
+            }
+            LRESULT(0)
+        }
+        WM_ENDSESSION => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).shutdown_hotkeys();
+            }
+            LRESULT(0)
+        }
         WM_QUIT_APP => {
             let _ = DestroyWindow(hwnd);
             LRESULT(0)
         }
         WM_DESTROY => {
             if let Some(core) = core_from(hwnd) {
+                (*core).shutdown_hotkeys();
                 (*core).palette_window = None;
                 (*core).settings_window = None;
                 (*core).about_window = None;

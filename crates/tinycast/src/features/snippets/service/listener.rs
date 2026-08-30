@@ -7,23 +7,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tinycast_pure::snippet::keyword::{
     classify_input, KeywordBuffer, KeywordInput,
 };
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyState, ToUnicode, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
     VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RWIN, VK_SHIFT, VK_TAB,
     VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetForegroundWindow, PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
-    HHOOK, KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+    GetForegroundWindow, PostMessageW, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_SYSKEYDOWN,
 };
 
 use super::injector;
 use crate::platform::messages::WM_SNIPPET_KEYWORD;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
-static HOOK: AtomicIsize = AtomicIsize::new(0);
 static HOST: AtomicIsize = AtomicIsize::new(0);
 static LAST_FG: AtomicIsize = AtomicIsize::new(0);
 
@@ -62,14 +59,9 @@ impl KeywordListener {
         if host.is_invalid() {
             return;
         }
-        unsafe {
-            let hinstance = GetModuleHandleW(None).unwrap_or_default();
-            let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), hinstance, 0);
-            if let Ok(hook) = hook {
-                HOOK.store(hook.0 as isize, Ordering::SeqCst);
-                self.running = true;
-            }
-        }
+        crate::platform::keyboard_ll::set_host(host);
+        crate::platform::keyboard_ll::retain(crate::platform::keyboard_ll::SNIPPETS);
+        self.running = true;
     }
 
     pub fn update_keywords(&self, keywords: impl IntoIterator<Item = String>) {
@@ -82,12 +74,7 @@ impl KeywordListener {
 
     pub fn stop(&mut self) {
         ENABLED.store(false, Ordering::SeqCst);
-        let hook = HOOK.swap(0, Ordering::SeqCst);
-        if hook != 0 {
-            unsafe {
-                let _ = UnhookWindowsHookEx(HHOOK(hook as *mut core::ffi::c_void));
-            }
-        }
+        crate::platform::keyboard_ll::release(crate::platform::keyboard_ll::SNIPPETS);
         if let Ok(mut slot) = SHARED.lock() {
             if let Some(shared) = slot.as_mut() {
                 shared.buffer.reset();
@@ -122,11 +109,13 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code >= 0 && ENABLED.load(Ordering::SeqCst) {
-        let info = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+pub(crate) unsafe fn on_ll(wparam: WPARAM, info: &KBDLLHOOKSTRUCT) {
+    if !ENABLED.load(Ordering::SeqCst) {
+        return;
+    }
+    {
         if injector::is_synthetic(info.dwExtraInfo) {
-            return CallNextHookEx(current_hook(), code, wparam, lparam);
+            return;
         }
         let key_down = wparam.0 as u32 == WM_KEYDOWN || wparam.0 as u32 == WM_SYSKEYDOWN;
         let vk = info.vkCode as u16;
@@ -195,11 +184,6 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             }
         }
     }
-    CallNextHookEx(current_hook(), code, wparam, lparam)
-}
-
-fn current_hook() -> HHOOK {
-    HHOOK(HOOK.load(Ordering::SeqCst) as *mut core::ffi::c_void)
 }
 
 fn ctrl_down() -> bool {

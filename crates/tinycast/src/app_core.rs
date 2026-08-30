@@ -167,6 +167,7 @@ impl AppCore {
         clip_manager::listen(self.host);
         self.apply_clipboard_retention();
         self.apply_snippets_enabled();
+        self.sync_hotkeys();
         if self.hud.is_none() && !self.host.is_invalid() {
             self.hud = MessageHud::create(self.host).ok();
         }
@@ -795,6 +796,7 @@ impl AppCore {
     pub fn set_hotkey(&mut self, action: &str, binding: Option<HotKeyBinding>) {
         self.hotkeys.set(action.to_string(), binding);
         self.persist_hotkeys();
+        self.sync_hotkeys();
         self.invalidate_palette();
         self.invalidate_settings();
     }
@@ -811,15 +813,61 @@ impl AppCore {
     }
 
     pub fn pause_global_hotkeys(&self) {
+        crate::features::hotkeys::service::center::pause(self.host);
         if let Some(window) = &self.palette_window {
             crate::platform::hotkey::pause(window.hwnd);
         }
     }
 
     pub fn resume_global_hotkeys(&self) {
+        crate::features::hotkeys::service::center::resume(self.host, &self.hotkeys);
         if let Some(window) = &self.palette_window {
             crate::platform::hotkey::resume(window.hwnd);
         }
+    }
+
+    pub fn sync_hotkeys(&mut self) {
+        crate::platform::keyboard_ll::set_host(self.host);
+        crate::features::hotkeys::service::center::set_host(self.host);
+        crate::features::hotkeys::service::center::sync(self.host, &self.hotkeys);
+        crate::features::hotkeys::service::hyper::configure(
+            crate::features::hotkeys::service::hyper::HyperKey::from_raw(&self.settings.hyper_key),
+            self.settings.hyper_includes_shift,
+        );
+    }
+
+    pub fn on_hotkey_action(&mut self) {
+        let Some(action) = crate::features::hotkeys::service::center::take_pending() else {
+            return;
+        };
+        self.perform_hotkey(&action);
+    }
+
+    pub fn perform_hotkey(&mut self, action: &str) {
+        if action == "hotkey.togglePalette" {
+            self.toggle_palette();
+            return;
+        }
+        if action == "hotkey.toggleClipboard" {
+            self.open_clipboard_history();
+            return;
+        }
+        if let Some(raw) = action.strip_prefix("hotkey.systemAction.") {
+            if let Some(id) = tinycast_pure::system_action::SystemActionId::from_raw(raw) {
+                self.run_system_action(id);
+            }
+            return;
+        }
+        if let Some(raw) = action.strip_prefix("hotkey.windowCommand.") {
+            if let Some(id) = tinycast_pure::window_command::WindowCommandId::from_raw(raw) {
+                self.run_window_command(id);
+            }
+        }
+    }
+
+    pub fn shutdown_hotkeys(&mut self) {
+        crate::features::hotkeys::service::hyper::shutdown();
+        crate::features::hotkeys::service::center::pause(self.host);
     }
 
     pub fn toggle_palette(&mut self) {

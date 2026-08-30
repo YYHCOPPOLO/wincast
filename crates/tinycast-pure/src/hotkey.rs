@@ -39,6 +39,40 @@ pub fn default_toggle_palette() -> HotKeyBinding {
 }
 
 impl Modifiers {
+    pub fn hyper_chord(includes_shift: bool) -> Self {
+        Self {
+            ctrl: true,
+            alt: true,
+            shift: includes_shift,
+            win: true,
+        }
+    }
+
+    pub fn is_superset(self, other: Self) -> bool {
+        (!other.ctrl || self.ctrl)
+            && (!other.alt || self.alt)
+            && (!other.shift || self.shift)
+            && (!other.win || self.win)
+    }
+
+    pub fn subtracting(self, other: Self) -> Self {
+        Self {
+            ctrl: self.ctrl && !other.ctrl,
+            alt: self.alt && !other.alt,
+            shift: self.shift && !other.shift,
+            win: self.win && !other.win,
+        }
+    }
+
+    pub fn union(self, other: Self) -> Self {
+        Self {
+            ctrl: self.ctrl || other.ctrl,
+            alt: self.alt || other.alt,
+            shift: self.shift || other.shift,
+            win: self.win || other.win,
+        }
+    }
+
     pub fn none() -> Self {
         Self {
             ctrl: false,
@@ -90,6 +124,74 @@ pub fn capture_keydown(vk: u16, modifiers: Modifiers) -> CaptureOutcome {
         return CaptureOutcome::Commit(HotKeyBinding::Combo(KeyShortcut { vk, modifiers }));
     }
     CaptureOutcome::Ignore
+}
+
+impl KeyShortcut {
+    pub fn retargeting_hyper(self, includes_shift: bool) -> Self {
+        let stale = Modifiers::hyper_chord(!includes_shift);
+        if !self.modifiers.is_superset(stale) {
+            return self;
+        }
+        Self {
+            vk: self.vk,
+            modifiers: self
+                .modifiers
+                .subtracting(stale)
+                .union(Modifiers::hyper_chord(includes_shift)),
+        }
+    }
+
+    pub fn collapsed_label(self, hyper: Option<Modifiers>) -> String {
+        if let Some(chord) = hyper {
+            if self.modifiers.is_superset(chord) {
+                let rest = self.modifiers.subtracting(chord);
+                let mut parts = vec!["✦".to_string()];
+                if rest.ctrl {
+                    parts.push("Ctrl".into());
+                }
+                if rest.alt {
+                    parts.push("Alt".into());
+                }
+                if rest.shift {
+                    parts.push("Shift".into());
+                }
+                if rest.win {
+                    parts.push("Win".into());
+                }
+                parts.push(vk_label(self.vk).to_string());
+                return parts.join("+");
+            }
+        }
+        HotKeyBinding::Combo(self).label()
+    }
+}
+
+pub fn retarget_hyper_bindings(
+    bindings: &[(String, HotKeyBinding)],
+    includes_shift: bool,
+) -> Vec<(String, HotKeyBinding)> {
+    let mut owned: Vec<(String, HotKeyBinding)> = bindings.to_vec();
+    let current = owned.clone();
+    for (action, binding) in &current {
+        let HotKeyBinding::Combo(shortcut) = binding else {
+            continue;
+        };
+        let retargeted = shortcut.retargeting_hyper(includes_shift);
+        if retargeted == *shortcut {
+            continue;
+        }
+        let next = HotKeyBinding::Combo(retargeted);
+        if current
+            .iter()
+            .any(|(other, b)| other != action && *b == next)
+        {
+            continue;
+        }
+        if let Some(slot) = owned.iter_mut().find(|(a, _)| a == action) {
+            slot.1 = next;
+        }
+    }
+    owned
 }
 
 impl HotKeyBinding {
@@ -249,5 +351,20 @@ mod tests {
             capture_keydown(0x11, Modifiers::none()),
             CaptureOutcome::Ignore
         );
+    }
+
+    #[test]
+    fn hyper_chord_is_ctrl_alt_win() {
+        let chord = Modifiers::hyper_chord(false);
+        assert!(chord.ctrl && chord.alt && chord.win && !chord.shift);
+        let with_shift = Modifiers::hyper_chord(true);
+        assert!(with_shift.shift);
+        let stale = KeyShortcut {
+            vk: 0x47,
+            modifiers: Modifiers::hyper_chord(false),
+        };
+        let next = stale.retargeting_hyper(true);
+        assert!(next.modifiers.shift);
+        assert_eq!(next.vk, 0x47);
     }
 }

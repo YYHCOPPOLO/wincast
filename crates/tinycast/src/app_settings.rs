@@ -27,6 +27,12 @@ pub struct AppSettings {
     pub emoji_skin_tone: String,
     #[serde(rename = "launchAtLogin")]
     pub launch_at_login: bool,
+    #[serde(default = "default_hyper", rename = "hyperKeyPhysicalKey")]
+    pub hyper_key: String,
+    #[serde(default, rename = "hyperKeyIncludesShift")]
+    pub hyper_includes_shift: bool,
+    #[serde(default = "default_hyper_quick", rename = "hyperKeyQuickPress")]
+    pub hyper_quick_press: String,
     #[serde(default = "default_search_scopes", rename = "launcherSearchScopes")]
     pub launcher_search_scopes: Vec<String>,
     #[serde(default, rename = "fileSearchEnabled")]
@@ -75,6 +81,9 @@ impl Default for AppSettings {
             appearance: Appearance::System,
             emoji_skin_tone: default_skin(),
             launch_at_login: false,
+            hyper_key: default_hyper(),
+            hyper_includes_shift: false,
+            hyper_quick_press: default_hyper_quick(),
             launcher_search_scopes: default_search_scopes(),
             file_search_enabled: false,
             notes_enabled: false,
@@ -116,6 +125,14 @@ impl AppSettings {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_hyper() -> String {
+    "none".into()
+}
+
+fn default_hyper_quick() -> String {
+    "none".into()
 }
 
 fn default_skin() -> String {

@@ -2,6 +2,7 @@ pub(crate) mod clipboard;
 pub(crate) mod clock;
 mod dpi;
 pub mod hotkey;
+pub(crate) mod keyboard_ll;
 pub(crate) mod launch_at_login;
 pub mod messages;
 pub(crate) mod paster;

@@ -43,6 +43,13 @@ impl HotKeyStore {
         self.bindings.get(action)
     }
 
+    pub fn snapshot(&self) -> Vec<(String, HotKeyBinding)> {
+        self.bindings
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
     pub fn set(&mut self, action: String, binding: Option<HotKeyBinding>) {
         if action.is_empty() {
             return;
