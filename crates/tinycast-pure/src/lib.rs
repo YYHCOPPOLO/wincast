@@ -32,3 +32,6 @@ pub mod template_tokens;
 pub mod theme;
 pub mod visibility;
 pub mod volume;
+pub mod window_action_memory;
+pub mod window_command;
+pub mod window_layout;
