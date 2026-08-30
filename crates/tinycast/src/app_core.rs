@@ -29,6 +29,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::app_settings::AppSettings;
+use crate::features::calculator::service::rates::CurrencyRateStore;
 use crate::features::launcher::service::app_index::AppIndex;
 use crate::features::launcher::settings::items::{
     commands_catalog, commit_alias_text, hotkey_action_key,
@@ -65,6 +66,7 @@ pub struct AppCore {
     pub aliases: AliasStore,
     pub hotkeys: HotKeyStore,
     pub settings: AppSettings,
+    pub currency_rates: CurrencyRateStore,
     host: HWND,
     list_scroll: f32,
     expanded: bool,
@@ -94,6 +96,7 @@ impl AppCore {
             aliases: AliasStore::load(store_path("aliases.json")),
             hotkeys: HotKeyStore::load(store_path("hotkeys.json")),
             settings: AppSettings::load(),
+            currency_rates: CurrencyRateStore::new(),
             host: HWND::default(),
             list_scroll: 0.0,
             expanded: false,
@@ -118,6 +121,12 @@ impl AppCore {
         self.list_scroll = 0.0;
         self.close_menu();
         self.app_index.start();
+        self.currency_rates.start(self.host);
+    }
+
+    pub fn install_rates(&mut self) {
+        self.currency_rates.install();
+        self.invalidate_palette();
     }
 
     pub fn set_host(&mut self, host: HWND) {

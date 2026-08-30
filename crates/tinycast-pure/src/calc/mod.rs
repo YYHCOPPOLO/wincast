@@ -6,8 +6,12 @@ mod engine;
 mod format;
 mod units;
 
-pub use currency::CurrencyRates;
+pub use currency::{currency_for_locale, merge_feeds, prices_coins, CurrencyRates};
 pub use engine::evaluate;
+
+pub fn lookup(rates: &CurrencyRates, code: &str) -> Option<f64> {
+    rates.rate(code)
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CalcResult {
@@ -55,6 +59,12 @@ impl CalcResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crypto_overwrites_fiat_on_same_code() {
+        let rates = merge_feeds(&[("USD", 1.0), ("BTC", 999.0)], &[("BTC", 65000.0)]);
+        assert_eq!(lookup(&rates, "BTC"), Some(65000.0));
+    }
 
     #[test]
     fn arithmetic_and_units() {

@@ -10,10 +10,217 @@ pub(crate) struct CurrencyDef {
 }
 
 /// A rate snapshot in units per 1 base currency. The engine never fetches.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CurrencyRates {
     pub fetched_at: i64,
     pub units_per_base: Vec<(String, f64)>,
+}
+
+/// Last-wins merge: crypto quotes overwrite fiat on the same code.
+pub fn merge_feeds(fiat: &[(&str, f64)], crypto: &[(&str, f64)]) -> CurrencyRates {
+    let mut units_per_base = Vec::new();
+    for (code, rate) in fiat.iter().chain(crypto.iter()) {
+        upsert_rate(&mut units_per_base, code, *rate);
+    }
+    CurrencyRates {
+        fetched_at: 0,
+        units_per_base,
+    }
+}
+
+/// Whole snapshots price at least one of the coins this app asks the coin feed for.
+pub fn prices_coins(rates: &CurrencyRates) -> bool {
+    ["BTC", "ETH", "SOL"]
+        .iter()
+        .any(|code| rates.rate(code).is_some())
+}
+
+/// ISO 4217 from a BCP-47 locale (`en-US`, `zh-Hans-CN`). Region is the last 2-letter subtag.
+pub fn currency_for_locale(locale: &str) -> Option<&'static str> {
+    region_currency(locale_region(locale)?)
+}
+
+fn locale_region(locale: &str) -> Option<[u8; 2]> {
+    let tag = locale.split(['-', '_']).rev().find(|part| {
+        part.len() == 2 && part.bytes().all(|b| b.is_ascii_alphabetic())
+    })?;
+    let bytes = tag.as_bytes();
+    Some([bytes[0].to_ascii_uppercase(), bytes[1].to_ascii_uppercase()])
+}
+
+fn upsert_rate(table: &mut Vec<(String, f64)>, code: &str, rate: f64) {
+    if let Some(existing) = table
+        .iter_mut()
+        .find(|(c, _)| c.eq_ignore_ascii_case(code))
+    {
+        existing.0 = code.to_string();
+        existing.1 = rate;
+        return;
+    }
+    table.push((code.to_string(), rate));
+}
+
+fn region_currency(region: [u8; 2]) -> Option<&'static str> {
+    Some(match &region {
+        b"AD" | b"AT" | b"AX" | b"BE" | b"CY" | b"DE" | b"EE" | b"ES" | b"EU" | b"FI" | b"FR"
+        | b"GR" | b"HR" | b"IE" | b"IT" | b"LT" | b"LU" | b"LV" | b"MC" | b"ME" | b"MT" | b"NL"
+        | b"PT" | b"SI" | b"SK" | b"SM" | b"VA" | b"XK" => "EUR",
+        b"AE" => "AED",
+        b"AF" => "AFN",
+        b"AG" | b"AI" | b"DM" | b"GD" | b"KN" | b"LC" | b"MS" | b"VC" => "XCD",
+        b"AL" => "ALL",
+        b"AM" => "AMD",
+        b"AO" => "AOA",
+        b"AR" => "ARS",
+        b"AS" | b"EC" | b"FM" | b"GU" | b"MH" | b"MP" | b"PR" | b"PW" | b"SV" | b"TC" | b"TL"
+        | b"UM" | b"US" | b"VG" | b"VI" => "USD",
+        b"AU" | b"CC" | b"CX" | b"HM" | b"KI" | b"NF" | b"NR" | b"TV" => "AUD",
+        b"AW" => "AWG",
+        b"AZ" => "AZN",
+        b"BA" => "BAM",
+        b"BB" => "BBD",
+        b"BD" => "BDT",
+        b"BF" | b"BJ" | b"CI" | b"GW" | b"ML" | b"NE" | b"SN" | b"TG" => "XOF",
+        b"BG" => "BGN",
+        b"BH" => "BHD",
+        b"BI" => "BIF",
+        b"BM" => "BMD",
+        b"BN" => "BND",
+        b"BO" => "BOB",
+        b"BR" => "BRL",
+        b"BS" => "BSD",
+        b"BT" => "BTN",
+        b"BW" => "BWP",
+        b"BY" => "BYN",
+        b"BZ" => "BZD",
+        b"CA" => "CAD",
+        b"CD" => "CDF",
+        b"CF" | b"CG" | b"CM" | b"GA" | b"GQ" | b"TD" => "XAF",
+        b"CH" | b"LI" => "CHF",
+        b"CL" => "CLP",
+        b"CN" => "CNY",
+        b"CO" => "COP",
+        b"CR" => "CRC",
+        b"CU" => "CUP",
+        b"CV" => "CVE",
+        b"CZ" => "CZK",
+        b"DJ" => "DJF",
+        b"DK" | b"FO" | b"GL" => "DKK",
+        b"DO" => "DOP",
+        b"DZ" => "DZD",
+        b"EG" => "EGP",
+        b"ER" => "ERN",
+        b"ET" => "ETB",
+        b"FJ" => "FJD",
+        b"FK" => "FKP",
+        b"GB" => "GBP",
+        b"GE" => "GEL",
+        b"GG" => "GGP",
+        b"GH" => "GHS",
+        b"GI" => "GIP",
+        b"GM" => "GMD",
+        b"GN" => "GNF",
+        b"GT" => "GTQ",
+        b"GY" => "GYD",
+        b"HK" => "HKD",
+        b"HN" => "HNL",
+        b"HT" => "HTG",
+        b"HU" => "HUF",
+        b"ID" => "IDR",
+        b"IL" | b"PS" => "ILS",
+        b"IM" => "IMP",
+        b"IN" => "INR",
+        b"IQ" => "IQD",
+        b"IR" => "IRR",
+        b"IS" => "ISK",
+        b"JE" => "JEP",
+        b"JM" => "JMD",
+        b"JO" => "JOD",
+        b"JP" => "JPY",
+        b"KE" => "KES",
+        b"KG" => "KGS",
+        b"KH" => "KHR",
+        b"KM" => "KMF",
+        b"KP" => "KPW",
+        b"KR" => "KRW",
+        b"KW" => "KWD",
+        b"KY" => "KYD",
+        b"KZ" => "KZT",
+        b"LA" => "LAK",
+        b"LB" => "LBP",
+        b"LK" => "LKR",
+        b"LR" => "LRD",
+        b"LS" => "LSL",
+        b"LY" => "LYD",
+        b"MA" | b"EH" => "MAD",
+        b"MD" => "MDL",
+        b"MG" => "MGA",
+        b"MK" => "MKD",
+        b"MM" => "MMK",
+        b"MN" => "MNT",
+        b"MO" => "MOP",
+        b"MR" => "MRU",
+        b"MU" => "MUR",
+        b"MV" => "MVR",
+        b"MW" => "MWK",
+        b"MX" => "MXN",
+        b"MY" => "MYR",
+        b"MZ" => "MZN",
+        b"NA" => "NAD",
+        b"NG" => "NGN",
+        b"NI" => "NIO",
+        b"NO" | b"BV" | b"SJ" => "NOK",
+        b"NP" => "NPR",
+        b"NZ" | b"CK" | b"NU" | b"PN" | b"TK" => "NZD",
+        b"OM" => "OMR",
+        b"PA" => "PAB",
+        b"PE" => "PEN",
+        b"PG" => "PGK",
+        b"PH" => "PHP",
+        b"PK" => "PKR",
+        b"PL" => "PLN",
+        b"PY" => "PYG",
+        b"QA" => "QAR",
+        b"RO" => "RON",
+        b"RS" => "RSD",
+        b"RU" => "RUB",
+        b"RW" => "RWF",
+        b"SA" => "SAR",
+        b"SB" => "SBD",
+        b"SC" => "SCR",
+        b"SD" => "SDG",
+        b"SE" => "SEK",
+        b"SG" => "SGD",
+        b"SH" => "SHP",
+        b"SL" => "SLE",
+        b"SO" => "SOS",
+        b"SR" => "SRD",
+        b"ST" => "STN",
+        b"SY" => "SYP",
+        b"SZ" => "SZL",
+        b"TH" => "THB",
+        b"TJ" => "TJS",
+        b"TM" => "TMT",
+        b"TN" => "TND",
+        b"TO" => "TOP",
+        b"TR" => "TRY",
+        b"TT" => "TTD",
+        b"TW" => "TWD",
+        b"TZ" => "TZS",
+        b"UA" => "UAH",
+        b"UG" => "UGX",
+        b"UY" => "UYU",
+        b"UZ" => "UZS",
+        b"VE" => "VES",
+        b"VN" => "VND",
+        b"VU" => "VUV",
+        b"WF" | b"PF" | b"NC" => "XPF",
+        b"WS" => "WST",
+        b"YE" => "YER",
+        b"ZA" => "ZAR",
+        b"ZM" => "ZMW",
+        _ => return None,
+    })
 }
 
 impl CurrencyRates {
@@ -456,3 +663,17 @@ const ALIASES: &[(&str, &str)] = &[
     ("zloty", "PLN"),
     ("zlotys", "PLN"),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn locale_maps_to_iso_4217() {
+        assert_eq!(currency_for_locale("en-US"), Some("USD"));
+        assert_eq!(currency_for_locale("en-GB"), Some("GBP"));
+        assert_eq!(currency_for_locale("bn-BD"), Some("BDT"));
+        assert_eq!(currency_for_locale("zh-Hans-CN"), Some("CNY"));
+        assert!(currency_for_locale("en").is_none());
+    }
+}
