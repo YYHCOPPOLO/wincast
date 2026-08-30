@@ -24,6 +24,8 @@ pub enum LaunchSpec {
     OpenClipboardHistory,
     ExpandSnippet(String),
     RunCustomCommand(String),
+    OpenQuicklink(String),
+    SearchQuicklinks,
     Noop,
 }
 
@@ -73,10 +75,12 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:support" => LaunchSpec::OpenSupport,
             "command:calculator-history" => LaunchSpec::OpenCalculatorHistory,
             "command:clipboard-history" => LaunchSpec::OpenClipboardHistory,
+            "command:search-quicklinks" => LaunchSpec::SearchQuicklinks,
             _ => LaunchSpec::Noop,
         },
         AppKind::Snippet => LaunchSpec::ExpandSnippet(entry.id.clone()),
         AppKind::CustomCommand => LaunchSpec::RunCustomCommand(entry.id.clone()),
+        AppKind::Quicklink => LaunchSpec::OpenQuicklink(entry.id.clone()),
         _ => LaunchSpec::Noop,
     }
 }
@@ -164,6 +168,8 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::OpenClipboardHistory
         | LaunchSpec::ExpandSnippet(_)
         | LaunchSpec::RunCustomCommand(_)
+        | LaunchSpec::OpenQuicklink(_)
+        | LaunchSpec::SearchQuicklinks
         | LaunchSpec::Noop => Ok(()),
     }
 }

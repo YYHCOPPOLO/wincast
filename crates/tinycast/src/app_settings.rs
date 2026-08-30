@@ -51,6 +51,8 @@ pub struct AppSettings {
     pub extensions_enabled: bool,
     #[serde(default, rename = "quicklinksEnabled")]
     pub quicklinks_enabled: bool,
+    #[serde(default = "default_true", rename = "quicklinksShowInLauncher")]
+    pub quicklinks_show_in_launcher: bool,
     #[serde(default = "default_retention_days", rename = "clipboardRetentionDays")]
     pub clipboard_retention_days: i64,
     #[serde(default = "default_disabled_apps", rename = "clipboardDisabledApps")]
@@ -77,6 +79,7 @@ impl Default for AppSettings {
             quick_actions_enabled: false,
             extensions_enabled: false,
             quicklinks_enabled: false,
+            quicklinks_show_in_launcher: true,
             clipboard_retention_days: default_retention_days(),
             clipboard_disabled_apps: default_disabled_apps(),
         }

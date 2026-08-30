@@ -42,8 +42,15 @@ pub fn path_from_entry_id(id: &str) -> Option<&str> {
     id.strip_prefix("snippet:")
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArgumentKind {
+    Snippet,
+    Quicklink,
+}
+
 #[derive(Clone, Debug)]
 pub struct ArgumentSession {
+    pub kind: ArgumentKind,
     pub snippet_path: String,
     pub snippet_name: String,
     pub show_confirmation: bool,
@@ -214,6 +221,7 @@ mod tests {
     #[test]
     fn argument_session_backspace_restores_previous() {
         let mut session = ArgumentSession {
+            kind: ArgumentKind::Snippet,
             snippet_path: "a.md".into(),
             snippet_name: "A".into(),
             show_confirmation: false,

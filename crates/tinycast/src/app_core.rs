@@ -49,6 +49,8 @@ use crate::features::launcher::ui::list::{
     selectable_at_y, slots_of, PaintItem, ROW_HEIGHT,
 };
 use crate::features::custom_commands::service::store::CustomCommandStore;
+use crate::features::quicklinks::service::store::QuicklinkStore;
+use crate::features::quicklinks::ui::coordinator as quicklink_coordinator;
 use crate::features::custom_commands::ui::coordinator as custom_coordinator;
 use crate::features::snippets::service::injector;
 use crate::features::snippets::service::listener::KeywordListener;
@@ -86,6 +88,7 @@ pub struct AppCore {
     snippet_repo: SnippetRepository,
     snippet_records: Vec<tinycast_pure::snippet::StoredSnippet>,
     custom_commands: CustomCommandStore,
+    quicklinks: QuicklinkStore,
     snippet_listener: KeywordListener,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
@@ -126,6 +129,7 @@ impl AppCore {
             snippet_repo: SnippetRepository::in_roaming(),
             snippet_records: Vec::new(),
             custom_commands: CustomCommandStore::load(),
+            quicklinks: QuicklinkStore::load(),
             snippet_listener: KeywordListener::new(),
             argument_session: None,
             hud: None,
@@ -401,6 +405,27 @@ impl AppCore {
     }
 
     pub fn launcher_paint_items(&self) -> Vec<PaintItem> {
+        if self.palette.mode == PaletteMode::Quicklinks {
+            let q = self.palette.query.to_lowercase();
+            let mut items = Vec::new();
+            for (i, link) in self
+                .quicklinks
+                .links()
+                .iter()
+                .filter(|l| q.is_empty() || l.name.to_lowercase().contains(&q))
+                .enumerate()
+            {
+                items.push(PaintItem::Row {
+                    title: link.name.clone(),
+                    alias: None,
+                    trailing: String::new(),
+                    keycap: None,
+                    icon_source: None,
+                    selected: i == self.palette.selection,
+                });
+            }
+            return items;
+        }
         if self.palette.mode == PaletteMode::QuicklinkArguments {
             if let Some(session) = &self.argument_session {
                 return snippet_coordinator::paint_argument_items(
@@ -809,6 +834,20 @@ impl AppCore {
         if !self.palette_visible {
             return;
         }
+        if self.palette.mode == PaletteMode::Quicklinks {
+            let q = self.palette.query.to_lowercase();
+            let links: Vec<_> = self
+                .quicklinks
+                .links()
+                .iter()
+                .filter(|l| q.is_empty() || l.name.to_lowercase().contains(&q))
+                .cloned()
+                .collect();
+            if let Some(link) = links.get(self.palette.selection) {
+                self.open_quicklink(&link.as_entry().id);
+            }
+            return;
+        }
         if self.palette.mode == PaletteMode::QuicklinkArguments {
             self.commit_argument();
             return;
@@ -900,6 +939,8 @@ impl AppCore {
             LaunchSpec::OpenClipboardHistory => self.open_clipboard_history(),
             LaunchSpec::ExpandSnippet(id) => self.begin_snippet_expansion(&id),
             LaunchSpec::RunCustomCommand(id) => self.run_custom_command(&id),
+            LaunchSpec::OpenQuicklink(id) => self.open_quicklink(&id),
+            LaunchSpec::SearchQuicklinks => self.open_quicklinks_search(),
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -959,6 +1000,15 @@ impl AppCore {
     fn catalog(&self) -> Vec<AppEntry> {
         let flags = self.feature_flags();
         let mut entries = self.entries.clone();
+        if self.settings.quicklinks_enabled && self.settings.quicklinks_show_in_launcher {
+            entries.extend(
+                self.quicklinks
+                    .links()
+                    .iter()
+                    .filter(|l| l.show_in_root)
+                    .map(|l| l.as_entry()),
+            );
+        }
         if self.settings.custom_commands_enabled && self.settings.custom_commands_show_in_launcher {
             entries.extend(self.custom_commands.commands().iter().map(|c| c.as_entry()));
         }
@@ -1350,6 +1400,14 @@ impl AppCore {
                 .clipboard
                 .search(&self.palette.query, self.clipboard_filter)
                 .len(),
+            PaletteMode::Quicklinks => {
+                let q = self.palette.query.to_lowercase();
+                self.quicklinks
+                    .links()
+                    .iter()
+                    .filter(|l| q.is_empty() || l.name.to_lowercase().contains(&q))
+                    .count()
+            }
             PaletteMode::QuicklinkArguments => self
                 .argument_session
                 .as_ref()
@@ -1654,6 +1712,83 @@ impl AppCore {
         self.list_scroll = clamp_scroll(self.list_scroll, content_height(&slots), view_h);
     }
 
+    fn open_quicklinks_search(&mut self) {
+        if !self.settings.quicklinks_enabled {
+            return;
+        }
+        self.close_menu();
+        let was_visible = self.palette_visible;
+        if !was_visible {
+            self.remember_previous_hwnd();
+        }
+        self.palette.prepare(PaletteMode::Quicklinks);
+        self.palette_visible = true;
+        self.expanded = true;
+        self.list_scroll = 0.0;
+        if was_visible {
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+            }
+            self.relayout_palette();
+            self.invalidate_palette();
+        } else {
+            self.show_palette_window();
+            self.expand_palette();
+        }
+    }
+
+    fn open_quicklink(&mut self, entry_id: &str) {
+        if !self.settings.quicklinks_enabled {
+            return;
+        }
+        let Some(id) = tinycast_pure::quicklink::id_from_entry(entry_id) else {
+            return;
+        };
+        let Some(link) = self.quicklinks.get(id).cloned() else {
+            return;
+        };
+        let ctx = snippet_coordinator::expansion_context(
+            self.clipboard.recent_text(20),
+            None,
+            crate::platform::clock::local_naive_unix(),
+            user_locale(),
+        );
+        let output = tinycast_pure::quicklink::expand_destination(
+            &link.destination,
+            &ctx,
+            &Default::default(),
+        );
+        if output.arguments.is_empty() {
+            self.hide_palette();
+            if let Err(err) = quicklink_coordinator::open_destination(&output.text) {
+                self.show_message_hud(&err);
+            }
+            return;
+        }
+        self.argument_session = Some(snippet_coordinator::ArgumentSession {
+            kind: snippet_coordinator::ArgumentKind::Quicklink,
+            snippet_path: link.id,
+            snippet_name: link.name,
+            show_confirmation: false,
+            specs: output.arguments,
+            values: std::collections::HashMap::new(),
+            index: 0,
+            clipboard: ctx.clipboard,
+            selection: ctx.selection,
+            now: ctx.now,
+            locale: ctx.locale,
+            tz: ctx.tz,
+        });
+        self.palette.prepare(PaletteMode::QuicklinkArguments);
+        self.palette_visible = true;
+        self.expanded = true;
+        if let Some(window) = &self.palette_window {
+            window.reset_search();
+        }
+        self.relayout_palette();
+        self.invalidate_palette();
+    }
+
     fn run_custom_command(&mut self, entry_id: &str) {
         if !self.settings.custom_commands_enabled {
             return;
@@ -1738,6 +1873,7 @@ impl AppCore {
             return;
         }
         self.argument_session = Some(snippet_coordinator::ArgumentSession {
+            kind: snippet_coordinator::ArgumentKind::Snippet,
             snippet_path: path.to_string(),
             snippet_name: record.name.clone(),
             show_confirmation: record.show_confirmation,
@@ -1810,6 +1946,28 @@ impl AppCore {
         let Some(session) = self.argument_session.take() else {
             return;
         };
+        if session.kind == snippet_coordinator::ArgumentKind::Quicklink {
+            let Some(link) = self.quicklinks.get(&session.snippet_path).cloned() else {
+                self.hide_palette();
+                return;
+            };
+            let ctx = snippet_coordinator::expansion_context(
+                session.clipboard,
+                session.selection,
+                session.now,
+                session.locale,
+            );
+            let output = tinycast_pure::quicklink::expand_destination(
+                &link.destination,
+                &ctx,
+                &session.values,
+            );
+            self.hide_palette();
+            if let Err(err) = quicklink_coordinator::open_destination(&output.text) {
+                self.show_message_hud(&err);
+            }
+            return;
+        }
         let Some(record) = self
             .snippet_records
             .iter()
