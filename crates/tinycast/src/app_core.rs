@@ -751,6 +751,11 @@ impl AppCore {
     pub fn settings_entries(&self, kind: AppKind) -> Vec<AppEntry> {
         let mut entries = match kind {
             AppKind::Command => commands_catalog(),
+            AppKind::SystemAction => tinycast_pure::system_action::SystemActionId::all()
+                .iter()
+                .copied()
+                .map(tinycast_pure::system_action::SystemActionId::as_entry)
+                .collect(),
             _ => self
                 .entries
                 .iter()
@@ -1241,10 +1246,113 @@ impl AppCore {
                 self.hide_palette();
                 self.export_quicklinks(self.host);
             }
+            LaunchSpec::RunSystemAction(id) => {
+                if let Some(action) =
+                    tinycast_pure::system_action::SystemActionId::from_entry_id(&id)
+                {
+                    self.run_system_action(action);
+                }
+            }
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
             }
+        }
+    }
+
+    pub fn run_system_action(&mut self, id: tinycast_pure::system_action::SystemActionId) {
+        use crate::features::system_actions::ui::coordinator as sys;
+        let previous = self.previous_hwnd;
+        if self.palette_visible {
+            self.hide_palette();
+        }
+        if sys::is_stage_manager(id) {
+            self.show_message_hud_tone(
+                sys::STAGE_MANAGER_UNAVAILABLE,
+                tinycast_pure::dialog::DialogTone::Neutral,
+            );
+            return;
+        }
+        match sys::plan(id) {
+            sys::RunPlan::Confirm {
+                title,
+                message,
+                accept,
+            } => {
+                if !sys::gated_run(sys::confirm(&title, &message, &accept)) {
+                    return;
+                }
+                self.apply_system_action(id, previous);
+            }
+            sys::RunPlan::PickVolume => {
+                let current = crate::features::system_actions::service::runner::current_volume()
+                    .unwrap_or(0.5);
+                let Some(level) = crate::surfaces::dialog::pick_volume(current) else {
+                    return;
+                };
+                if let Err(failure) =
+                    crate::features::system_actions::service::runner::set_volume(level)
+                {
+                    self.present_system_action_failure(id, failure);
+                    return;
+                }
+                self.show_volume_hud();
+            }
+            sys::RunPlan::Execute => self.apply_system_action(id, previous),
+        }
+    }
+
+    fn apply_system_action(
+        &mut self,
+        id: tinycast_pure::system_action::SystemActionId,
+        previous: HWND,
+    ) {
+        use crate::features::system_actions::ui::coordinator as sys;
+        match sys::execute(id, previous) {
+            Ok(feedback) => {
+                if sys::shows_volume(id) {
+                    self.show_volume_hud();
+                } else if let Some(feedback) = feedback {
+                    self.show_message_hud_tone(&feedback.message, sys::tone_for(&feedback));
+                }
+            }
+            Err(failure) => self.present_system_action_failure(id, failure),
+        }
+    }
+
+    fn present_system_action_failure(
+        &mut self,
+        id: tinycast_pure::system_action::SystemActionId,
+        failure: crate::features::system_actions::service::runner::Failure,
+    ) {
+        crate::surfaces::dialog::alert(
+            &format!("“{}” Failed", id.name()),
+            &failure.message,
+        );
+        if let Some(uri) = failure.settings_uri {
+            let _ = crate::features::launcher::ui::coordinator::execute(
+                &LaunchSpec::Uri(uri.to_string()),
+            );
+        }
+    }
+
+    fn show_message_hud_tone(&mut self, message: &str, tone: tinycast_pure::dialog::DialogTone) {
+        if self.hud.is_none() && !self.host.is_invalid() {
+            self.hud = MessageHud::create(self.host).ok();
+        }
+        if let Some(hud) = &self.hud {
+            hud.show_message(message, tone);
+        }
+    }
+
+    fn show_volume_hud(&mut self) {
+        let (level, muted) =
+            crate::features::system_actions::service::runner::output_state().unwrap_or((0.0, true));
+        if self.hud.is_none() && !self.host.is_invalid() {
+            self.hud = MessageHud::create(self.host).ok();
+        }
+        if let Some(hud) = &self.hud {
+            hud.show_volume(level, muted);
         }
     }
 
@@ -1320,6 +1428,12 @@ impl AppCore {
                     .map(snippet_coordinator::snippet_entry),
             );
         }
+        entries.extend(
+            tinycast_pure::system_action::SystemActionId::all()
+                .iter()
+                .copied()
+                .map(tinycast_pure::system_action::SystemActionId::as_entry),
+        );
         entries.extend(
             CommandID::all()
                 .iter()
@@ -2877,6 +2991,34 @@ mod tests {
         assert_ne!(
             launch_spec(&CommandID::CreateQuicklink.as_entry()),
             LaunchSpec::Noop
+        );
+    }
+
+    #[test]
+    fn system_actions_publish_on() {
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.favorites = tinycast_pure::favorites::FavoritesStore::default();
+        c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.toggle_palette();
+        c.expand_select_first();
+        let items = c.launcher_paint_items();
+        assert!(items.iter().any(|item| matches!(
+            item,
+            PaintItem::Row { title, .. } if title == "Lock Screen"
+        )));
+        assert!(items.iter().any(|item| matches!(
+            item,
+            PaintItem::Row { title, .. } if title == "Toggle Stage Manager"
+        )));
+        let listed = c.settings_entries(AppKind::SystemAction);
+        assert_eq!(
+            listed.len(),
+            tinycast_pure::system_action::SystemActionId::all().len()
+        );
+        assert_eq!(
+            launch_spec(&tinycast_pure::system_action::SystemActionId::LockScreen.as_entry()),
+            LaunchSpec::RunSystemAction("system-action:lock-screen".into())
         );
     }
 }

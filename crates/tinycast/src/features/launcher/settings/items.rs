@@ -106,11 +106,20 @@ impl LauncherItemsSection {
         }
     }
 
+    pub fn system_actions() -> Self {
+        Self {
+            kind: AppKind::SystemAction,
+            header: "System Actions",
+            search_prompt: "Search system actions…",
+        }
+    }
+
     pub fn for_tab(tab: SettingsTab) -> Option<Self> {
         match tab {
             SettingsTab::Applications => Some(Self::applications()),
             SettingsTab::SystemSettings => Some(Self::system_settings()),
             SettingsTab::Commands => Some(Self::commands()),
+            SettingsTab::SystemActions => Some(Self::system_actions()),
             _ => None,
         }
     }
@@ -184,6 +193,10 @@ pub fn hotkey_action_key(entry: &AppEntry) -> Option<String> {
         AppKind::Command => CommandID::from_raw(&entry.id)
             .and_then(CommandID::hotkey_defaults_key)
             .map(str::to_string),
+        AppKind::SystemAction => tinycast_pure::system_action::SystemActionId::from_entry_id(
+            &entry.id,
+        )
+        .map(|id| format!("hotkey.systemAction.{}", id.raw())),
         _ => None,
     }
 }

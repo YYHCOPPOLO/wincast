@@ -8,6 +8,7 @@ pub mod app_settings_key;
 pub mod command_id;
 pub mod emoji;
 pub mod custom_command;
+pub mod dialog;
 pub mod favorites;
 pub mod feature_flags;
 pub mod hotkey;

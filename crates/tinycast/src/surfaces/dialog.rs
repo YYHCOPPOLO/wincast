@@ -28,6 +28,8 @@ const ID_CONTINUE: usize = 1;
 const ID_CANCEL: usize = 2;
 
 static DIALOG_UP: AtomicBool = AtomicBool::new(false);
+static LAST_VOLUME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static VOLUME_ACCEPTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmPrompt {
@@ -56,6 +58,28 @@ pub fn confirm(prompt: &ConfirmPrompt) -> bool {
     run(prompt, true)
 }
 
+/// Set Volume slider: ←/→ walk the 5% grid, Enter accepts, Escape cancels.
+pub fn pick_volume(current: f32) -> Option<f32> {
+    if !begin() {
+        return None;
+    }
+    VOLUME_ACCEPTED.store(false, Ordering::SeqCst);
+    LAST_VOLUME.store(current.to_bits(), Ordering::SeqCst);
+    let prompt = ConfirmPrompt {
+        title: "Set Volume".into(),
+        message: "Choose the output volume. Use Left and Right to adjust.".into(),
+        accept: "Set Volume".into(),
+        cancel: "Cancel".into(),
+    };
+    let accepted = run_volume(&prompt, current);
+    end();
+    if accepted {
+        Some(f32::from_bits(LAST_VOLUME.load(Ordering::SeqCst)))
+    } else {
+        None
+    }
+}
+
 /// Single Continue button for failure reports.
 pub fn alert(title: &str, message: &str) {
     let prompt = ConfirmPrompt {
@@ -72,7 +96,7 @@ pub fn alert(title: &str, message: &str) {
 }
 
 fn run(prompt: &ConfirmPrompt, has_cancel: bool) -> bool {
-    let hwnd = match create_window(prompt, has_cancel) {
+    let hwnd = match create_window(prompt, has_cancel, None) {
         Ok(h) => h,
         Err(_) => return false,
     };
@@ -112,15 +136,65 @@ fn run(prompt: &ConfirmPrompt, has_cancel: bool) -> bool {
     }
 }
 
+fn run_volume(prompt: &ConfirmPrompt, current: f32) -> bool {
+    let hwnd = match create_window(prompt, true, Some(current)) {
+        Ok(h) => h,
+        Err(_) => return false,
+    };
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = SetForegroundWindow(hwnd);
+        let _ = SetFocus(hwnd);
+        let mut msg = MSG::default();
+        while IsWindow(hwnd).as_bool() {
+            let ok = GetMessageW(&mut msg, HWND::default(), 0, 0);
+            if !ok.as_bool() {
+                break;
+            }
+            if msg.message == WM_KEYDOWN {
+                let vk = msg.wParam.0 as u16;
+                if vk == 0x1B {
+                    set_result(hwnd, false);
+                    let _ = DestroyWindow(hwnd);
+                    continue;
+                }
+                if vk == 0x0D {
+                    set_result(hwnd, true);
+                    let _ = DestroyWindow(hwnd);
+                    continue;
+                }
+                if vk == 0x25 || vk == 0x27 {
+                    nudge_volume(hwnd, vk == 0x27);
+                    continue;
+                }
+            }
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        while PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
+            if msg.message == WM_PAINT || msg.message == 0x0012 {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+        take_result()
+    }
+}
+
 struct Inner {
     prompt: ConfirmPrompt,
     has_cancel: bool,
     result: bool,
     continue_rect: RECT,
     cancel_rect: RECT,
+    volume: Option<f32>,
 }
 
-fn create_window(prompt: &ConfirmPrompt, has_cancel: bool) -> windows::core::Result<HWND> {
+fn create_window(
+    prompt: &ConfirmPrompt,
+    has_cancel: bool,
+    volume: Option<f32>,
+) -> windows::core::Result<HWND> {
     unsafe {
         let hinstance = GetModuleHandleW(None)?;
         let class = WNDCLASSW {
@@ -144,6 +218,7 @@ fn create_window(prompt: &ConfirmPrompt, has_cancel: bool) -> windows::core::Res
             result: false,
             continue_rect: RECT::default(),
             cancel_rect: RECT::default(),
+            volume,
         });
         let ptr = Box::into_raw(inner);
         let hwnd = match CreateWindowExW(
@@ -192,12 +267,30 @@ fn position(hwnd: HWND) {
     }
 }
 
+fn nudge_volume(hwnd: HWND, up: bool) {
+    unsafe {
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+        if ptr.is_null() {
+            return;
+        }
+        if let Some(level) = (*ptr).volume {
+            let next = tinycast_pure::volume::volume_step(level, up);
+            (*ptr).volume = Some(next);
+            LAST_VOLUME.store(next.to_bits(), Ordering::SeqCst);
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, windows::Win32::Foundation::FALSE);
+        }
+    }
+}
+
 fn set_result(hwnd: HWND, value: bool) {
     unsafe {
         let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
         if !ptr.is_null() {
             (*ptr).result = value;
             LAST_RESULT.store(if value { 1 } else { 0 }, Ordering::SeqCst);
+            if let Some(level) = (*ptr).volume {
+                LAST_VOLUME.store(level.to_bits(), Ordering::SeqCst);
+            }
         }
     }
 }
@@ -234,6 +327,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             } else if vk == 0x0D {
                 set_result(hwnd, true);
                 let _ = DestroyWindow(hwnd);
+            } else if vk == 0x25 || vk == 0x27 {
+                nudge_volume(hwnd, vk == 0x27);
             }
             LRESULT(0)
         }
@@ -303,6 +398,13 @@ fn paint(hwnd: HWND) {
         let mut msg: Vec<u16> = inner.prompt.message.encode_utf16().collect();
         msg.push(0);
         let _ = TextOutW(hdc, pad, pad + dip_scalar_to_px(28.0, dpi), &msg);
+        if let Some(level) = inner.volume {
+            SetTextColor(hdc, COLORREF(0x00FFFFFF));
+            let readout = tinycast_pure::volume::percentage(level);
+            let mut vol: Vec<u16> = readout.encode_utf16().collect();
+            vol.push(0);
+            let _ = TextOutW(hdc, pad, pad + dip_scalar_to_px(56.0, dpi), &vol);
+        }
         fill_button(hdc, inner.continue_rect, true);
         SetTextColor(hdc, COLORREF(0x00FFFFFF));
         let mut acc: Vec<u16> = inner.prompt.accept.encode_utf16().collect();

@@ -65,10 +65,32 @@ impl MessageHud {
     }
 
     pub fn show(&self, message: &str) {
+        self.show_message(message, tinycast_pure::dialog::DialogTone::Success);
+    }
+
+    pub fn show_message(&self, message: &str, tone: tinycast_pure::dialog::DialogTone) {
+        let marked = match tone {
+            tinycast_pure::dialog::DialogTone::Neutral => format!("· {message}"),
+            tinycast_pure::dialog::DialogTone::Danger => format!("! {message}"),
+            tinycast_pure::dialog::DialogTone::Success => message.to_string(),
+        };
+        self.present(&marked, false);
+    }
+
+    pub fn show_volume(&self, level: f32, muted: bool) {
+        let text = if muted {
+            "Muted".to_string()
+        } else {
+            tinycast_pure::volume::percentage(level)
+        };
+        self.present(&format!("VOL\t{text}\t{}", if muted { 0 } else { (level.clamp(0.0, 1.0) * 100.0) as i32 }), true);
+    }
+
+    fn present(&self, message: &str, volume: bool) {
         let mut wide: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
         unsafe {
             let _ = SetWindowTextW(self.hwnd, windows::core::PCWSTR(wide.as_mut_ptr()));
-            position(self.hwnd);
+            position(self.hwnd, volume);
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
             let _ = KillTimer(self.hwnd, HIDE_TIMER);
             let _ = SetTimer(self.hwnd, HIDE_TIMER, HIDE_MS, None);
@@ -87,10 +109,10 @@ impl Drop for MessageHud {
     }
 }
 
-fn position(hwnd: HWND) {
+fn position(hwnd: HWND, volume: bool) {
     let dpi = unsafe { GetDpiForWindow(hwnd) };
     let w = dip_scalar_to_px(theme::size::HUD_WIDTH, dpi);
-    let h = dip_scalar_to_px(48.0, dpi);
+    let h = dip_scalar_to_px(if volume { theme::size::HUD_HEIGHT } else { 48.0 }, dpi);
     let screens = screens_px();
     let (x, y) = if let Some(s) = screens.first() {
         let work = s.work;
@@ -139,9 +161,43 @@ fn paint(hwnd: HWND, hdc: windows::Win32::Graphics::Gdi::HDC) {
         let mut text = [0u16; 256];
         let n = GetWindowTextW(hwnd, &mut text);
         if n > 0 {
-            let x = rc.left + 12;
-            let y = rc.top + 14;
-            let _ = TextOutW(hdc, x, y, &text[..n as usize]);
+            let shown = String::from_utf16_lossy(&text[..n as usize]);
+            if let Some(rest) = shown.strip_prefix("VOL\t") {
+                let mut parts = rest.split('\t');
+                let label = parts.next().unwrap_or("");
+                let fill = parts.next().and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+                let pad = 12;
+                let y = rc.top + 16;
+                let label_w: Vec<u16> = label.encode_utf16().collect();
+                let _ = TextOutW(hdc, rc.left + pad, y, &label_w);
+                let bar_top = y + 22;
+                let bar_left = rc.left + pad;
+                let bar_right = rc.right - pad;
+                let bar_bottom = bar_top + 8;
+                let track = RECT {
+                    left: bar_left,
+                    top: bar_top,
+                    right: bar_right,
+                    bottom: bar_bottom,
+                };
+                let track_br = CreateSolidBrush(COLORREF(0x00444444));
+                FillRect(hdc, &track, track_br);
+                let _ = DeleteObject(HGDIOBJ(track_br.0));
+                let width = ((bar_right - bar_left) * fill / 100).max(0);
+                let fill_rc = RECT {
+                    left: bar_left,
+                    top: bar_top,
+                    right: bar_left + width,
+                    bottom: bar_bottom,
+                };
+                let fill_br = CreateSolidBrush(COLORREF(0x00FFFFFF));
+                FillRect(hdc, &fill_rc, fill_br);
+                let _ = DeleteObject(HGDIOBJ(fill_br.0));
+            } else {
+                let x = rc.left + 12;
+                let y = rc.top + 14;
+                let _ = TextOutW(hdc, x, y, &text[..n as usize]);
+            }
         }
     }
 }

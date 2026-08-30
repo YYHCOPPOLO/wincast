@@ -354,6 +354,14 @@ mod tests {
     }
 
     #[test]
+    fn coordinator_cannot_skip_confirmation() {
+        assert_ne!(
+            SystemActionId::EmptyTrash.confirmation(),
+            Confirmation::None
+        );
+    }
+
+    #[test]
     fn as_entry_uses_system_action_kind() {
         let entry = SystemActionId::LockScreen.as_entry();
         assert_eq!(entry.id, "system-action:lock-screen");

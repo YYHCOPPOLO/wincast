@@ -30,6 +30,7 @@ pub enum LaunchSpec {
     CreateQuicklink,
     ImportQuicklinks,
     ExportQuicklinks,
+    RunSystemAction(String),
     Noop,
 }
 
@@ -89,6 +90,7 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
         AppKind::Snippet => LaunchSpec::ExpandSnippet(entry.id.clone()),
         AppKind::CustomCommand => LaunchSpec::RunCustomCommand(entry.id.clone()),
         AppKind::Quicklink => LaunchSpec::OpenQuicklink(entry.id.clone()),
+        AppKind::SystemAction => LaunchSpec::RunSystemAction(entry.id.clone()),
         _ => LaunchSpec::Noop,
     }
 }
@@ -182,6 +184,7 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::CreateQuicklink
         | LaunchSpec::ImportQuicklinks
         | LaunchSpec::ExportQuicklinks
+        | LaunchSpec::RunSystemAction(_)
         | LaunchSpec::Noop => Ok(()),
     }
 }
