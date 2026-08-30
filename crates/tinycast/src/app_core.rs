@@ -130,6 +130,7 @@ impl AppCore {
             self.entries = entries;
             self.clamp_selection();
             self.invalidate_palette();
+            self.invalidate_settings();
         }
     }
 
@@ -262,6 +263,7 @@ impl AppCore {
             self.palette.prepare(PaletteMode::Launcher);
             self.palette_visible = true;
             self.expanded = false;
+            self.app_index.start();
             self.show_palette_window();
         }
     }
@@ -824,14 +826,17 @@ impl AppCore {
         } else {
             None
         };
-        self.favorites.toggle(id);
+        self.favorites.toggle(id.clone());
         self.persist_favorites();
         if self.palette.query.is_empty() {
-            self.palette.selection = if removing {
-                fav_index.unwrap_or(0).saturating_sub(1)
-            } else {
-                0
-            };
+            if removing {
+                self.palette.selection = fav_index.unwrap_or(0).saturating_sub(1);
+            } else if let Some(next) = selectable_rows(&self.sections())
+                .iter()
+                .position(|row| row.id == id)
+            {
+                self.palette.selection = next;
+            }
         }
         self.clamp_selection();
         self.ensure_selection_visible();
@@ -1112,6 +1117,85 @@ mod tests {
             .entries
             .iter()
             .any(|e| e.kind == tinycast_pure::app_entry::AppKind::SystemSettings));
+        assert!(c
+            .settings_entries(AppKind::Application)
+            .iter()
+            .any(|e| e.name == "Notepad"));
+    }
+
+    #[test]
+    fn showing_palette_starts_a_fresh_index_scan() {
+        let mut c = AppCore::new();
+        assert_eq!(c.app_index.generation(), 0);
+        c.toggle_palette();
+        assert!(c.palette_visible);
+        assert_eq!(c.app_index.generation(), 1);
+        c.toggle_palette();
+        assert!(!c.palette_visible);
+        assert_eq!(c.app_index.generation(), 1);
+        c.toggle_palette();
+        assert_eq!(c.app_index.generation(), 2);
+    }
+
+    fn application_named(id: &str, name: &str) -> AppEntry {
+        AppEntry {
+            id: id.into(),
+            kind: AppKind::Application,
+            name: name.into(),
+            fields: tinycast_pure::search_relevance::SearchFields {
+                display_name: name.into(),
+                ..Default::default()
+            },
+            hotkey: None,
+        }
+    }
+
+    struct RestoreFile {
+        path: std::path::PathBuf,
+        previous: Option<Vec<u8>>,
+    }
+
+    impl Drop for RestoreFile {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(bytes) => {
+                    let _ = std::fs::write(&self.path, bytes);
+                }
+                None => {
+                    let _ = std::fs::remove_file(&self.path);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn add_to_favorites_on_empty_query_keeps_selection_on_toggled_row() {
+        let _restore = RestoreFile {
+            path: store_path("favorites.json"),
+            previous: std::fs::read(store_path("favorites.json")).ok(),
+        };
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.favorites = tinycast_pure::favorites::FavoritesStore::default();
+        c.entries = vec![
+            application_named("app:alpha", "Alpha"),
+            application_named("app:beta", "Beta"),
+        ];
+        c.favorites.toggle("app:alpha".into());
+        c.toggle_palette();
+        c.expand_select_first();
+        let beta = selectable_rows(&c.sections())
+            .iter()
+            .position(|row| row.id == "app:beta")
+            .expect("beta in applications");
+        assert!(beta > 0, "alpha is already pinned at slot 1");
+        c.palette.selection = beta;
+        assert_eq!(c.selected_entry().unwrap().id, "app:beta");
+        c.toggle_favorite_selected();
+        assert_eq!(c.favorites.ids, ["app:alpha", "app:beta"]);
+        assert_eq!(c.selected_entry().unwrap().id, "app:beta");
+        assert_eq!(c.palette.selection, 1);
     }
 
     #[test]

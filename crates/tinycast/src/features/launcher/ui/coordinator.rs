@@ -117,6 +117,7 @@ pub fn copy_path_text(entry: &AppEntry) -> Option<String> {
 pub fn reveal_path(entry: &AppEntry) -> Option<String> {
     match launch_spec(entry) {
         LaunchSpec::Path(path) if !path.is_empty() => Some(path),
+        LaunchSpec::Aumid(aumid) => Some(format!("shell:AppsFolder\\{aumid}")),
         _ => None,
     }
 }
@@ -289,7 +290,36 @@ mod tests {
             copy_path_text(&aumid).as_deref(),
             Some(r"shell:AppsFolder\Microsoft.WindowsNotepad_8wekyb3d8bbwe!App")
         );
-        assert_eq!(reveal_path(&aumid), None);
+        assert_eq!(
+            reveal_path(&aumid).as_deref(),
+            Some(r"shell:AppsFolder\Microsoft.WindowsNotepad_8wekyb3d8bbwe!App")
+        );
+    }
+
+    #[test]
+    fn aumid_show_in_folder_uses_apps_folder_shell_path() {
+        let mut aumid = app("app:C:\\Windows\\notepad.exe", "Notepad");
+        aumid.fields.bundle_id = Some("Microsoft.WindowsNotepad_8wekyb3d8bbwe!App".into());
+        let revealed = reveal_path(&aumid).expect("aumid apps are revealable");
+        assert_eq!(
+            revealed,
+            r"shell:AppsFolder\Microsoft.WindowsNotepad_8wekyb3d8bbwe!App"
+        );
+        assert_eq!(copy_path_text(&aumid).as_deref(), Some(revealed.as_str()));
+        assert_eq!(icon_source(&aumid).as_deref(), Some(revealed.as_str()));
+        assert_eq!(reveal_path(&CommandID::Settings.as_entry()), None);
+        let settings = AppEntry {
+            id: "app:ms-settings:display".into(),
+            kind: AppKind::SystemSettings,
+            name: "Display".into(),
+            fields: SearchFields {
+                display_name: "Display".into(),
+                bundle_id: Some("ms-settings:display".into()),
+                ..Default::default()
+            },
+            hotkey: None,
+        };
+        assert_eq!(reveal_path(&settings), None);
     }
 
     #[test]
