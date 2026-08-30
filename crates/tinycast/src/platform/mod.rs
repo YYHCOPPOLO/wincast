@@ -9,7 +9,7 @@ pub(crate) mod paster;
 pub(crate) mod paths;
 pub mod screens;
 mod single_instance;
-mod tray;
+pub(crate) mod tray;
 pub(crate) mod winhttp;
 
 pub fn run() -> windows::core::Result<()> {

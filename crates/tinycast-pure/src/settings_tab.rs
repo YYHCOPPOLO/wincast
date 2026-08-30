@@ -151,6 +151,12 @@ mod tests {
     }
 
     #[test]
+    fn permissions_tab_is_under_general_section() {
+        assert_eq!(SettingsSection::General.tabs()[1], SettingsTab::Permissions);
+        assert_eq!(SettingsTab::Permissions.title(), "Permissions");
+    }
+
+    #[test]
     fn settings_tab_titles_match_v0102() {
         assert_eq!(SettingsTab::General.title(), "General");
         assert_eq!(SettingsTab::Applications.title(), "Applications");

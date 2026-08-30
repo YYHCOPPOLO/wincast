@@ -46,7 +46,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::app_core::AppCore;
 use crate::features::launcher::settings::items::{
-    hit_confirm, hit_launcher, hit_search, hotkey_action_key, layout_confirm,
+    hit_confirm, hit_launcher, hotkey_action_key, layout_confirm,
     layout_launcher_items, layout_search_section, paint_confirm, paint_confirm_copy,
     paint_launcher_items, paint_search_section, ConfirmCopy, FieldEdit, Formats, Hit,
     LauncherItemsSection, ALIAS_EDIT_ID, FILTER_EDIT_ID, ITEM_H,
@@ -684,15 +684,37 @@ unsafe fn paint_detail(
     if selected == SettingsTab::General {
         hide_edits(inner);
         if let Some(core) = core {
-            let layout = layout_search_section(detail_w);
-            paint_search_section(
+            crate::features::settings::panes::general::paint(
                 target,
                 formats,
-                &layout,
-                core.ranking_is_empty(),
+                &crate::features::settings::panes::general::GeneralState {
+                    ranking_empty: core.ranking_is_empty(),
+                    hyper: &core.settings.hyper_key,
+                    hyper_shift: core.settings.hyper_includes_shift,
+                    appearance: core.appearance_label(),
+                    compact: core.settings.compact_mode,
+                    favorites_in_compact: core.settings.show_favorites_in_compact,
+                    follow_cursor: core.settings.open_on_cursor_screen,
+                    draggable: core.settings.palette_draggable,
+                    launch_at_login: core.settings.launch_at_login,
+                    show_in_menu_bar: core.settings.show_in_menu_bar,
+                    pop_to_root: core.settings.pop_to_root_timeout,
+                    auto_switch: core.settings.auto_switch_input_source,
+                },
+                detail_w,
                 (*inner).scroll,
             )?;
         }
+        return Ok(());
+    }
+    if selected == SettingsTab::Permissions {
+        hide_edits(inner);
+        crate::features::settings::panes::permissions::paint(
+            target,
+            formats,
+            detail_w,
+            (*inner).scroll,
+        )?;
         return Ok(());
     }
     let Some(section) = LauncherItemsSection::for_tab(selected) else {
@@ -1162,7 +1184,10 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     let detail_w = (window_w - theme::size::SETTINGS_SIDEBAR).max(0.0);
     let tab = selected_tab(inner);
     if tab == SettingsTab::General {
-        return layout_search_section(detail_w).content_height;
+        return crate::features::settings::panes::general::content_height();
+    }
+    if tab == SettingsTab::Permissions {
+        return crate::features::settings::panes::permissions::content_height();
     }
     if tab == SettingsTab::Snippets {
         return crate::features::snippets::settings::pane::content_height();
@@ -1416,13 +1441,65 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         return;
     }
     if tab == SettingsTab::General {
-        let layout = layout_search_section(detail_w);
-        let empty = core_from_host((*inner).host)
-            .map(|c| (*c).ranking_is_empty())
-            .unwrap_or(true);
-        if hit_search(&layout, detail_x, detail_y, empty) == Some(Hit::ResetRanking) {
-            (*inner).confirming_reset = true;
-            let _ = InvalidateRect(hwnd, None, FALSE);
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        use crate::features::settings::panes::general::{GeneralHit, GeneralToggle};
+        match crate::features::settings::panes::general::hit(detail_x, detail_y, (*inner).scroll) {
+            Some(GeneralHit::PaletteRecorder) => {
+                (*core).pause_global_hotkeys();
+                (*inner).recording = Some("hotkey.togglePalette".into());
+            }
+            Some(GeneralHit::ResetRanking) => {
+                if !(*core).ranking_is_empty() {
+                    (*inner).confirming_reset = true;
+                }
+            }
+            Some(GeneralHit::HyperKey) => (*core).cycle_hyper_key(),
+            Some(GeneralHit::HyperShift) => {
+                (*core).set_hyper_includes_shift(!(*core).settings.hyper_includes_shift)
+            }
+            Some(GeneralHit::Appearance) => (*core).cycle_appearance(),
+            Some(GeneralHit::Compact) => (*core).toggle_setting_bool(GeneralToggle::Compact),
+            Some(GeneralHit::FavoritesInCompact) => {
+                (*core).toggle_setting_bool(GeneralToggle::FavoritesInCompact)
+            }
+            Some(GeneralHit::FollowCursor) => {
+                (*core).toggle_setting_bool(GeneralToggle::FollowCursor)
+            }
+            Some(GeneralHit::Draggable) => (*core).toggle_setting_bool(GeneralToggle::Draggable),
+            Some(GeneralHit::LaunchAtLogin) => {
+                (*core).toggle_setting_bool(GeneralToggle::LaunchAtLogin)
+            }
+            Some(GeneralHit::ShowInMenuBar) => {
+                (*core).toggle_setting_bool(GeneralToggle::ShowInMenuBar)
+            }
+            Some(GeneralHit::PopToRoot) => (*core).cycle_pop_to_root(),
+            Some(GeneralHit::AutoSwitchInput) => {
+                (*core).toggle_setting_bool(GeneralToggle::AutoSwitch)
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::Permissions {
+        match crate::features::settings::panes::permissions::hit(
+            detail_x,
+            detail_y,
+            (*inner).scroll,
+            detail_w,
+        ) {
+            Some(crate::features::settings::panes::permissions::PermissionHit::Open(i)) => {
+                if let Some(row) = crate::features::settings::panes::permissions::ROWS.get(i) {
+                    let _ = crate::features::launcher::ui::coordinator::execute(
+                        &crate::features::launcher::ui::coordinator::LaunchSpec::Uri(
+                            row.uri.to_string(),
+                        ),
+                    );
+                }
+            }
+            None => {}
         }
         return;
     }

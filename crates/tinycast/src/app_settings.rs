@@ -71,6 +71,16 @@ pub struct AppSettings {
     pub clipboard_retention_days: i64,
     #[serde(default = "default_disabled_apps", rename = "clipboardDisabledApps")]
     pub clipboard_disabled_apps: Vec<String>,
+    #[serde(default = "default_true", rename = "showFavoritesInCompactMode")]
+    pub show_favorites_in_compact: bool,
+    #[serde(default, rename = "paletteDraggable")]
+    pub palette_draggable: bool,
+    #[serde(default = "default_true", rename = "showInMenuBar")]
+    pub show_in_menu_bar: bool,
+    #[serde(default, rename = "popToRootTimeout")]
+    pub pop_to_root_timeout: i64,
+    #[serde(default, rename = "autoSwitchInputSource")]
+    pub auto_switch_input_source: bool,
 }
 
 impl Default for AppSettings {
@@ -103,6 +113,11 @@ impl Default for AppSettings {
             quicklinks_show_in_launcher: true,
             clipboard_retention_days: default_retention_days(),
             clipboard_disabled_apps: default_disabled_apps(),
+            show_favorites_in_compact: true,
+            palette_draggable: false,
+            show_in_menu_bar: true,
+            pop_to_root_timeout: 0,
+            auto_switch_input_source: false,
         }
     }
 }

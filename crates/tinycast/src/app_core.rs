@@ -1453,6 +1453,86 @@ impl AppCore {
         self.invalidate_settings();
     }
 
+    pub fn cycle_hyper_key(&mut self) {
+        self.settings.hyper_key =
+            crate::features::settings::panes::general::cycle_hyper(&self.settings.hyper_key)
+                .to_string();
+        let _ = self.settings.save();
+        self.sync_hotkeys();
+        self.invalidate_settings();
+    }
+
+    pub fn set_hyper_includes_shift(&mut self, on: bool) {
+        let snapshot = self.hotkeys.snapshot();
+        let retargeted =
+            tinycast_pure::hotkey::retarget_hyper_bindings(&snapshot, on);
+        for (action, binding) in retargeted {
+            self.hotkeys.set(action, Some(binding));
+        }
+        self.settings.hyper_includes_shift = on;
+        let _ = self.settings.save();
+        self.persist_hotkeys();
+        self.sync_hotkeys();
+        self.invalidate_settings();
+    }
+
+    pub fn cycle_appearance(&mut self) {
+        self.settings.appearance = match self.settings.appearance {
+            crate::app_settings::Appearance::System => crate::app_settings::Appearance::Light,
+            crate::app_settings::Appearance::Light => crate::app_settings::Appearance::Dark,
+            crate::app_settings::Appearance::Dark => crate::app_settings::Appearance::System,
+        };
+        let _ = self.settings.save();
+        self.invalidate_settings();
+        self.invalidate_palette();
+    }
+
+    pub fn toggle_setting_bool(&mut self, which: crate::features::settings::panes::general::GeneralToggle) {
+        use crate::features::settings::panes::general::GeneralToggle;
+        match which {
+            GeneralToggle::Compact => self.settings.compact_mode = !self.settings.compact_mode,
+            GeneralToggle::FavoritesInCompact => {
+                self.settings.show_favorites_in_compact = !self.settings.show_favorites_in_compact
+            }
+            GeneralToggle::FollowCursor => {
+                self.settings.open_on_cursor_screen = !self.settings.open_on_cursor_screen
+            }
+            GeneralToggle::Draggable => {
+                self.settings.palette_draggable = !self.settings.palette_draggable
+            }
+            GeneralToggle::LaunchAtLogin => {
+                self.settings.launch_at_login = !self.settings.launch_at_login
+            }
+            GeneralToggle::ShowInMenuBar => {
+                self.settings.show_in_menu_bar = !self.settings.show_in_menu_bar;
+                crate::platform::tray::set_icon_visible(self.host, self.settings.show_in_menu_bar);
+            }
+            GeneralToggle::AutoSwitch => {
+                self.settings.auto_switch_input_source = !self.settings.auto_switch_input_source
+            }
+        }
+        let _ = self.settings.save();
+        self.invalidate_settings();
+        self.invalidate_palette();
+    }
+
+    pub fn cycle_pop_to_root(&mut self) {
+        self.settings.pop_to_root_timeout =
+            crate::features::settings::panes::general::cycle_pop_to_root(
+                self.settings.pop_to_root_timeout,
+            );
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
+    pub fn appearance_label(&self) -> &'static str {
+        match self.settings.appearance {
+            crate::app_settings::Appearance::System => "system",
+            crate::app_settings::Appearance::Light => "light",
+            crate::app_settings::Appearance::Dark => "dark",
+        }
+    }
+
     fn show_volume_hud(&mut self) {
         let (level, muted) =
             crate::features::system_actions::service::runner::output_state().unwrap_or((0.0, true));

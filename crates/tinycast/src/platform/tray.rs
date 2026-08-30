@@ -63,6 +63,16 @@ pub fn create(core: &mut AppCore) -> windows::core::Result<HWND> {
     }
 }
 
+pub fn set_icon_visible(hwnd: HWND, visible: bool) {
+    unsafe {
+        if visible {
+            let _ = add_icon(hwnd);
+        } else {
+            remove_icon(hwnd);
+        }
+    }
+}
+
 unsafe fn add_icon(hwnd: HWND) -> windows::core::Result<()> {
     let mut data = notify_data(hwnd);
     data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
