@@ -12,9 +12,7 @@ use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D
 use windows::Win32::Graphics::Direct2D::{
     ID2D1RenderTarget, ID2D1SolidColorBrush, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
 };
-use windows::Win32::Graphics::DirectWrite::{
-    IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL,
-};
+use windows::Win32::Graphics::DirectWrite::{IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL};
 use windows::Win32::Graphics::Gdi::{
     CreateFontW, DeleteObject, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
     DEFAULT_PITCH, FW_NORMAL, HFONT, OUT_DEFAULT_PRECIS,
@@ -45,6 +43,25 @@ pub const RESET_CONFIRM_MESSAGE: &str =
     "Tinycast will relearn your preferred results as you use the launcher.";
 pub const RESET_CONFIRM_ACTION: &str = "Reset Ranking";
 pub const RESET_CONFIRM_CANCEL: &str = "Cancel";
+
+#[derive(Clone, Copy, Debug)]
+pub struct ConfirmCopy {
+    pub title: &'static str,
+    pub message: &'static str,
+    pub accept: &'static str,
+    pub cancel: &'static str,
+}
+
+impl ConfirmCopy {
+    pub fn reset_ranking() -> Self {
+        Self {
+            title: RESET_CONFIRM_TITLE,
+            message: RESET_CONFIRM_MESSAGE,
+            accept: RESET_CONFIRM_ACTION,
+            cancel: RESET_CONFIRM_CANCEL,
+        }
+    }
+}
 
 const SECTION_HEADER_H: f32 = 22.0;
 const ENABLE_ROW_H: f32 = 52.0;
@@ -119,7 +136,11 @@ pub fn commands_catalog() -> Vec<AppEntry> {
 }
 
 /// Membership only: keep the index's name order.
-pub fn filter_entries<'a>(entries: &'a [AppEntry], kind: AppKind, query: &str) -> Vec<&'a AppEntry> {
+pub fn filter_entries<'a>(
+    entries: &'a [AppEntry],
+    kind: AppKind,
+    query: &str,
+) -> Vec<&'a AppEntry> {
     let scoped: Vec<&'a AppEntry> = entries.iter().filter(|e| e.kind == kind).collect();
     if query.is_empty() {
         return scoped;
@@ -398,12 +419,7 @@ pub fn layout_search_section(detail_w: f32) -> SearchLayout {
         h: 24.0,
     };
     y += row.h + theme::spacing::SM;
-    let footer = Rect {
-        x,
-        y,
-        w,
-        h: 48.0,
-    };
+    let footer = Rect { x, y, w, h: 48.0 };
     SearchLayout {
         header,
         row,
@@ -506,7 +522,8 @@ impl FieldEdit {
     pub fn create(parent: HWND, id: usize) -> windows::core::Result<Self> {
         unsafe {
             let hinstance = GetModuleHandleW(None)?;
-            let style = WS_CHILD | WINDOW_STYLE(ES_LEFT as u32) | WINDOW_STYLE(ES_AUTOHSCROLL as u32);
+            let style =
+                WS_CHILD | WINDOW_STYLE(ES_LEFT as u32) | WINDOW_STYLE(ES_AUTOHSCROLL as u32);
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("EDIT"),
@@ -877,6 +894,22 @@ pub fn paint_confirm(
     layout: &ConfirmLayout,
     window: (f32, f32),
 ) -> windows::core::Result<()> {
+    paint_confirm_copy(
+        target,
+        formats,
+        layout,
+        window,
+        ConfirmCopy::reset_ranking(),
+    )
+}
+
+pub fn paint_confirm_copy(
+    target: &ID2D1RenderTarget,
+    formats: &Formats<'_>,
+    layout: &ConfirmLayout,
+    window: (f32, f32),
+    copy: ConfirmCopy,
+) -> windows::core::Result<()> {
     let scrim = solid(target, scrim_color())?;
     unsafe {
         target.FillRectangle(
@@ -903,7 +936,7 @@ pub fn paint_confirm(
             w: layout.card.w - CARD_PAD * 2.0,
             h: 24.0,
         },
-        RESET_CONFIRM_TITLE,
+        copy.title,
     )?;
     draw_label(
         target,
@@ -915,13 +948,13 @@ pub fn paint_confirm(
             w: layout.card.w - CARD_PAD * 2.0,
             h: 48.0,
         },
-        RESET_CONFIRM_MESSAGE,
+        copy.message,
     )?;
     paint_button(
         target,
         formats.caption,
         layout.cancel,
-        RESET_CONFIRM_CANCEL,
+        copy.cancel,
         false,
         true,
     )?;
@@ -929,7 +962,7 @@ pub fn paint_confirm(
         target,
         formats.caption,
         layout.accept,
-        RESET_CONFIRM_ACTION,
+        copy.accept,
         true,
         true,
     )?;
@@ -959,11 +992,7 @@ fn fill_card(
     Ok(())
 }
 
-fn paint_toggle(
-    target: &ID2D1RenderTarget,
-    rect: Rect,
-    on: bool,
-) -> windows::core::Result<()> {
+fn paint_toggle(target: &ID2D1RenderTarget, rect: Rect, on: bool) -> windows::core::Result<()> {
     let fill = solid(target, if on { accent_color() } else { toggle_off() })?;
     let knob = solid(target, tab_text_color())?;
     let rounded = D2D1_ROUNDED_RECT {
@@ -997,11 +1026,7 @@ fn paint_toggle(
     Ok(())
 }
 
-fn paint_checkbox(
-    target: &ID2D1RenderTarget,
-    rect: Rect,
-    on: bool,
-) -> windows::core::Result<()> {
+fn paint_checkbox(target: &ID2D1RenderTarget, rect: Rect, on: bool) -> windows::core::Result<()> {
     let stroke = solid(target, hairline_color())?;
     let rounded = D2D1_ROUNDED_RECT {
         rect: rect.d2d(),
@@ -1058,7 +1083,14 @@ fn paint_well(
     recording: bool,
 ) -> windows::core::Result<()> {
     let fill = solid(target, well_fill())?;
-    let stroke = solid(target, if recording { accent_color() } else { hairline_color() })?;
+    let stroke = solid(
+        target,
+        if recording {
+            accent_color()
+        } else {
+            hairline_color()
+        },
+    )?;
     let rounded = D2D1_ROUNDED_RECT {
         rect: rect.d2d(),
         radiusX: theme::radius::MENU,
@@ -1076,7 +1108,13 @@ fn paint_well(
             tab_text_color()
         },
     )?;
-    draw_label(target, format, &brush, rect.inset(theme::spacing::SM, 0.0), text)
+    draw_label(
+        target,
+        format,
+        &brush,
+        rect.inset(theme::spacing::SM, 0.0),
+        text,
+    )
 }
 
 fn paint_button(
@@ -1323,13 +1361,9 @@ mod tests {
             Some(Hit::ItemVisible(0))
         );
         assert_eq!(
-            hit_launcher(
-                &layout,
-                row.alias.x + 1.0,
-                row.alias.y + 1.0,
-                true,
-                |_| false
-            ),
+            hit_launcher(&layout, row.alias.x + 1.0, row.alias.y + 1.0, true, |_| {
+                false
+            }),
             Some(Hit::Alias(0))
         );
         assert_eq!(

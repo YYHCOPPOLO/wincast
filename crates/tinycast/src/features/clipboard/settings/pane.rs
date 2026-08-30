@@ -1,11 +1,18 @@
 //! Clipboard settings: retention, disabled apps, clear history.
 
+use std::path::Path;
+
 use tinycast_pure::theme;
+use windows::core::{PCWSTR, PWSTR};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
     ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL};
+use windows::Win32::UI::Controls::Dialogs::{
+    GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+};
 
 use crate::features::launcher::settings::items::Formats;
 
@@ -13,11 +20,18 @@ const ROW_H: f32 = 36.0;
 
 const RETENTION_DAYS: [i64; 7] = [1, 7, 30, 90, 180, 365, -1];
 
+pub const ADD_APPLICATION_TITLE: &str = "Add Application…";
+pub const CLEAR_HISTORY_TITLE: &str = "Clear history";
+pub const CLEAR_CONFIRM_TITLE: &str = "Clear clipboard history?";
+pub const CLEAR_CONFIRM_MESSAGE: &str = "This can't be undone.";
+pub const CLEAR_CONFIRM_ACTION: &str = "Clear History";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClipboardHit {
     Retention,
     Clear,
     RemoveApp(usize),
+    AddApp,
 }
 
 pub fn retention_title(days: i64) -> &'static str {
@@ -33,11 +47,37 @@ pub fn retention_title(days: i64) -> &'static str {
 }
 
 pub fn cycle_retention(days: i64) -> i64 {
-    let idx = RETENTION_DAYS
-        .iter()
-        .position(|d| *d == days)
-        .unwrap_or(3);
+    let idx = RETENTION_DAYS.iter().position(|d| *d == days).unwrap_or(3);
     RETENTION_DAYS[(idx + 1) % RETENTION_DAYS.len()]
+}
+
+struct ClipboardLayout {
+    retention: f32,
+    apps: Vec<f32>,
+    add_app: f32,
+    clear: f32,
+}
+
+fn layout(disabled_len: usize, origin: f32) -> ClipboardLayout {
+    let mut y = origin + 24.0;
+    let retention = y;
+    y += ROW_H + theme::spacing::XL + 24.0;
+    let mut apps = Vec::new();
+    // Caption row, then each disabled app.
+    y += ROW_H;
+    for _ in 0..disabled_len {
+        apps.push(y);
+        y += ROW_H;
+    }
+    let add_app = y;
+    y += ROW_H + theme::spacing::XL + 24.0;
+    let clear = y;
+    ClipboardLayout {
+        retention,
+        apps,
+        add_app,
+        clear,
+    }
 }
 
 pub fn paint(
@@ -50,81 +90,124 @@ pub fn paint(
 ) -> windows::core::Result<()> {
     let origin = theme::spacing::XXL - scroll;
     let inset = theme::spacing::XXL;
-    let mut y = origin;
-    draw_header(target, formats.header, inset, y, detail_w, "History")?;
-    y += 24.0;
+    let rows = layout(disabled.len(), origin);
+    draw_header(target, formats.header, inset, origin, detail_w, "History")?;
     draw_row(
         target,
         formats,
         inset,
-        y,
+        rows.retention,
         detail_w,
         "Keep history for",
         retention_title(retention_days),
     )?;
-    y += ROW_H + theme::spacing::XL;
     draw_header(
         target,
         formats.header,
         inset,
-        y,
+        rows.retention + ROW_H + theme::spacing::XL,
         detail_w,
         "Disabled Applications",
     )?;
-    y += 24.0;
-    if disabled.is_empty() {
-        draw_caption(
+    draw_caption(
+        target,
+        formats.caption,
+        inset,
+        rows.retention + ROW_H + theme::spacing::XL + 24.0,
+        detail_w,
+        "Copies from these apps are not recorded.",
+    )?;
+    for (i, name) in disabled.iter().enumerate() {
+        draw_row(
             target,
-            formats.caption,
+            formats,
             inset,
-            y,
+            rows.apps[i],
             detail_w,
-            "Copies from these apps are not recorded.",
+            name,
+            "Remove",
         )?;
-        y += ROW_H;
-    } else {
-        for name in disabled {
-            draw_row(target, formats, inset, y, detail_w, name, "Remove")?;
-            y += ROW_H;
-        }
     }
-    y += theme::spacing::XL;
-    draw_header(target, formats.header, inset, y, detail_w, "Clear")?;
-    y += 24.0;
     draw_row(
         target,
         formats,
         inset,
-        y,
+        rows.add_app,
         detail_w,
-        "Clear history",
+        ADD_APPLICATION_TITLE,
+        "Add",
+    )?;
+    draw_header(
+        target,
+        formats.header,
+        inset,
+        rows.add_app + ROW_H + theme::spacing::XL,
+        detail_w,
         "Clear",
+    )?;
+    draw_row(
+        target,
+        formats,
+        inset,
+        rows.clear,
+        detail_w,
+        CLEAR_HISTORY_TITLE,
+        "Clear…",
     )?;
     Ok(())
 }
 
 pub fn hit(x: f32, y: f32, scroll: f32, disabled_len: usize) -> Option<ClipboardHit> {
     let origin = theme::spacing::XXL - scroll;
-    let mut row_y = origin + 24.0;
-    if in_row(y, row_y) && x > theme::spacing::XXL {
+    let rows = layout(disabled_len, origin);
+    if in_row(y, rows.retention) && x > theme::spacing::XXL {
         return Some(ClipboardHit::Retention);
     }
-    row_y += ROW_H + theme::spacing::XL + 24.0;
-    for i in 0..disabled_len.max(1) {
-        if disabled_len > 0 && in_row(y, row_y) {
+    for (i, row_y) in rows.apps.iter().enumerate() {
+        if in_row(y, *row_y) {
             return Some(ClipboardHit::RemoveApp(i));
         }
-        row_y += ROW_H;
     }
-    if disabled_len == 0 {
-        row_y += 0.0;
+    if in_row(y, rows.add_app) {
+        return Some(ClipboardHit::AddApp);
     }
-    row_y += theme::spacing::XL + 24.0;
-    if in_row(y, row_y) {
+    if in_row(y, rows.clear) {
         return Some(ClipboardHit::Clear);
     }
     let _ = x;
     None
+}
+
+pub fn pick_application_stem(owner: HWND) -> Option<String> {
+    let mut file = [0u16; 1024];
+    let mut filter: Vec<u16> = "Applications\0*.exe\0All Files\0*.*\0\0"
+        .encode_utf16()
+        .collect();
+    let title: Vec<u16> = "Add Application"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut ofn = OPENFILENAMEW::default();
+    ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = PCWSTR(filter.as_mut_ptr());
+    ofn.lpstrFile = PWSTR(file.as_mut_ptr());
+    ofn.nMaxFile = file.len() as u32;
+    ofn.lpstrTitle = PCWSTR(title.as_ptr());
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    let ok = unsafe { GetOpenFileNameW(&mut ofn) };
+    if !ok.as_bool() {
+        return None;
+    }
+    let len = file.iter().position(|&c| c == 0).unwrap_or(file.len());
+    let path = String::from_utf16_lossy(&file[..len]);
+    if path.is_empty() {
+        return None;
+    }
+    Path::new(&path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string())
 }
 
 fn in_row(y: f32, row_y: f32) -> bool {
@@ -285,5 +368,30 @@ mod tests {
         assert_eq!(cycle_retention(90), 180);
         assert_eq!(retention_title(90), "3 Months");
         assert_eq!(retention_title(-1), "Forever");
+    }
+
+    #[test]
+    fn add_application_and_clear_are_hittable() {
+        let origin = theme::spacing::XXL;
+        let rows = layout(2, origin);
+        assert_eq!(
+            hit(theme::spacing::XXL + 1.0, rows.add_app + 1.0, 0.0, 2),
+            Some(ClipboardHit::AddApp)
+        );
+        assert_eq!(
+            hit(theme::spacing::XXL + 1.0, rows.clear + 1.0, 0.0, 2),
+            Some(ClipboardHit::Clear)
+        );
+        assert_eq!(
+            hit(theme::spacing::XXL + 1.0, rows.apps[1] + 1.0, 0.0, 2),
+            Some(ClipboardHit::RemoveApp(1))
+        );
+        let empty = layout(0, origin);
+        assert_eq!(
+            hit(theme::spacing::XXL + 1.0, empty.add_app + 1.0, 0.0, 0),
+            Some(ClipboardHit::AddApp)
+        );
+        assert_eq!(ADD_APPLICATION_TITLE, "Add Application…");
+        assert_eq!(CLEAR_CONFIRM_ACTION, "Clear History");
     }
 }

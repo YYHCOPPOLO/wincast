@@ -1,14 +1,15 @@
+pub(crate) mod clipboard;
+pub(crate) mod clock;
 mod dpi;
 pub mod hotkey;
 pub(crate) mod launch_at_login;
 pub mod messages;
+pub(crate) mod paster;
 pub(crate) mod paths;
 pub mod screens;
 mod single_instance;
 mod tray;
 pub(crate) mod winhttp;
-pub(crate) mod clipboard;
-pub(crate) mod paster;
 
 pub fn run() -> windows::core::Result<()> {
     dpi::apply()?;

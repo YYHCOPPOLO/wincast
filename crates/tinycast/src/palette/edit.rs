@@ -40,9 +40,13 @@ pub struct SearchEdit {
 
 /// Search field in DIP: 20 inset, 44-tall header band.
 pub fn search_field_dip() -> (f32, f32, f32, f32) {
+    search_field_dip_with_trailing(0.0)
+}
+
+pub fn search_field_dip_with_trailing(trailing: f32) -> (f32, f32, f32, f32) {
     let x = theme::spacing::XXL;
     let y = theme::size::HEADER_PADDING;
-    let w = theme::size::PANEL_WIDTH - theme::spacing::XXL * 2.0;
+    let w = (theme::size::PANEL_WIDTH - theme::spacing::XXL * 2.0 - trailing).max(60.0);
     let h = theme::size::HEADER_HEIGHT;
     (x, y, w, h)
 }
@@ -90,19 +94,19 @@ impl SearchEdit {
                 font: HFONT::default(),
                 dpi: 0,
             };
-            edit.layout(parent);
+            edit.layout_with_trailing(parent, 0.0);
             Ok(edit)
         }
     }
 
-    pub fn layout(&mut self, parent: HWND) {
+    pub fn layout_with_trailing(&mut self, parent: HWND, trailing: f32) {
         unsafe {
             let dpi = GetDpiForWindow(parent);
             if dpi != self.dpi {
                 self.dpi = dpi;
                 self.apply_font(dpi);
             }
-            let (x, y, w, h) = search_field_dip();
+            let (x, y, w, h) = search_field_dip_with_trailing(trailing);
             let _ = SetWindowPos(
                 self.hwnd,
                 HWND_TOP,

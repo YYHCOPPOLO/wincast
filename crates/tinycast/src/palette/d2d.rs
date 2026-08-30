@@ -51,6 +51,13 @@ pub struct PaintParams<'a> {
     pub menu: Option<MenuPaint<'a>>,
     pub clipboard_preview: Option<&'a str>,
     pub tab_hint: Option<&'a str>,
+    pub clipboard_filter: Option<FilterButtonPaint<'a>>,
+}
+
+pub struct FilterButtonPaint<'a> {
+    pub title: &'a str,
+    pub open: bool,
+    pub rect: tinycast_pure::palette_placement::DipRect,
 }
 
 impl Renderer {
@@ -366,7 +373,15 @@ fn paint_scene(
             let _ = paint_placeholder(target, text_format);
         }
         if let Some(hint) = params.tab_hint {
-            let _ = paint_tab_hint(target, list_fonts, hint, size.width);
+            let trailing = params
+                .clipboard_filter
+                .as_ref()
+                .map(|_| crate::features::clipboard::ui::screen::filter_trailing_width())
+                .unwrap_or(0.0);
+            let _ = paint_tab_hint(target, list_fonts, hint, trailing);
+        }
+        if let Some(filter) = &params.clipboard_filter {
+            let _ = paint_filter_button(target, list_fonts, filter);
         }
         let list_w = if params.clipboard_preview.is_some() {
             theme::size::CLIPBOARD_LIST_WIDTH.min(size.width)
@@ -461,7 +476,12 @@ fn paint_clipboard_preview(
         right: panel_w - pad,
         bottom: bottom - pad,
     };
-    let wide: Vec<u16> = preview.chars().take(2000).collect::<String>().encode_utf16().collect();
+    let wide: Vec<u16> = preview
+        .chars()
+        .take(2000)
+        .collect::<String>()
+        .encode_utf16()
+        .collect();
     unsafe {
         target.DrawText(
             &wide,
@@ -475,16 +495,74 @@ fn paint_clipboard_preview(
     Ok(())
 }
 
+fn paint_filter_button(
+    target: &ID2D1RenderTarget,
+    fonts: &ListFonts,
+    filter: &FilterButtonPaint<'_>,
+) -> windows::core::Result<()> {
+    let rect = filter.rect;
+    let fill = D2D1_COLOR_F {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: if filter.open {
+            theme::colors::SELECTION_DARK_ALPHA
+        } else {
+            0.14
+        },
+    };
+    let rounded = D2D1_ROUNDED_RECT {
+        rect: D2D_RECT_F {
+            left: rect.x,
+            top: rect.y,
+            right: rect.x + rect.w,
+            bottom: rect.y + rect.h,
+        },
+        radiusX: rect.h / 2.0,
+        radiusY: rect.h / 2.0,
+    };
+    let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
+    unsafe {
+        target.FillRoundedRectangle(&rounded, &brush);
+    }
+    let ink = D2D1_COLOR_F {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 0.92,
+    };
+    let text_brush = unsafe { target.CreateSolidColorBrush(&ink, None)? };
+    let chevron = if filter.open { "▴" } else { "▾" };
+    let label = format!("{} {chevron}", filter.title);
+    let wide: Vec<u16> = label.encode_utf16().collect();
+    unsafe {
+        target.DrawText(
+            &wide,
+            &fonts.header,
+            &D2D_RECT_F {
+                left: rect.x + theme::spacing::SM,
+                top: rect.y,
+                right: rect.x + rect.w - theme::spacing::SM,
+                bottom: rect.y + rect.h,
+            },
+            &text_brush,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
+    Ok(())
+}
+
 fn paint_tab_hint(
     target: &ID2D1RenderTarget,
     fonts: &ListFonts,
     hint: &str,
-    panel_w: f32,
+    trailing: f32,
 ) -> windows::core::Result<()> {
     if hint == "AI Chat" {
         // Caller must pass None while AI is off; keep this guard anyway.
     }
-    let (x, y, w, h) = super::edit::search_field_dip();
+    let (x, y, w, h) = super::edit::search_field_dip_with_trailing(trailing);
     let right = x + w;
     let cap = "Tab";
     let cap_w = 36.0;
@@ -543,7 +621,6 @@ fn paint_tab_hint(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let _ = panel_w;
     Ok(())
 }
 

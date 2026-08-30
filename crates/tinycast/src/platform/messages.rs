@@ -5,3 +5,5 @@ pub const WM_QUIT_APP: u32 = 0x8000 + 4;
 pub const WM_RESIGN_PALETTE: u32 = 0x8000 + 5;
 pub const WM_APP_INDEX: u32 = 0x8000 + 6;
 pub const WM_RATES: u32 = 0x8000 + 7;
+pub const WM_CLIPBOARD_IMAGE: u32 = 0x8000 + 8;
+pub const WM_CLIPBOARDUPDATE: u32 = 0x031D;

@@ -1,6 +1,6 @@
 use tinycast_pure::palette_menu::MenuItem;
 use tinycast_pure::palette_menu::{
-    action_group_rects, actions_menu_frame, menu_header_rect, menu_row_rect, ACTIONS_SHORTCUT,
+    action_group_rects, menu_frame, menu_header_rect, menu_row_rect, OpenMenu, ACTIONS_SHORTCUT,
 };
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
@@ -23,6 +23,7 @@ pub struct MenuPaint<'a> {
     pub header: &'a str,
     pub items: &'a [MenuItem],
     pub selection: usize,
+    pub kind: OpenMenu,
 }
 
 pub fn paint_footer(
@@ -125,7 +126,7 @@ pub fn paint_menu(
         return Ok(());
     }
     let has_header = !menu.header.is_empty();
-    let frame = actions_menu_frame(panel_w, panel_h, menu.items.len(), has_header);
+    let frame = menu_frame(menu.kind, panel_w, panel_h, menu.items.len(), has_header);
     let glass = color(0.08, 0.08, 0.08, 0.94);
     fill_round(target, frame, theme::radius::MENU_PANEL, glass)?;
     let frost = color(1.0, 1.0, 1.0, 0.05);

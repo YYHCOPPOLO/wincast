@@ -46,9 +46,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::app_core::AppCore;
 use crate::features::launcher::settings::items::{
-    hit_confirm, hit_launcher, hit_search, hotkey_action_key, layout_confirm, layout_launcher_items,
-    layout_search_section, paint_confirm, paint_launcher_items, paint_search_section, FieldEdit,
-    Formats, Hit, LauncherItemsSection, ALIAS_EDIT_ID, FILTER_EDIT_ID, ITEM_H,
+    hit_confirm, hit_launcher, hit_search, hotkey_action_key, layout_confirm,
+    layout_launcher_items, layout_search_section, paint_confirm, paint_confirm_copy,
+    paint_launcher_items, paint_search_section, ConfirmCopy, FieldEdit, Formats, Hit,
+    LauncherItemsSection, ALIAS_EDIT_ID, FILTER_EDIT_ID, ITEM_H,
 };
 use crate::platform::screens::{dip_scalar_to_px, screens_px, target_screen_from_cursor_px};
 
@@ -147,6 +148,7 @@ struct SettingsInner {
     alias_index: Option<usize>,
     recording: Option<String>,
     confirming_reset: bool,
+    confirming_clear: bool,
     shown_tab: SettingsTab,
 }
 
@@ -192,6 +194,7 @@ impl SettingsWindow {
                 alias_index: None,
                 recording: None,
                 confirming_reset: false,
+                confirming_clear: false,
                 shown_tab: SettingsTab::General,
             });
             let ptr = Box::into_raw(inner);
@@ -530,18 +533,41 @@ unsafe fn paint_detail(
         reset_pane_state(inner, false);
         (*inner).shown_tab = selected;
     }
-    if (*inner).confirming_reset {
+    if (*inner).confirming_reset || (*inner).confirming_clear {
         hide_edits(inner);
         if let Some(core) = core {
             let layout = layout_confirm(width, height);
-            paint_search_section(
-                target,
-                formats,
-                &layout_search_section(detail_w),
-                core.ranking_is_empty(),
-                (*inner).scroll,
-            )?;
-            paint_confirm(target, formats, &layout, (width, height))?;
+            if (*inner).confirming_clear {
+                crate::features::clipboard::settings::pane::paint(
+                    target,
+                    formats,
+                    core.settings.clipboard_retention_days,
+                    &core.settings.clipboard_disabled_apps,
+                    detail_w,
+                    (*inner).scroll,
+                )?;
+                paint_confirm_copy(
+                    target,
+                    formats,
+                    &layout,
+                    (width, height),
+                    ConfirmCopy {
+                        title: crate::features::clipboard::settings::pane::CLEAR_CONFIRM_TITLE,
+                        message: crate::features::clipboard::settings::pane::CLEAR_CONFIRM_MESSAGE,
+                        accept: crate::features::clipboard::settings::pane::CLEAR_CONFIRM_ACTION,
+                        cancel: crate::features::launcher::settings::items::RESET_CONFIRM_CANCEL,
+                    },
+                )?;
+            } else {
+                paint_search_section(
+                    target,
+                    formats,
+                    &layout_search_section(detail_w),
+                    core.ranking_is_empty(),
+                    (*inner).scroll,
+                )?;
+                paint_confirm(target, formats, &layout, (width, height))?;
+            }
         }
         return Ok(());
     }
@@ -674,6 +700,7 @@ unsafe fn reset_pane_state(inner: *mut SettingsInner, resume_hotkeys: bool) {
     }
     (*inner).alias_index = None;
     (*inner).confirming_reset = false;
+    (*inner).confirming_clear = false;
     if (*inner).recording.take().is_some() && resume_hotkeys {
         if let Some(core) = core_from_host((*inner).host) {
             (*core).resume_global_hotkeys();
@@ -1061,18 +1088,24 @@ unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
     let Some(inner) = inner_from(hwnd) else {
         return false;
     };
-    if (*inner).confirming_reset {
+    if (*inner).confirming_reset || (*inner).confirming_clear {
         let vk = wparam.0 as u16;
         if vk == 0x1B {
             (*inner).confirming_reset = false;
+            (*inner).confirming_clear = false;
             let _ = InvalidateRect(hwnd, None, FALSE);
             return true;
         }
         if vk == 0x0D {
             if let Some(core) = core_from_host((*inner).host) {
-                (*core).reset_learned_ranking();
+                if (*inner).confirming_clear {
+                    (*core).clear_clipboard_history();
+                } else {
+                    (*core).reset_learned_ranking();
+                }
             }
             (*inner).confirming_reset = false;
+            (*inner).confirming_clear = false;
             let _ = InvalidateRect(hwnd, None, FALSE);
             return true;
         }
@@ -1135,17 +1168,23 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         return;
     };
     let (width, height) = client_dip_size(hwnd);
-    if (*inner).confirming_reset {
+    if (*inner).confirming_reset || (*inner).confirming_clear {
         let layout = layout_confirm(width, height);
         match hit_confirm(&layout, x, y) {
             Some(Hit::ConfirmReset) => {
                 if let Some(core) = core_from_host((*inner).host) {
-                    (*core).reset_learned_ranking();
+                    if (*inner).confirming_clear {
+                        (*core).clear_clipboard_history();
+                    } else {
+                        (*core).reset_learned_ranking();
+                    }
                 }
                 (*inner).confirming_reset = false;
+                (*inner).confirming_clear = false;
             }
             Some(Hit::ConfirmCancel) => {
                 (*inner).confirming_reset = false;
+                (*inner).confirming_clear = false;
             }
             _ => {}
         }
@@ -1175,7 +1214,14 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                 (*core).cycle_clipboard_retention();
             }
             Some(crate::features::clipboard::settings::pane::ClipboardHit::Clear) => {
-                (*core).clear_clipboard_history();
+                (*inner).confirming_clear = true;
+            }
+            Some(crate::features::clipboard::settings::pane::ClipboardHit::AddApp) => {
+                if let Some(stem) =
+                    crate::features::clipboard::settings::pane::pick_application_stem(hwnd)
+                {
+                    (*core).add_clipboard_disabled_app(stem);
+                }
             }
             Some(crate::features::clipboard::settings::pane::ClipboardHit::RemoveApp(i)) => {
                 (*core).remove_clipboard_disabled_app(i);
@@ -1367,6 +1413,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if let Some(inner) = inner_from(hwnd) {
                 commit_alias(inner);
                 (*inner).confirming_reset = false;
+                (*inner).confirming_clear = false;
                 if (*inner).recording.take().is_some() {
                     if let Some(core) = core_from_host((*inner).host) {
                         (*core).resume_global_hotkeys();

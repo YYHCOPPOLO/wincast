@@ -217,9 +217,10 @@ impl PaletteWindow {
     fn layout_search(&self) {
         unsafe {
             if let Some(inner) = inner_from(self.hwnd) {
-                if let Some(edit) = (*inner).edit.as_mut() {
-                    edit.layout(self.hwnd);
-                }
+                let trailing = core_from_host((*inner).host)
+                    .map(|c| (*c).search_trailing_width())
+                    .unwrap_or(0.0);
+                layout_edit(self.hwnd, inner, trailing);
             }
         }
     }
@@ -376,6 +377,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
             menu: None,
             clipboard_preview: None,
             tab_hint: None,
+            clipboard_filter: None,
         };
         inner.renderer.paint(hwnd, params, inner.present_alpha);
         return;
@@ -388,6 +390,8 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     let menu = (*core).menu_paint();
     let preview = (*core).clipboard_preview();
     let tab_hint = (*core).tab_hint();
+    let filter = (*core).clipboard_filter_paint();
+    layout_edit(hwnd, inner, (*core).search_trailing_width());
     let params = PaintParams {
         placeholder,
         items: &items,
@@ -398,8 +402,17 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         menu,
         clipboard_preview: preview.as_deref(),
         tab_hint,
+        clipboard_filter: filter,
     };
     inner.renderer.paint(hwnd, params, inner.present_alpha);
+}
+
+fn layout_edit(hwnd: HWND, inner: *mut PaletteInner, trailing: f32) {
+    unsafe {
+        if let Some(edit) = (*inner).edit.as_mut() {
+            edit.layout_with_trailing(hwnd, trailing);
+        }
+    }
 }
 
 fn client_dip_size(hwnd: HWND, dpi: u32) -> (f32, f32) {
@@ -565,9 +578,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let width = (lparam.0 as u32) & 0xffff;
                 let height = ((lparam.0 as u32) >> 16) & 0xffff;
                 (*inner).renderer.resize(hwnd, width, height);
-                if let Some(edit) = (*inner).edit.as_mut() {
-                    edit.layout(hwnd);
-                }
+                let trailing = core_from_host((*inner).host)
+                    .map(|c| (*c).search_trailing_width())
+                    .unwrap_or(0.0);
+                layout_edit(hwnd, inner, trailing);
                 if (*inner).renderer.is_layered() {
                     paint_palette(hwnd, inner);
                 }
@@ -606,9 +620,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_DPICHANGED => {
             if let Some(inner) = inner_from(hwnd) {
                 (*inner).renderer.discard_target();
-                if let Some(edit) = (*inner).edit.as_mut() {
-                    edit.layout(hwnd);
-                }
+                let trailing = core_from_host((*inner).host)
+                    .map(|c| (*c).search_trailing_width())
+                    .unwrap_or(0.0);
+                layout_edit(hwnd, inner, trailing);
                 if let Some(core) = core_from_host((*inner).host) {
                     (*core).relayout_palette();
                 }

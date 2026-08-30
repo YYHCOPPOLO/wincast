@@ -171,10 +171,68 @@ pub fn actions_menu_frame(
     item_count: usize,
     has_header: bool,
 ) -> DipRect {
-    let w = theme::size::MENU_WIDTH;
+    popover_menu_frame(
+        panel_w,
+        panel_h,
+        item_count,
+        has_header,
+        theme::size::MENU_WIDTH,
+        false,
+    )
+}
+
+/// Clipboard type filter, anchored `.topTrailing` under the header button.
+pub fn clipboard_filter_menu_frame(
+    panel_w: f32,
+    panel_h: f32,
+    item_count: usize,
+    has_header: bool,
+) -> DipRect {
+    popover_menu_frame(
+        panel_w,
+        panel_h,
+        item_count,
+        has_header,
+        theme::size::CLIPBOARD_FILTER_MENU_WIDTH,
+        true,
+    )
+}
+
+pub fn menu_frame(
+    kind: OpenMenu,
+    panel_w: f32,
+    panel_h: f32,
+    item_count: usize,
+    has_header: bool,
+) -> DipRect {
+    match kind {
+        OpenMenu::ClipboardFilter => {
+            clipboard_filter_menu_frame(panel_w, panel_h, item_count, has_header)
+        }
+        _ => actions_menu_frame(panel_w, panel_h, item_count, has_header),
+    }
+}
+
+fn popover_menu_frame(
+    panel_w: f32,
+    panel_h: f32,
+    item_count: usize,
+    has_header: bool,
+    w: f32,
+    top_trailing: bool,
+) -> DipRect {
     let h = menu_height(item_count, has_header);
     let x = (panel_w - MENU_INSET - w).max(MENU_INSET);
-    let y = (panel_h - MENU_INSET - h).max(MENU_INSET);
+    let y = if top_trailing {
+        let below_header = theme::size::COMPACT_HEIGHT;
+        if below_header + h > panel_h - MENU_INSET {
+            (panel_h - MENU_INSET - h).max(MENU_INSET)
+        } else {
+            below_header
+        }
+    } else {
+        (panel_h - MENU_INSET - h).max(MENU_INSET)
+    };
     DipRect { x, y, w, h }
 }
 
@@ -351,6 +409,19 @@ mod tests {
         assert_eq!(frame.x, 750.0 - MENU_INSET - 276.0);
         assert!(frame.x > 750.0 / 2.0);
         assert!((frame.y + frame.h - (475.0 - MENU_INSET)).abs() < 0.01);
+    }
+
+    #[test]
+    fn clipboard_filter_menu_is_200_dip_top_trailing() {
+        assert_eq!(theme::size::CLIPBOARD_FILTER_MENU_WIDTH, 200.0);
+        let frame = clipboard_filter_menu_frame(750.0, 475.0, 5, true);
+        assert_eq!(frame.w, 200.0);
+        assert_eq!(frame.x, 750.0 - MENU_INSET - 200.0);
+        assert_eq!(frame.y, theme::size::COMPACT_HEIGHT);
+        assert_eq!(
+            menu_frame(OpenMenu::ClipboardFilter, 750.0, 475.0, 5, true).w,
+            200.0
+        );
     }
 
     #[test]

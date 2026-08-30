@@ -90,6 +90,21 @@ impl CalculatorHistoryStore {
     }
 }
 
+/// Copy payload for a history row. Strip thousands grouping only when the
+/// stored result is a grouped number (`1,024`), not dates (`Friday, 14 August`).
+pub fn history_copy_payload(result: &str) -> String {
+    if is_grouped_number(result) {
+        result.replace(',', "")
+    } else {
+        result.to_string()
+    }
+}
+
+fn is_grouped_number(s: &str) -> bool {
+    let t = s.trim();
+    t.contains(',') && t.replace(',', "").parse::<f64>().is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,5 +127,19 @@ mod tests {
         assert_eq!(h.items.len(), CAP);
         assert_eq!(h.items[0], CAP.to_string());
         assert_eq!(h.items.last().unwrap(), "1");
+    }
+
+    #[test]
+    fn history_copy_strips_grouping_only_on_numeric_copy_text() {
+        assert_eq!(history_copy_payload("1,024"), "1024");
+        assert_eq!(history_copy_payload("-1,024.5"), "-1024.5");
+        assert_eq!(
+            history_copy_payload("Friday, 14 August"),
+            "Friday, 14 August"
+        );
+        assert_eq!(
+            history_copy_payload("Friday, 24 July at 1:48 AM"),
+            "Friday, 24 July at 1:48 AM"
+        );
     }
 }

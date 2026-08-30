@@ -9,7 +9,7 @@ mod units;
 
 pub use currency::{currency_for_locale, merge_feeds, prices_coins, CurrencyRates};
 pub use engine::evaluate;
-pub use history::{CalcHistoryEntry, CalculatorHistoryStore};
+pub use history::{history_copy_payload, CalcHistoryEntry, CalculatorHistoryStore};
 
 pub fn lookup(rates: &CurrencyRates, code: &str) -> Option<f64> {
     rates.rate(code)
@@ -180,20 +180,16 @@ mod tests {
         let r = evaluate("days till 9april", CLOCK, None, None).unwrap();
         assert_eq!(r.display, "259 days");
         assert_eq!(r.source_badge.as_deref(), Some("Friday, 24 July"));
+        assert_eq!(r.target_badge.as_deref(), Some("Friday, 9 April, 2027"));
+        let plus_weeks = evaluate("today + 3 weeks", CLOCK, None, None).unwrap();
+        assert_eq!(plus_weeks.display, "Friday, 14 August");
+        assert_eq!(plus_weeks.copy_text, "Friday, 14 August");
         assert_eq!(
-            r.target_badge.as_deref(),
-            Some("Friday, 9 April, 2027")
-        );
-        assert_eq!(
-            evaluate("today + 3 weeks", CLOCK, None, None)
-                .unwrap()
-                .display,
+            history_copy_payload(&plus_weeks.copy_text),
             "Friday, 14 August"
         );
         assert_eq!(
-            evaluate("now + 90 min", CLOCK, None, None)
-                .unwrap()
-                .display,
+            evaluate("now + 90 min", CLOCK, None, None).unwrap().display,
             "Friday, 24 July at 1:48 AM"
         );
         assert_eq!(
@@ -203,15 +199,11 @@ mod tests {
             "345 days"
         );
         assert_eq!(
-            evaluate("5/2 - 1/2", CLOCK, None, None)
-                .unwrap()
-                .display,
+            evaluate("5/2 - 1/2", CLOCK, None, None).unwrap().display,
             "2"
         );
         assert_eq!(
-            evaluate("9/4 - today", CLOCK, None, None)
-                .unwrap()
-                .display,
+            evaluate("9/4 - today", CLOCK, None, None).unwrap().display,
             "42 days"
         );
         assert!(evaluate("today", CLOCK, None, None).is_none());
@@ -244,9 +236,7 @@ mod tests {
             "83.50 INR"
         );
         assert_eq!(
-            evaluate("$10 +", 0, Some(&rates), None)
-                .unwrap()
-                .display,
+            evaluate("$10 +", 0, Some(&rates), None).unwrap().display,
             "10.00 USD"
         );
         let err = evaluate("10 usd to kg", 0, Some(&rates), None).unwrap();
@@ -295,7 +285,10 @@ mod tests {
         let got = evaluate(query, 0, None, None)
             .unwrap_or_else(|| panic!("{query}: expected error {expected}, got nil"));
         assert_eq!(got.display, expected, "{query}");
-        assert!(got.source_badge.is_none() && got.target_badge.is_none(), "{query}");
+        assert!(
+            got.source_badge.is_none() && got.target_badge.is_none(),
+            "{query}"
+        );
     }
 
     fn copy(query: &str) -> String {

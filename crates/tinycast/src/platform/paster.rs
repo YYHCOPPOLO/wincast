@@ -6,16 +6,9 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL,
 };
-use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-
-use super::clipboard;
+use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, SetForegroundWindow};
 
 const VK_V: VIRTUAL_KEY = VIRTUAL_KEY(0x56);
-
-pub fn paste_text(text: &str, previous: HWND) {
-    let _ = clipboard::write_text_marked(text);
-    paste_into(previous);
-}
 
 pub fn paste_into(previous: HWND) {
     if previous.is_invalid() {
@@ -28,12 +21,19 @@ pub fn paste_into(previous: HWND) {
         .spawn(move || {
             std::thread::sleep(Duration::from_millis(80));
             let hwnd = HWND(bits as *mut core::ffi::c_void);
-            unsafe {
-                let _ = SetForegroundWindow(hwnd);
+            if !restore_foreground(hwnd) {
+                return;
             }
             std::thread::sleep(Duration::from_millis(40));
             send_ctrl_v();
         });
+}
+
+fn restore_foreground(target: HWND) -> bool {
+    unsafe {
+        let _ = AllowSetForegroundWindow(u32::MAX);
+        SetForegroundWindow(target).as_bool()
+    }
 }
 
 fn send_ctrl_v() {
@@ -55,7 +55,11 @@ fn key(vk: VIRTUAL_KEY, up: bool) -> INPUT {
             ki: KEYBDINPUT {
                 wVk: vk,
                 wScan: 0,
-                dwFlags: if up { KEYEVENTF_KEYUP } else { Default::default() },
+                dwFlags: if up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    Default::default()
+                },
                 time: 0,
                 dwExtraInfo: 0,
             },

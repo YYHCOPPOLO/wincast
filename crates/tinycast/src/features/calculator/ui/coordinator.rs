@@ -1,4 +1,4 @@
-use tinycast_pure::calc::{CalcResult, CalculatorHistoryStore};
+use tinycast_pure::calc::{history_copy_payload, CalcResult, CalculatorHistoryStore};
 
 use super::card;
 use crate::features::launcher::ui::coordinator::copy_text;
@@ -7,11 +7,10 @@ pub fn copy_calculator_result(history: &mut CalculatorHistoryStore, result: &Cal
     if !card::is_actionable(result) {
         return false;
     }
-    history.record(result.expression.clone(), result.display.clone());
+    history.record(result.expression.clone(), result.copy_text.clone());
     copy_text(&result.copy_text).is_ok()
 }
 
 pub fn copy_history_result(result: &str) -> bool {
-    let plain = result.replace(',', "");
-    copy_text(&plain).is_ok()
+    copy_text(&history_copy_payload(result)).is_ok()
 }
