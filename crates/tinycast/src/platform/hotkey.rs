@@ -28,6 +28,14 @@ pub fn unregister_toggle_palette(hwnd: HWND) {
     }
 }
 
+pub fn pause(hwnd: HWND) {
+    unregister_toggle_palette(hwnd);
+}
+
+pub fn resume(hwnd: HWND) {
+    let _ = register_toggle_palette(hwnd);
+}
+
 fn modifiers_to_win32(m: Modifiers) -> HOT_KEY_MODIFIERS {
     let mut flags = HOT_KEY_MODIFIERS(0);
     if m.alt {

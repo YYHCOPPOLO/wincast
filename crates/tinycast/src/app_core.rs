@@ -1,7 +1,10 @@
 use tinycast_pure::alias::AliasStore;
-use tinycast_pure::app_entry::AppEntry;
+use tinycast_pure::app_entry::{AppEntry, AppKind};
 use tinycast_pure::command_id::CommandID;
 use tinycast_pure::favorites::FavoritesStore;
+use tinycast_pure::feature_flags::FeatureFlags;
+use tinycast_pure::hotkey::HotKeyBinding;
+use tinycast_pure::hotkey_store::HotKeyStore;
 use tinycast_pure::launcher_ranking::LauncherRankingStore;
 use tinycast_pure::launcher_results::{
     is_category_listing, ordered_results, selectable_rows, LauncherSection,
@@ -22,6 +25,9 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::app_settings::AppSettings;
 use crate::features::launcher::service::app_index::AppIndex;
+use crate::features::launcher::settings::items::{
+    commit_alias_text, commands_catalog, hotkey_action_key,
+};
 use crate::features::launcher::ui::coordinator::{
     execute, launch_spec, record_if_needed, LaunchSpec,
 };
@@ -50,6 +56,8 @@ pub struct AppCore {
     pub visibility: VisibilityStore,
     pub favorites: FavoritesStore,
     pub aliases: AliasStore,
+    pub hotkeys: HotKeyStore,
+    pub settings: AppSettings,
     host: HWND,
     list_scroll: f32,
     expanded: bool,
@@ -73,6 +81,8 @@ impl AppCore {
             visibility: VisibilityStore::load(store_path("visibility.json")),
             favorites: FavoritesStore::load(store_path("favorites.json")),
             aliases: AliasStore::load(store_path("aliases.json")),
+            hotkeys: HotKeyStore::load(store_path("hotkeys.json")),
+            settings: AppSettings::load(),
             host: HWND::default(),
             list_scroll: 0.0,
             expanded: false,
@@ -131,7 +141,76 @@ impl AppCore {
         }
         self.settings_tab = tab;
         if let Some(window) = &self.settings_window {
-            window.invalidate();
+            window.on_tab_changed();
+        }
+    }
+
+    pub fn feature_flags(&self) -> FeatureFlags {
+        self.settings.feature_flags()
+    }
+
+    pub fn settings_entries(&self, kind: AppKind) -> Vec<AppEntry> {
+        let mut entries = match kind {
+            AppKind::Command => commands_catalog(),
+            _ => self
+                .entries
+                .iter()
+                .filter(|e| e.kind == kind)
+                .cloned()
+                .collect(),
+        };
+        self.apply_prefs(&mut entries);
+        entries
+    }
+
+    pub fn set_kind_enabled(&mut self, kind: AppKind, on: bool) {
+        self.visibility.set_kind_enabled(kind, on);
+        self.persist_visibility();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn set_item_visible(&mut self, id: &str, visible: bool) {
+        self.visibility.set_item_visible(id, visible);
+        self.persist_visibility();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn set_alias_draft(&mut self, id: &str, draft: &str) {
+        self.aliases.set(id.to_string(), commit_alias_text(draft));
+        self.persist_aliases();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn set_hotkey(&mut self, action: &str, binding: Option<HotKeyBinding>) {
+        self.hotkeys.set(action.to_string(), binding);
+        self.persist_hotkeys();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn ranking_is_empty(&self) -> bool {
+        self.ranking.is_empty()
+    }
+
+    pub fn reset_learned_ranking(&mut self) {
+        self.ranking.reset_all();
+        let _ = self.ranking.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn pause_global_hotkeys(&self) {
+        if let Some(window) = &self.palette_window {
+            crate::platform::hotkey::pause(window.hwnd);
+        }
+    }
+
+    pub fn resume_global_hotkeys(&self) {
+        if let Some(window) = &self.palette_window {
+            crate::platform::hotkey::resume(window.hwnd);
         }
     }
 
@@ -423,12 +502,43 @@ impl AppCore {
     }
 
     fn catalog(&self) -> Vec<AppEntry> {
+        let flags = self.feature_flags();
         let mut entries = self.entries.clone();
-        entries.extend(CommandID::all().iter().copied().map(CommandID::as_entry));
-        for entry in &mut entries {
-            entry.fields.user_alias = self.aliases.get(&entry.id).map(str::to_string);
-        }
+        entries.extend(
+            CommandID::all()
+                .iter()
+                .copied()
+                .filter(|id| id.shows_in_launcher(flags))
+                .map(CommandID::as_entry),
+        );
+        self.apply_prefs(&mut entries);
         entries
+    }
+
+    fn apply_prefs(&self, entries: &mut [AppEntry]) {
+        for entry in entries {
+            entry.fields.user_alias = self.aliases.get(&entry.id).map(str::to_string);
+            entry.hotkey = hotkey_action_key(entry)
+                .and_then(|key| self.hotkeys.get(&key).cloned());
+        }
+    }
+
+    fn persist_visibility(&self) {
+        let _ = self.visibility.save(store_path("visibility.json"));
+    }
+
+    fn persist_aliases(&self) {
+        let _ = self.aliases.save(store_path("aliases.json"));
+    }
+
+    fn persist_hotkeys(&self) {
+        let _ = self.hotkeys.save(store_path("hotkeys.json"));
+    }
+
+    fn invalidate_settings(&self) {
+        if let Some(window) = &self.settings_window {
+            window.invalidate();
+        }
     }
 
     fn sections(&self) -> Vec<LauncherSection> {
@@ -658,5 +768,33 @@ mod tests {
         c.toggle_palette();
         c.activate_favorite_slot(1);
         assert!(c.palette_visible);
+    }
+
+    #[test]
+    fn feature_off_commands_are_absent_from_launcher_and_present_in_settings() {
+        use crate::features::launcher::ui::list::PaintItem;
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.favorites = tinycast_pure::favorites::FavoritesStore::default();
+        c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.settings = AppSettings::default();
+        c.toggle_palette();
+        let items = c.launcher_paint_items();
+        assert!(!items.iter().any(|item| matches!(
+            item,
+            PaintItem::Row { title, .. } if title == "AI Chat"
+        )));
+        assert!(!items.iter().any(|item| matches!(
+            item,
+            PaintItem::Row { title, .. } if title == "Search Files"
+        )));
+        assert!(items.iter().any(|item| matches!(
+            item,
+            PaintItem::Row { title, .. } if title == "Quit Tinycast"
+        )));
+        let listed = c.settings_entries(AppKind::Command);
+        assert_eq!(listed.len(), CommandID::all().len());
+        assert!(listed.iter().any(|e| e.name == "AI Chat"));
+        assert!(listed.iter().any(|e| e.name == "Search Files"));
     }
 }

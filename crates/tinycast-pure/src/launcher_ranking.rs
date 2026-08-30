@@ -77,6 +77,10 @@ impl LauncherRankingStore {
             .unwrap_or(0)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+
     pub fn reset_all(&mut self) {
         self.records.clear();
     }
@@ -272,8 +276,11 @@ mod tests {
     #[test]
     fn reset_all_clears_learned_ranking() {
         let (mut s, path) = load_temp("reset");
+        assert!(s.is_empty());
         s.record("wha", "app:whatsapp", 1_000);
+        assert!(!s.is_empty());
         s.reset_all();
+        assert!(s.is_empty());
         assert_eq!(s.boost("w", "app:whatsapp", 1_000), 0);
         let _ = std::fs::remove_file(path);
     }

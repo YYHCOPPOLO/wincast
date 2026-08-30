@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use tinycast_pure::feature_flags::FeatureFlags;
+
 use crate::platform::launch_at_login;
 use crate::platform::paths;
 
@@ -25,6 +27,24 @@ pub struct AppSettings {
     pub launch_at_login: bool,
     #[serde(default = "default_search_scopes", rename = "launcherSearchScopes")]
     pub launcher_search_scopes: Vec<String>,
+    #[serde(default, rename = "fileSearchEnabled")]
+    pub file_search_enabled: bool,
+    #[serde(default, rename = "notesEnabled")]
+    pub notes_enabled: bool,
+    #[serde(default, rename = "snippetsEnabled")]
+    pub snippets_enabled: bool,
+    #[serde(default, rename = "windowManagementEnabled")]
+    pub window_management_enabled: bool,
+    #[serde(default, rename = "calendarEnabled")]
+    pub calendar_enabled: bool,
+    #[serde(default, rename = "aiEnabled")]
+    pub ai_enabled: bool,
+    #[serde(default, rename = "quickActionsEnabled")]
+    pub quick_actions_enabled: bool,
+    #[serde(default, rename = "extensionsEnabled")]
+    pub extensions_enabled: bool,
+    #[serde(default, rename = "quicklinksEnabled")]
+    pub quicklinks_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -35,6 +55,31 @@ impl Default for AppSettings {
             appearance: Appearance::System,
             launch_at_login: false,
             launcher_search_scopes: default_search_scopes(),
+            file_search_enabled: false,
+            notes_enabled: false,
+            snippets_enabled: false,
+            window_management_enabled: false,
+            calendar_enabled: false,
+            ai_enabled: false,
+            quick_actions_enabled: false,
+            extensions_enabled: false,
+            quicklinks_enabled: false,
+        }
+    }
+}
+
+impl AppSettings {
+    pub fn feature_flags(&self) -> FeatureFlags {
+        FeatureFlags {
+            file_search_enabled: self.file_search_enabled,
+            notes_enabled: self.notes_enabled,
+            snippets_enabled: self.snippets_enabled,
+            window_management_enabled: self.window_management_enabled,
+            calendar_enabled: self.calendar_enabled,
+            ai_enabled: self.ai_enabled,
+            quick_actions_enabled: self.quick_actions_enabled,
+            extensions_enabled: self.extensions_enabled,
+            quicklinks_enabled: self.quicklinks_enabled,
         }
     }
 }
@@ -94,6 +139,7 @@ mod tests {
             appearance: Appearance::Dark,
             launch_at_login: false,
             launcher_search_scopes: default_search_scopes(),
+            ..Default::default()
         };
         let j = serde_json::to_value(&s).unwrap();
         assert_eq!(j["compactMode"], true);
@@ -107,6 +153,16 @@ mod tests {
             j[AppSettingsKey::SearchScopes.as_str()],
             serde_json::json!(default_search_scopes())
         );
+        assert_eq!(j[AppSettingsKey::FileSearchEnabled.as_str()], false);
+        assert_eq!(j[AppSettingsKey::AiEnabled.as_str()], false);
+        assert_eq!(j[AppSettingsKey::NotesEnabled.as_str()], false);
+        assert_eq!(j[AppSettingsKey::SnippetsEnabled.as_str()], false);
+        assert_eq!(j[AppSettingsKey::WindowManagementEnabled.as_str()], false);
+        assert_eq!(j[AppSettingsKey::CalendarEnabled.as_str()], false);
+        assert_eq!(j[AppSettingsKey::QuickActionsEnabled.as_str()], false);
+        assert_eq!(j[AppSettingsKey::ExtensionsEnabled.as_str()], false);
+        assert!(!s.feature_flags().file_search_enabled);
+        assert!(!s.feature_flags().ai_enabled);
     }
 
     #[test]
@@ -118,6 +174,15 @@ mod tests {
         assert_eq!(s.appearance, Appearance::System);
         assert!(!s.launch_at_login);
         assert_eq!(s.launcher_search_scopes, default_search_scopes());
+        assert!(!s.file_search_enabled);
+        assert!(!s.notes_enabled);
+        assert!(!s.snippets_enabled);
+        assert!(!s.window_management_enabled);
+        assert!(!s.calendar_enabled);
+        assert!(!s.ai_enabled);
+        assert!(!s.quick_actions_enabled);
+        assert!(!s.extensions_enabled);
+        assert!(!s.quicklinks_enabled);
     }
 
     #[test]
@@ -138,6 +203,7 @@ mod tests {
             appearance: Appearance::Light,
             launch_at_login: false,
             launcher_search_scopes: default_search_scopes(),
+            ..Default::default()
         };
         s.write_json(&roaming, &local).unwrap();
         assert!(local.is_dir());

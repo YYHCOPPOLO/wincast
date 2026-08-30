@@ -1,4 +1,5 @@
 use crate::app_entry::{AppEntry, AppKind};
+use crate::feature_flags::FeatureFlags;
 use crate::search_relevance::SearchFields;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -69,6 +70,64 @@ impl CommandID {
 
     pub fn all() -> &'static [CommandID] {
         Self::ALL
+    }
+
+    /// Commands settings lists the full catalog, including feature-gated rows.
+    pub fn settings_pane_ids() -> &'static [CommandID] {
+        Self::ALL
+    }
+
+    pub fn from_raw(raw: &str) -> Option<CommandID> {
+        Self::ALL.iter().copied().find(|id| id.raw() == raw)
+    }
+
+    pub fn listed_in_commands_settings(self) -> bool {
+        true
+    }
+
+    pub fn shows_in_launcher(self, flags: FeatureFlags) -> bool {
+        match self {
+            CommandID::SearchFiles => flags.file_search_enabled,
+            CommandID::ShowNotes | CommandID::CreateNote | CommandID::SearchNotes => {
+                flags.notes_enabled
+            }
+            CommandID::JoinNextMeeting
+            | CommandID::CopyMeetingLink
+            | CommandID::MySchedule
+            | CommandID::OpenInCalendar
+            | CommandID::CreateEvent => flags.calendar_enabled,
+            CommandID::AiChat => flags.ai_enabled,
+            CommandID::FixGrammar
+            | CommandID::Rewrite
+            | CommandID::Translate
+            | CommandID::Summarize => flags.quick_actions_enabled,
+            CommandID::CreateQuicklink
+            | CommandID::SearchQuicklinks
+            | CommandID::ImportQuicklinks
+            | CommandID::ExportQuicklinks => flags.quicklinks_enabled,
+            _ => true,
+        }
+    }
+
+    /// `UserDefaults` key in v0.10.2; `None` means the Commands row has no recorder.
+    pub fn hotkey_defaults_key(self) -> Option<&'static str> {
+        match self {
+            CommandID::SearchFiles => Some("hotkey.searchFiles"),
+            CommandID::ClipboardHistory => Some("hotkey.toggleClipboard"),
+            CommandID::SearchEmoji => Some("hotkey.toggleEmoji"),
+            CommandID::ShowNotes => Some("hotkey.showNotes"),
+            CommandID::CreateNote => Some("hotkey.createNote"),
+            CommandID::SearchNotes => Some("hotkey.searchNotes"),
+            CommandID::JoinNextMeeting => Some("hotkey.joinNextMeeting"),
+            CommandID::MySchedule => Some("hotkey.mySchedule"),
+            CommandID::CreateEvent => Some("hotkey.createEvent"),
+            CommandID::AiChat => Some("hotkey.aiChat"),
+            CommandID::FixGrammar => Some("hotkey.quickAction.fixGrammar"),
+            CommandID::Rewrite => Some("hotkey.quickAction.rewrite"),
+            CommandID::Translate => Some("hotkey.quickAction.translate"),
+            CommandID::Summarize => Some("hotkey.quickAction.summarize"),
+            _ => None,
+        }
     }
 
     pub fn raw(self) -> &'static str {
@@ -218,5 +277,60 @@ mod tests {
         assert!(entry.hotkey.is_none());
         assert!(entry.fields.user_alias.is_none());
         assert!(entry.fields.bundle_id.is_none());
+    }
+
+    #[test]
+    fn commands_pane_lists_every_command_id() {
+        // v0.10.2 ships 29 CommandIDs; do not invent extras to satisfy a looser bound.
+        assert_eq!(CommandID::all().len(), 29);
+        let listed = CommandID::settings_pane_ids();
+        assert_eq!(listed.len(), CommandID::all().len());
+        assert_eq!(listed, CommandID::all());
+        for id in CommandID::all() {
+            assert!(
+                id.listed_in_commands_settings(),
+                "{} must stay listed when its feature is off",
+                id.raw()
+            );
+        }
+    }
+
+    #[test]
+    fn feature_off_commands_stay_out_of_the_launcher() {
+        let flags = crate::feature_flags::FeatureFlags::default();
+        assert!(!flags.file_search_enabled);
+        assert!(!flags.notes_enabled);
+        assert!(!flags.snippets_enabled);
+        assert!(!flags.window_management_enabled);
+        assert!(!flags.calendar_enabled);
+        assert!(!flags.ai_enabled);
+        assert!(!flags.quick_actions_enabled);
+        assert!(!flags.extensions_enabled);
+        assert!(!flags.quicklinks_enabled);
+
+        for always in [
+            CommandID::Settings,
+            CommandID::About,
+            CommandID::Support,
+            CommandID::Quit,
+            CommandID::ClipboardHistory,
+            CommandID::CalculatorHistory,
+            CommandID::SearchEmoji,
+        ] {
+            assert!(always.shows_in_launcher(flags), "{}", always.raw());
+        }
+        assert!(!CommandID::AiChat.shows_in_launcher(flags));
+        assert!(!CommandID::SearchFiles.shows_in_launcher(flags));
+        assert!(!CommandID::ShowNotes.shows_in_launcher(flags));
+        assert!(!CommandID::FixGrammar.shows_in_launcher(flags));
+        assert!(!CommandID::JoinNextMeeting.shows_in_launcher(flags));
+        assert!(!CommandID::CreateQuicklink.shows_in_launcher(flags));
+
+        let on = crate::feature_flags::FeatureFlags {
+            file_search_enabled: true,
+            ..Default::default()
+        };
+        assert!(CommandID::SearchFiles.shows_in_launcher(on));
+        assert!(!CommandID::AiChat.shows_in_launcher(on));
     }
 }

@@ -1,8 +1,9 @@
+use tinycast_pure::hotkey::{capture_keydown, CaptureOutcome, Modifiers};
 use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
 use tinycast_pure::theme;
 use windows::core::w;
 use windows::Win32::Foundation::{
-    D2DERR_RECREATE_TARGET, FALSE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+    COLORREF, D2DERR_RECREATE_TARGET, FALSE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F,
@@ -19,26 +20,36 @@ use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
     DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
     DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-    DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_WORD_WRAPPING_NO_WRAP,
+    DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, GetStockObject, InvalidateRect, BLACK_BRUSH, HBRUSH,
+    BeginPaint, EndPaint, GetStockObject, InvalidateRect, SetBkMode, SetTextColor, BLACK_BRUSH,
+    HBRUSH, HDC, NULL_BRUSH, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyState, SetFocus, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetWindowLongPtrW,
     GetWindowRect, IsWindow, LoadCursorW, LoadIconW, RegisterClassW, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW,
-    GWLP_USERDATA, HWND_TOP, IDC_ARROW, IDI_APPLICATION, MINMAXINFO, SWP_NOACTIVATE,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE,
+    EN_KILLFOCUS, GWLP_USERDATA, HWND_TOP, IDC_ARROW, IDI_APPLICATION, MINMAXINFO, SWP_NOACTIVATE,
     SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO,
-    WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WNDCLASSW, WS_CAPTION,
-    WS_CLIPCHILDREN, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_SYSMENU,
+    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+    WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
+    WM_PAINT, WM_SIZE, WM_SYSKEYDOWN, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_APPWINDOW,
+    WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_SYSMENU,
 };
 
 use crate::app_core::AppCore;
+use crate::features::launcher::settings::items::{
+    hit_confirm, hit_launcher, hit_search, hotkey_action_key, layout_confirm, layout_launcher_items,
+    layout_search_section, paint_confirm, paint_launcher_items, paint_search_section, FieldEdit,
+    Formats, Hit, LauncherItemsSection, ALIAS_EDIT_ID, FILTER_EDIT_ID, ITEM_H,
+};
 use crate::platform::screens::{dip_scalar_to_px, screens_px, target_screen_from_cursor_px};
 
 const CLASS: windows::core::PCWSTR = w!("TinycastSettings");
@@ -129,12 +140,22 @@ struct SettingsInner {
     host: HWND,
     renderer: Renderer,
     placing: bool,
+    scroll: f32,
+    filter_query: String,
+    filter: Option<FieldEdit>,
+    alias: Option<FieldEdit>,
+    alias_index: Option<usize>,
+    recording: Option<String>,
+    confirming_reset: bool,
+    shown_tab: SettingsTab,
 }
 
 struct Renderer {
     factory: ID2D1Factory,
     header_format: IDWriteTextFormat,
     tab_format: IDWriteTextFormat,
+    body_format: IDWriteTextFormat,
+    caption_format: IDWriteTextFormat,
     hwnd_target: Option<ID2D1HwndRenderTarget>,
 }
 
@@ -164,6 +185,14 @@ impl SettingsWindow {
                 host,
                 renderer: Renderer::new()?,
                 placing: false,
+                scroll: 0.0,
+                filter_query: String::new(),
+                filter: None,
+                alias: None,
+                alias_index: None,
+                recording: None,
+                confirming_reset: false,
+                shown_tab: SettingsTab::General,
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -187,6 +216,12 @@ impl SettingsWindow {
                 }
             };
             place_hidden(hwnd);
+            if let Ok(filter) = FieldEdit::create(hwnd, FILTER_EDIT_ID) {
+                (*ptr).filter = Some(filter);
+            }
+            if let Ok(alias) = FieldEdit::create(hwnd, ALIAS_EDIT_ID) {
+                (*ptr).alias = Some(alias);
+            }
             Ok(Self { hwnd })
         }
     }
@@ -204,6 +239,15 @@ impl SettingsWindow {
         unsafe {
             let _ = InvalidateRect(self.hwnd, None, FALSE);
         }
+    }
+
+    pub fn on_tab_changed(&self) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                reset_pane_state(inner, true);
+            }
+        }
+        self.invalidate();
     }
 }
 
@@ -245,17 +289,46 @@ impl Renderer {
                 w!("en-US"),
             )?
         };
-        for format in [&header_format, &tab_format] {
+        let body_format = unsafe {
+            dwrite.CreateTextFormat(
+                w!("Segoe UI"),
+                None,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                TAB_FONT_DIP,
+                w!("en-US"),
+            )?
+        };
+        let caption_format = unsafe {
+            dwrite.CreateTextFormat(
+                w!("Segoe UI"),
+                None,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                HEADER_FONT_DIP,
+                w!("en-US"),
+            )?
+        };
+        for format in [&header_format, &tab_format, &body_format] {
             unsafe {
                 format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
                 format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
                 format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
             }
         }
+        unsafe {
+            caption_format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
+            caption_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            caption_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+        }
         Ok(Self {
             factory,
             header_format,
             tab_format,
+            body_format,
+            caption_format,
             hwnd_target: None,
         })
     }
@@ -281,7 +354,7 @@ impl Renderer {
         }
     }
 
-    fn paint(&mut self, hwnd: HWND, selected: SettingsTab) {
+    fn paint(&mut self, hwnd: HWND, inner: *mut SettingsInner) {
         if self.hwnd_target.is_none() {
             let (w, h) = client_size(hwnd);
             self.resize(hwnd, w, h);
@@ -289,7 +362,18 @@ impl Renderer {
         let Some(target) = &self.hwnd_target else {
             return;
         };
-        if let Err(err) = paint_scene(target, &self.header_format, &self.tab_format, selected) {
+        let selected = unsafe { selected_tab(inner) };
+        let err = paint_scene(
+            hwnd,
+            target,
+            &self.header_format,
+            &self.tab_format,
+            &self.body_format,
+            &self.caption_format,
+            selected,
+            inner,
+        );
+        if let Err(err) = err {
             if err.code() == D2DERR_RECREATE_TARGET {
                 self.hwnd_target = None;
             }
@@ -347,10 +431,14 @@ fn client_size(hwnd: HWND) -> (u32, u32) {
 }
 
 fn paint_scene(
+    hwnd: HWND,
     target: &ID2D1RenderTarget,
     header_format: &IDWriteTextFormat,
     tab_format: &IDWriteTextFormat,
+    body_format: &IDWriteTextFormat,
+    caption_format: &IDWriteTextFormat,
     selected: SettingsTab,
+    inner: *mut SettingsInner,
 ) -> windows::core::Result<()> {
     unsafe {
         target.BeginDraw();
@@ -408,7 +496,208 @@ fn paint_scene(
                 }
             }
         }
+        let formats = Formats {
+            header: header_format,
+            body: body_format,
+            caption: caption_format,
+        };
+        paint_detail(
+            hwnd,
+            target,
+            &formats,
+            selected,
+            inner,
+            size.width,
+            size.height,
+        )?;
         target.EndDraw(None, None)
+    }
+}
+
+unsafe fn paint_detail(
+    hwnd: HWND,
+    target: &ID2D1RenderTarget,
+    formats: &Formats<'_>,
+    selected: SettingsTab,
+    inner: *mut SettingsInner,
+    width: f32,
+    height: f32,
+) -> windows::core::Result<()> {
+    let sidebar_w = theme::size::SETTINGS_SIDEBAR;
+    let detail_w = (width - sidebar_w).max(0.0);
+    let core = core_from_host((*inner).host).map(|c| &*c);
+    if selected != (*inner).shown_tab {
+        reset_pane_state(inner, false);
+        (*inner).shown_tab = selected;
+    }
+    if (*inner).confirming_reset {
+        hide_edits(inner);
+        if let Some(core) = core {
+            let layout = layout_confirm(width, height);
+            paint_search_section(
+                target,
+                formats,
+                &layout_search_section(detail_w),
+                core.ranking_is_empty(),
+                (*inner).scroll,
+            )?;
+            paint_confirm(target, formats, &layout, (width, height))?;
+        }
+        return Ok(());
+    }
+    if selected == SettingsTab::General {
+        hide_edits(inner);
+        if let Some(core) = core {
+            let layout = layout_search_section(detail_w);
+            paint_search_section(
+                target,
+                formats,
+                &layout,
+                core.ranking_is_empty(),
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
+    let Some(section) = LauncherItemsSection::for_tab(selected) else {
+        hide_edits(inner);
+        return Ok(());
+    };
+    let Some(core) = core else {
+        hide_edits(inner);
+        return Ok(());
+    };
+    let entries = core.settings_entries(section.kind);
+    let filtered = crate::features::launcher::settings::items::filter_entries(
+        &entries,
+        section.kind,
+        &(*inner).filter_query,
+    );
+    let refs: Vec<&tinycast_pure::app_entry::AppEntry> = filtered;
+    let layout = layout_launcher_items(
+        &section,
+        refs.len(),
+        |i| refs.get(i).and_then(|e| hotkey_action_key(e)).is_some(),
+        detail_w,
+        refs.is_empty(),
+    );
+    let scroll = (*inner).scroll;
+    paint_launcher_items(
+        target,
+        formats,
+        &section,
+        &layout,
+        &refs,
+        &core.visibility,
+        &core.aliases,
+        &core.hotkeys,
+        (*inner).recording.as_deref(),
+        (*inner).alias_index,
+        &(*inner).filter_query,
+        scroll,
+    )?;
+    layout_edits(
+        hwnd,
+        inner,
+        &layout,
+        sidebar_w,
+        scroll,
+        core.visibility.is_kind_enabled(section.kind),
+    );
+    Ok(())
+}
+
+unsafe fn layout_edits(
+    hwnd: HWND,
+    inner: *mut SettingsInner,
+    layout: &crate::features::launcher::settings::items::LauncherLayout,
+    sidebar_w: f32,
+    scroll: f32,
+    kind_on: bool,
+) {
+    let mut filter_rect = layout.filter;
+    filter_rect.x += sidebar_w;
+    filter_rect.y -= scroll;
+    if let Some(filter) = (*inner).filter.as_mut() {
+        filter.layout(hwnd, filter_rect, kind_on);
+    }
+    if let (Some(idx), Some(alias)) = ((*inner).alias_index, (*inner).alias.as_mut()) {
+        if kind_on {
+            if let Some(item) = layout.items.get(idx) {
+                let mut rect = item.alias;
+                rect.x += sidebar_w;
+                rect.y -= scroll;
+                alias.layout(hwnd, rect, true);
+                return;
+            }
+        }
+        alias.hide();
+        (*inner).alias_index = None;
+    } else if let Some(alias) = (*inner).alias.as_ref() {
+        alias.hide();
+    }
+}
+
+unsafe fn hide_edits(inner: *mut SettingsInner) {
+    if let Some(filter) = (*inner).filter.as_ref() {
+        filter.hide();
+    }
+    if let Some(alias) = (*inner).alias.as_ref() {
+        alias.hide();
+    }
+}
+
+unsafe fn reset_pane_state(inner: *mut SettingsInner, resume_hotkeys: bool) {
+    commit_alias(inner);
+    (*inner).scroll = 0.0;
+    (*inner).filter_query.clear();
+    if let Some(filter) = (*inner).filter.as_ref() {
+        filter.set_text("");
+        filter.hide();
+    }
+    if let Some(alias) = (*inner).alias.as_ref() {
+        alias.hide();
+    }
+    (*inner).alias_index = None;
+    (*inner).confirming_reset = false;
+    if (*inner).recording.take().is_some() && resume_hotkeys {
+        if let Some(core) = core_from_host((*inner).host) {
+            (*core).resume_global_hotkeys();
+        }
+    }
+}
+
+unsafe fn commit_alias(inner: *mut SettingsInner) {
+    let Some(idx) = (*inner).alias_index.take() else {
+        if let Some(alias) = (*inner).alias.as_ref() {
+            alias.hide();
+        }
+        return;
+    };
+    let text = (*inner)
+        .alias
+        .as_ref()
+        .map(FieldEdit::text)
+        .unwrap_or_default();
+    if let Some(alias) = (*inner).alias.as_ref() {
+        alias.hide();
+    }
+    let Some(core) = core_from_host((*inner).host) else {
+        return;
+    };
+    let tab = (*core).settings_tab;
+    let Some(section) = LauncherItemsSection::for_tab(tab) else {
+        return;
+    };
+    let entries = (*core).settings_entries(section.kind);
+    let filtered = crate::features::launcher::settings::items::filter_entries(
+        &entries,
+        section.kind,
+        &(*inner).filter_query,
+    );
+    if let Some(entry) = filtered.get(idx) {
+        let id = entry.id.clone();
+        (*core).set_alias_draft(&id, &text);
     }
 }
 
@@ -672,6 +961,286 @@ unsafe fn apply_min_track(hwnd: HWND, lparam: LPARAM) {
     (*mmi).ptMinTrackSize.y = outer_h;
 }
 
+fn current_modifiers() -> Modifiers {
+    unsafe {
+        Modifiers {
+            ctrl: GetKeyState(VK_CONTROL.0 as i32) < 0,
+            alt: GetKeyState(VK_MENU.0 as i32) < 0,
+            shift: GetKeyState(VK_SHIFT.0 as i32) < 0,
+            win: GetKeyState(VK_LWIN.0 as i32) < 0 || GetKeyState(VK_RWIN.0 as i32) < 0,
+        }
+    }
+}
+
+fn client_dip_size(hwnd: HWND) -> (f32, f32) {
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
+    let (w, h) = client_size(hwnd);
+    (px_to_dip(w as i32, dpi), px_to_dip(h as i32, dpi))
+}
+
+unsafe fn handle_command(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) {
+    let notify = ((wparam.0 as u32) >> 16) & 0xffff;
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    let child = HWND(lparam.0 as *mut core::ffi::c_void);
+    if notify == EN_CHANGE {
+        if let Some(filter) = (*inner).filter.as_ref() {
+            if filter.hwnd == child {
+                commit_alias(inner);
+                (*inner).filter_query = filter.text();
+                let _ = InvalidateRect(hwnd, None, FALSE);
+            }
+        }
+    }
+    if notify == EN_KILLFOCUS {
+        if let Some(alias) = (*inner).alias.as_ref() {
+            if alias.hwnd == child {
+                commit_alias(inner);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+            }
+        }
+    }
+}
+
+unsafe fn handle_wheel(hwnd: HWND, wparam: WPARAM) {
+    let delta = ((wparam.0 as u32) >> 16) as i16;
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    let (width, height) = client_dip_size(hwnd);
+    (*inner).scroll -= (delta as f32 / 120.0) * ITEM_H;
+    let max = (pane_content_height(inner, width) - height).max(0.0);
+    (*inner).scroll = (*inner).scroll.clamp(0.0, max);
+    let _ = InvalidateRect(hwnd, None, FALSE);
+}
+
+unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
+    let detail_w = (window_w - theme::size::SETTINGS_SIDEBAR).max(0.0);
+    let tab = selected_tab(inner);
+    if tab == SettingsTab::General {
+        return layout_search_section(detail_w).content_height;
+    }
+    let Some(section) = LauncherItemsSection::for_tab(tab) else {
+        return 0.0;
+    };
+    let Some(core) = core_from_host((*inner).host) else {
+        return 0.0;
+    };
+    let entries = (*core).settings_entries(section.kind);
+    let filtered = crate::features::launcher::settings::items::filter_entries(
+        &entries,
+        section.kind,
+        &(*inner).filter_query,
+    );
+    layout_launcher_items(
+        &section,
+        filtered.len(),
+        |i| filtered.get(i).and_then(|e| hotkey_action_key(e)).is_some(),
+        detail_w,
+        filtered.is_empty(),
+    )
+    .content_height
+}
+
+unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
+    let Some(inner) = inner_from(hwnd) else {
+        return false;
+    };
+    if (*inner).confirming_reset {
+        let vk = wparam.0 as u16;
+        if vk == 0x1B {
+            (*inner).confirming_reset = false;
+            let _ = InvalidateRect(hwnd, None, FALSE);
+            return true;
+        }
+        if vk == 0x0D {
+            if let Some(core) = core_from_host((*inner).host) {
+                (*core).reset_learned_ranking();
+            }
+            (*inner).confirming_reset = false;
+            let _ = InvalidateRect(hwnd, None, FALSE);
+            return true;
+        }
+        return true;
+    }
+    let Some(action) = (*inner).recording.clone() else {
+        return false;
+    };
+    let vk = wparam.0 as u16;
+    match capture_keydown(vk, current_modifiers()) {
+        CaptureOutcome::Ignore => true,
+        CaptureOutcome::Cancel => {
+            (*inner).recording = None;
+            if let Some(core) = core_from_host((*inner).host) {
+                (*core).resume_global_hotkeys();
+            }
+            let _ = InvalidateRect(hwnd, None, FALSE);
+            true
+        }
+        CaptureOutcome::Clear => {
+            (*inner).recording = None;
+            if let Some(core) = core_from_host((*inner).host) {
+                (*core).set_hotkey(&action, None);
+                (*core).resume_global_hotkeys();
+            }
+            let _ = InvalidateRect(hwnd, None, FALSE);
+            true
+        }
+        CaptureOutcome::Commit(binding) => {
+            (*inner).recording = None;
+            if let Some(core) = core_from_host((*inner).host) {
+                (*core).set_hotkey(&action, Some(binding));
+                (*core).resume_global_hotkeys();
+            }
+            let _ = InvalidateRect(hwnd, None, FALSE);
+            true
+        }
+    }
+}
+
+unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
+    let (px, py) = point_from_lparam(lparam);
+    let dpi = GetDpiForWindow(hwnd);
+    let x = px_to_dip(px, dpi);
+    let y = px_to_dip(py, dpi);
+    if let Some(tab) = tab_at(x, y) {
+        if let Some(inner) = inner_from(hwnd) {
+            if (*inner).recording.take().is_some() {
+                if let Some(core) = core_from_host((*inner).host) {
+                    (*core).resume_global_hotkeys();
+                }
+            }
+            if let Some(core) = core_from_host((*inner).host) {
+                (*core).select_settings_tab(tab);
+            }
+        }
+        return;
+    }
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    let (width, height) = client_dip_size(hwnd);
+    if (*inner).confirming_reset {
+        let layout = layout_confirm(width, height);
+        match hit_confirm(&layout, x, y) {
+            Some(Hit::ConfirmReset) => {
+                if let Some(core) = core_from_host((*inner).host) {
+                    (*core).reset_learned_ranking();
+                }
+                (*inner).confirming_reset = false;
+            }
+            Some(Hit::ConfirmCancel) => {
+                (*inner).confirming_reset = false;
+            }
+            _ => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    let sidebar_w = theme::size::SETTINGS_SIDEBAR;
+    if x < sidebar_w {
+        return;
+    }
+    let detail_x = x - sidebar_w;
+    let detail_y = y + (*inner).scroll;
+    let detail_w = (width - sidebar_w).max(0.0);
+    let tab = selected_tab(inner);
+    if tab == SettingsTab::General {
+        let layout = layout_search_section(detail_w);
+        let empty = core_from_host((*inner).host)
+            .map(|c| (*c).ranking_is_empty())
+            .unwrap_or(true);
+        if hit_search(&layout, detail_x, detail_y, empty) == Some(Hit::ResetRanking) {
+            (*inner).confirming_reset = true;
+            let _ = InvalidateRect(hwnd, None, FALSE);
+        }
+        return;
+    }
+    let Some(section) = LauncherItemsSection::for_tab(tab) else {
+        return;
+    };
+    let Some(core) = core_from_host((*inner).host) else {
+        return;
+    };
+    let entries = (*core).settings_entries(section.kind);
+    let filtered = crate::features::launcher::settings::items::filter_entries(
+        &entries,
+        section.kind,
+        &(*inner).filter_query,
+    );
+    let layout = layout_launcher_items(
+        &section,
+        filtered.len(),
+        |i| filtered.get(i).and_then(|e| hotkey_action_key(e)).is_some(),
+        detail_w,
+        filtered.is_empty(),
+    );
+    let kind_on = (*core).visibility.is_kind_enabled(section.kind);
+    match hit_launcher(&layout, detail_x, detail_y, kind_on, |i| {
+        filtered
+            .get(i)
+            .and_then(|e| hotkey_action_key(e))
+            .is_some_and(|k| (*core).hotkeys.get(&k).is_some())
+    }) {
+        Some(Hit::KindToggle) => {
+            if (*inner).recording.take().is_some() {
+                (*core).resume_global_hotkeys();
+            }
+            let on = !kind_on;
+            (*core).set_kind_enabled(section.kind, on);
+        }
+        Some(Hit::ItemVisible(i)) => {
+            if let Some(entry) = filtered.get(i) {
+                let id = entry.id.clone();
+                let visible = !(*core).visibility.is_item_visible(&id);
+                (*core).set_item_visible(&id, visible);
+            }
+        }
+        Some(Hit::Alias(i)) => {
+            commit_alias(inner);
+            (*inner).alias_index = Some(i);
+            if let Some(alias) = (*inner).alias.as_ref() {
+                let text = filtered
+                    .get(i)
+                    .and_then(|e| (*core).aliases.get(&e.id))
+                    .unwrap_or("");
+                alias.set_text(text);
+                alias.focus();
+            }
+            let _ = InvalidateRect(hwnd, None, FALSE);
+        }
+        Some(Hit::Recorder(i)) => {
+            commit_alias(inner);
+            if let Some(key) = filtered.get(i).and_then(|e| hotkey_action_key(e)) {
+                if (*inner).recording.as_deref() == Some(key.as_str()) {
+                    (*inner).recording = None;
+                    (*core).resume_global_hotkeys();
+                } else {
+                    (*inner).recording = Some(key);
+                    (*core).pause_global_hotkeys();
+                    let _ = SetFocus(hwnd);
+                }
+            }
+            let _ = InvalidateRect(hwnd, None, FALSE);
+        }
+        Some(Hit::RecorderClear(i)) => {
+            if let Some(key) = filtered.get(i).and_then(|e| hotkey_action_key(e)) {
+                (*inner).recording = None;
+                (*core).set_hotkey(&key, None);
+                (*core).resume_global_hotkeys();
+            }
+        }
+        _ => {
+            commit_alias(inner);
+            if (*inner).recording.take().is_some() {
+                (*core).resume_global_hotkeys();
+            }
+            let _ = InvalidateRect(hwnd, None, FALSE);
+        }
+    }
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_NCCREATE => {
@@ -699,22 +1268,36 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
             let _hdc = BeginPaint(hwnd, &mut ps);
             if let Some(inner) = inner_from(hwnd) {
-                let selected = selected_tab(inner);
-                (*inner).renderer.paint(hwnd, selected);
+                (*inner).renderer.paint(hwnd, inner);
             }
             let _ = EndPaint(hwnd, &ps);
             LRESULT(0)
         }
-        WM_LBUTTONDOWN => {
-            let (px, py) = point_from_lparam(lparam);
-            let dpi = GetDpiForWindow(hwnd);
-            if let Some(tab) = tab_at(px_to_dip(px, dpi), px_to_dip(py, dpi)) {
-                if let Some(inner) = inner_from(hwnd) {
-                    if let Some(core) = core_from_host((*inner).host) {
-                        (*core).select_settings_tab(tab);
-                    }
-                }
+        WM_CTLCOLOREDIT => {
+            let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
+            unsafe {
+                SetBkMode(hdc, TRANSPARENT);
+                SetTextColor(hdc, COLORREF(0x00FFFFFF));
             }
+            LRESULT(unsafe { GetStockObject(NULL_BRUSH) }.0 as isize)
+        }
+        WM_COMMAND => {
+            handle_command(hwnd, wparam, lparam);
+            LRESULT(0)
+        }
+        WM_MOUSEWHEEL => {
+            handle_wheel(hwnd, wparam);
+            LRESULT(0)
+        }
+        WM_KEYDOWN | WM_SYSKEYDOWN => {
+            if handle_keydown(hwnd, wparam) {
+                LRESULT(0)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_LBUTTONDOWN => {
+            handle_lbutton(hwnd, lparam);
             LRESULT(0)
         }
         WM_DPICHANGED => {
@@ -742,6 +1325,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_CLOSE => {
+            if let Some(inner) = inner_from(hwnd) {
+                commit_alias(inner);
+                (*inner).confirming_reset = false;
+                if (*inner).recording.take().is_some() {
+                    if let Some(core) = core_from_host((*inner).host) {
+                        (*core).resume_global_hotkeys();
+                    }
+                }
+                hide_edits(inner);
+            }
             match close_action() {
                 CloseAction::Hide => {
                     let _ = ShowWindow(hwnd, SW_HIDE);
