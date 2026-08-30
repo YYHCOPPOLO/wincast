@@ -197,6 +197,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn retention_key_is_upstream() {
+        assert_eq!(
+            AppSettingsKey::ClipboardRetention.as_str(),
+            "clipboardRetentionDays"
+        );
+    }
+
+    #[test]
     fn settings_key_raw_values_match_v0102() {
         assert_eq!(
             AppSettingsKey::ClipboardRetention.as_str(),

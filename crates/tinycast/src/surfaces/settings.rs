@@ -545,6 +545,20 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    if selected == SettingsTab::Clipboard {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::clipboard::settings::pane::paint(
+                target,
+                formats,
+                core.settings.clipboard_retention_days,
+                &core.settings.clipboard_disabled_apps,
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
     if selected == SettingsTab::General {
         hide_edits(inner);
         if let Some(core) = core {
@@ -1146,6 +1160,31 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
     let detail_y = y + (*inner).scroll;
     let detail_w = (width - sidebar_w).max(0.0);
     let tab = selected_tab(inner);
+    if tab == SettingsTab::Clipboard {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        let disabled_len = (*core).settings.clipboard_disabled_apps.len();
+        match crate::features::clipboard::settings::pane::hit(
+            detail_x,
+            detail_y,
+            (*inner).scroll,
+            disabled_len,
+        ) {
+            Some(crate::features::clipboard::settings::pane::ClipboardHit::Retention) => {
+                (*core).cycle_clipboard_retention();
+            }
+            Some(crate::features::clipboard::settings::pane::ClipboardHit::Clear) => {
+                (*core).clear_clipboard_history();
+            }
+            Some(crate::features::clipboard::settings::pane::ClipboardHit::RemoveApp(i)) => {
+                (*core).remove_clipboard_disabled_app(i);
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
     if tab == SettingsTab::General {
         let layout = layout_search_section(detail_w);
         let empty = core_from_host((*inner).host)

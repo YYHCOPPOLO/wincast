@@ -142,6 +142,33 @@ impl AppCore {
         }
     }
 
+    pub fn cycle_clipboard_retention(&mut self) {
+        self.settings.clipboard_retention_days =
+            crate::features::clipboard::settings::pane::cycle_retention(
+                self.settings.clipboard_retention_days,
+            );
+        let _ = self.settings.save();
+        if self.settings.clipboard_retention_days > 0 {
+            self.clipboard
+                .prune_unpinned_older_than(self.settings.clipboard_retention_days * 86_400);
+        }
+        self.invalidate_settings();
+    }
+
+    pub fn clear_clipboard_history(&mut self) {
+        self.clipboard.clear();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn remove_clipboard_disabled_app(&mut self, index: usize) {
+        if index < self.settings.clipboard_disabled_apps.len() {
+            self.settings.clipboard_disabled_apps.remove(index);
+            let _ = self.settings.save();
+            self.invalidate_settings();
+        }
+    }
+
     pub fn capture_clipboard(&mut self) {
         clip_manager::capture(&mut self.clipboard, &self.settings);
         if self.palette.mode == PaletteMode::Clipboard {
