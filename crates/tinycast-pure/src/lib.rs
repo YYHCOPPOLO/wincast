@@ -2,6 +2,7 @@
 
 pub mod alias;
 pub mod calc;
+pub mod clipboard_text;
 pub mod app_entry;
 pub mod app_settings_key;
 pub mod command_id;
