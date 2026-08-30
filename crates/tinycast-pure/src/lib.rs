@@ -21,5 +21,7 @@ pub mod palette_tab;
 pub mod search_relevance;
 pub mod search_scopes;
 pub mod settings_tab;
+pub mod template;
+pub mod template_tokens;
 pub mod theme;
 pub mod visibility;
