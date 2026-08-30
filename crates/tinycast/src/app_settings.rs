@@ -43,6 +43,12 @@ pub struct AppSettings {
     pub snippets_show_in_launcher: bool,
     #[serde(default, rename = "windowManagementEnabled")]
     pub window_management_enabled: bool,
+    #[serde(default = "default_true", rename = "windowManagementShowInLauncher")]
+    pub window_management_show_in_launcher: bool,
+    #[serde(default, rename = "windowManagementGap")]
+    pub window_gap: i32,
+    #[serde(default, rename = "windowManagementCycleOnRepeat")]
+    pub window_cycle_on_repeat: bool,
     #[serde(default, rename = "calendarEnabled")]
     pub calendar_enabled: bool,
     #[serde(default, rename = "aiEnabled")]
@@ -77,6 +83,9 @@ impl Default for AppSettings {
             snippets_enabled: false,
             snippets_show_in_launcher: true,
             window_management_enabled: false,
+            window_management_show_in_launcher: true,
+            window_gap: 0,
+            window_cycle_on_repeat: false,
             calendar_enabled: false,
             ai_enabled: false,
             quick_actions_enabled: false,

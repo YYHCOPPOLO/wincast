@@ -57,6 +57,8 @@ use crate::features::snippets::service::injector;
 use crate::features::snippets::service::listener::KeywordListener;
 use crate::features::snippets::service::repository::SnippetRepository;
 use crate::features::snippets::ui::coordinator as snippet_coordinator;
+use crate::features::window_management::service::mover::WindowMover;
+use crate::features::window_management::ui::coordinator as window_coordinator;
 use crate::palette::menu::{FooterPaint, MenuPaint};
 use crate::palette::physical;
 use crate::palette::PaletteWindow;
@@ -91,6 +93,7 @@ pub struct AppCore {
     pub(crate) custom_commands: CustomCommandStore,
     pub(crate) quicklinks: QuicklinkStore,
     snippet_listener: KeywordListener,
+    window_mover: WindowMover,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
     previous_hwnd: HWND,
@@ -132,6 +135,7 @@ impl AppCore {
             custom_commands: CustomCommandStore::load(),
             quicklinks: QuicklinkStore::load(),
             snippet_listener: KeywordListener::new(),
+            window_mover: WindowMover::new(),
             argument_session: None,
             hud: None,
             previous_hwnd: HWND::default(),
@@ -1253,6 +1257,13 @@ impl AppCore {
                     self.run_system_action(action);
                 }
             }
+            LaunchSpec::RunWindowCommand(id) => {
+                if let Some(command) =
+                    tinycast_pure::window_command::WindowCommandId::from_entry_id(&id)
+                {
+                    self.run_window_command(command);
+                }
+            }
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -1345,6 +1356,55 @@ impl AppCore {
         }
     }
 
+    pub fn run_window_command(&mut self, id: tinycast_pure::window_command::WindowCommandId) {
+        let previous = self.previous_hwnd;
+        if self.palette_visible {
+            self.hide_palette();
+        }
+        match window_coordinator::run(
+            &mut self.window_mover,
+            id,
+            previous,
+            self.settings.window_management_enabled,
+            self.settings.window_gap as f32,
+            self.settings.window_cycle_on_repeat,
+        ) {
+            window_coordinator::Outcome::Hud(message) => {
+                self.show_message_hud_tone(message, tinycast_pure::dialog::DialogTone::Neutral);
+            }
+            window_coordinator::Outcome::Disabled
+            | window_coordinator::Outcome::Quiet
+            | window_coordinator::Outcome::Moved => {}
+        }
+    }
+
+    pub fn set_window_management_enabled(&mut self, enabled: bool) {
+        self.settings.window_management_enabled = enabled;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn set_window_management_show_in_launcher(&mut self, show: bool) {
+        self.settings.window_management_show_in_launcher = show;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn set_window_cycle_on_repeat(&mut self, on: bool) {
+        self.settings.window_cycle_on_repeat = on;
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
+    pub fn cycle_window_gap(&mut self) {
+        self.settings.window_gap =
+            crate::features::window_management::settings::pane::cycle_gap(self.settings.window_gap);
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
     fn show_volume_hud(&mut self) {
         let (level, muted) =
             crate::features::system_actions::service::runner::output_state().unwrap_or((0.0, true));
@@ -1434,6 +1494,16 @@ impl AppCore {
                 .copied()
                 .map(tinycast_pure::system_action::SystemActionId::as_entry),
         );
+        if self.settings.window_management_enabled
+            && self.settings.window_management_show_in_launcher
+        {
+            entries.extend(
+                tinycast_pure::window_command::WindowCommandId::all()
+                    .iter()
+                    .copied()
+                    .map(tinycast_pure::window_command::WindowCommandId::as_entry),
+            );
+        }
         entries.extend(
             CommandID::all()
                 .iter()
@@ -3019,6 +3089,32 @@ mod tests {
         assert_eq!(
             launch_spec(&tinycast_pure::system_action::SystemActionId::LockScreen.as_entry()),
             LaunchSpec::RunSystemAction("system-action:lock-screen".into())
+        );
+    }
+
+    #[test]
+    fn window_commands_hidden_until_enabled() {
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.toggle_palette();
+        c.expand_select_first();
+        let hidden = c.launcher_paint_items();
+        assert!(!hidden.iter().any(|item| matches!(
+            item,
+            PaintItem::Row { title, .. } if title == "Left Half"
+        )));
+        c.settings.window_management_enabled = true;
+        c.settings.window_management_show_in_launcher = true;
+        let shown = c.launcher_paint_items();
+        assert!(shown.iter().any(|item| matches!(
+            item,
+            PaintItem::Row { title, .. } if title == "Left Half"
+        )));
+        assert_eq!(
+            launch_spec(
+                &tinycast_pure::window_command::WindowCommandId::LeftHalf.as_entry()
+            ),
+            LaunchSpec::RunWindowCommand("window-command:left-half".into())
         );
     }
 }

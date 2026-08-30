@@ -630,6 +630,22 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    if selected == SettingsTab::WindowManagement {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::window_management::settings::pane::paint(
+                target,
+                formats,
+                core.settings.window_management_enabled,
+                core.settings.window_management_show_in_launcher,
+                core.settings.window_cycle_on_repeat,
+                core.settings.window_gap,
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
     if selected == SettingsTab::Quicklinks {
         hide_edits(inner);
         if let Some(core) = core {
@@ -1151,6 +1167,9 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::Snippets {
         return crate::features::snippets::settings::pane::content_height();
     }
+    if tab == SettingsTab::WindowManagement {
+        return crate::features::window_management::settings::pane::content_height();
+    }
     if tab == SettingsTab::Emoji {
         return crate::features::emoji::settings::content_height();
     }
@@ -1314,6 +1333,36 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
     let detail_y = y + (*inner).scroll;
     let detail_w = (width - sidebar_w).max(0.0);
     let tab = selected_tab(inner);
+    if tab == SettingsTab::WindowManagement {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        match crate::features::window_management::settings::pane::hit(
+            detail_x,
+            detail_y,
+            (*inner).scroll,
+        ) {
+            Some(crate::features::window_management::settings::pane::WindowHit::Enable) => {
+                (*core).set_window_management_enabled(!(*core).settings.window_management_enabled);
+            }
+            Some(
+                crate::features::window_management::settings::pane::WindowHit::ShowInLauncher,
+            ) => {
+                (*core).set_window_management_show_in_launcher(
+                    !(*core).settings.window_management_show_in_launcher,
+                );
+            }
+            Some(crate::features::window_management::settings::pane::WindowHit::Cycle) => {
+                (*core).set_window_cycle_on_repeat(!(*core).settings.window_cycle_on_repeat);
+            }
+            Some(crate::features::window_management::settings::pane::WindowHit::Gap) => {
+                (*core).cycle_window_gap();
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
     if tab == SettingsTab::Snippets {
         let Some(core) = core_from_host((*inner).host) else {
             return;

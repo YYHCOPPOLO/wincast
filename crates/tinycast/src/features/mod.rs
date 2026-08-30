@@ -6,3 +6,4 @@ pub mod launcher;
 pub mod quicklinks;
 pub mod snippets;
 pub mod system_actions;
+pub mod window_management;

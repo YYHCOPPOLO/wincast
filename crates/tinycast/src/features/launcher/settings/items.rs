@@ -197,6 +197,10 @@ pub fn hotkey_action_key(entry: &AppEntry) -> Option<String> {
             &entry.id,
         )
         .map(|id| format!("hotkey.systemAction.{}", id.raw())),
+        AppKind::WindowCommand => tinycast_pure::window_command::WindowCommandId::from_entry_id(
+            &entry.id,
+        )
+        .map(|id| format!("hotkey.windowCommand.{}", id.raw())),
         _ => None,
     }
 }

@@ -375,6 +375,12 @@ mod tests {
     }
 
     #[test]
+    fn space_commands_are_not_geometry() {
+        assert_eq!(WindowCommandId::NextSpace.kind(), WindowKind::Space);
+        assert_eq!(WindowCommandId::Restore.kind(), WindowKind::Restore);
+    }
+
+    #[test]
     fn catalog_ids_match_v0102() {
         assert_eq!(WindowCommandId::LeftHalf.raw(), "left-half");
         assert_eq!(WindowCommandId::Restore.name(), "Restore Window");
