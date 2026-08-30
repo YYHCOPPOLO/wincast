@@ -18,6 +18,7 @@ use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
 use tinycast_pure::calc::{evaluate, CalcResult, CalculatorHistoryStore};
 use tinycast_pure::palette_row_index::{clamp_selection, selectable_count};
+use tinycast_pure::palette_tab::{tab_from, TabHop};
 use tinycast_pure::palette_state::{escape_outcome, EscapeOutcome, PaletteState};
 use tinycast_pure::settings_tab::SettingsTab;
 use tinycast_pure::theme;
@@ -174,6 +175,25 @@ impl AppCore {
         if self.palette.mode == PaletteMode::Clipboard {
             self.clamp_selection();
             self.invalidate_palette();
+        }
+    }
+
+    pub fn tab_hint(&self) -> Option<&'static str> {
+        match tab_from(
+            self.palette.mode,
+            self.settings.ai_enabled,
+            false,
+        ) {
+            TabHop::Clipboard => Some("Clipboard"),
+            TabHop::Launcher => Some("Launcher"),
+            TabHop::Ai => {
+                if self.settings.ai_enabled {
+                    Some("AI Chat")
+                } else {
+                    None
+                }
+            }
+            TabHop::StayForArguments => None,
         }
     }
 
@@ -449,6 +469,10 @@ impl AppCore {
     pub fn handle_key(&mut self, vk: u16) -> bool {
         if vk == VK_ESCAPE.0 {
             self.handle_escape();
+            return true;
+        }
+        if vk == 0x09 {
+            self.hop_tab();
             return true;
         }
         if vk == 0x4B && ctrl_down() && !shift_down() && !alt_down() {
@@ -1144,6 +1168,39 @@ impl AppCore {
             .unwrap_or("Open")
     }
 
+    fn hop_tab(&mut self) {
+        if !self.palette_visible {
+            return;
+        }
+        let hop = tab_from(self.palette.mode, self.settings.ai_enabled, false);
+        let query = self.palette.query.clone();
+        match hop {
+            TabHop::StayForArguments => return,
+            TabHop::Clipboard => {
+                if !self.previous_hwnd.is_invalid() {
+                    // keep existing previous app
+                }
+                self.palette.mode = PaletteMode::Clipboard;
+            }
+            TabHop::Launcher => {
+                self.palette.mode = PaletteMode::Launcher;
+            }
+            TabHop::Ai => {
+                if !self.settings.ai_enabled {
+                    return;
+                }
+                self.palette.mode = PaletteMode::Ai;
+            }
+        }
+        self.palette.query = query;
+        self.palette.selection = 0;
+        self.list_scroll = 0.0;
+        self.expanded = true;
+        self.close_menu();
+        self.relayout_palette();
+        self.invalidate_palette();
+    }
+
     fn remember_previous_hwnd(&mut self) {
         let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
         if !fg.is_invalid() {
@@ -1408,6 +1465,21 @@ mod tests {
         c.set_query("abc".into());
         assert_eq!(c.palette.query, "abc");
         assert!(c.expanded);
+    }
+
+    #[test]
+    fn tab_ring_keeps_query_between_launcher_and_clipboard() {
+        let mut c = AppCore::new();
+        c.toggle_palette();
+        c.set_query("hello".into());
+        c.handle_key(0x09);
+        assert_eq!(c.palette.mode, PaletteMode::Clipboard);
+        assert_eq!(c.palette.query, "hello");
+        c.handle_key(0x09);
+        assert_eq!(c.palette.mode, PaletteMode::Launcher);
+        assert_eq!(c.palette.query, "hello");
+        assert_eq!(c.tab_hint(), Some("Clipboard"));
+        assert_ne!(c.tab_hint(), Some("AI Chat"));
     }
 
     #[test]

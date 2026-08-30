@@ -17,6 +17,7 @@ pub mod palette_mode;
 pub mod palette_placement;
 pub mod palette_row_index;
 pub mod palette_state;
+pub mod palette_tab;
 pub mod search_relevance;
 pub mod search_scopes;
 pub mod settings_tab;

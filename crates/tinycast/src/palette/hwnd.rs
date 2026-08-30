@@ -375,6 +375,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
             },
             menu: None,
             clipboard_preview: None,
+            tab_hint: None,
         };
         inner.renderer.paint(hwnd, params, inner.present_alpha);
         return;
@@ -386,6 +387,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     let footer = (*core).footer_paint();
     let menu = (*core).menu_paint();
     let preview = (*core).clipboard_preview();
+    let tab_hint = (*core).tab_hint();
     let params = PaintParams {
         placeholder,
         items: &items,
@@ -395,6 +397,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         footer,
         menu,
         clipboard_preview: preview.as_deref(),
+        tab_hint,
     };
     inner.renderer.paint(hwnd, params, inner.present_alpha);
 }

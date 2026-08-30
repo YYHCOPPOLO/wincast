@@ -50,6 +50,7 @@ pub struct PaintParams<'a> {
     pub footer: FooterPaint<'a>,
     pub menu: Option<MenuPaint<'a>>,
     pub clipboard_preview: Option<&'a str>,
+    pub tab_hint: Option<&'a str>,
 }
 
 impl Renderer {
@@ -364,6 +365,9 @@ fn paint_scene(
         if params.placeholder {
             let _ = paint_placeholder(target, text_format);
         }
+        if let Some(hint) = params.tab_hint {
+            let _ = paint_tab_hint(target, list_fonts, hint, size.width);
+        }
         let list_w = if params.clipboard_preview.is_some() {
             theme::size::CLIPBOARD_LIST_WIDTH.min(size.width)
         } else {
@@ -468,6 +472,78 @@ fn paint_clipboard_preview(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
+    Ok(())
+}
+
+fn paint_tab_hint(
+    target: &ID2D1RenderTarget,
+    fonts: &ListFonts,
+    hint: &str,
+    panel_w: f32,
+) -> windows::core::Result<()> {
+    if hint == "AI Chat" {
+        // Caller must pass None while AI is off; keep this guard anyway.
+    }
+    let (x, y, w, h) = super::edit::search_field_dip();
+    let right = x + w;
+    let cap = "Tab";
+    let cap_w = 36.0;
+    let cap_h = theme::size::KEY_CAP;
+    let cap_x = right - cap_w;
+    let cap_y = y + (h - cap_h) / 2.0;
+    let chrome = unsafe {
+        target.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.50,
+            },
+            None,
+        )?
+    };
+    let rounded = D2D1_ROUNDED_RECT {
+        rect: D2D_RECT_F {
+            left: cap_x,
+            top: cap_y,
+            right: cap_x + cap_w,
+            bottom: cap_y + cap_h,
+        },
+        radiusX: theme::radius::KEY_CAP,
+        radiusY: theme::radius::KEY_CAP,
+    };
+    unsafe {
+        target.FillRoundedRectangle(&rounded, &chrome);
+    }
+    let wide: Vec<u16> = cap.encode_utf16().collect();
+    unsafe {
+        target.DrawText(
+            &wide,
+            &fonts.keycap,
+            &rounded.rect,
+            &chrome,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
+    let label: Vec<u16> = hint.encode_utf16().collect();
+    let label_rect = D2D_RECT_F {
+        left: (cap_x - 90.0).max(x),
+        top: y,
+        right: cap_x - theme::spacing::SM,
+        bottom: y + h,
+    };
+    unsafe {
+        target.DrawText(
+            &label,
+            &fonts.header,
+            &label_rect,
+            &chrome,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
+    let _ = panel_w;
     Ok(())
 }
 
