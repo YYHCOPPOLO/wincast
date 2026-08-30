@@ -48,6 +48,8 @@ use crate::features::launcher::ui::list::{
     clamp_scroll, content_height, ensure_visible, list_bottom, list_top, paint_items, row_y,
     selectable_at_y, slots_of, PaintItem, ROW_HEIGHT,
 };
+use crate::features::custom_commands::service::store::CustomCommandStore;
+use crate::features::custom_commands::ui::coordinator as custom_coordinator;
 use crate::features::snippets::service::injector;
 use crate::features::snippets::service::listener::KeywordListener;
 use crate::features::snippets::service::repository::SnippetRepository;
@@ -83,6 +85,7 @@ pub struct AppCore {
     clipboard_filter: ClipboardFilter,
     snippet_repo: SnippetRepository,
     snippet_records: Vec<tinycast_pure::snippet::StoredSnippet>,
+    custom_commands: CustomCommandStore,
     snippet_listener: KeywordListener,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
@@ -122,6 +125,7 @@ impl AppCore {
             clipboard_filter: ClipboardFilter::All,
             snippet_repo: SnippetRepository::in_roaming(),
             snippet_records: Vec::new(),
+            custom_commands: CustomCommandStore::load(),
             snippet_listener: KeywordListener::new(),
             argument_session: None,
             hud: None,
@@ -895,6 +899,7 @@ impl AppCore {
             LaunchSpec::OpenCalculatorHistory => self.open_calculator_history(),
             LaunchSpec::OpenClipboardHistory => self.open_clipboard_history(),
             LaunchSpec::ExpandSnippet(id) => self.begin_snippet_expansion(&id),
+            LaunchSpec::RunCustomCommand(id) => self.run_custom_command(&id),
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -954,6 +959,9 @@ impl AppCore {
     fn catalog(&self) -> Vec<AppEntry> {
         let flags = self.feature_flags();
         let mut entries = self.entries.clone();
+        if self.settings.custom_commands_enabled && self.settings.custom_commands_show_in_launcher {
+            entries.extend(self.custom_commands.commands().iter().map(|c| c.as_entry()));
+        }
         if self.settings.snippets_enabled && self.settings.snippets_show_in_launcher {
             entries.extend(
                 self.snippet_records
@@ -1644,6 +1652,38 @@ impl AppCore {
         let slots = slots_of(&items);
         let view_h = list_bottom(theme::size::PANEL_HEIGHT) - list_top();
         self.list_scroll = clamp_scroll(self.list_scroll, content_height(&slots), view_h);
+    }
+
+    fn run_custom_command(&mut self, entry_id: &str) {
+        if !self.settings.custom_commands_enabled {
+            return;
+        }
+        let Some(id) = tinycast_pure::custom_command::CustomCommand::id_from_entry(entry_id)
+        else {
+            return;
+        };
+        let Some(command) = self.custom_commands.get(id).cloned() else {
+            return;
+        };
+        self.hide_palette();
+        match custom_coordinator::request_run(&command) {
+            custom_coordinator::RunRequest::Confirm => {
+                if !self.confirm_custom_command(&command) {
+                    return;
+                }
+            }
+            custom_coordinator::RunRequest::Execute => {}
+        }
+        match custom_coordinator::execute(&command) {
+            Ok(()) => {}
+            Err(err) => self.show_message_hud(&err),
+        }
+    }
+
+    fn confirm_custom_command(&mut self, command: &tinycast_pure::custom_command::CustomCommand) -> bool {
+        let text = format!("{} — {}", command.name, command.command);
+        self.show_message_hud(&text);
+        true
     }
 
     fn apply_snippets_enabled(&mut self) {

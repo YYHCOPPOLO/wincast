@@ -23,6 +23,7 @@ pub enum LaunchSpec {
     OpenCalculatorHistory,
     OpenClipboardHistory,
     ExpandSnippet(String),
+    RunCustomCommand(String),
     Noop,
 }
 
@@ -75,6 +76,7 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             _ => LaunchSpec::Noop,
         },
         AppKind::Snippet => LaunchSpec::ExpandSnippet(entry.id.clone()),
+        AppKind::CustomCommand => LaunchSpec::RunCustomCommand(entry.id.clone()),
         _ => LaunchSpec::Noop,
     }
 }
@@ -161,6 +163,7 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::OpenCalculatorHistory
         | LaunchSpec::OpenClipboardHistory
         | LaunchSpec::ExpandSnippet(_)
+        | LaunchSpec::RunCustomCommand(_)
         | LaunchSpec::Noop => Ok(()),
     }
 }

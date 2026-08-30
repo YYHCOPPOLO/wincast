@@ -31,6 +31,10 @@ pub struct AppSettings {
     pub file_search_enabled: bool,
     #[serde(default, rename = "notesEnabled")]
     pub notes_enabled: bool,
+    #[serde(default, rename = "customCommandsEnabled")]
+    pub custom_commands_enabled: bool,
+    #[serde(default = "default_true", rename = "customCommandsShowInLauncher")]
+    pub custom_commands_show_in_launcher: bool,
     #[serde(default, rename = "snippetsEnabled")]
     pub snippets_enabled: bool,
     #[serde(default = "default_true", rename = "snippetsShowInLauncher")]
@@ -63,6 +67,8 @@ impl Default for AppSettings {
             launcher_search_scopes: default_search_scopes(),
             file_search_enabled: false,
             notes_enabled: false,
+            custom_commands_enabled: false,
+            custom_commands_show_in_launcher: true,
             snippets_enabled: false,
             snippets_show_in_launcher: true,
             window_management_enabled: false,
