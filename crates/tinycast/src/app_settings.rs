@@ -225,6 +225,10 @@ mod tests {
         assert!(!s.quick_actions_enabled);
         assert!(!s.extensions_enabled);
         assert!(!s.quicklinks_enabled);
+        assert!(!s.custom_commands_enabled);
+        assert!(s.custom_commands_show_in_launcher);
+        assert!(s.quicklinks_show_in_launcher);
+        assert_eq!(s.emoji_skin_tone, "none");
     }
 
     #[test]

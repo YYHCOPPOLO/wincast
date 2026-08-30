@@ -27,6 +27,9 @@ pub enum LaunchSpec {
     OpenQuicklink(String),
     SearchQuicklinks,
     SearchEmoji,
+    CreateQuicklink,
+    ImportQuicklinks,
+    ExportQuicklinks,
     Noop,
 }
 
@@ -78,6 +81,9 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:clipboard-history" => LaunchSpec::OpenClipboardHistory,
             "command:search-quicklinks" => LaunchSpec::SearchQuicklinks,
             "command:search-emoji" => LaunchSpec::SearchEmoji,
+            "command:create-quicklink" => LaunchSpec::CreateQuicklink,
+            "command:import-quicklinks" => LaunchSpec::ImportQuicklinks,
+            "command:export-quicklinks" => LaunchSpec::ExportQuicklinks,
             _ => LaunchSpec::Noop,
         },
         AppKind::Snippet => LaunchSpec::ExpandSnippet(entry.id.clone()),
@@ -173,6 +179,9 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::OpenQuicklink(_)
         | LaunchSpec::SearchQuicklinks
         | LaunchSpec::SearchEmoji
+        | LaunchSpec::CreateQuicklink
+        | LaunchSpec::ImportQuicklinks
+        | LaunchSpec::ExportQuicklinks
         | LaunchSpec::Noop => Ok(()),
     }
 }
@@ -333,6 +342,18 @@ mod tests {
             LaunchSpec::OpenSupport
         );
         assert_eq!(launch_spec(&CommandID::AiChat.as_entry()), LaunchSpec::Noop);
+        assert_eq!(
+            launch_spec(&CommandID::CreateQuicklink.as_entry()),
+            LaunchSpec::CreateQuicklink
+        );
+        assert_eq!(
+            launch_spec(&CommandID::ImportQuicklinks.as_entry()),
+            LaunchSpec::ImportQuicklinks
+        );
+        assert_eq!(
+            launch_spec(&CommandID::ExportQuicklinks.as_entry()),
+            LaunchSpec::ExportQuicklinks
+        );
         assert_eq!(
             launch_spec(&CommandID::ClipboardHistory.as_entry()),
             LaunchSpec::OpenClipboardHistory

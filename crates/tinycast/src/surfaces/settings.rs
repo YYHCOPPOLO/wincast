@@ -617,6 +617,54 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    if selected == SettingsTab::Emoji {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::emoji::settings::paint(
+                target,
+                formats,
+                &core.settings.emoji_skin_tone,
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
+    if selected == SettingsTab::Quicklinks {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::quicklinks::settings::pane::paint(
+                target,
+                formats,
+                core.settings.quicklinks_enabled,
+                core.settings.quicklinks_show_in_launcher,
+                core.quicklink_records(),
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
+    let commands_shift = if selected == SettingsTab::Commands {
+        if let Some(core) = core {
+            crate::features::custom_commands::settings::pane::paint(
+                target,
+                formats,
+                core.settings.custom_commands_enabled,
+                core.settings.custom_commands_show_in_launcher,
+                core.custom_command_records(),
+                detail_w,
+                (*inner).scroll,
+            )?;
+            crate::features::custom_commands::settings::pane::content_height(
+                core.custom_command_records().len(),
+            )
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
     if selected == SettingsTab::General {
         hide_edits(inner);
         if let Some(core) = core {
@@ -653,6 +701,11 @@ unsafe fn paint_detail(
         detail_w,
         refs.is_empty(),
     );
+    let layout = if commands_shift > 0.0 {
+        layout.shifted(commands_shift)
+    } else {
+        layout
+    };
     let scroll = (*inner).scroll;
     paint_launcher_items(
         target,
@@ -1095,11 +1148,31 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::General {
         return layout_search_section(detail_w).content_height;
     }
+    if tab == SettingsTab::Snippets {
+        return crate::features::snippets::settings::pane::content_height();
+    }
+    if tab == SettingsTab::Emoji {
+        return crate::features::emoji::settings::content_height();
+    }
+    if tab == SettingsTab::Quicklinks {
+        let n = core_from_host((*inner).host)
+            .map(|c| (*c).quicklink_records().len())
+            .unwrap_or(0);
+        return crate::features::quicklinks::settings::pane::content_height(n);
+    }
+    let commands_shift = if tab == SettingsTab::Commands {
+        let n = core_from_host((*inner).host)
+            .map(|c| (*c).custom_command_records().len())
+            .unwrap_or(0);
+        crate::features::custom_commands::settings::pane::content_height(n)
+    } else {
+        0.0
+    };
     let Some(section) = LauncherItemsSection::for_tab(tab) else {
         return 0.0;
     };
     let Some(core) = core_from_host((*inner).host) else {
-        return 0.0;
+        return commands_shift;
     };
     let entries = (*core).settings_entries(section.kind);
     let filtered = crate::features::launcher::settings::items::filter_entries(
@@ -1114,6 +1187,7 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
         detail_w,
         filtered.is_empty(),
     )
+    .shifted(commands_shift)
     .content_height
 }
 
@@ -1303,6 +1377,97 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         }
         return;
     }
+    if tab == SettingsTab::Emoji {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        if crate::features::emoji::settings::hit(detail_x, y, (*inner).scroll)
+            == Some(crate::features::emoji::settings::EmojiHit::SkinTone)
+        {
+            (*core).cycle_emoji_skin_tone();
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::Quicklinks {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        let count = (*core).quicklink_records().len();
+        match crate::features::quicklinks::settings::pane::hit(
+            detail_x,
+            y,
+            (*inner).scroll,
+            count,
+        ) {
+            Some(crate::features::quicklinks::settings::pane::QuicklinksHit::Enable) => {
+                (*core).set_quicklinks_enabled(!(*core).settings.quicklinks_enabled);
+            }
+            Some(crate::features::quicklinks::settings::pane::QuicklinksHit::ShowInLauncher) => {
+                (*core).set_quicklinks_show_in_launcher(
+                    !(*core).settings.quicklinks_show_in_launcher,
+                );
+            }
+            Some(crate::features::quicklinks::settings::pane::QuicklinksHit::Create) => {
+                (*core).edit_quicklink(hwnd, None);
+            }
+            Some(crate::features::quicklinks::settings::pane::QuicklinksHit::Import) => {
+                (*core).import_quicklinks(hwnd);
+            }
+            Some(crate::features::quicklinks::settings::pane::QuicklinksHit::Export) => {
+                (*core).export_quicklinks(hwnd);
+            }
+            Some(crate::features::quicklinks::settings::pane::QuicklinksHit::Item(i)) => {
+                (*core).edit_quicklink(hwnd, Some(i));
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    let mut launcher_shift = 0.0;
+    if tab == SettingsTab::Commands {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        let count = (*core).custom_command_records().len();
+        match crate::features::custom_commands::settings::pane::hit(
+            detail_x,
+            y,
+            (*inner).scroll,
+            count,
+        ) {
+            Some(crate::features::custom_commands::settings::pane::CustomCommandsHit::Enable) => {
+                (*core).set_custom_commands_enabled(!(*core).settings.custom_commands_enabled);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+                return;
+            }
+            Some(
+                crate::features::custom_commands::settings::pane::CustomCommandsHit::ShowInLauncher,
+            ) => {
+                (*core).set_custom_commands_show_in_launcher(
+                    !(*core).settings.custom_commands_show_in_launcher,
+                );
+                let _ = InvalidateRect(hwnd, None, FALSE);
+                return;
+            }
+            Some(crate::features::custom_commands::settings::pane::CustomCommandsHit::New) => {
+                (*core).new_custom_command(hwnd);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+                return;
+            }
+            Some(crate::features::custom_commands::settings::pane::CustomCommandsHit::Item(i)) => {
+                (*core).edit_custom_command_at(hwnd, i);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+                return;
+            }
+            None => {
+                launcher_shift = crate::features::custom_commands::settings::pane::content_height(
+                    count,
+                );
+            }
+        }
+    }
     let Some(section) = LauncherItemsSection::for_tab(tab) else {
         return;
     };
@@ -1322,6 +1487,11 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         detail_w,
         filtered.is_empty(),
     );
+    let layout = if launcher_shift > 0.0 {
+        layout.shifted(launcher_shift)
+    } else {
+        layout
+    };
     let kind_on = (*core).visibility.is_kind_enabled(section.kind);
     match hit_launcher(&layout, detail_x, detail_y, kind_on, |i| {
         filtered
@@ -1556,6 +1726,9 @@ mod tests {
             .collect();
         assert_eq!(tabs[0], SettingsTab::General);
         assert_eq!(tabs[2], SettingsTab::Applications);
+        assert!(tabs.iter().any(|t| *t == SettingsTab::Commands));
+        assert!(tabs.iter().any(|t| *t == SettingsTab::Quicklinks));
+        assert!(tabs.iter().any(|t| *t == SettingsTab::Emoji));
         assert_eq!(
             tabs.iter().find(|t| **t == SettingsTab::Ai),
             Some(&SettingsTab::Ai)

@@ -62,6 +62,8 @@ pub struct ArgumentSession {
     pub now: i64,
     pub locale: String,
     pub tz: String,
+    pub keyword: Option<String>,
+    pub target: isize,
 }
 
 impl ArgumentSession {
@@ -242,9 +244,41 @@ mod tests {
             now: 0,
             locale: "en".into(),
             tz: "UTC".into(),
+            keyword: None,
+            target: 0,
         };
         assert!(!session.commit("one".into()));
         assert_eq!(session.back().as_deref(), Some("one"));
         assert_eq!(session.index, 0);
+    }
+
+    #[test]
+    fn expansion_context_forwards_selection() {
+        let ctx = expansion_context(vec!["clip".into()], Some("sel".into()), 1, "en".into());
+        assert_eq!(ctx.selection.as_deref(), Some("sel"));
+        assert_eq!(ctx.clipboard, ["clip"]);
+    }
+
+    #[test]
+    fn keyword_argument_session_keeps_keyword_and_target() {
+        let session = ArgumentSession {
+            kind: ArgumentKind::Snippet,
+            snippet_path: "a.md".into(),
+            snippet_name: "A".into(),
+            show_confirmation: false,
+            specs: vec![],
+            values: HashMap::new(),
+            index: 0,
+            clipboard: vec![],
+            selection: Some("sel".into()),
+            now: 0,
+            locale: "en".into(),
+            tz: "UTC".into(),
+            keyword: Some("!notes".into()),
+            target: 42,
+        };
+        assert_eq!(session.keyword.as_deref(), Some("!notes"));
+        assert_eq!(session.target, 42);
+        assert_eq!(session.selection.as_deref(), Some("sel"));
     }
 }

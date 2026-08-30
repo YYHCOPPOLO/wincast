@@ -68,19 +68,21 @@ impl Renderer {
         let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
         let text_format = make_text_format(
             &dwrite,
+            w!("Segoe UI"),
             super::edit::SEARCH_FONT_DIP,
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             false,
         )?;
         let list_fonts = ListFonts {
-            title: make_text_format(&dwrite, 15.0, DWRITE_FONT_WEIGHT_REGULAR, false, false)?,
-            trailing: make_text_format(&dwrite, 12.0, DWRITE_FONT_WEIGHT_REGULAR, true, false)?,
-            header: make_text_format(&dwrite, 11.0, DWRITE_FONT_WEIGHT_SEMI_BOLD, false, false)?,
-            chip: make_text_format(&dwrite, 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
-            keycap: make_text_format(&dwrite, 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
+            title: make_text_format(&dwrite, w!("Segoe UI"), 15.0, DWRITE_FONT_WEIGHT_REGULAR, false, false)?,
+            trailing: make_text_format(&dwrite, w!("Segoe UI"), 12.0, DWRITE_FONT_WEIGHT_REGULAR, true, false)?,
+            header: make_text_format(&dwrite, w!("Segoe UI"), 11.0, DWRITE_FONT_WEIGHT_SEMI_BOLD, false, false)?,
+            chip: make_text_format(&dwrite, w!("Segoe UI"), 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
+            keycap: make_text_format(&dwrite, w!("Segoe UI"), 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
             calc_result: make_text_format(
                 &dwrite,
+                w!("Segoe UI"),
                 theme::typography::CALC_RESULT,
                 DWRITE_FONT_WEIGHT_SEMI_BOLD,
                 false,
@@ -88,7 +90,16 @@ impl Renderer {
             )?,
             calc_badge: make_text_format(
                 &dwrite,
+                w!("Segoe UI"),
                 theme::typography::CALC_BADGE,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                false,
+                true,
+            )?,
+            emoji: make_text_format(
+                &dwrite,
+                w!("Segoe UI Emoji"),
+                32.0,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
                 true,
@@ -310,6 +321,7 @@ fn create_hwnd_target(
 
 fn make_text_format(
     dwrite: &IDWriteFactory,
+    family: windows::core::PCWSTR,
     size: f32,
     weight: windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT,
     trailing: bool,
@@ -317,7 +329,7 @@ fn make_text_format(
 ) -> windows::core::Result<IDWriteTextFormat> {
     let format = unsafe {
         dwrite.CreateTextFormat(
-            w!("Segoe UI"),
+            family,
             None,
             weight,
             DWRITE_FONT_STYLE_NORMAL,

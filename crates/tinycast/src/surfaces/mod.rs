@@ -1,3 +1,4 @@
+pub mod dialog;
 mod hud;
 mod settings;
 mod stub;

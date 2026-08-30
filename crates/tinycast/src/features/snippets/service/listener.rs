@@ -10,8 +10,9 @@ use tinycast_pure::snippet::keyword::{
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, ToUnicode, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME,
-    VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RWIN, VK_TAB, VK_UP,
+    GetAsyncKeyState, GetKeyState, ToUnicode, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
+    VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RWIN, VK_SHIFT, VK_TAB,
+    VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetForegroundWindow, PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
@@ -229,10 +230,52 @@ fn is_reset_key(vk: u16) -> bool {
     )
 }
 
+/// `ToUnicode` `wFlags` bit: do not change keyboard state (dead keys stay with the target app).
+pub const TO_UNICODE_NO_STATE_CHANGE: u32 = 0x04;
+
+fn key_state_byte(ks: i16) -> u8 {
+    let mut b = 0u8;
+    if ks < 0 {
+        b |= 0x80;
+    }
+    if (ks as u16) & 1 != 0 {
+        b |= 0x01;
+    }
+    b
+}
+
+fn fill_keyboard_state(state: &mut [u8; 256]) {
+    for vk in 0..256 {
+        let async_ks = unsafe { GetAsyncKeyState(vk as i32) };
+        let sync_ks = unsafe { GetKeyState(vk as i32) };
+        let mut b = 0u8;
+        if async_ks < 0 || sync_ks < 0 {
+            b |= 0x80;
+        }
+        if (sync_ks as u16) & 1 != 0 {
+            b |= 0x01;
+        }
+        state[vk] = b;
+    }
+}
+
 fn to_char(vk: u16, scan: u32) -> Option<char> {
-    let state = [0u8; 256];
+    let mut state = [0u8; 256];
+    fill_keyboard_state(&mut state);
+    to_char_with_state(vk, scan, &state)
+}
+
+fn to_char_with_state(vk: u16, scan: u32, state: &[u8; 256]) -> Option<char> {
     let mut buf = [0u16; 8];
-    let n = unsafe { ToUnicode(vk as u32, scan, Some(&state), &mut buf, 0) };
+    let n = unsafe {
+        ToUnicode(
+            vk as u32,
+            scan,
+            Some(state),
+            &mut buf,
+            TO_UNICODE_NO_STATE_CHANGE,
+        )
+    };
     if n > 0 {
         char::decode_utf16(buf[..n as usize].iter().copied())
             .flatten()
@@ -260,5 +303,38 @@ mod tests {
     #[test]
     fn pending_slot_starts_empty() {
         assert!(take_pending().is_none());
+    }
+
+    #[test]
+    fn key_state_byte_sets_down_and_toggle_bits() {
+        assert_eq!(key_state_byte(0), 0);
+        assert_eq!(key_state_byte(1), 0x01);
+        assert_eq!(key_state_byte(-128), 0x80);
+        assert_eq!(key_state_byte(-127), 0x81);
+    }
+
+    #[test]
+    fn to_unicode_uses_dont_change_state_flag() {
+        assert_eq!(TO_UNICODE_NO_STATE_CHANGE, 0x04);
+    }
+
+    #[test]
+    fn shift_plus_one_is_exclamation_on_us_layout() {
+        let mut shifted = [0u8; 256];
+        shifted[VK_SHIFT.0 as usize] = 0x80;
+        let zero = [0u8; 256];
+        let vk_1 = 0x31u16;
+        let scan_1 = 0x02u32;
+        let unshifted = to_char_with_state(vk_1, scan_1, &zero);
+        let with_shift = to_char_with_state(vk_1, scan_1, &shifted);
+        assert!(
+            with_shift != unshifted || with_shift == Some('!'),
+            "Shift+VK_1 must not match an all-zero key state (unshifted={unshifted:?}, shifted={with_shift:?})"
+        );
+        if unshifted == Some('1') {
+            assert_eq!(with_shift, Some('!'));
+        }
+        assert_eq!(shifted[VK_SHIFT.0 as usize] & 0x80, 0x80);
+        assert_eq!(zero[VK_SHIFT.0 as usize], 0);
     }
 }

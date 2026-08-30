@@ -54,7 +54,35 @@ pub fn expand_with(
     args: &HashMap<String, String>,
     auto_percent: bool,
 ) -> ExpandOutput {
-    expand_inner(input, ctx, args, &[], auto_percent, 0, &HashSet::new())
+    expand_inner(
+        input,
+        ctx,
+        args,
+        &[],
+        auto_percent,
+        0,
+        &HashSet::new(),
+        false,
+    )
+}
+
+/// Destination expansion: `{cursor}` and `{snippet:…}` stay literal.
+pub fn expand_destination_template(
+    input: &str,
+    ctx: &ExpandContext,
+    args: &HashMap<String, String>,
+    auto_percent: bool,
+) -> ExpandOutput {
+    expand_inner(
+        input,
+        ctx,
+        args,
+        &[],
+        auto_percent,
+        0,
+        &HashSet::new(),
+        true,
+    )
 }
 
 pub fn expand_snippet(
@@ -68,7 +96,7 @@ pub fn expand_snippet(
     if let Some(id) = root_id {
         visited.insert(id.to_string());
     }
-    expand_inner(input, ctx, args, snippets, false, 0, &visited)
+    expand_inner(input, ctx, args, snippets, false, 0, &visited, false)
 }
 
 pub fn uses_selection(input: &str) -> bool {
@@ -85,6 +113,7 @@ fn expand_inner(
     auto_percent: bool,
     depth: usize,
     visited: &HashSet<String>,
+    destination: bool,
 ) -> ExpandOutput {
     let mut text = String::new();
     let mut cursor = None;
@@ -126,11 +155,17 @@ fn expand_inner(
                 }
             },
             Segment::Cursor => {
-                if cursor.is_none() {
+                if destination {
+                    text.push_str("{cursor}");
+                } else if cursor.is_none() {
                     cursor = Some(grapheme_count(&text));
                 }
             }
             Segment::SnippetRef { key, source } => {
+                if destination {
+                    text.push_str(&source);
+                    continue;
+                }
                 let resolved = resolve_reference(&key, &sorted);
                 let allowed = depth < MAX_REFERENCE_DEPTH
                     && resolved
@@ -151,6 +186,7 @@ fn expand_inner(
                     auto_percent,
                     depth + 1,
                     &nested_visited,
+                    false,
                 );
                 let insertion = grapheme_count(&text);
                 if cursor.is_none() {
@@ -1058,6 +1094,9 @@ mod tests {
             expand_with("{argument name=\"A\"}", &ctx, &args, true).text,
             "x%20y"
         );
+        assert!(uses_selection("{selection} hello"));
+        assert!(uses_selection("x{selectedText}"));
+        assert!(!uses_selection("{clipboard}"));
         assert_eq!(
             expand("{selectedText}", &ctx, &Default::default()).text,
             expand("{selection}", &ctx, &Default::default()).text
@@ -1095,5 +1134,28 @@ mod tests {
             uuid: || "u".into(),
         };
         assert_eq!(expand("[{clipboard}]", &ctx, &Default::default()).text, "[]");
+    }
+
+    #[test]
+    fn destination_mode_leaves_cursor_and_snippet_refs_verbatim() {
+        let ctx = ExpandContext {
+            clipboard: vec!["hi".into()],
+            selection: None,
+            now: 0,
+            locale: "en".into(),
+            tz: "UTC".into(),
+            uuid: || "u".into(),
+        };
+        let stripped = expand("A{cursor}B{snippet:X}", &ctx, &Default::default());
+        assert_eq!(stripped.text, "AB{snippet:X}");
+        assert_eq!(stripped.cursor, Some(1));
+        let kept = expand_destination_template(
+            "A{cursor}B{snippet:X}",
+            &ctx,
+            &Default::default(),
+            false,
+        );
+        assert_eq!(kept.text, "A{cursor}B{snippet:X}");
+        assert!(kept.cursor.is_none());
     }
 }

@@ -14,8 +14,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::messages::{
-    WM_APP_INDEX, WM_CLIPBOARDUPDATE, WM_CLIPBOARD_IMAGE, WM_OPEN_SETTINGS, WM_QUIT_APP, WM_RATES,
-    WM_SNIPPETS, WM_SNIPPET_KEYWORD, WM_TOGGLE_PALETTE, WM_TRAY,
+    WM_APP_INDEX, WM_CLIPBOARDUPDATE, WM_CLIPBOARD_IMAGE, WM_CUSTOM_COMMAND_FAILED, WM_OPEN_SETTINGS,
+    WM_QUIT_APP, WM_RATES, WM_SNIPPETS, WM_SNIPPET_KEYWORD, WM_TOGGLE_PALETTE, WM_TRAY,
 };
 use crate::app_core::AppCore;
 
@@ -198,6 +198,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_SNIPPET_KEYWORD => {
             if let Some(core) = core_from(hwnd) {
                 (*core).on_snippet_keyword();
+            }
+            LRESULT(0)
+        }
+        WM_CUSTOM_COMMAND_FAILED => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).on_custom_command_failed();
             }
             LRESULT(0)
         }

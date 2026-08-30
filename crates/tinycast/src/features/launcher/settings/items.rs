@@ -262,6 +262,29 @@ pub struct LauncherLayout {
     pub content_height: f32,
 }
 
+impl LauncherLayout {
+    pub fn shifted(mut self, dy: f32) -> Self {
+        fn shift(r: Rect, dy: f32) -> Rect {
+            Rect { y: r.y + dy, ..r }
+        }
+        self.header = shift(self.header, dy);
+        self.enable_row = shift(self.enable_row, dy);
+        self.toggle = shift(self.toggle, dy);
+        self.list_card = shift(self.list_card, dy);
+        self.filter = shift(self.filter, dy);
+        self.empty = self.empty.map(|r| shift(r, dy));
+        for item in &mut self.items {
+            item.row = shift(item.row, dy);
+            item.alias = shift(item.alias, dy);
+            item.checkbox = shift(item.checkbox, dy);
+            item.recorder = item.recorder.map(|r| shift(r, dy));
+            item.recorder_clear = item.recorder_clear.map(|r| shift(r, dy));
+        }
+        self.content_height += dy;
+        self
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct SearchLayout {
     pub header: Rect,
@@ -1285,6 +1308,26 @@ mod tests {
             },
             hotkey: None,
         }
+    }
+
+    #[test]
+    fn quicklinks_and_emoji_tabs_are_not_empty_launcher_sections() {
+        assert!(LauncherItemsSection::for_tab(SettingsTab::Quicklinks).is_none());
+        assert!(LauncherItemsSection::for_tab(SettingsTab::Emoji).is_none());
+        assert_eq!(
+            LauncherItemsSection::for_tab(SettingsTab::Commands),
+            Some(LauncherItemsSection::commands())
+        );
+    }
+
+    #[test]
+    fn launcher_layout_shift_stacks_below_custom_commands() {
+        let layout =
+            layout_launcher_items(&LauncherItemsSection::commands(), 0, |_| false, 400.0, true);
+        let shifted = layout.clone().shifted(80.0);
+        assert_eq!(shifted.header.y, layout.header.y + 80.0);
+        assert_eq!(shifted.enable_row.y, layout.enable_row.y + 80.0);
+        assert_eq!(shifted.content_height, layout.content_height + 80.0);
     }
 
     #[test]

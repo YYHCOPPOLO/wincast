@@ -45,6 +45,7 @@ pub enum SlotKind {
     Header,
     Row,
     Calc,
+    EmojiRow { cells: usize, columns: usize },
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +68,12 @@ pub enum PaintItem {
         target_badge: Option<String>,
         selected: bool,
         is_error: bool,
+    },
+    EmojiRow {
+        glyphs: Vec<String>,
+        columns: usize,
+        start: usize,
+        selected: usize,
     },
 }
 
@@ -147,6 +154,7 @@ pub struct ListFonts {
     pub keycap: IDWriteTextFormat,
     pub calc_result: IDWriteTextFormat,
     pub calc_badge: IDWriteTextFormat,
+    pub emoji: IDWriteTextFormat,
 }
 
 pub fn list_top() -> f32 {
@@ -162,6 +170,7 @@ pub fn slot_height(kind: SlotKind) -> f32 {
         SlotKind::Header => SECTION_HEADER_HEIGHT,
         SlotKind::Row => ROW_HEIGHT,
         SlotKind::Calc => theme::size::CALC_CARD_HEIGHT,
+        SlotKind::EmojiRow { .. } => tinycast_pure::emoji::CELL_DIP,
     }
 }
 
@@ -172,6 +181,10 @@ pub fn slots_of(items: &[PaintItem]) -> Vec<SlotKind> {
             PaintItem::Header { .. } => SlotKind::Header,
             PaintItem::Row { .. } => SlotKind::Row,
             PaintItem::Calc { .. } => SlotKind::Calc,
+            PaintItem::EmojiRow { glyphs, columns, .. } => SlotKind::EmojiRow {
+                cells: glyphs.len(),
+                columns: *columns,
+            },
         })
         .collect()
 }
@@ -185,11 +198,20 @@ pub fn row_y(slots: &[SlotKind], selectable: usize) -> Option<(f32, f32)> {
     let mut idx = 0usize;
     for slot in slots {
         let h = slot_height(*slot);
-        if matches!(*slot, SlotKind::Row | SlotKind::Calc) {
-            if idx == selectable {
-                return Some((y, h));
+        match *slot {
+            SlotKind::Row | SlotKind::Calc => {
+                if idx == selectable {
+                    return Some((y, h));
+                }
+                idx += 1;
             }
-            idx += 1;
+            SlotKind::EmojiRow { cells, .. } => {
+                if selectable >= idx && selectable < idx + cells {
+                    return Some((y, h));
+                }
+                idx += cells;
+            }
+            SlotKind::Header => {}
         }
         y += h;
     }
@@ -233,10 +255,19 @@ pub fn selectable_at_y(
             return match slot {
                 SlotKind::Header => None,
                 SlotKind::Row | SlotKind::Calc => Some(selectable),
+                SlotKind::EmojiRow { cells, .. } => {
+                    if *cells == 0 {
+                        None
+                    } else {
+                        Some(selectable)
+                    }
+                }
             };
         }
-        if matches!(*slot, SlotKind::Row | SlotKind::Calc) {
-            selectable += 1;
+        match slot {
+            SlotKind::Row | SlotKind::Calc => selectable += 1,
+            SlotKind::EmojiRow { cells, .. } => selectable += *cells,
+            SlotKind::Header => {}
         }
         cursor += h;
     }
@@ -531,8 +562,22 @@ pub fn paint(
                 }
                 y += h;
             }
+            PaintItem::EmojiRow {
+                glyphs,
+                columns,
+                start,
+                selected,
+            } => {
+                let h = tinycast_pure::emoji::CELL_DIP;
+                if y + h > top && y < bottom {
+                    paint_emoji_row(
+                        target, fonts, glyphs, *columns, *start, *selected, y, panel_w, h,
+                    )?;
+                }
+                y += h;
+            }
         }
-        if y > bottom + ROW_HEIGHT {
+        if y > bottom + tinycast_pure::emoji::CELL_DIP {
             break;
         }
     }
@@ -540,6 +585,70 @@ pub fn paint(
         target.PopAxisAlignedClip();
     }
     paint_fade(target, panel_w, top, bottom)?;
+    Ok(())
+}
+
+fn paint_emoji_row(
+    target: &ID2D1RenderTarget,
+    fonts: &ListFonts,
+    glyphs: &[String],
+    columns: usize,
+    start: usize,
+    selected: usize,
+    y: f32,
+    panel_w: f32,
+    h: f32,
+) -> windows::core::Result<()> {
+    let cols = columns.max(1);
+    let cell_w = panel_w / cols as f32;
+    for (col, glyph) in glyphs.iter().enumerate() {
+        let x = col as f32 * cell_w;
+        let index = start + col;
+        if index == selected {
+            let pill = D2D1_ROUNDED_RECT {
+                rect: D2D_RECT_F {
+                    left: x + 2.0,
+                    top: y + 2.0,
+                    right: x + cell_w - 2.0,
+                    bottom: y + h - 2.0,
+                },
+                radiusX: theme::radius::ROW,
+                radiusY: theme::radius::ROW,
+            };
+            let brush = unsafe { target.CreateSolidColorBrush(&selection_color(), None)? };
+            unsafe {
+                target.FillRoundedRectangle(&pill, &brush);
+            }
+        }
+        let rect = D2D_RECT_F {
+            left: x,
+            top: y,
+            right: x + cell_w,
+            bottom: y + h,
+        };
+        let brush = unsafe {
+            target.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 0.95,
+                },
+                None,
+            )?
+        };
+        let wide: Vec<u16> = glyph.encode_utf16().collect();
+        unsafe {
+            target.DrawText(
+                &wide,
+                &fonts.emoji,
+                &rect,
+                &brush,
+                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
+    }
     Ok(())
 }
 
@@ -965,6 +1074,18 @@ mod tests {
         assert_eq!(theme::size::ROW_ICON, 24.0);
         assert_eq!(theme::radius::ROW, 10.0);
         assert_eq!(ROW_HEIGHT, 40.0);
+    }
+
+    #[test]
+    fn emoji_row_slot_is_56_dip() {
+        assert_eq!(
+            slot_height(SlotKind::EmojiRow {
+                cells: 8,
+                columns: 8
+            }),
+            tinycast_pure::emoji::CELL_DIP
+        );
+        assert_eq!(tinycast_pure::emoji::CELL_DIP, 56.0);
     }
 
     #[test]

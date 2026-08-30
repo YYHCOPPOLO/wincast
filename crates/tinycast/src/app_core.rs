@@ -26,7 +26,8 @@ use tinycast_pure::visibility::VisibilityStore;
 
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_MENU, VK_RETURN, VK_SHIFT, VK_UP,
+    GetKeyState, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_MENU, VK_RETURN, VK_RIGHT, VK_SHIFT,
+    VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
@@ -87,8 +88,8 @@ pub struct AppCore {
     clipboard_filter: ClipboardFilter,
     snippet_repo: SnippetRepository,
     snippet_records: Vec<tinycast_pure::snippet::StoredSnippet>,
-    custom_commands: CustomCommandStore,
-    quicklinks: QuicklinkStore,
+    pub(crate) custom_commands: CustomCommandStore,
+    pub(crate) quicklinks: QuicklinkStore,
     snippet_listener: KeywordListener,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
@@ -317,6 +318,201 @@ impl AppCore {
         self.invalidate_settings();
     }
 
+    pub fn custom_command_records(&self) -> &[tinycast_pure::custom_command::CustomCommand] {
+        self.custom_commands.commands()
+    }
+
+    pub fn quicklink_records(&self) -> &[tinycast_pure::quicklink::Quicklink] {
+        self.quicklinks.links()
+    }
+
+    pub fn set_custom_commands_enabled(&mut self, enabled: bool) {
+        self.settings.custom_commands_enabled = enabled;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn set_custom_commands_show_in_launcher(&mut self, show: bool) {
+        self.settings.custom_commands_show_in_launcher = show;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn set_quicklinks_enabled(&mut self, enabled: bool) {
+        self.settings.quicklinks_enabled = enabled;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn set_quicklinks_show_in_launcher(&mut self, show: bool) {
+        self.settings.quicklinks_show_in_launcher = show;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn cycle_emoji_skin_tone(&mut self) {
+        let next =
+            tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone).cycle();
+        self.settings.emoji_skin_tone = next.as_raw().to_string();
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn new_custom_command(&mut self, owner: HWND) {
+        if !self.custom_commands.is_available() {
+            crate::surfaces::dialog::alert(
+                "Library unavailable",
+                crate::features::custom_commands::service::store::STORAGE_UNAVAILABLE,
+            );
+            return;
+        }
+        self.pause_global_hotkeys();
+        let drafted = crate::features::custom_commands::ui::editor::edit(owner, None);
+        self.resume_global_hotkeys();
+        let Some(draft) = drafted else {
+            return;
+        };
+        let command = tinycast_pure::custom_command::CustomCommand {
+            id: new_item_id(),
+            name: draft.name,
+            command: draft.command,
+            confirm: draft.confirm,
+        };
+        if let Err(err) = self.custom_commands.upsert(command) {
+            crate::surfaces::dialog::alert("Could not save command", &err);
+        }
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn edit_custom_command_at(&mut self, owner: HWND, index: usize) {
+        if !self.custom_commands.is_available() {
+            crate::surfaces::dialog::alert(
+                "Library unavailable",
+                crate::features::custom_commands::service::store::STORAGE_UNAVAILABLE,
+            );
+            return;
+        }
+        let Some(existing) = self.custom_commands.commands().get(index).cloned() else {
+            return;
+        };
+        let initial = crate::features::custom_commands::ui::editor::CommandDraft {
+            name: existing.name.clone(),
+            command: existing.command.clone(),
+            confirm: existing.confirm,
+        };
+        self.pause_global_hotkeys();
+        let drafted =
+            crate::features::custom_commands::ui::editor::edit(owner, Some(&initial));
+        self.resume_global_hotkeys();
+        let Some(draft) = drafted else {
+            return;
+        };
+        let mut updated = existing;
+        updated.name = draft.name;
+        updated.command = draft.command;
+        updated.confirm = draft.confirm;
+        if let Err(err) = self.custom_commands.upsert(updated) {
+            crate::surfaces::dialog::alert("Could not save command", &err);
+        }
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn edit_quicklink(&mut self, owner: HWND, index: Option<usize>) {
+        if !self.quicklinks.is_available() {
+            crate::surfaces::dialog::alert(
+                "Library unavailable",
+                crate::features::quicklinks::service::store::STORAGE_UNAVAILABLE,
+            );
+            return;
+        }
+        let initial = index.and_then(|i| {
+            self.quicklinks.links().get(i).map(|link| {
+                crate::features::quicklinks::ui::editor::QuicklinkDraft {
+                    name: link.name.clone(),
+                    destination: link.destination.clone(),
+                }
+            })
+        });
+        let existing = index.and_then(|i| self.quicklinks.links().get(i).cloned());
+        self.pause_global_hotkeys();
+        let drafted = crate::features::quicklinks::ui::editor::edit(owner, initial.as_ref());
+        self.resume_global_hotkeys();
+        let Some(draft) = drafted else {
+            return;
+        };
+        let mut link = existing.unwrap_or_else(|| tinycast_pure::quicklink::Quicklink {
+            id: new_item_id(),
+            name: String::new(),
+            destination: String::new(),
+            pinned: false,
+            show_in_root: true,
+            pin_order: 0,
+        });
+        link.name = draft.name;
+        link.destination = draft.destination;
+        if let Err(err) = self.quicklinks.upsert(link) {
+            crate::surfaces::dialog::alert("Could not save quicklink", &err);
+        }
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    fn create_quicklink_from_command(&mut self) {
+        self.hide_palette();
+        self.edit_quicklink(self.host, None);
+    }
+
+    pub fn import_quicklinks(&mut self, owner: HWND) {
+        if !self.quicklinks.is_available() {
+            crate::surfaces::dialog::alert(
+                "Library unavailable",
+                crate::features::quicklinks::service::store::STORAGE_UNAVAILABLE,
+            );
+            return;
+        }
+        let Some(path) = crate::features::quicklinks::settings::pane::pick_open_json(owner) else {
+            return;
+        };
+        match std::fs::read(&path) {
+            Ok(bytes) => match self.quicklinks.import_from_bytes(&bytes) {
+                Ok(_) => {
+                    self.invalidate_palette();
+                    self.invalidate_settings();
+                }
+                Err(err) => crate::surfaces::dialog::alert("Import failed", &err),
+            },
+            Err(err) => crate::surfaces::dialog::alert("Import failed", &err.to_string()),
+        }
+    }
+
+    pub fn export_quicklinks(&mut self, owner: HWND) {
+        if !self.quicklinks.is_available() {
+            crate::surfaces::dialog::alert(
+                "Library unavailable",
+                crate::features::quicklinks::service::store::STORAGE_UNAVAILABLE,
+            );
+            return;
+        }
+        let Some(path) = crate::features::quicklinks::settings::pane::pick_save_json(owner) else {
+            return;
+        };
+        match self.quicklinks.export_bytes() {
+            Ok(bytes) => {
+                if let Err(err) = std::fs::write(&path, bytes) {
+                    crate::surfaces::dialog::alert("Export failed", &err.to_string());
+                }
+            }
+            Err(err) => crate::surfaces::dialog::alert("Export failed", &err),
+        }
+    }
+
     pub fn on_snippet_keyword(&mut self) {
         let Some(pending) =
             crate::features::snippets::service::listener::take_pending()
@@ -345,9 +541,13 @@ impl AppCore {
         else {
             return;
         };
+        if injector::insertion_refused(fg) {
+            return;
+        }
+        let selection = injector::capture_selection(fg, true);
         let ctx = snippet_coordinator::expansion_context(
             self.clipboard.recent_text(20),
-            None,
+            selection,
             crate::platform::clock::local_naive_unix(),
             user_locale(),
         );
@@ -358,12 +558,41 @@ impl AppCore {
             &Default::default(),
         );
         if !output.arguments.is_empty() {
+            self.previous_hwnd = fg;
+            self.argument_session = Some(snippet_coordinator::ArgumentSession {
+                kind: snippet_coordinator::ArgumentKind::Snippet,
+                snippet_path: record.path.to_string_lossy().into_owned(),
+                snippet_name: record.name.clone(),
+                show_confirmation: record.show_confirmation,
+                specs: output.arguments,
+                values: std::collections::HashMap::new(),
+                index: 0,
+                clipboard: ctx.clipboard,
+                selection: ctx.selection,
+                now: ctx.now,
+                locale: ctx.locale,
+                tz: ctx.tz,
+                keyword: Some(pending.keyword),
+                target: pending.target,
+            });
+            self.palette.prepare(PaletteMode::QuicklinkArguments);
+            self.palette_visible = true;
+            self.expanded = true;
+            self.show_palette_window();
+            self.relayout_palette();
+            self.invalidate_palette();
             return;
         }
-        injector::delete_chars(pending.keyword.chars().count());
-        injector::inject_into(fg, &output.text, output.cursor);
-        if record.show_confirmation {
-            self.show_message_hud(&record.name);
+        if injector::deliver_keyword(fg, &pending.keyword, &output.text, output.cursor) {
+            if record.show_confirmation {
+                self.show_message_hud(&record.name);
+            }
+        }
+    }
+
+    pub fn on_custom_command_failed(&mut self) {
+        if let Some(err) = crate::features::custom_commands::service::runner::take_pending_error() {
+            crate::surfaces::dialog::alert("Command failed", &err);
         }
     }
 
@@ -407,19 +636,12 @@ impl AppCore {
     pub fn launcher_paint_items(&self) -> Vec<PaintItem> {
         if self.palette.mode == PaletteMode::Emoji {
             let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
-            let hits = tinycast_pure::emoji::search_emoji_with_tone(&self.palette.query, tone);
-            return hits
-                .into_iter()
-                .enumerate()
-                .map(|(i, e)| PaintItem::Row {
-                    title: format!("{}  {}", e.glyph, e.name),
-                    alias: None,
-                    trailing: String::new(),
-                    keycap: None,
-                    icon_source: None,
-                    selected: i == self.palette.selection,
-                })
-                .collect();
+            return crate::features::emoji::paint_items(
+                &self.palette.query,
+                tone,
+                self.palette.selection,
+                theme::size::PANEL_WIDTH,
+            );
         }
         if self.palette.mode == PaletteMode::Quicklinks {
             let q = self.palette.query.to_lowercase();
@@ -772,6 +994,25 @@ impl AppCore {
             }
             return true;
         }
+        if self.palette.mode == PaletteMode::Emoji {
+            let cols = crate::features::emoji::columns(theme::size::PANEL_WIDTH) as i32;
+            if vk == VK_LEFT.0 {
+                self.move_selection(-1);
+                return true;
+            }
+            if vk == VK_RIGHT.0 {
+                self.move_selection(1);
+                return true;
+            }
+            if vk == VK_DOWN.0 {
+                self.move_selection(cols);
+                return true;
+            }
+            if vk == VK_UP.0 {
+                self.move_selection(-cols);
+                return true;
+            }
+        }
         if vk == VK_DOWN.0 {
             self.move_selection(1);
             return true;
@@ -830,7 +1071,26 @@ impl AppCore {
     }
 
     pub fn select_at_y(&mut self, y_dip: f32) -> bool {
+        self.select_at(0.0, y_dip)
+    }
+
+    pub fn select_at(&mut self, x_dip: f32, y_dip: f32) -> bool {
         if !self.expanded {
+            return false;
+        }
+        if self.palette.mode == PaletteMode::Emoji {
+            let items = self.launcher_paint_items();
+            if let Some(index) = crate::features::emoji::hit_index(
+                &items,
+                x_dip,
+                y_dip,
+                self.list_scroll,
+                theme::size::PANEL_WIDTH,
+            ) {
+                self.palette.selection = index;
+                self.invalidate_palette();
+                return true;
+            }
             return false;
         }
         let items = self.launcher_paint_items();
@@ -852,10 +1112,10 @@ impl AppCore {
         }
         if self.palette.mode == PaletteMode::Emoji {
             let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
-            let hits = tinycast_pure::emoji::search_emoji_with_tone(&self.palette.query, tone);
-            if let Some(emoji) = hits.get(self.palette.selection) {
+            if let Some(glyph) =
+                crate::features::emoji::glyph_at(&self.palette.query, tone, self.palette.selection)
+            {
                 let previous = self.previous_hwnd;
-                let glyph = emoji.glyph.clone();
                 let _ = crate::features::launcher::ui::coordinator::copy_text(&glyph);
                 self.hide_palette();
                 crate::platform::paster::paste_into(previous);
@@ -970,6 +1230,15 @@ impl AppCore {
             LaunchSpec::OpenQuicklink(id) => self.open_quicklink(&id),
             LaunchSpec::SearchQuicklinks => self.open_quicklinks_search(),
             LaunchSpec::SearchEmoji => self.open_emoji(),
+            LaunchSpec::CreateQuicklink => self.create_quicklink_from_command(),
+            LaunchSpec::ImportQuicklinks => {
+                self.hide_palette();
+                self.import_quicklinks(self.host);
+            }
+            LaunchSpec::ExportQuicklinks => {
+                self.hide_palette();
+                self.export_quicklinks(self.host);
+            }
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -1117,7 +1386,7 @@ impl AppCore {
                 }
             }
         }
-        if self.select_at_y(y) && double {
+        if self.select_at(x, y) && double {
             self.activate_selected();
         }
     }
@@ -1804,7 +2073,7 @@ impl AppCore {
         };
         let ctx = snippet_coordinator::expansion_context(
             self.clipboard.recent_text(20),
-            None,
+            injector::capture_selection(self.previous_hwnd, !self.palette_visible),
             crate::platform::clock::local_naive_unix(),
             user_locale(),
         );
@@ -1833,6 +2102,8 @@ impl AppCore {
             now: ctx.now,
             locale: ctx.locale,
             tz: ctx.tz,
+            keyword: None,
+            target: 0,
         });
         self.palette.prepare(PaletteMode::QuicklinkArguments);
         self.palette_visible = true;
@@ -1858,22 +2129,13 @@ impl AppCore {
         self.hide_palette();
         match custom_coordinator::request_run(&command) {
             custom_coordinator::RunRequest::Confirm => {
-                if !self.confirm_custom_command(&command) {
+                if !custom_coordinator::confirm(&command) {
                     return;
                 }
             }
             custom_coordinator::RunRequest::Execute => {}
         }
-        match custom_coordinator::execute(&command) {
-            Ok(()) => {}
-            Err(err) => self.show_message_hud(&err),
-        }
-    }
-
-    fn confirm_custom_command(&mut self, command: &tinycast_pure::custom_command::CustomCommand) -> bool {
-        let text = format!("{} — {}", command.name, command.command);
-        self.show_message_hud(&text);
-        true
+        custom_coordinator::start(&command, self.host);
     }
 
     fn apply_snippets_enabled(&mut self) {
@@ -1913,7 +2175,7 @@ impl AppCore {
         };
         let ctx = snippet_coordinator::expansion_context(
             self.clipboard.recent_text(20),
-            None,
+            injector::capture_selection(self.previous_hwnd, !self.palette_visible),
             crate::platform::clock::local_naive_unix(),
             user_locale(),
         );
@@ -1940,6 +2202,8 @@ impl AppCore {
             now: ctx.now,
             locale: ctx.locale,
             tz: ctx.tz,
+            keyword: None,
+            target: 0,
         });
         self.palette.prepare(PaletteMode::QuicklinkArguments);
         self.palette_visible = true;
@@ -2041,6 +2305,16 @@ impl AppCore {
         let output =
             snippet_coordinator::expand_record(&record, &self.snippet_records, &ctx, &session.values);
         let _ = session.tz;
+        if let Some(keyword) = session.keyword {
+            let target = HWND(session.target as *mut core::ffi::c_void);
+            self.hide_palette();
+            if injector::deliver_keyword(target, &keyword, &output.text, output.cursor) {
+                if session.show_confirmation {
+                    self.show_message_hud(&session.snippet_name);
+                }
+            }
+            return;
+        }
         self.deliver_snippet_with(
             &session.snippet_name,
             session.show_confirmation,
@@ -2063,6 +2337,9 @@ impl AppCore {
         output: tinycast_pure::template::ExpandOutput,
     ) {
         let previous = self.previous_hwnd;
+        if injector::insertion_refused(previous) {
+            return;
+        }
         self.hide_palette();
         injector::inject_into(previous, &output.text, output.cursor);
         if show_hud {
@@ -2112,6 +2389,26 @@ fn user_locale() -> String {
         String::from_utf16_lossy(&buf[..n as usize - 1])
     } else {
         "en".into()
+    }
+}
+
+fn new_item_id() -> String {
+    match unsafe { windows::Win32::System::Com::CoCreateGuid() } {
+        Ok(g) => format!(
+            "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            g.data1,
+            g.data2,
+            g.data3,
+            g.data4[0],
+            g.data4[1],
+            g.data4[2],
+            g.data4[3],
+            g.data4[4],
+            g.data4[5],
+            g.data4[6],
+            g.data4[7]
+        ),
+        Err(_) => format!("{}", unix_now()),
     }
 }
 
@@ -2490,5 +2787,92 @@ mod tests {
         assert_eq!(listed.len(), CommandID::all().len());
         assert!(listed.iter().any(|e| e.name == "AI Chat"));
         assert!(listed.iter().any(|e| e.name == "Search Files"));
+    }
+
+    #[test]
+    fn confirm_custom_command_gate_returns_false_when_a_dialog_is_up() {
+        use crate::features::custom_commands::ui::coordinator::{
+            confirm, confirm_prompt, request_run, RunRequest,
+        };
+        let command = tinycast_pure::custom_command::CustomCommand {
+            id: "1".into(),
+            name: "Format Disk".into(),
+            command: "format C:".into(),
+            confirm: true,
+        };
+        assert!(matches!(request_run(&command), RunRequest::Confirm));
+        let prompt = confirm_prompt(&command);
+        assert_eq!(prompt.title, "Format Disk");
+        assert_eq!(prompt.message, "format C:");
+        assert_eq!(prompt.accept, "Continue");
+        assert_eq!(prompt.cancel, "Cancel");
+        assert!(crate::surfaces::dialog::begin());
+        assert!(
+            !confirm(&command),
+            "Cancel / stacked dialog must not run the command"
+        );
+        crate::surfaces::dialog::end();
+    }
+
+    #[test]
+    fn custom_commands_stay_hidden_until_enabled() {
+        let path = std::env::temp_dir().join(format!(
+            "tinycast-cc-core-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut store = CustomCommandStore::load_from(path.clone());
+        store
+            .upsert(tinycast_pure::custom_command::CustomCommand {
+                id: "1".into(),
+                name: "Format Disk".into(),
+                command: "echo".into(),
+                confirm: true,
+            })
+            .unwrap();
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.favorites = tinycast_pure::favorites::FavoritesStore::default();
+        c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.custom_commands = store;
+        c.settings.custom_commands_enabled = false;
+        c.toggle_palette();
+        let hidden = c.launcher_paint_items();
+        assert!(!hidden.iter().any(|item| matches!(
+            item,
+            PaintItem::Row { title, .. } if title == "Format Disk"
+        )));
+        c.settings.custom_commands_enabled = true;
+        c.settings.custom_commands_show_in_launcher = true;
+        let shown = c.launcher_paint_items();
+        assert!(shown.iter().any(|item| matches!(
+            item,
+            PaintItem::Row { title, .. } if title == "Format Disk"
+        )));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn create_import_export_quicklink_are_not_noop() {
+        assert_eq!(
+            launch_spec(&CommandID::CreateQuicklink.as_entry()),
+            LaunchSpec::CreateQuicklink
+        );
+        assert_eq!(
+            launch_spec(&CommandID::ImportQuicklinks.as_entry()),
+            LaunchSpec::ImportQuicklinks
+        );
+        assert_eq!(
+            launch_spec(&CommandID::ExportQuicklinks.as_entry()),
+            LaunchSpec::ExportQuicklinks
+        );
+        assert_ne!(
+            launch_spec(&CommandID::CreateQuicklink.as_entry()),
+            LaunchSpec::Noop
+        );
     }
 }

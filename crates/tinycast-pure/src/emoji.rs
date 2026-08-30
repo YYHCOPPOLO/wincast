@@ -13,6 +13,15 @@ pub enum EmojiSkinTone {
 }
 
 impl EmojiSkinTone {
+    pub const ALL: [EmojiSkinTone; 6] = [
+        Self::None,
+        Self::Light,
+        Self::MediumLight,
+        Self::Medium,
+        Self::MediumDark,
+        Self::Dark,
+    ];
+
     pub fn from_raw(raw: &str) -> Self {
         match raw {
             "light" => Self::Light,
@@ -22,6 +31,33 @@ impl EmojiSkinTone {
             "dark" => Self::Dark,
             _ => Self::None,
         }
+    }
+
+    pub fn as_raw(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Light => "light",
+            Self::MediumLight => "medium-light",
+            Self::Medium => "medium",
+            Self::MediumDark => "medium-dark",
+            Self::Dark => "dark",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "Default",
+            Self::Light => "Light",
+            Self::MediumLight => "Medium-Light",
+            Self::Medium => "Medium",
+            Self::MediumDark => "Medium-Dark",
+            Self::Dark => "Dark",
+        }
+    }
+
+    pub fn cycle(self) -> Self {
+        let i = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
     }
 
     pub fn modifier(self) -> Option<char> {
@@ -141,5 +177,13 @@ mod tests {
     fn grid_cell_is_56_dip() {
         assert_eq!(CELL_DIP, 56.0);
         assert!(columns_for_width(750.0) >= 10);
+    }
+
+    #[test]
+    fn skin_tone_round_trips_and_cycles() {
+        assert_eq!(EmojiSkinTone::from_raw("medium-dark").as_raw(), "medium-dark");
+        assert_eq!(EmojiSkinTone::None.cycle(), EmojiSkinTone::Light);
+        assert_eq!(EmojiSkinTone::Dark.cycle(), EmojiSkinTone::None);
+        assert_eq!(EmojiSkinTone::Light.label(), "Light");
     }
 }

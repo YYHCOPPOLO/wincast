@@ -8,4 +8,5 @@ pub const WM_RATES: u32 = 0x8000 + 7;
 pub const WM_CLIPBOARD_IMAGE: u32 = 0x8000 + 8;
 pub const WM_SNIPPETS: u32 = 0x8000 + 9;
 pub const WM_SNIPPET_KEYWORD: u32 = 0x8000 + 10;
+pub const WM_CUSTOM_COMMAND_FAILED: u32 = 0x8000 + 11;
 pub const WM_CLIPBOARDUPDATE: u32 = 0x031D;

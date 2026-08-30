@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::app_entry::{AppEntry, AppKind};
 use crate::search_relevance::SearchFields;
-use crate::template::{expand_with, ExpandContext, ExpandOutput};
+use crate::template::{expand_destination_template, ExpandContext, ExpandOutput};
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Quicklink {
@@ -70,7 +70,7 @@ pub fn expand_destination(
     args: &HashMap<String, String>,
 ) -> ExpandOutput {
     let auto_percent = uses_url_encoding(destination);
-    expand_with(destination, ctx, args, auto_percent)
+    expand_destination_template(destination, ctx, args, auto_percent)
 }
 
 pub fn uses_url_encoding(destination: &str) -> bool {
@@ -170,5 +170,30 @@ mod tests {
         assert_eq!(detect_kind(r"C:\Windows"), Some(DestinationKind::Path));
         assert_eq!(detect_kind("github.com/a"), Some(DestinationKind::Web));
         assert_eq!(detect_kind("not a link"), None);
+    }
+
+    #[test]
+    fn destination_keeps_cursor_and_snippet_refs_literal() {
+        let ctx = ExpandContext {
+            clipboard: vec![],
+            selection: None,
+            now: 0,
+            locale: "en".into(),
+            tz: "UTC".into(),
+            uuid: || "u".into(),
+        };
+        let o = expand_destination(
+            "https://ex.com/{cursor}/{snippet:Name}/{snippet name=\"X\"}",
+            &ctx,
+            &Default::default(),
+        );
+        assert!(
+            o.text.contains("{cursor}"),
+            "cursor must stay literal, got {}",
+            o.text
+        );
+        assert!(o.text.contains("{snippet:Name}"));
+        assert!(o.text.contains("{snippet name=\"X\"}"));
+        assert!(o.cursor.is_none());
     }
 }

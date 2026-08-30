@@ -37,6 +37,10 @@ pub fn enable_copy() -> ConfirmCopy {
     }
 }
 
+pub fn content_height() -> f32 {
+    24.0 + ROW_H * 2.0 + theme::spacing::XL + 24.0
+}
+
 pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<SnippetsHit> {
     let y = y + scroll;
     if y >= 24.0 && y < 24.0 + ROW_H {
