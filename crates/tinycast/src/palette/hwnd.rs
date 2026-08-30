@@ -2,7 +2,7 @@ use tinycast_pure::palette_placement::{compact_size, expanded_size};
 use tinycast_pure::palette_state::should_draw_placeholder;
 use tinycast_pure::theme;
 use windows::core::w;
-use windows::Win32::Foundation::{COLORREF, FALSE, HWND, LPARAM, LRESULT, TRUE, WPARAM};
+use windows::Win32::Foundation::{COLORREF, FALSE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMSBT_TRANSIENTWINDOW,
     DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
@@ -16,14 +16,15 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetAncestor, GetForegroundWindow,
-    GetWindowLongPtrW, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW,
-    RegisterClassW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GA_ROOT, GWLP_USERDATA, HWND_TOPMOST,
-    IDC_ARROW, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WA_INACTIVE, WM_ACTIVATE, WM_CHAR,
-    WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HOTKEY, WM_KEYDOWN,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE,
-    WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetAncestor, GetClientRect,
+    GetForegroundWindow, GetWindowLongPtrW, HideCaret, IsWindow, IsWindowVisible, KillTimer,
+    LoadCursorW, PostMessageW, RegisterClassW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, ShowCaret, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GA_ROOT,
+    GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MA_NOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE,
+    WA_INACTIVE, WM_ACTIVATE, WM_CHAR, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_HOTKEY, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEACTIVATE,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSW,
+    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use super::d2d::{PaintParams, Renderer, LAYERED_SOURCE_CONSTANT_ALPHA};
@@ -193,6 +194,20 @@ impl PaletteWindow {
         }
     }
 
+    pub fn set_search_caret_visible(&self, visible: bool) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                if let Some(edit) = (*inner).edit.as_ref() {
+                    if visible {
+                        let _ = ShowCaret(edit.hwnd);
+                    } else {
+                        let _ = HideCaret(edit.hwnd);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn invalidate(&self) {
         unsafe {
             let _ = InvalidateRect(self.hwnd, None, FALSE);
@@ -347,24 +362,46 @@ unsafe fn core_from_host(host: HWND) -> Option<*mut AppCore> {
 
 unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     let inner = &mut *inner;
-    let (placeholder, items, scroll, appearance) = core_from_host(inner.host)
-        .map(|core| {
-            (
-                should_draw_placeholder(&(*core).palette),
-                (*core).launcher_paint_items(),
-                (*core).list_scroll(),
-                (*core).appearance_key(),
-            )
-        })
-        .unwrap_or((false, Vec::new(), 0.0, 0));
+    let Some(core) = core_from_host(inner.host) else {
+        let params = PaintParams {
+            placeholder: false,
+            items: &[],
+            scroll: 0.0,
+            cache: &mut inner.icons,
+            appearance: 0,
+            footer: super::menu::FooterPaint {
+                show_action_group: false,
+                primary_label: "",
+            },
+            menu: None,
+        };
+        inner.renderer.paint(hwnd, params, inner.present_alpha);
+        return;
+    };
+    let placeholder = should_draw_placeholder(&(*core).palette);
+    let items = (*core).launcher_paint_items();
+    let scroll = (*core).list_scroll();
+    let appearance = (*core).appearance_key();
+    let footer = (*core).footer_paint();
+    let menu = (*core).menu_paint();
     let params = PaintParams {
         placeholder,
         items: &items,
         scroll,
         cache: &mut inner.icons,
         appearance,
+        footer,
+        menu,
     };
     inner.renderer.paint(hwnd, params, inner.present_alpha);
+}
+
+fn client_dip_size(hwnd: HWND, dpi: u32) -> (f32, f32) {
+    let mut rc = RECT::default();
+    unsafe {
+        let _ = GetClientRect(hwnd, &mut rc);
+    }
+    client_point_to_dip(rc.right, rc.bottom, dpi)
 }
 
 fn scaled_rect(rest: physical::Rect, scale: f32) -> physical::Rect {
@@ -584,14 +621,39 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if let Some(inner) = inner_from(hwnd) {
                 if let Some(core) = core_from_host((*inner).host) {
                     let dpi = GetDpiForWindow(hwnd);
-                    let (_x, y) = lparam_point(lparam);
-                    let (_, y_dip) = client_point_to_dip(_x, y, dpi);
-                    if (*core).select_at_y(y_dip) && msg == WM_LBUTTONDBLCLK {
-                        (*core).activate_selected();
+                    let (x, y) = lparam_point(lparam);
+                    let (x_dip, y_dip) = client_point_to_dip(x, y, dpi);
+                    let (w_dip, h_dip) = client_dip_size(hwnd, dpi);
+                    (*core).pointer_down(x_dip, y_dip, w_dip, h_dip, msg == WM_LBUTTONDBLCLK);
+                    if let Some(edit) = (*inner).edit.as_ref() {
+                        edit.focus();
                     }
                 }
             }
             LRESULT(0)
+        }
+        WM_MOUSEMOVE => {
+            if let Some(inner) = inner_from(hwnd) {
+                if let Some(core) = core_from_host((*inner).host) {
+                    let dpi = GetDpiForWindow(hwnd);
+                    let (x, y) = lparam_point(lparam);
+                    let (x_dip, y_dip) = client_point_to_dip(x, y, dpi);
+                    let (w_dip, h_dip) = client_dip_size(hwnd, dpi);
+                    (*core).pointer_move(x_dip, y_dip, w_dip, h_dip);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_MOUSEACTIVATE => {
+            let menu_open = inner_from(hwnd)
+                .and_then(|inner| core_from_host(unsafe { (*inner).host }))
+                .map(|core| unsafe { (*core).menu_is_open() })
+                .unwrap_or(false);
+            if menu_open {
+                LRESULT(MA_NOACTIVATE as isize)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
         }
         WM_MOUSEWHEEL => {
             if let Some(inner) = inner_from(hwnd) {

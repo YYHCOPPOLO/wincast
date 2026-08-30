@@ -242,7 +242,11 @@ unsafe extern "system" fn edit_subclass(
         WM_ERASEBKGND => LRESULT(1),
         WM_KEYDOWN => {
             if let Some(core) = core_from_host(host) {
+                let menu_open = (*core).menu_is_open();
                 if (*core).handle_key(wparam.0 as u16) {
+                    return LRESULT(0);
+                }
+                if menu_open {
                     return LRESULT(0);
                 }
             }
@@ -250,7 +254,10 @@ unsafe extern "system" fn edit_subclass(
         }
         WM_CHAR => {
             let code = wparam.0 as u32;
-            if code == 13 || code == 10 || ctrl_down() {
+            let menu_open = core_from_host(host)
+                .map(|core| (*core).menu_is_open())
+                .unwrap_or(false);
+            if menu_open || code == 13 || code == 10 || ctrl_down() {
                 return LRESULT(0);
             }
             DefSubclassProc(hwnd, msg, wparam, lparam)
@@ -264,6 +271,9 @@ unsafe extern "system" fn edit_subclass(
         }
         WM_IME_STARTCOMPOSITION => {
             if let Some(core) = core_from_host(host) {
+                if (*core).menu_is_open() {
+                    return LRESULT(0);
+                }
                 (*core).set_composing(true);
             }
             DefSubclassProc(hwnd, msg, wparam, lparam)

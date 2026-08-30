@@ -2,8 +2,12 @@ use tinycast_pure::app_entry::{AppEntry, AppKind};
 use tinycast_pure::launcher_ranking::{should_record_ranking, LauncherRankingStore};
 
 use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{GlobalFree, HANDLE, HWND};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER};
+use windows::Win32::System::DataExchange::{
+    CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+};
+use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::UI::Shell::{
     IApplicationActivationManager, ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC,
     SHELLEXECUTEINFOW,
@@ -101,6 +105,68 @@ pub fn record_if_needed(
     }
 }
 
+pub fn copy_path_text(entry: &AppEntry) -> Option<String> {
+    match launch_spec(entry) {
+        LaunchSpec::Path(path) if !path.is_empty() => Some(path),
+        LaunchSpec::Aumid(aumid) => Some(format!("shell:AppsFolder\\{aumid}")),
+        LaunchSpec::Uri(uri) if !uri.is_empty() => Some(uri),
+        _ => None,
+    }
+}
+
+pub fn reveal_path(entry: &AppEntry) -> Option<String> {
+    match launch_spec(entry) {
+        LaunchSpec::Path(path) if !path.is_empty() => Some(path),
+        _ => None,
+    }
+}
+
+pub fn copy_text(text: &str) -> windows::core::Result<()> {
+    let mut wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let bytes = wide.len() * 2;
+    unsafe {
+        OpenClipboard(HWND::default())?;
+        let _ = EmptyClipboard();
+        let handle = GlobalAlloc(GMEM_MOVEABLE, bytes)?;
+        let ptr = GlobalLock(handle);
+        if ptr.is_null() {
+            let _ = GlobalFree(handle);
+            let _ = CloseClipboard();
+            return Err(windows::core::Error::from_win32());
+        }
+        std::ptr::copy_nonoverlapping(wide.as_mut_ptr(), ptr as *mut u16, wide.len());
+        let _ = GlobalUnlock(handle);
+        let hg = HANDLE(handle.0);
+        if SetClipboardData(13, hg).is_err() {
+            let _ = GlobalFree(handle);
+            let _ = CloseClipboard();
+            return Err(windows::core::Error::from_win32());
+        }
+        CloseClipboard()?;
+    }
+    Ok(())
+}
+
+pub fn show_in_folder(path: &str) -> windows::core::Result<()> {
+    let file: Vec<u16> = "explorer.exe"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let args: Vec<u16> = format!("/select,\"{path}\"")
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC,
+        lpFile: PCWSTR(file.as_ptr()),
+        lpParameters: PCWSTR(args.as_ptr()),
+        nShow: SW_SHOWNORMAL.0 as i32,
+        ..Default::default()
+    };
+    unsafe { ShellExecuteExW(&mut info) }
+}
+
 pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
     match spec {
         LaunchSpec::Aumid(aumid) => activate_aumid(aumid)
@@ -153,7 +219,9 @@ fn shell_open(file: &str, hwnd: HWND) -> windows::core::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{icon_source, launch_spec, record_if_needed, LaunchSpec};
+    use super::{
+        copy_path_text, icon_source, launch_spec, record_if_needed, reveal_path, LaunchSpec,
+    };
     use tinycast_pure::app_entry::{AppEntry, AppKind};
     use tinycast_pure::command_id::CommandID;
     use tinycast_pure::launcher_ranking::{should_record_ranking, LauncherRankingStore};
@@ -209,6 +277,19 @@ mod tests {
             launch_spec(&path),
             LaunchSpec::Path(r"C:\Windows\System32\notepad.exe".into())
         );
+        assert_eq!(
+            copy_path_text(&path).as_deref(),
+            Some(r"C:\Windows\System32\notepad.exe")
+        );
+        assert_eq!(
+            reveal_path(&path).as_deref(),
+            Some(r"C:\Windows\System32\notepad.exe")
+        );
+        assert_eq!(
+            copy_path_text(&aumid).as_deref(),
+            Some(r"shell:AppsFolder\Microsoft.WindowsNotepad_8wekyb3d8bbwe!App")
+        );
+        assert_eq!(reveal_path(&aumid), None);
     }
 
     #[test]

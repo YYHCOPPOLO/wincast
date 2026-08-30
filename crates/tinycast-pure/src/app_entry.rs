@@ -54,6 +54,24 @@ impl AppKind {
             AppKind::Command => "Command",
         }
     }
+
+    pub fn open_verb(self) -> &'static str {
+        match self {
+            AppKind::Application => "Open Application",
+            AppKind::SystemSettings => "Open System Setting",
+            AppKind::Quicklink => "Open Quicklink",
+            AppKind::Snippet => "Paste Snippet",
+            AppKind::SystemAction => "Run System Action",
+            AppKind::WindowCommand => "Move Window",
+            AppKind::CustomCommand => "Run Custom Command",
+            AppKind::Command => "Run Command",
+        }
+    }
+
+    /// Windows wording of Show in Finder. Applications have a folder; commands do not.
+    pub fn can_reveal_in_folder(self) -> bool {
+        matches!(self, AppKind::Application)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -131,6 +149,11 @@ mod tests {
         assert_eq!(AppKind::Command.section_title(), "Commands");
         assert_eq!(AppKind::Application.kind_label(), "Application");
         assert_eq!(AppKind::Command.kind_label(), "Command");
+        assert_eq!(AppKind::Application.open_verb(), "Open Application");
+        assert_eq!(AppKind::Command.open_verb(), "Run Command");
+        assert!(AppKind::Application.can_reveal_in_folder());
+        assert!(!AppKind::Command.can_reveal_in_folder());
+        assert!(!AppKind::SystemSettings.can_reveal_in_folder());
         assert_eq!(
             AppKind::named_by(AppKind::Application.section_title()),
             Some(AppKind::Application)

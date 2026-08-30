@@ -10,6 +10,7 @@ pub mod hotkey;
 pub mod hotkey_store;
 pub mod launcher_ranking;
 pub mod launcher_results;
+pub mod palette_menu;
 pub mod palette_mode;
 pub mod palette_placement;
 pub mod palette_row_index;

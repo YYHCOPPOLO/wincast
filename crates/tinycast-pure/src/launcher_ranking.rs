@@ -81,6 +81,25 @@ impl LauncherRankingStore {
         self.records.is_empty()
     }
 
+    pub fn has_ranking(&self, entry_id: &str) -> bool {
+        if entry_id.is_empty() {
+            return false;
+        }
+        self.records
+            .values()
+            .any(|by_item| by_item.contains_key(entry_id))
+    }
+
+    pub fn reset(&mut self, entry_id: &str) {
+        if entry_id.is_empty() {
+            return;
+        }
+        for by_item in self.records.values_mut() {
+            by_item.remove(entry_id);
+        }
+        self.records.retain(|_, by_item| !by_item.is_empty());
+    }
+
     pub fn reset_all(&mut self) {
         self.records.clear();
     }
@@ -281,6 +300,19 @@ mod tests {
         assert!(!s.is_empty());
         s.reset_all();
         assert!(s.is_empty());
+        assert_eq!(s.boost("w", "app:whatsapp", 1_000), 0);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn reset_one_item_leaves_other_ranking() {
+        let (mut s, path) = load_temp("reset-one");
+        s.record("wha", "app:whatsapp", 1_000);
+        s.record("not", "app:notepad", 1_000);
+        assert!(s.has_ranking("app:whatsapp"));
+        s.reset("app:whatsapp");
+        assert!(!s.has_ranking("app:whatsapp"));
+        assert!(s.has_ranking("app:notepad"));
         assert_eq!(s.boost("w", "app:whatsapp", 1_000), 0);
         let _ = std::fs::remove_file(path);
     }

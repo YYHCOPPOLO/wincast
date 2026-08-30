@@ -1,6 +1,7 @@
 mod d2d;
 mod edit;
 mod hwnd;
+pub(crate) mod menu;
 
 pub use hwnd::PaletteWindow;
 

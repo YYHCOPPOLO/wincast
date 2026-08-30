@@ -9,6 +9,11 @@ use tinycast_pure::launcher_ranking::LauncherRankingStore;
 use tinycast_pure::launcher_results::{
     is_category_listing, ordered_results, selectable_rows, LauncherSection,
 };
+use tinycast_pure::palette_menu::{
+    action_group_rects, actions_for, actions_menu_frame, can_open_actions, clamp_menu_selection,
+    menu_row_at, point_in, ActionContext, MenuItem, OpenMenu, ID_COPY_PATH, ID_FAVORITE,
+    ID_MOVE_DOWN, ID_MOVE_UP, ID_OPEN, ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
+};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
 use tinycast_pure::palette_row_index::clamp_selection;
@@ -19,22 +24,24 @@ use tinycast_pure::visibility::VisibilityStore;
 
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_UP,
+    GetKeyState, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_MENU, VK_RETURN, VK_SHIFT, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::app_settings::AppSettings;
 use crate::features::launcher::service::app_index::AppIndex;
 use crate::features::launcher::settings::items::{
-    commit_alias_text, commands_catalog, hotkey_action_key,
+    commands_catalog, commit_alias_text, hotkey_action_key,
 };
 use crate::features::launcher::ui::coordinator::{
-    execute, launch_spec, record_if_needed, LaunchSpec,
+    copy_path_text, copy_text, execute, launch_spec, record_if_needed, reveal_path, show_in_folder,
+    LaunchSpec,
 };
 use crate::features::launcher::ui::list::{
     clamp_scroll, content_height, ensure_visible, list_bottom, list_top, paint_items, row_y,
     selectable_at_y, slots_of, PaintItem, ROW_HEIGHT,
 };
+use crate::palette::menu::{FooterPaint, MenuPaint};
 use crate::palette::physical;
 use crate::palette::PaletteWindow;
 use crate::platform::messages::WM_QUIT_APP;
@@ -63,6 +70,10 @@ pub struct AppCore {
     expanded: bool,
     anchor: Option<tinycast_pure::palette_placement::PaletteAnchor>,
     anchor_px: Option<physical::Point>,
+    menu: OpenMenu,
+    menu_selection: usize,
+    menu_items: Vec<MenuItem>,
+    menu_header: String,
 }
 
 impl AppCore {
@@ -88,6 +99,10 @@ impl AppCore {
             expanded: false,
             anchor: None,
             anchor_px: None,
+            menu: OpenMenu::None,
+            menu_selection: 0,
+            menu_items: Vec::new(),
+            menu_header: String::new(),
         }
     }
 
@@ -101,6 +116,7 @@ impl AppCore {
             window.hide();
         }
         self.list_scroll = 0.0;
+        self.close_menu();
         self.app_index.start();
     }
 
@@ -127,6 +143,31 @@ impl AppCore {
 
     pub fn appearance_key(&self) -> u8 {
         0
+    }
+
+    pub fn menu_is_open(&self) -> bool {
+        self.menu.is_open()
+    }
+
+    pub fn footer_paint(&self) -> FooterPaint<'_> {
+        FooterPaint {
+            show_action_group: self.footer_action_group_visible(),
+            primary_label: self
+                .selected_entry()
+                .map(|e| e.kind.open_verb())
+                .unwrap_or("Open"),
+        }
+    }
+
+    pub fn menu_paint(&self) -> Option<MenuPaint<'_>> {
+        if self.menu != OpenMenu::Actions || self.menu_items.is_empty() {
+            return None;
+        }
+        Some(MenuPaint {
+            header: self.menu_header.as_str(),
+            items: &self.menu_items,
+            selection: self.menu_selection,
+        })
     }
 
     pub fn open_settings(&mut self) {
@@ -226,6 +267,7 @@ impl AppCore {
     }
 
     pub fn hide_palette(&mut self) {
+        self.close_menu();
         self.palette_visible = false;
         self.expanded = false;
         self.palette.is_composing = false;
@@ -239,6 +281,10 @@ impl AppCore {
     }
 
     pub fn handle_escape(&mut self) {
+        if self.menu.is_open() {
+            self.close_menu();
+            return;
+        }
         let launcher = self.palette.mode == PaletteMode::Launcher;
         match escape_outcome(&self.palette.query, launcher) {
             EscapeOutcome::ClearQuery => {
@@ -274,6 +320,9 @@ impl AppCore {
     }
 
     pub fn set_query(&mut self, text: String) {
+        if self.menu.is_open() {
+            return;
+        }
         if self.palette.query != text {
             self.palette.selection = 0;
             self.list_scroll = 0.0;
@@ -295,7 +344,7 @@ impl AppCore {
     }
 
     pub fn append_query_char(&mut self, c: char) {
-        if c.is_control() {
+        if self.menu.is_open() || c.is_control() {
             return;
         }
         self.palette.query.push(c);
@@ -313,8 +362,56 @@ impl AppCore {
             self.handle_escape();
             return true;
         }
+        if vk == 0x4B && ctrl_down() && !shift_down() && !alt_down() {
+            self.toggle_actions();
+            return true;
+        }
+        if vk == 0x46 && ctrl_down() && shift_down() && !alt_down() {
+            if self.expanded {
+                self.toggle_favorite_selected();
+                self.close_menu();
+            }
+            return true;
+        }
+        if vk == 0x43 && ctrl_down() && alt_down() && !shift_down() {
+            self.copy_path_selected();
+            return true;
+        }
+        if (vk == VK_UP.0 || vk == VK_DOWN.0) && ctrl_down() && alt_down() {
+            if self.expanded {
+                let delta = if vk == VK_UP.0 { -1 } else { 1 };
+                self.move_favorite_selected(delta);
+                self.close_menu();
+            }
+            return self.expanded;
+        }
         if vk == VK_RETURN.0 {
+            if ctrl_down() && !alt_down() {
+                self.reveal_selected();
+                return true;
+            }
+            if self.menu.is_open() {
+                self.activate_menu_item();
+                return true;
+            }
             self.activate_selected();
+            return true;
+        }
+        if self.menu.is_open() {
+            if vk == VK_DOWN.0 {
+                self.move_menu(1);
+                return true;
+            }
+            if vk == VK_UP.0 {
+                self.move_menu(-1);
+                return true;
+            }
+            if ctrl_down() {
+                if let Some(n) = FavoritesStore::digit_from_vk(vk) {
+                    self.activate_favorite_slot(n);
+                    return true;
+                }
+            }
             return true;
         }
         if vk == VK_DOWN.0 {
@@ -361,7 +458,7 @@ impl AppCore {
     }
 
     pub fn scroll_list(&mut self, wheel_delta: i16) {
-        if !self.expanded {
+        if !self.expanded || self.menu.is_open() {
             return;
         }
         let notches = wheel_delta as f32 / 120.0;
@@ -518,9 +615,287 @@ impl AppCore {
     fn apply_prefs(&self, entries: &mut [AppEntry]) {
         for entry in entries {
             entry.fields.user_alias = self.aliases.get(&entry.id).map(str::to_string);
-            entry.hotkey = hotkey_action_key(entry)
-                .and_then(|key| self.hotkeys.get(&key).cloned());
+            entry.hotkey = hotkey_action_key(entry).and_then(|key| self.hotkeys.get(&key).cloned());
         }
+    }
+
+    pub fn toggle_actions(&mut self) {
+        if self.menu == OpenMenu::Actions {
+            self.close_menu();
+            return;
+        }
+        if !can_open_actions(self.expanded, self.has_selectable_rows()) {
+            return;
+        }
+        self.open_actions();
+    }
+
+    pub fn pointer_down(&mut self, x: f32, y: f32, panel_w: f32, panel_h: f32, double: bool) {
+        if self.menu.is_open() {
+            let has_header = !self.menu_header.is_empty();
+            let frame = actions_menu_frame(panel_w, panel_h, self.menu_items.len(), has_header);
+            if point_in(frame, x, y) {
+                if let Some(index) = menu_row_at(frame, has_header, self.menu_items.len(), x, y) {
+                    self.menu_selection = index;
+                    self.activate_menu_item();
+                }
+                return;
+            }
+            self.close_menu();
+            return;
+        }
+        if self.footer_action_group_visible() {
+            if let Some(group) = action_group_rects(panel_w, panel_h) {
+                if point_in(group.actions, x, y) {
+                    self.toggle_actions();
+                    return;
+                }
+                if point_in(group.primary, x, y) {
+                    self.activate_selected();
+                    return;
+                }
+            }
+        }
+        if self.select_at_y(y) && double {
+            self.activate_selected();
+        }
+    }
+
+    pub fn pointer_move(&mut self, x: f32, y: f32, panel_w: f32, panel_h: f32) {
+        if !self.menu.is_open() {
+            return;
+        }
+        let has_header = !self.menu_header.is_empty();
+        let frame = actions_menu_frame(panel_w, panel_h, self.menu_items.len(), has_header);
+        if let Some(index) = menu_row_at(frame, has_header, self.menu_items.len(), x, y) {
+            if index != self.menu_selection {
+                self.menu_selection = index;
+                self.invalidate_palette();
+            }
+        }
+    }
+
+    fn open_actions(&mut self) {
+        let Some(entry) = self.selected_entry() else {
+            return;
+        };
+        let items = actions_for(self.action_context(&entry));
+        if items.is_empty() {
+            return;
+        }
+        self.menu_header = entry.name.clone();
+        self.menu_items = items;
+        self.menu_selection = 0;
+        self.menu = OpenMenu::Actions;
+        if let Some(window) = &self.palette_window {
+            window.set_search_caret_visible(false);
+        }
+        self.invalidate_palette();
+    }
+
+    fn close_menu(&mut self) {
+        if self.menu == OpenMenu::None && self.menu_items.is_empty() {
+            return;
+        }
+        self.menu = OpenMenu::None;
+        self.menu_items.clear();
+        self.menu_header.clear();
+        self.menu_selection = 0;
+        if let Some(window) = &self.palette_window {
+            window.set_search_caret_visible(true);
+        }
+        self.invalidate_palette();
+    }
+
+    fn activate_menu_item(&mut self) {
+        let Some(item) = self.menu_items.get(self.menu_selection).copied() else {
+            self.close_menu();
+            return;
+        };
+        match item.id {
+            ID_OPEN => {
+                self.close_menu();
+                self.activate_selected();
+            }
+            ID_FAVORITE => {
+                self.toggle_favorite_selected();
+                self.close_menu();
+            }
+            ID_MOVE_UP => {
+                self.move_favorite_selected(-1);
+                self.close_menu();
+            }
+            ID_MOVE_DOWN => {
+                self.move_favorite_selected(1);
+                self.close_menu();
+            }
+            ID_RESET_RANKING => {
+                self.reset_ranking_selected();
+                self.close_menu();
+            }
+            ID_SHOW_IN_FOLDER => {
+                self.close_menu();
+                self.reveal_selected();
+            }
+            ID_COPY_PATH => {
+                self.copy_path_selected();
+                self.close_menu();
+            }
+            ID_UNINSTALL => {
+                self.close_menu();
+            }
+            _ => self.close_menu(),
+        }
+    }
+
+    fn move_menu(&mut self, delta: i32) {
+        let count = self.menu_items.len();
+        if count == 0 {
+            return;
+        }
+        let next = if delta < 0 {
+            self.menu_selection
+                .saturating_sub(delta.unsigned_abs() as usize)
+        } else {
+            self.menu_selection.saturating_add(delta as usize)
+        };
+        self.menu_selection = clamp_menu_selection(next, count);
+        self.invalidate_palette();
+    }
+
+    fn footer_action_group_visible(&self) -> bool {
+        self.expanded && self.has_selectable_rows()
+    }
+
+    fn has_selectable_rows(&self) -> bool {
+        !selectable_rows(&self.sections()).is_empty()
+    }
+
+    fn selected_entry(&self) -> Option<AppEntry> {
+        selectable_rows(&self.sections())
+            .get(self.palette.selection)
+            .cloned()
+            .cloned()
+    }
+
+    fn action_context(&self, entry: &AppEntry) -> ActionContext {
+        let pins = self.palette.query.is_empty();
+        let pinned = if pins {
+            self.pinned_favorite_ids()
+        } else {
+            Vec::new()
+        };
+        let fav_i = pinned.iter().position(|id| id == &entry.id);
+        ActionContext {
+            kind: entry.kind,
+            is_favorite: self.favorites.contains(&entry.id),
+            can_move_up: fav_i.map(|i| i > 0).unwrap_or(false),
+            can_move_down: fav_i.map(|i| i + 1 < pinned.len()).unwrap_or(false),
+            has_ranking: self.ranking.has_ranking(&entry.id),
+            running: false,
+        }
+    }
+
+    fn pinned_favorite_ids(&self) -> Vec<String> {
+        let catalog = self.catalog();
+        let visible: Vec<&str> = catalog
+            .iter()
+            .filter(|e| {
+                self.visibility.is_kind_enabled(e.kind) && self.visibility.is_item_visible(&e.id)
+            })
+            .map(|e| e.id.as_str())
+            .collect();
+        self.favorites
+            .ids
+            .iter()
+            .filter(|id| visible.iter().any(|v| v == id))
+            .cloned()
+            .collect()
+    }
+
+    fn toggle_favorite_selected(&mut self) {
+        let Some(entry) = self.selected_entry() else {
+            return;
+        };
+        let id = entry.id.clone();
+        let removing = self.favorites.contains(&id);
+        let fav_index = if self.palette.query.is_empty() {
+            self.pinned_favorite_ids().iter().position(|k| k == &id)
+        } else {
+            None
+        };
+        self.favorites.toggle(id);
+        self.persist_favorites();
+        if self.palette.query.is_empty() {
+            self.palette.selection = if removing {
+                fav_index.unwrap_or(0).saturating_sub(1)
+            } else {
+                0
+            };
+        }
+        self.clamp_selection();
+        self.ensure_selection_visible();
+        self.invalidate_palette();
+    }
+
+    fn move_favorite_selected(&mut self, delta: i32) {
+        if !self.palette.query.is_empty() {
+            return;
+        }
+        let Some(entry) = self.selected_entry() else {
+            return;
+        };
+        let pinned = self.pinned_favorite_ids();
+        let Some(index) = pinned.iter().position(|id| id == &entry.id) else {
+            return;
+        };
+        let target = index as i32 + delta;
+        if target < 0 || target >= pinned.len() as i32 {
+            return;
+        }
+        let other = pinned[target as usize].clone();
+        self.favorites.exchange(&entry.id, &other);
+        self.persist_favorites();
+        if let Some(next) = selectable_rows(&self.sections())
+            .iter()
+            .position(|row| row.id == entry.id)
+        {
+            self.palette.selection = next;
+        }
+        self.ensure_selection_visible();
+        self.invalidate_palette();
+    }
+
+    fn reset_ranking_selected(&mut self) {
+        let Some(entry) = self.selected_entry() else {
+            return;
+        };
+        self.ranking.reset(&entry.id);
+        let _ = self.ranking.save();
+        self.clamp_selection();
+        self.ensure_selection_visible();
+        self.invalidate_palette();
+    }
+
+    fn copy_path_selected(&mut self) {
+        let Some(entry) = self.selected_entry() else {
+            return;
+        };
+        let Some(text) = copy_path_text(&entry) else {
+            return;
+        };
+        let _ = copy_text(&text);
+    }
+
+    fn reveal_selected(&mut self) {
+        let Some(entry) = self.selected_entry() else {
+            return;
+        };
+        let Some(path) = reveal_path(&entry) else {
+            return;
+        };
+        self.hide_palette();
+        let _ = show_in_folder(&path);
     }
 
     fn persist_visibility(&self) {
@@ -533,6 +908,10 @@ impl AppCore {
 
     fn persist_hotkeys(&self) {
         let _ = self.hotkeys.save(store_path("hotkeys.json"));
+    }
+
+    fn persist_favorites(&self) {
+        let _ = self.favorites.save(store_path("favorites.json"));
     }
 
     fn invalidate_settings(&self) {
@@ -606,6 +985,14 @@ fn unix_now() -> i64 {
 
 fn ctrl_down() -> bool {
     unsafe { GetKeyState(VK_CONTROL.0 as i32) < 0 }
+}
+
+fn shift_down() -> bool {
+    unsafe { GetKeyState(VK_SHIFT.0 as i32) < 0 }
+}
+
+fn alt_down() -> bool {
+    unsafe { GetKeyState(VK_MENU.0 as i32) < 0 }
 }
 
 #[cfg(test)]
@@ -768,6 +1155,55 @@ mod tests {
         c.toggle_palette();
         c.activate_favorite_slot(1);
         assert!(c.palette_visible);
+    }
+
+    #[test]
+    fn escape_closes_actions_menu_before_hiding() {
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.favorites = tinycast_pure::favorites::FavoritesStore::default();
+        c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.toggle_palette();
+        c.expand_select_first();
+        assert!(!c.menu_is_open());
+        c.toggle_actions();
+        assert!(c.menu_is_open());
+        c.handle_escape();
+        assert!(!c.menu_is_open());
+        assert!(c.palette_visible);
+        c.handle_escape();
+        assert!(!c.palette_visible);
+    }
+
+    #[test]
+    fn ctrl_k_swallowed_in_compact_bar() {
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.favorites = tinycast_pure::favorites::FavoritesStore::default();
+        c.toggle_palette();
+        assert!(!c.expanded);
+        c.toggle_actions();
+        assert!(!c.menu_is_open());
+    }
+
+    #[test]
+    fn toggle_actions_is_one_menu_and_frozen_query() {
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.favorites = tinycast_pure::favorites::FavoritesStore::default();
+        c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.toggle_palette();
+        c.expand_select_first();
+        c.toggle_actions();
+        assert!(c.menu_is_open());
+        let before = c.palette.query.clone();
+        c.set_query("should-not-apply".into());
+        c.append_query_char('x');
+        assert_eq!(c.palette.query, before);
+        c.toggle_actions();
+        assert!(!c.menu_is_open());
+        let paint = c.menu_paint();
+        assert!(paint.is_none());
     }
 
     #[test]

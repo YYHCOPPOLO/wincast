@@ -58,6 +58,24 @@ impl FavoritesStore {
             self.ids.push(id);
         }
     }
+
+    pub fn contains(&self, id: &str) -> bool {
+        !id.is_empty() && self.ids.iter().any(|k| k == id)
+    }
+
+    /// Swap two stored positions; hidden keys keep their slots.
+    pub fn exchange(&mut self, first: &str, second: &str) {
+        if first == second || first.is_empty() || second.is_empty() {
+            return;
+        }
+        let Some(a) = self.ids.iter().position(|k| k == first) else {
+            return;
+        };
+        let Some(b) = self.ids.iter().position(|k| k == second) else {
+            return;
+        };
+        self.ids.swap(a, b);
+    }
 }
 
 fn sanitize_ids(ids: Vec<String>) -> Vec<String> {
@@ -153,5 +171,19 @@ mod tests {
     fn load_missing_file_is_empty() {
         let f = FavoritesStore::load(PathBuf::from("Z:\\tinycast-does-not-exist\\favorites.json"));
         assert!(f.ids.is_empty());
+    }
+
+    #[test]
+    fn exchange_swaps_stored_positions() {
+        let mut f = FavoritesStore::default();
+        f.toggle("app:a".into());
+        f.toggle("app:b".into());
+        f.toggle("app:c".into());
+        f.exchange("app:a", "app:b");
+        assert_eq!(f.ids, ["app:b", "app:a", "app:c"]);
+        f.exchange("app:a", "missing");
+        assert_eq!(f.ids, ["app:b", "app:a", "app:c"]);
+        assert!(f.contains("app:a"));
+        assert!(!f.contains(""));
     }
 }
