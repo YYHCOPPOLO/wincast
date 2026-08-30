@@ -47,12 +47,10 @@ impl CurrencyRateStore {
         store
     }
 
-    #[allow(dead_code)]
     pub fn rates(&self) -> Option<&CurrencyRates> {
         self.rates.as_ref()
     }
 
-    #[allow(dead_code)]
     pub fn region(&self) -> Option<String> {
         region_currency()
     }

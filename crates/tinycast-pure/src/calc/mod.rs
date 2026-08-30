@@ -4,10 +4,12 @@ mod currency;
 mod datetime;
 mod engine;
 mod format;
+mod history;
 mod units;
 
 pub use currency::{currency_for_locale, merge_feeds, prices_coins, CurrencyRates};
 pub use engine::evaluate;
+pub use history::{CalcHistoryEntry, CalculatorHistoryStore};
 
 pub fn lookup(rates: &CurrencyRates, code: &str) -> Option<f64> {
     rates.rate(code)

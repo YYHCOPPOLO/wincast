@@ -69,6 +69,20 @@ impl Renderer {
             header: make_text_format(&dwrite, 11.0, DWRITE_FONT_WEIGHT_SEMI_BOLD, false, false)?,
             chip: make_text_format(&dwrite, 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
             keycap: make_text_format(&dwrite, 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
+            calc_result: make_text_format(
+                &dwrite,
+                theme::typography::CALC_RESULT,
+                DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                false,
+                true,
+            )?,
+            calc_badge: make_text_format(
+                &dwrite,
+                theme::typography::CALC_BADGE,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                false,
+                true,
+            )?,
         };
         Ok(Self {
             factory,

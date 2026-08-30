@@ -44,6 +44,7 @@ const ICON_CACHE_MAX: usize = 8 * 1024 * 1024;
 pub enum SlotKind {
     Header,
     Row,
+    Calc,
 }
 
 #[derive(Clone, Debug)]
@@ -58,6 +59,14 @@ pub enum PaintItem {
         keycap: Option<String>,
         icon_source: Option<String>,
         selected: bool,
+    },
+    Calc {
+        expression: String,
+        display: String,
+        source_badge: Option<String>,
+        target_badge: Option<String>,
+        selected: bool,
+        is_error: bool,
     },
 }
 
@@ -136,6 +145,8 @@ pub struct ListFonts {
     pub header: IDWriteTextFormat,
     pub chip: IDWriteTextFormat,
     pub keycap: IDWriteTextFormat,
+    pub calc_result: IDWriteTextFormat,
+    pub calc_badge: IDWriteTextFormat,
 }
 
 pub fn list_top() -> f32 {
@@ -150,6 +161,7 @@ pub fn slot_height(kind: SlotKind) -> f32 {
     match kind {
         SlotKind::Header => SECTION_HEADER_HEIGHT,
         SlotKind::Row => ROW_HEIGHT,
+        SlotKind::Calc => theme::size::CALC_CARD_HEIGHT,
     }
 }
 
@@ -159,6 +171,7 @@ pub fn slots_of(items: &[PaintItem]) -> Vec<SlotKind> {
         .map(|item| match item {
             PaintItem::Header { .. } => SlotKind::Header,
             PaintItem::Row { .. } => SlotKind::Row,
+            PaintItem::Calc { .. } => SlotKind::Calc,
         })
         .collect()
 }
@@ -172,7 +185,7 @@ pub fn row_y(slots: &[SlotKind], selectable: usize) -> Option<(f32, f32)> {
     let mut idx = 0usize;
     for slot in slots {
         let h = slot_height(*slot);
-        if *slot == SlotKind::Row {
+        if matches!(*slot, SlotKind::Row | SlotKind::Calc) {
             if idx == selectable {
                 return Some((y, h));
             }
@@ -219,10 +232,10 @@ pub fn selectable_at_y(
         if y >= cursor && y < cursor + h {
             return match slot {
                 SlotKind::Header => None,
-                SlotKind::Row => Some(selectable),
+                SlotKind::Row | SlotKind::Calc => Some(selectable),
             };
         }
-        if *slot == SlotKind::Row {
+        if matches!(*slot, SlotKind::Row | SlotKind::Calc) {
             selectable += 1;
         }
         cursor += h;
@@ -487,6 +500,33 @@ pub fn paint(
                         cache,
                         dpi,
                         appearance,
+                    )?;
+                }
+                y += h;
+            }
+            PaintItem::Calc {
+                expression,
+                display,
+                source_badge,
+                target_badge,
+                selected,
+                is_error,
+            } => {
+                let h = theme::size::CALC_CARD_HEIGHT;
+                if y + h > top && y < bottom {
+                    crate::features::calculator::ui::card::paint(
+                        target,
+                        dwrite,
+                        fonts,
+                        expression,
+                        display,
+                        source_badge.as_deref(),
+                        target_badge.as_deref(),
+                        *selected,
+                        *is_error,
+                        y,
+                        panel_w,
+                        h,
                     )?;
                 }
                 y += h;

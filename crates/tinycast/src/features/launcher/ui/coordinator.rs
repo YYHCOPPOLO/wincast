@@ -24,6 +24,7 @@ pub enum LaunchSpec {
     OpenSettings,
     OpenAbout,
     OpenSupport,
+    OpenCalculatorHistory,
     Noop,
 }
 
@@ -71,6 +72,7 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:settings" => LaunchSpec::OpenSettings,
             "command:about" => LaunchSpec::OpenAbout,
             "command:support" => LaunchSpec::OpenSupport,
+            "command:calculator-history" => LaunchSpec::OpenCalculatorHistory,
             _ => LaunchSpec::Noop,
         },
         _ => LaunchSpec::Noop,
@@ -178,6 +180,7 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::OpenSettings
         | LaunchSpec::OpenAbout
         | LaunchSpec::OpenSupport
+        | LaunchSpec::OpenCalculatorHistory
         | LaunchSpec::Noop => Ok(()),
     }
 }
@@ -341,6 +344,10 @@ mod tests {
         assert_eq!(
             launch_spec(&CommandID::ClipboardHistory.as_entry()),
             LaunchSpec::Noop
+        );
+        assert_eq!(
+            launch_spec(&CommandID::CalculatorHistory.as_entry()),
+            LaunchSpec::OpenCalculatorHistory
         );
     }
 

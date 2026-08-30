@@ -20,4 +20,9 @@ mod tests {
         assert_eq!(selectable_count(true, 3), 4);
         assert_eq!(clamp_selection(10, 4), 3);
     }
+
+    #[test]
+    fn card_shifts_selection_count() {
+        assert_eq!(selectable_count(true, 5), 6);
+    }
 }

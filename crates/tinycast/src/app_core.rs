@@ -16,7 +16,8 @@ use tinycast_pure::palette_menu::{
 };
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
-use tinycast_pure::palette_row_index::clamp_selection;
+use tinycast_pure::calc::{evaluate, CalcResult, CalculatorHistoryStore};
+use tinycast_pure::palette_row_index::{clamp_selection, selectable_count};
 use tinycast_pure::palette_state::{escape_outcome, EscapeOutcome, PaletteState};
 use tinycast_pure::settings_tab::SettingsTab;
 use tinycast_pure::theme;
@@ -30,6 +31,7 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::app_settings::AppSettings;
 use crate::features::calculator::service::rates::CurrencyRateStore;
+use crate::features::calculator::ui::{card, coordinator as calc_coordinator};
 use crate::features::launcher::service::app_index::AppIndex;
 use crate::features::launcher::settings::items::{
     commands_catalog, commit_alias_text, hotkey_action_key,
@@ -67,6 +69,7 @@ pub struct AppCore {
     pub hotkeys: HotKeyStore,
     pub settings: AppSettings,
     pub currency_rates: CurrencyRateStore,
+    pub calc_history: CalculatorHistoryStore,
     host: HWND,
     list_scroll: f32,
     expanded: bool,
@@ -97,6 +100,7 @@ impl AppCore {
             hotkeys: HotKeyStore::load(store_path("hotkeys.json")),
             settings: AppSettings::load(),
             currency_rates: CurrencyRateStore::new(),
+            calc_history: CalculatorHistoryStore::load(store_path("calculator-history.json")),
             host: HWND::default(),
             list_scroll: 0.0,
             expanded: false,
@@ -144,7 +148,20 @@ impl AppCore {
     }
 
     pub fn launcher_paint_items(&self) -> Vec<PaintItem> {
-        paint_items(&self.sections(), self.palette.selection, &self.favorites)
+        if self.palette.mode == PaletteMode::CalculatorHistory {
+            return self.calc_history_paint_items();
+        }
+        let card = self.calc_result();
+        let row_sel = if card.is_some() {
+            self.palette.selection.checked_sub(1).unwrap_or(usize::MAX)
+        } else {
+            self.palette.selection
+        };
+        let mut items = paint_items(&self.sections(), row_sel, &self.favorites);
+        if let Some(result) = card {
+            items.insert(0, card::paint_item(&result, self.palette.selection == 0));
+        }
+        items
     }
 
     pub fn list_scroll(&self) -> f32 {
@@ -162,10 +179,7 @@ impl AppCore {
     pub fn footer_paint(&self) -> FooterPaint<'_> {
         FooterPaint {
             show_action_group: self.footer_action_group_visible(),
-            primary_label: self
-                .selected_entry()
-                .map(|e| e.kind.open_verb())
-                .unwrap_or("Open"),
+            primary_label: self.primary_label(),
         }
     }
 
@@ -452,7 +466,7 @@ impl AppCore {
             }
             return;
         }
-        let count = selectable_rows(&self.sections()).len();
+        let count = self.selectable_len();
         if count == 0 {
             return;
         }
@@ -503,11 +517,36 @@ impl AppCore {
             self.expand_select_first();
             return;
         }
+        let card = self.calc_result();
+        if card.is_some() && self.palette.selection == 0 {
+            if let Some(result) = card {
+                if calc_coordinator::copy_calculator_result(&mut self.calc_history, &result) {
+                    self.persist_calc_history();
+                    self.hide_palette();
+                }
+            }
+            return;
+        }
+        let row_index = if card.is_some() {
+            self.palette.selection - 1
+        } else {
+            self.palette.selection
+        };
+        if self.palette.mode == PaletteMode::CalculatorHistory {
+            if let Some(entry) = self
+                .calc_history
+                .search(&self.palette.query)
+                .get(row_index)
+                .cloned()
+            {
+                if calc_coordinator::copy_history_result(&entry.result) {
+                    self.hide_palette();
+                }
+            }
+            return;
+        }
         let sections = self.sections();
-        let Some(entry) = selectable_rows(&sections)
-            .get(self.palette.selection)
-            .cloned()
-        else {
+        let Some(entry) = selectable_rows(&sections).get(row_index).cloned() else {
             return;
         };
         self.activate_entry(&entry);
@@ -553,6 +592,7 @@ impl AppCore {
                     window.show();
                 }
             }
+            LaunchSpec::OpenCalculatorHistory => self.open_calculator_history(),
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -779,14 +819,19 @@ impl AppCore {
     }
 
     fn has_selectable_rows(&self) -> bool {
-        !selectable_rows(&self.sections()).is_empty()
+        self.selectable_len() > 0
     }
 
     fn selected_entry(&self) -> Option<AppEntry> {
-        selectable_rows(&self.sections())
-            .get(self.palette.selection)
-            .cloned()
-            .cloned()
+        if self.palette.mode == PaletteMode::CalculatorHistory {
+            return None;
+        }
+        let index = if self.calc_result().is_some() {
+            self.palette.selection.checked_sub(1)?
+        } else {
+            self.palette.selection
+        };
+        selectable_rows(&self.sections()).get(index).cloned().cloned()
     }
 
     fn action_context(&self, entry: &AppEntry) -> ActionContext {
@@ -928,6 +973,97 @@ impl AppCore {
         let _ = self.favorites.save(store_path("favorites.json"));
     }
 
+    fn persist_calc_history(&self) {
+        let _ = self
+            .calc_history
+            .save(store_path("calculator-history.json"));
+    }
+
+    fn calc_result(&self) -> Option<CalcResult> {
+        match self.palette.mode {
+            PaletteMode::Launcher | PaletteMode::CalculatorHistory => evaluate(
+                &self.palette.query,
+                unix_now(),
+                self.currency_rates.rates(),
+                self.currency_rates.region().as_deref(),
+            ),
+            _ => None,
+        }
+    }
+
+    fn selectable_len(&self) -> usize {
+        match self.palette.mode {
+            PaletteMode::CalculatorHistory => selectable_count(
+                self.calc_result().is_some(),
+                self.calc_history.search(&self.palette.query).len(),
+            ),
+            PaletteMode::Launcher => selectable_count(
+                self.calc_result().is_some(),
+                selectable_rows(&self.sections()).len(),
+            ),
+            _ => selectable_rows(&self.sections()).len(),
+        }
+    }
+
+    fn calc_history_paint_items(&self) -> Vec<PaintItem> {
+        let card = self.calc_result();
+        let mut items = Vec::new();
+        let mut index = 0usize;
+        if let Some(result) = &card {
+            items.push(card::paint_item(result, self.palette.selection == 0));
+            index = 1;
+        }
+        for entry in self.calc_history.search(&self.palette.query) {
+            items.push(PaintItem::Row {
+                title: entry.expression,
+                alias: None,
+                trailing: entry.result,
+                keycap: None,
+                icon_source: None,
+                selected: self.palette.selection == index,
+            });
+            index += 1;
+        }
+        items
+    }
+
+    fn primary_label(&self) -> &'static str {
+        if let Some(result) = self.calc_result() {
+            if self.palette.selection == 0 {
+                return if card::is_actionable(&result) {
+                    "Copy Answer"
+                } else {
+                    "Open"
+                };
+            }
+        }
+        if self.palette.mode == PaletteMode::CalculatorHistory {
+            return "Copy Answer";
+        }
+        self.selected_entry()
+            .map(|e| e.kind.open_verb())
+            .unwrap_or("Open")
+    }
+
+    fn open_calculator_history(&mut self) {
+        self.close_menu();
+        let was_visible = self.palette_visible;
+        self.palette.prepare(PaletteMode::CalculatorHistory);
+        self.palette_visible = true;
+        self.expanded = true;
+        self.list_scroll = 0.0;
+        if was_visible {
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+            }
+            self.relayout_palette();
+            self.invalidate_palette();
+        } else {
+            self.show_palette_window();
+            self.expand_palette();
+        }
+    }
+
     fn invalidate_settings(&self) {
         if let Some(window) = &self.settings_window {
             window.invalidate();
@@ -950,7 +1086,7 @@ impl AppCore {
     }
 
     fn clamp_selection(&mut self) {
-        let n = selectable_rows(&self.sections()).len();
+        let n = self.selectable_len();
         self.palette.selection = clamp_selection(self.palette.selection, n);
         self.clamp_scroll();
     }
@@ -1050,6 +1186,23 @@ mod tests {
         c.set_query("abc".into());
         assert_eq!(c.palette.query, "abc");
         assert!(c.expanded);
+    }
+
+    #[test]
+    fn calculator_card_occupies_selection_zero() {
+        let mut c = AppCore::new();
+        c.toggle_palette();
+        c.set_query("2+2".into());
+        assert_eq!(c.palette.selection, 0);
+        let items = c.launcher_paint_items();
+        assert!(matches!(
+            &items[0],
+            PaintItem::Calc {
+                selected: true,
+                display,
+                ..
+            } if display == "4"
+        ));
     }
 
     #[test]

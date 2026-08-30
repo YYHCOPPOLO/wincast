@@ -85,6 +85,7 @@ pub mod size {
     pub const MENU_ICON: f32 = 20.0;
     pub const MENU_BRAND_ICON: f32 = 14.0;
     pub const BAR_BRAND_ICON: f32 = 12.0;
+    pub const CALC_CARD_HEIGHT: f32 = 96.0;
     pub const CHAT_IMAGE_THUMB: f32 = 96.0;
     pub const CHAT_ATTACHMENT_GLYPH: f32 = 16.0;
     pub const SETTINGS_WINDOW: (f32, f32) = (860.0, 700.0);
@@ -110,6 +111,11 @@ pub mod size {
     pub const VOLUME_TRACK_HEIGHT: f32 = 6.0;
     pub const VOLUME_KNOB: f32 = 16.0;
     pub const VOLUME_READOUT: f32 = 38.0;
+}
+
+pub mod typography {
+    pub const CALC_RESULT: f32 = 22.0;
+    pub const CALC_BADGE: f32 = 11.0;
 }
 
 pub mod duration {
