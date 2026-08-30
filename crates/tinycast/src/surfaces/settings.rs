@@ -149,6 +149,7 @@ struct SettingsInner {
     recording: Option<String>,
     confirming_reset: bool,
     confirming_clear: bool,
+    confirming_snippets: bool,
     shown_tab: SettingsTab,
 }
 
@@ -195,6 +196,7 @@ impl SettingsWindow {
                 recording: None,
                 confirming_reset: false,
                 confirming_clear: false,
+                confirming_snippets: false,
                 shown_tab: SettingsTab::General,
             });
             let ptr = Box::into_raw(inner);
@@ -533,11 +535,27 @@ unsafe fn paint_detail(
         reset_pane_state(inner, false);
         (*inner).shown_tab = selected;
     }
-    if (*inner).confirming_reset || (*inner).confirming_clear {
+    if (*inner).confirming_reset || (*inner).confirming_clear || (*inner).confirming_snippets {
         hide_edits(inner);
         if let Some(core) = core {
             let layout = layout_confirm(width, height);
-            if (*inner).confirming_clear {
+            if (*inner).confirming_snippets {
+                crate::features::snippets::settings::pane::paint(
+                    target,
+                    formats,
+                    core.settings.snippets_enabled,
+                    core.settings.snippets_show_in_launcher,
+                    detail_w,
+                    (*inner).scroll,
+                )?;
+                paint_confirm_copy(
+                    target,
+                    formats,
+                    &layout,
+                    (width, height),
+                    crate::features::snippets::settings::pane::enable_copy(),
+                )?;
+            } else if (*inner).confirming_clear {
                 crate::features::clipboard::settings::pane::paint(
                     target,
                     formats,
@@ -568,6 +586,20 @@ unsafe fn paint_detail(
                 )?;
                 paint_confirm(target, formats, &layout, (width, height))?;
             }
+        }
+        return Ok(());
+    }
+    if selected == SettingsTab::Snippets {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::snippets::settings::pane::paint(
+                target,
+                formats,
+                core.settings.snippets_enabled,
+                core.settings.snippets_show_in_launcher,
+                detail_w,
+                (*inner).scroll,
+            )?;
         }
         return Ok(());
     }
@@ -701,6 +733,7 @@ unsafe fn reset_pane_state(inner: *mut SettingsInner, resume_hotkeys: bool) {
     (*inner).alias_index = None;
     (*inner).confirming_reset = false;
     (*inner).confirming_clear = false;
+    (*inner).confirming_snippets = false;
     if (*inner).recording.take().is_some() && resume_hotkeys {
         if let Some(core) = core_from_host((*inner).host) {
             (*core).resume_global_hotkeys();
@@ -1088,17 +1121,20 @@ unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
     let Some(inner) = inner_from(hwnd) else {
         return false;
     };
-    if (*inner).confirming_reset || (*inner).confirming_clear {
+    if (*inner).confirming_reset || (*inner).confirming_clear || (*inner).confirming_snippets {
         let vk = wparam.0 as u16;
         if vk == 0x1B {
             (*inner).confirming_reset = false;
             (*inner).confirming_clear = false;
+            (*inner).confirming_snippets = false;
             let _ = InvalidateRect(hwnd, None, FALSE);
             return true;
         }
         if vk == 0x0D {
             if let Some(core) = core_from_host((*inner).host) {
-                if (*inner).confirming_clear {
+                if (*inner).confirming_snippets {
+                    (*core).set_snippets_enabled(true);
+                } else if (*inner).confirming_clear {
                     (*core).clear_clipboard_history();
                 } else {
                     (*core).reset_learned_ranking();
@@ -1106,6 +1142,7 @@ unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
             }
             (*inner).confirming_reset = false;
             (*inner).confirming_clear = false;
+            (*inner).confirming_snippets = false;
             let _ = InvalidateRect(hwnd, None, FALSE);
             return true;
         }
@@ -1168,12 +1205,14 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         return;
     };
     let (width, height) = client_dip_size(hwnd);
-    if (*inner).confirming_reset || (*inner).confirming_clear {
+    if (*inner).confirming_reset || (*inner).confirming_clear || (*inner).confirming_snippets {
         let layout = layout_confirm(width, height);
         match hit_confirm(&layout, x, y) {
             Some(Hit::ConfirmReset) => {
                 if let Some(core) = core_from_host((*inner).host) {
-                    if (*inner).confirming_clear {
+                    if (*inner).confirming_snippets {
+                        (*core).set_snippets_enabled(true);
+                    } else if (*inner).confirming_clear {
                         (*core).clear_clipboard_history();
                     } else {
                         (*core).reset_learned_ranking();
@@ -1181,10 +1220,12 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                 }
                 (*inner).confirming_reset = false;
                 (*inner).confirming_clear = false;
+                (*inner).confirming_snippets = false;
             }
             Some(Hit::ConfirmCancel) => {
                 (*inner).confirming_reset = false;
                 (*inner).confirming_clear = false;
+                (*inner).confirming_snippets = false;
             }
             _ => {}
         }
@@ -1199,6 +1240,26 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
     let detail_y = y + (*inner).scroll;
     let detail_w = (width - sidebar_w).max(0.0);
     let tab = selected_tab(inner);
+    if tab == SettingsTab::Snippets {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        match crate::features::snippets::settings::pane::hit(detail_x, detail_y, (*inner).scroll) {
+            Some(crate::features::snippets::settings::pane::SnippetsHit::Enable) => {
+                if (*core).settings.snippets_enabled {
+                    (*core).set_snippets_enabled(false);
+                } else {
+                    (*inner).confirming_snippets = true;
+                }
+            }
+            Some(crate::features::snippets::settings::pane::SnippetsHit::ShowInLauncher) => {
+                (*core).set_snippets_show_in_launcher(!(*core).settings.snippets_show_in_launcher);
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
     if tab == SettingsTab::Clipboard {
         let Some(core) = core_from_host((*inner).host) else {
             return;
@@ -1414,6 +1475,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 commit_alias(inner);
                 (*inner).confirming_reset = false;
                 (*inner).confirming_clear = false;
+                (*inner).confirming_snippets = false;
                 if (*inner).recording.take().is_some() {
                     if let Some(core) = core_from_host((*inner).host) {
                         (*core).resume_global_hotkeys();

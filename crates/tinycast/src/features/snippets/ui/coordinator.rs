@@ -10,6 +10,16 @@ use tinycast_pure::template::{
 
 use crate::features::launcher::ui::list::PaintItem;
 
+pub fn ensure_ui_automation() -> bool {
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+    use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
+    unsafe {
+        CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
+            .ok()
+            .is_some_and(|_: IUIAutomation| true)
+    }
+}
+
 pub fn snippet_entry(record: &StoredSnippet) -> AppEntry {
     AppEntry {
         id: snippet_id(&record.path),

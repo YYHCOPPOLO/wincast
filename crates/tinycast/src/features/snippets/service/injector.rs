@@ -22,6 +22,12 @@ pub fn is_synthetic(extra: usize) -> bool {
     extra == SYNTHETIC_EXTRA
 }
 
+pub fn delete_chars(count: usize) {
+    for _ in 0..count {
+        send_vk(windows::Win32::UI::Input::KeyboardAndMouse::VK_BACK);
+    }
+}
+
 pub fn inject_into(previous: HWND, text: &str, cursor: Option<usize>) {
     let payload = text.to_string();
     let bits = previous.0 as isize;

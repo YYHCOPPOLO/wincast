@@ -49,6 +49,7 @@ use crate::features::launcher::ui::list::{
     selectable_at_y, slots_of, PaintItem, ROW_HEIGHT,
 };
 use crate::features::snippets::service::injector;
+use crate::features::snippets::service::listener::KeywordListener;
 use crate::features::snippets::service::repository::SnippetRepository;
 use crate::features::snippets::ui::coordinator as snippet_coordinator;
 use crate::palette::menu::{FooterPaint, MenuPaint};
@@ -82,6 +83,7 @@ pub struct AppCore {
     clipboard_filter: ClipboardFilter,
     snippet_repo: SnippetRepository,
     snippet_records: Vec<tinycast_pure::snippet::StoredSnippet>,
+    snippet_listener: KeywordListener,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
     previous_hwnd: HWND,
@@ -120,6 +122,7 @@ impl AppCore {
             clipboard_filter: ClipboardFilter::All,
             snippet_repo: SnippetRepository::in_roaming(),
             snippet_records: Vec::new(),
+            snippet_listener: KeywordListener::new(),
             argument_session: None,
             hud: None,
             previous_hwnd: HWND::default(),
@@ -286,12 +289,89 @@ impl AppCore {
         self.app_index.set_host(host);
     }
 
+    pub fn set_snippets_enabled(&mut self, enabled: bool) {
+        if self.settings.snippets_enabled == enabled {
+            return;
+        }
+        self.settings.snippets_enabled = enabled;
+        let _ = self.settings.save();
+        if enabled {
+            let _ = snippet_coordinator::ensure_ui_automation();
+        }
+        self.apply_snippets_enabled();
+        self.invalidate_settings();
+    }
+
+    pub fn set_snippets_show_in_launcher(&mut self, show: bool) {
+        self.settings.snippets_show_in_launcher = show;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn on_snippet_keyword(&mut self) {
+        let Some(pending) =
+            crate::features::snippets::service::listener::take_pending()
+        else {
+            return;
+        };
+        if !self.settings.snippets_enabled {
+            return;
+        }
+        let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+        if fg.0 as isize != pending.target {
+            return;
+        }
+        let needle = pending.keyword.to_lowercase();
+        let Some(record) = self
+            .snippet_records
+            .iter()
+            .filter(|r| r.enabled)
+            .filter(|r| {
+                r.keyword
+                    .as_deref()
+                    .is_some_and(|k| k.trim().eq_ignore_ascii_case(&needle))
+            })
+            .min_by(|a, b| a.path.cmp(&b.path))
+            .cloned()
+        else {
+            return;
+        };
+        let ctx = snippet_coordinator::expansion_context(
+            self.clipboard.recent_text(20),
+            None,
+            crate::platform::clock::local_naive_unix(),
+            user_locale(),
+        );
+        let output = snippet_coordinator::expand_record(
+            &record,
+            &self.snippet_records,
+            &ctx,
+            &Default::default(),
+        );
+        if !output.arguments.is_empty() {
+            return;
+        }
+        injector::delete_chars(pending.keyword.chars().count());
+        injector::inject_into(fg, &output.text, output.cursor);
+        if record.show_confirmation {
+            self.show_message_hud(&record.name);
+        }
+    }
+
     pub fn install_snippets(&mut self) {
         if !self.settings.snippets_enabled {
             return;
         }
         if let Ok(snap) = self.snippet_repo.load() {
             self.snippet_records = snap.records;
+            let keywords: Vec<String> = self
+                .snippet_records
+                .iter()
+                .filter(|r| r.enabled)
+                .filter_map(|r| r.keyword.clone())
+                .collect();
+            self.snippet_listener.update_keywords(keywords);
             self.clamp_selection();
             self.invalidate_palette();
             self.invalidate_settings();
@@ -1574,7 +1654,15 @@ impl AppCore {
             if !self.host.is_invalid() {
                 self.snippet_repo.start_watch(self.host);
             }
+            let keywords: Vec<String> = self
+                .snippet_records
+                .iter()
+                .filter(|r| r.enabled)
+                .filter_map(|r| r.keyword.clone())
+                .collect();
+            self.snippet_listener.start(self.host, keywords);
         } else {
+            self.snippet_listener.stop();
             self.snippet_repo.stop_watch();
             self.snippet_records.clear();
         }
