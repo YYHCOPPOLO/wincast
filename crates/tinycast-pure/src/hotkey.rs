@@ -166,6 +166,19 @@ impl KeyShortcut {
     }
 }
 
+/// Combo registrations only. A missing or double-tap Toggle Palette is not Alt+Space.
+pub fn registered_combos(
+    bindings: &[(String, HotKeyBinding)],
+) -> Vec<(String, KeyShortcut)> {
+    bindings
+        .iter()
+        .filter_map(|(action, binding)| match binding {
+            HotKeyBinding::Combo(shortcut) => Some((action.clone(), *shortcut)),
+            HotKeyBinding::DoubleTap(_) => None,
+        })
+        .collect()
+}
+
 pub fn retarget_hyper_bindings(
     bindings: &[(String, HotKeyBinding)],
     includes_shift: bool,
@@ -366,5 +379,23 @@ mod tests {
         let next = stale.retargeting_hyper(true);
         assert!(next.modifiers.shift);
         assert_eq!(next.vk, 0x47);
+    }
+
+    #[test]
+    fn missing_or_double_tap_toggle_palette_is_not_a_combo() {
+        let empty: Vec<(String, HotKeyBinding)> = Vec::new();
+        assert!(registered_combos(&empty).is_empty());
+        let dt = vec![(
+            "hotkey.togglePalette".into(),
+            HotKeyBinding::DoubleTap(DoubleTapModifier::Control),
+        )];
+        assert!(registered_combos(&dt).is_empty());
+        let combo = vec![(
+            "hotkey.togglePalette".into(),
+            default_toggle_palette(),
+        )];
+        let got = registered_combos(&combo);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].0, "hotkey.togglePalette");
     }
 }

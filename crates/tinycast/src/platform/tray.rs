@@ -8,10 +8,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     GetCursorPos, GetWindowLongPtrW, LoadIconW, PostMessageW, PostQuitMessage, RegisterClassW,
     SetForegroundWindow, SetWindowLongPtrW, TrackPopupMenu, CREATESTRUCTW, GWLP_USERDATA,
-    HWND_MESSAGE, IDI_APPLICATION, MF_STRING, TPM_RETURNCMD, TPM_RIGHTBUTTON, WINDOW_EX_STYLE,
+    IDI_APPLICATION, MF_STRING, TPM_RETURNCMD, TPM_RIGHTBUTTON, WINDOW_EX_STYLE,
     WINDOW_STYLE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY, WM_LBUTTONDBLCLK,
-    WM_LBUTTONUP, WM_NCCREATE,
-    WM_RBUTTONUP, WNDCLASSW,
+    WM_LBUTTONUP, WM_NCCREATE, WM_RBUTTONUP, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 use super::messages::{
@@ -25,6 +24,22 @@ const TRAY_ID: u32 = 1;
 const ID_SETTINGS: usize = 1;
 const ID_QUIT: usize = 2;
 const HOST_CLASS: windows::core::PCWSTR = w!("TinycastHost");
+
+fn host_parent() -> HWND {
+    HWND::default()
+}
+
+fn host_style() -> WINDOW_STYLE {
+    WS_POPUP
+}
+
+fn host_ex_style() -> WINDOW_EX_STYLE {
+    WS_EX_TOOLWINDOW
+}
+
+fn host_adds_icon_on_create() -> bool {
+    false
+}
 
 pub fn create(core: &mut AppCore) -> windows::core::Result<HWND> {
     unsafe {
@@ -45,20 +60,23 @@ pub fn create(core: &mut AppCore) -> windows::core::Result<HWND> {
         }
 
         let hwnd = CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
+            host_ex_style(),
             HOST_CLASS,
             w!("Tinycast"),
-            WINDOW_STYLE::default(),
+            host_style(),
             0,
             0,
             0,
             0,
-            HWND_MESSAGE,
+            host_parent(),
             None,
             hinstance,
             Some(core as *mut AppCore as *const core::ffi::c_void),
         )?;
-        add_icon(hwnd)?;
+        // Tray icon is applied in AppCore::start from showInMenuBar.
+        if host_adds_icon_on_create() {
+            add_icon(hwnd)?;
+        }
         Ok(hwnd)
     }
 }
@@ -251,5 +269,21 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::UI::WindowsAndMessaging::HWND_MESSAGE;
+
+    #[test]
+    fn host_is_hidden_top_level_so_endsession_arrives() {
+        assert_ne!(host_parent().0, HWND_MESSAGE.0);
+        assert!(host_parent().is_invalid());
+        assert_eq!(host_style(), WS_POPUP);
+        let ex = host_ex_style();
+        assert_eq!(ex.0 & WS_EX_TOOLWINDOW.0, WS_EX_TOOLWINDOW.0);
+        assert!(!host_adds_icon_on_create());
     }
 }

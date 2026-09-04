@@ -1,13 +1,13 @@
 //! Caps Lock Scan Code Map + right-side Hyper intercept.
 
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
 
 use tinycast_pure::hotkey::{KeyShortcut, Modifiers};
 use windows::core::w;
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW, HKEY_CURRENT_USER, KEY_SET_VALUE,
-    REG_BINARY,
+    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY_CURRENT_USER,
+    KEY_QUERY_VALUE, KEY_SET_VALUE, REG_BINARY, REG_VALUE_TYPE,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_CAPITAL, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN,
@@ -69,7 +69,8 @@ impl HyperKey {
 static KEY: AtomicU8 = AtomicU8::new(0);
 static INCLUDE_SHIFT: AtomicBool = AtomicBool::new(false);
 static HELD: AtomicBool = AtomicBool::new(false);
-static USED: AtomicBool = AtomicBool::new(false);
+static PAUSED: AtomicBool = AtomicBool::new(false);
+static LAST_VK: AtomicU16 = AtomicU16::new(0);
 
 pub fn configure(key: HyperKey, include_shift: bool) {
     let prev = HyperKey::from_raw(match KEY.load(Ordering::SeqCst) {
@@ -93,6 +94,7 @@ pub fn configure(key: HyperKey, include_shift: bool) {
     );
     INCLUDE_SHIFT.store(include_shift, Ordering::SeqCst);
     HELD.store(false, Ordering::SeqCst);
+    LAST_VK.store(0, Ordering::SeqCst);
     if key == HyperKey::CapsLock {
         set_scancode_map(true);
     } else if prev == HyperKey::CapsLock {
@@ -105,8 +107,15 @@ pub fn configure(key: HyperKey, include_shift: bool) {
     }
 }
 
+pub fn set_paused(paused: bool) {
+    PAUSED.store(paused, Ordering::SeqCst);
+    HELD.store(false, Ordering::SeqCst);
+    LAST_VK.store(0, Ordering::SeqCst);
+}
+
 pub fn shutdown() {
     HELD.store(false, Ordering::SeqCst);
+    LAST_VK.store(0, Ordering::SeqCst);
     set_scancode_map(false);
     keyboard_ll::release(keyboard_ll::HYPER);
 }
@@ -115,33 +124,88 @@ pub fn chord() -> Modifiers {
     Modifiers::hyper_chord(INCLUDE_SHIFT.load(Ordering::SeqCst))
 }
 
-pub fn on_ll(wparam: windows::Win32::Foundation::WPARAM, info: &KBDLLHOOKSTRUCT) -> bool {
-    let key = KEY.load(Ordering::SeqCst);
-    if key == 0 {
-        return false;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HyperLl {
+    Pass,
+    Eat,
+    Dispatch,
+}
+
+/// Eat the Hyper key itself and bound Hyper+key; unbound follow-up keys pass through.
+fn hyper_ll_action(
+    paused: bool,
+    key_configured: bool,
+    is_hyper_key: bool,
+    down: bool,
+    held: bool,
+    has_combo: bool,
+    last_vk: u16,
+    vk: u16,
+) -> HyperLl {
+    if paused || !key_configured {
+        return HyperLl::Pass;
     }
+    if is_hyper_key {
+        return HyperLl::Eat;
+    }
+    if held && down {
+        if !has_combo {
+            return HyperLl::Pass;
+        }
+        if last_vk == vk {
+            return HyperLl::Eat;
+        }
+        return HyperLl::Dispatch;
+    }
+    HyperLl::Pass
+}
+
+pub fn on_ll(wparam: windows::Win32::Foundation::WPARAM, info: &KBDLLHOOKSTRUCT) -> bool {
+    let paused = PAUSED.load(Ordering::SeqCst);
+    let key = KEY.load(Ordering::SeqCst);
     let msg = wparam.0 as u32;
     let down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
     let up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
-    if is_hyper_key(key, info) {
-        if down {
-            HELD.store(true, Ordering::SeqCst);
-            USED.store(false, Ordering::SeqCst);
-        } else if up {
-            HELD.store(false, Ordering::SeqCst);
+    let is_hyper = is_hyper_key(key, info);
+    let vk = info.vkCode as u16;
+    let held = HELD.load(Ordering::SeqCst);
+    let last = LAST_VK.load(Ordering::SeqCst);
+    let has = if !paused && key != 0 && held && down && !is_hyper {
+        crate::features::hotkeys::service::center::has_combo(KeyShortcut {
+            vk,
+            modifiers: chord(),
+        })
+    } else {
+        false
+    };
+    match hyper_ll_action(paused, key != 0, is_hyper, down, held, has, last, vk) {
+        HyperLl::Pass => {
+            if held && up && last == vk {
+                LAST_VK.store(0, Ordering::SeqCst);
+            }
+            false
         }
-        return true;
+        HyperLl::Eat => {
+            if is_hyper {
+                if down {
+                    HELD.store(true, Ordering::SeqCst);
+                    LAST_VK.store(0, Ordering::SeqCst);
+                } else if up {
+                    HELD.store(false, Ordering::SeqCst);
+                    LAST_VK.store(0, Ordering::SeqCst);
+                }
+            }
+            true
+        }
+        HyperLl::Dispatch => {
+            LAST_VK.store(vk, Ordering::SeqCst);
+            crate::features::hotkeys::service::center::dispatch_combo(KeyShortcut {
+                vk,
+                modifiers: chord(),
+            });
+            true
+        }
     }
-    if HELD.load(Ordering::SeqCst) && down {
-        USED.store(true, Ordering::SeqCst);
-        let mods = chord();
-        crate::features::hotkeys::service::center::dispatch_combo(KeyShortcut {
-            vk: info.vkCode as u16,
-            modifiers: mods,
-        });
-        return true;
-    }
-    false
 }
 
 fn is_hyper_key(key: u8, info: &KBDLLHOOKSTRUCT) -> bool {
@@ -155,6 +219,53 @@ fn is_hyper_key(key: u8, info: &KBDLLHOOKSTRUCT) -> bool {
     }
 }
 
+fn parse_scancode_map(data: &[u8]) -> Option<Vec<(u16, u16)>> {
+    if data.len() < 12 {
+        return None;
+    }
+    let count = u32::from_le_bytes(data[8..12].try_into().ok()?) as usize;
+    if data.len() < 12 + count * 4 {
+        return None;
+    }
+    let mut maps = Vec::new();
+    for i in 0..count {
+        let off = 12 + i * 4;
+        let dest = u16::from_le_bytes(data[off..off + 2].try_into().ok()?);
+        let src = u16::from_le_bytes(data[off + 2..off + 4].try_into().ok()?);
+        if dest == 0 && src == 0 {
+            continue;
+        }
+        maps.push((dest, src));
+    }
+    Some(maps)
+}
+
+fn encode_scancode_map(maps: &[(u16, u16)]) -> Vec<u8> {
+    let mut out = vec![0u8; 12];
+    let count = (maps.len() + 1) as u32;
+    out[8..12].copy_from_slice(&count.to_le_bytes());
+    for (dest, src) in maps {
+        out.extend_from_slice(&dest.to_le_bytes());
+        out.extend_from_slice(&src.to_le_bytes());
+    }
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out
+}
+
+/// Enable inserts 0x3A→0x6A; disable removes only that source. `None` means delete the value.
+pub fn patch_scancode_map(existing: Option<&[u8]>, enable: bool) -> Option<Vec<u8>> {
+    let mut maps = existing.and_then(parse_scancode_map).unwrap_or_default();
+    maps.retain(|(_, src)| *src != SCAN_CAPS as u16);
+    if enable {
+        maps.push((SCAN_HYPER as u16, SCAN_CAPS as u16));
+    }
+    if maps.is_empty() {
+        None
+    } else {
+        Some(encode_scancode_map(&maps))
+    }
+}
+
 fn set_scancode_map(enable: bool) {
     unsafe {
         let mut hkey = windows::Win32::System::Registry::HKEY::default();
@@ -162,20 +273,36 @@ fn set_scancode_map(enable: bool) {
             HKEY_CURRENT_USER,
             w!("SYSTEM\\CurrentControlSet\\Control\\Keyboard Layout"),
             0,
-            KEY_SET_VALUE,
+            KEY_SET_VALUE | KEY_QUERY_VALUE,
             &mut hkey,
         );
         if status != ERROR_SUCCESS {
             return;
         }
-        if enable {
-            // header, flags, count=2 (1 mapping + terminator), map 0x3A -> 0x6A, terminator
-            let data: [u8; 24] = [
-                0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0x6A, 0, 0x3A, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            ];
-            let _ = RegSetValueExW(hkey, w!("Scancode Map"), 0, REG_BINARY, Some(&data));
+        let mut buf = [0u8; 256];
+        let mut size = buf.len() as u32;
+        let mut kind = REG_VALUE_TYPE(0);
+        let query = RegQueryValueExW(
+            hkey,
+            w!("Scancode Map"),
+            None,
+            Some(&mut kind),
+            Some(buf.as_mut_ptr()),
+            Some(&mut size),
+        );
+        let existing = if query == ERROR_SUCCESS && kind == REG_BINARY && size as usize <= buf.len()
+        {
+            Some(&buf[..size as usize])
         } else {
-            let _ = RegDeleteValueW(hkey, w!("Scancode Map"));
+            None
+        };
+        match patch_scancode_map(existing, enable) {
+            Some(data) => {
+                let _ = RegSetValueExW(hkey, w!("Scancode Map"), 0, REG_BINARY, Some(&data));
+            }
+            None => {
+                let _ = RegDeleteValueW(hkey, w!("Scancode Map"));
+            }
         }
         let _ = RegCloseKey(hkey);
     }
@@ -183,7 +310,7 @@ fn set_scancode_map(enable: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::HyperKey;
+    use super::*;
     use tinycast_pure::hotkey::{KeyShortcut, Modifiers};
 
     #[test]
@@ -194,6 +321,46 @@ mod tests {
             vk: 0x47,
             modifiers: Modifiers::hyper_chord(false),
         };
-        assert!(combo.collapsed_label(Some(Modifiers::hyper_chord(false))).starts_with('✦'));
+        assert!(combo
+            .collapsed_label(Some(Modifiers::hyper_chord(false)))
+            .starts_with('✦'));
+    }
+
+    #[test]
+    fn patch_scancode_map_preserves_other_entries() {
+        let existing = encode_scancode_map(&[(0x3B, 0x02)]);
+        let enabled = patch_scancode_map(Some(&existing), true).unwrap();
+        let parsed = parse_scancode_map(&enabled).unwrap();
+        assert!(parsed.contains(&(SCAN_HYPER as u16, SCAN_CAPS as u16)));
+        assert!(parsed.contains(&(0x3B, 0x02)));
+        let disabled = patch_scancode_map(Some(&enabled), false).unwrap();
+        let parsed = parse_scancode_map(&disabled).unwrap();
+        assert!(!parsed.iter().any(|(_, src)| *src == SCAN_CAPS as u16));
+        assert!(parsed.contains(&(0x3B, 0x02)));
+        assert!(patch_scancode_map(None, false).is_none());
+    }
+
+    #[test]
+    fn paused_or_unbound_hyper_follow_up_is_not_eaten() {
+        assert_eq!(
+            hyper_ll_action(true, true, true, true, false, false, 0, 0x14),
+            HyperLl::Pass
+        );
+        assert_eq!(
+            hyper_ll_action(false, true, false, true, true, false, 0, 0x47),
+            HyperLl::Pass
+        );
+        assert_eq!(
+            hyper_ll_action(false, true, false, true, true, true, 0, 0x47),
+            HyperLl::Dispatch
+        );
+        assert_eq!(
+            hyper_ll_action(false, true, false, true, true, true, 0x47, 0x47),
+            HyperLl::Eat
+        );
+        assert_eq!(
+            hyper_ll_action(false, true, true, true, false, false, 0, 0x14),
+            HyperLl::Eat
+        );
     }
 }

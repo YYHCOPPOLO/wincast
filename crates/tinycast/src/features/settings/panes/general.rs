@@ -7,6 +7,7 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::features::hotkeys::service::hyper::HyperKey;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
@@ -90,6 +91,18 @@ pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<GeneralHit> {
     None
 }
 
+pub fn hyper_includes_shift_enabled(hyper: &str) -> bool {
+    hyper != "none"
+}
+
+pub fn hyper_subtitle(raw: &str) -> &'static str {
+    match HyperKey::from_raw(raw) {
+        HyperKey::CapsLock => "Caps Lock. Takes effect after logoff; cleared on quit.",
+        HyperKey::None => "Off",
+        other => other.title(),
+    }
+}
+
 pub fn cycle_hyper(current: &str) -> &'static str {
     match current {
         "none" => "capsLock",
@@ -131,11 +144,11 @@ pub fn paint(
             true,
         ),
         ("Reset learned ranking", ranking_sub, !state.ranking_empty),
-        ("Hyper Key", state.hyper, state.hyper != "none"),
+        ("Hyper Key", hyper_subtitle(state.hyper), state.hyper != "none"),
         (
             "Include Shift",
-            "Hyper chord is Ctrl+Alt+Win+Shift.",
-            state.hyper_shift,
+            "Hyper chord is Ctrl+Alt+Win+Shift. Disabled until a Hyper key is set.",
+            state.hyper_shift && hyper_includes_shift_enabled(state.hyper),
         ),
         ("Appearance", state.appearance, true),
         (
@@ -285,5 +298,8 @@ mod tests {
         );
         assert_eq!(cycle_hyper("none"), "capsLock");
         assert_eq!(cycle_pop_to_root(0), 10);
+        assert!(hyper_subtitle("capsLock").contains("logoff"));
+        assert!(!hyper_includes_shift_enabled("none"));
+        assert!(hyper_includes_shift_enabled("capsLock"));
     }
 }

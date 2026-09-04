@@ -29,7 +29,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_MENU, VK_RETURN, VK_RIGHT, VK_SHIFT,
     VK_UP,
 };
-use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, PostMessageW};
 
 use crate::app_settings::AppSettings;
 use crate::features::calculator::service::rates::CurrencyRateStore;
@@ -124,7 +124,17 @@ impl AppCore {
             visibility: VisibilityStore::load(store_path("visibility.json")),
             favorites: FavoritesStore::load(store_path("favorites.json")),
             aliases: AliasStore::load(store_path("aliases.json")),
-            hotkeys: HotKeyStore::load(store_path("hotkeys.json")),
+            hotkeys: {
+                let path = store_path("hotkeys.json");
+                let mut store = HotKeyStore::load(&path);
+                if !path.exists() {
+                    store.set(
+                        "hotkey.togglePalette".into(),
+                        Some(tinycast_pure::hotkey::default_toggle_palette()),
+                    );
+                }
+                store
+            },
             settings: AppSettings::load(),
             currency_rates: CurrencyRateStore::new(),
             calc_history: CalculatorHistoryStore::load(store_path("calculator-history.json")),
@@ -168,6 +178,7 @@ impl AppCore {
         self.apply_clipboard_retention();
         self.apply_snippets_enabled();
         self.sync_hotkeys();
+        crate::platform::tray::set_icon_visible(self.host, self.settings.show_in_menu_bar);
         if self.hud.is_none() && !self.host.is_invalid() {
             self.hud = MessageHud::create(self.host).ok();
         }
@@ -814,16 +825,10 @@ impl AppCore {
 
     pub fn pause_global_hotkeys(&self) {
         crate::features::hotkeys::service::center::pause(self.host);
-        if let Some(window) = &self.palette_window {
-            crate::platform::hotkey::pause(window.hwnd);
-        }
     }
 
     pub fn resume_global_hotkeys(&self) {
         crate::features::hotkeys::service::center::resume(self.host, &self.hotkeys);
-        if let Some(window) = &self.palette_window {
-            crate::platform::hotkey::resume(window.hwnd);
-        }
     }
 
     pub fn sync_hotkeys(&mut self) {
@@ -848,10 +853,6 @@ impl AppCore {
             self.toggle_palette();
             return;
         }
-        if action == "hotkey.toggleClipboard" {
-            self.open_clipboard_history();
-            return;
-        }
         if let Some(raw) = action.strip_prefix("hotkey.systemAction.") {
             if let Some(id) = tinycast_pure::system_action::SystemActionId::from_raw(raw) {
                 self.run_system_action(id);
@@ -861,6 +862,23 @@ impl AppCore {
         if let Some(raw) = action.strip_prefix("hotkey.windowCommand.") {
             if let Some(id) = tinycast_pure::window_command::WindowCommandId::from_raw(raw) {
                 self.run_window_command(id);
+            }
+            return;
+        }
+        if let Some(id) = CommandID::from_hotkey_key(action) {
+            if id.shows_in_launcher(self.feature_flags()) {
+                self.activate_entry(&id.as_entry());
+            }
+            return;
+        }
+        if let Some(entry) = self
+            .entries
+            .iter()
+            .find(|e| hotkey_action_key(e).as_deref() == Some(action))
+        {
+            if self.visibility.allows_hotkey(entry.kind) {
+                let entry = entry.clone();
+                self.activate_entry(&entry);
             }
         }
     }
@@ -1321,7 +1339,7 @@ impl AppCore {
 
     pub fn run_system_action(&mut self, id: tinycast_pure::system_action::SystemActionId) {
         use crate::features::system_actions::ui::coordinator as sys;
-        let previous = self.previous_hwnd;
+        let previous = self.action_target();
         if self.palette_visible {
             self.hide_palette();
         }
@@ -1405,7 +1423,7 @@ impl AppCore {
     }
 
     pub fn run_window_command(&mut self, id: tinycast_pure::window_command::WindowCommandId) {
-        let previous = self.previous_hwnd;
+        let previous = self.action_target();
         if self.palette_visible {
             self.hide_palette();
         }
@@ -1463,6 +1481,11 @@ impl AppCore {
     }
 
     pub fn set_hyper_includes_shift(&mut self, on: bool) {
+        if crate::features::hotkeys::service::hyper::HyperKey::from_raw(&self.settings.hyper_key)
+            == crate::features::hotkeys::service::hyper::HyperKey::None
+        {
+            return;
+        }
         let snapshot = self.hotkeys.snapshot();
         let retargeted =
             tinycast_pure::hotkey::retarget_hyper_bindings(&snapshot, on);
@@ -2121,10 +2144,20 @@ impl AppCore {
     }
 
     fn remember_previous_hwnd(&mut self) {
-        let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+        let fg = unsafe { GetForegroundWindow() };
         if !fg.is_invalid() {
             self.previous_hwnd = fg;
         }
+    }
+
+    fn action_target(&self) -> HWND {
+        let fg = unsafe { GetForegroundWindow() };
+        window_coordinator::resolve_action_target(
+            self.palette_visible,
+            self.previous_hwnd,
+            fg,
+            window_coordinator::hwnd_is_ours(fg),
+        )
     }
 
     fn open_clipboard_history(&mut self) {
@@ -2744,6 +2777,30 @@ mod tests {
         );
         c.toggle_palette();
         assert!(!c.palette_visible);
+    }
+
+    #[test]
+    fn perform_hotkey_dispatches_command_id_actions() {
+        let mut c = AppCore::new();
+        c.perform_hotkey("hotkey.searchFiles");
+        assert!(!c.palette_visible);
+        c.perform_hotkey("hotkey.toggleClipboard");
+        assert!(c.palette_visible);
+        assert_eq!(c.palette.mode, PaletteMode::Clipboard);
+        c.perform_hotkey("hotkey.toggleEmoji");
+        assert_eq!(c.palette.mode, PaletteMode::Emoji);
+    }
+
+    #[test]
+    fn cleared_toggle_palette_stays_unbound_across_pause_resume() {
+        let mut c = AppCore::new();
+        c.hotkeys.set("hotkey.togglePalette".into(), None);
+        c.pause_global_hotkeys();
+        c.resume_global_hotkeys();
+        assert!(c.hotkeys.get("hotkey.togglePalette").is_none());
+        assert!(tinycast_pure::hotkey::registered_combos(&c.hotkeys.snapshot())
+            .iter()
+            .all(|(action, _)| action != "hotkey.togglePalette"));
     }
 
     #[test]

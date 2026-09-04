@@ -130,6 +130,13 @@ impl CommandID {
         }
     }
 
+    pub fn from_hotkey_key(key: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|id| id.hotkey_defaults_key() == Some(key))
+    }
+
     pub fn raw(self) -> &'static str {
         match self {
             CommandID::AiChat => "command:ai-chat",
@@ -283,6 +290,20 @@ mod tests {
     fn commands_pane_lists_every_command_id() {
         // v0.10.2 ships 29 CommandIDs; do not invent extras to satisfy a looser bound.
         assert_eq!(CommandID::all().len(), 29);
+        assert_eq!(
+            CommandID::from_hotkey_key("hotkey.toggleEmoji"),
+            Some(CommandID::SearchEmoji)
+        );
+        assert_eq!(
+            CommandID::from_hotkey_key("hotkey.toggleClipboard"),
+            Some(CommandID::ClipboardHistory)
+        );
+        assert_eq!(CommandID::from_hotkey_key("hotkey.togglePalette"), None);
+        for id in CommandID::all() {
+            if let Some(key) = id.hotkey_defaults_key() {
+                assert_eq!(CommandID::from_hotkey_key(key), Some(*id), "{key}");
+            }
+        }
         let listed = CommandID::settings_pane_ids();
         assert_eq!(listed.len(), CommandID::all().len());
         assert_eq!(listed, CommandID::all());

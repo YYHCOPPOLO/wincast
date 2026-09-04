@@ -81,4 +81,18 @@ mod tests {
         r.cancel();
         assert!(!r.is_recording());
     }
+
+    #[test]
+    fn recorder_commits_double_tap_on_second_release() {
+        let mut r = Recorder::new();
+        r.begin("hotkey.togglePalette".into());
+        let none = Modifiers::none();
+        assert_eq!(r.on_keydown(0x11, none, 0), CaptureOutcome::Ignore);
+        assert_eq!(r.on_keyup(0x11, 100), CaptureOutcome::Ignore);
+        assert_eq!(r.on_keydown(0x11, none, 200), CaptureOutcome::Ignore);
+        match r.on_keyup(0x11, 300) {
+            CaptureOutcome::Commit(HotKeyBinding::DoubleTap(DoubleTapModifier::Control)) => {}
+            other => panic!("{other:?}"),
+        }
+    }
 }

@@ -1,4 +1,4 @@
-use tinycast_pure::hotkey::{capture_keydown, CaptureOutcome, Modifiers};
+use tinycast_pure::hotkey::{CaptureOutcome, Modifiers};
 use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
 use tinycast_pure::theme;
 use windows::core::w;
@@ -39,12 +39,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EN_KILLFOCUS, GWLP_USERDATA, HWND_TOP, IDC_ARROW, IDI_APPLICATION, MINMAXINFO, SWP_NOACTIVATE,
     SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE, WINDOW_EX_STYLE,
     WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
-    WM_PAINT, WM_SIZE, WM_SYSKEYDOWN, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_APPWINDOW,
+    WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
+    WM_PAINT, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_APPWINDOW,
     WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_SYSMENU,
 };
 
 use crate::app_core::AppCore;
+use crate::features::hotkeys::ui::recorder::Recorder;
 use crate::features::launcher::settings::items::{
     hit_confirm, hit_launcher, hotkey_action_key, layout_confirm,
     layout_launcher_items, layout_search_section, paint_confirm, paint_confirm_copy,
@@ -146,7 +147,7 @@ struct SettingsInner {
     filter: Option<FieldEdit>,
     alias: Option<FieldEdit>,
     alias_index: Option<usize>,
-    recording: Option<String>,
+    recorder: Recorder,
     confirming_reset: bool,
     confirming_clear: bool,
     confirming_snippets: bool,
@@ -193,7 +194,7 @@ impl SettingsWindow {
                 filter: None,
                 alias: None,
                 alias_index: None,
-                recording: None,
+                recorder: Recorder::new(),
                 confirming_reset: false,
                 confirming_clear: false,
                 confirming_snippets: false,
@@ -640,6 +641,9 @@ unsafe fn paint_detail(
                 core.settings.window_management_show_in_launcher,
                 core.settings.window_cycle_on_repeat,
                 core.settings.window_gap,
+                &core.visibility,
+                &core.hotkeys,
+                (*inner).recorder.action.as_deref(),
                 detail_w,
                 (*inner).scroll,
             )?;
@@ -754,7 +758,7 @@ unsafe fn paint_detail(
         &core.visibility,
         &core.aliases,
         &core.hotkeys,
-        (*inner).recording.as_deref(),
+        (*inner).recorder.action.as_deref(),
         (*inner).alias_index,
         &(*inner).filter_query,
         scroll,
@@ -825,10 +829,13 @@ unsafe fn reset_pane_state(inner: *mut SettingsInner, resume_hotkeys: bool) {
     (*inner).confirming_reset = false;
     (*inner).confirming_clear = false;
     (*inner).confirming_snippets = false;
-    if (*inner).recording.take().is_some() && resume_hotkeys {
+    if (*inner).recorder.is_recording() && resume_hotkeys {
+        (*inner).recorder.cancel();
         if let Some(core) = core_from_host((*inner).host) {
             (*core).resume_global_hotkeys();
         }
+    } else if (*inner).recorder.is_recording() {
+        (*inner).recorder.cancel();
     }
 }
 
@@ -1266,14 +1273,38 @@ unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
         }
         return true;
     }
-    let Some(action) = (*inner).recording.clone() else {
+    let Some(action) = (*inner).recorder.action.clone() else {
         return false;
     };
     let vk = wparam.0 as u16;
-    match capture_keydown(vk, current_modifiers()) {
+    let outcome = (*inner)
+        .recorder
+        .on_keydown(vk, current_modifiers(), now_ms());
+    apply_capture(hwnd, inner, &action, outcome)
+}
+
+unsafe fn handle_keyup(hwnd: HWND, wparam: WPARAM) -> bool {
+    let Some(inner) = inner_from(hwnd) else {
+        return false;
+    };
+    let Some(action) = (*inner).recorder.action.clone() else {
+        return false;
+    };
+    let vk = wparam.0 as u16;
+    let outcome = (*inner).recorder.on_keyup(vk, now_ms());
+    apply_capture(hwnd, inner, &action, outcome)
+}
+
+unsafe fn apply_capture(
+    hwnd: HWND,
+    inner: *mut SettingsInner,
+    action: &str,
+    outcome: CaptureOutcome,
+) -> bool {
+    match outcome {
         CaptureOutcome::Ignore => true,
         CaptureOutcome::Cancel => {
-            (*inner).recording = None;
+            (*inner).recorder.cancel();
             if let Some(core) = core_from_host((*inner).host) {
                 (*core).resume_global_hotkeys();
             }
@@ -1281,24 +1312,31 @@ unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
             true
         }
         CaptureOutcome::Clear => {
-            (*inner).recording = None;
+            (*inner).recorder.cancel();
             if let Some(core) = core_from_host((*inner).host) {
-                (*core).set_hotkey(&action, None);
+                (*core).set_hotkey(action, None);
                 (*core).resume_global_hotkeys();
             }
             let _ = InvalidateRect(hwnd, None, FALSE);
             true
         }
         CaptureOutcome::Commit(binding) => {
-            (*inner).recording = None;
+            (*inner).recorder.cancel();
             if let Some(core) = core_from_host((*inner).host) {
-                (*core).set_hotkey(&action, Some(binding));
+                (*core).set_hotkey(action, Some(binding));
                 (*core).resume_global_hotkeys();
             }
             let _ = InvalidateRect(hwnd, None, FALSE);
             true
         }
     }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
@@ -1308,7 +1346,8 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
     let y = px_to_dip(py, dpi);
     if let Some(tab) = tab_at(x, y) {
         if let Some(inner) = inner_from(hwnd) {
-            if (*inner).recording.take().is_some() {
+            if (*inner).recorder.is_recording() {
+                (*inner).recorder.cancel();
                 if let Some(core) = core_from_host((*inner).host) {
                     (*core).resume_global_hotkeys();
                 }
@@ -1364,8 +1403,9 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         };
         match crate::features::window_management::settings::pane::hit(
             detail_x,
-            detail_y,
+            y,
             (*inner).scroll,
+            detail_w,
         ) {
             Some(crate::features::window_management::settings::pane::WindowHit::Enable) => {
                 (*core).set_window_management_enabled(!(*core).settings.window_management_enabled);
@@ -1382,6 +1422,33 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             }
             Some(crate::features::window_management::settings::pane::WindowHit::Gap) => {
                 (*core).cycle_window_gap();
+            }
+            Some(crate::features::window_management::settings::pane::WindowHit::Visible(i)) => {
+                if let Some(id) = tinycast_pure::window_command::WindowCommandId::all().get(i) {
+                    let entry = id.entry_id();
+                    let vis = !(*core).visibility.is_item_visible(&entry);
+                    (*core).set_item_visible(&entry, vis);
+                }
+            }
+            Some(crate::features::window_management::settings::pane::WindowHit::Recorder(i)) => {
+                if let Some(id) = tinycast_pure::window_command::WindowCommandId::all().get(i) {
+                    let key = format!("hotkey.windowCommand.{}", id.raw());
+                    if (*inner).recorder.action.as_deref() == Some(key.as_str()) {
+                        (*inner).recorder.cancel();
+                        (*core).resume_global_hotkeys();
+                    } else {
+                        (*inner).recorder.begin(key);
+                        (*core).pause_global_hotkeys();
+                    }
+                }
+            }
+            Some(crate::features::window_management::settings::pane::WindowHit::RecorderClear(i)) => {
+                if let Some(id) = tinycast_pure::window_command::WindowCommandId::all().get(i) {
+                    let key = format!("hotkey.windowCommand.{}", id.raw());
+                    (*inner).recorder.cancel();
+                    (*core).set_hotkey(&key, None);
+                    (*core).resume_global_hotkeys();
+                }
             }
             None => {}
         }
@@ -1448,7 +1515,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         match crate::features::settings::panes::general::hit(detail_x, detail_y, (*inner).scroll) {
             Some(GeneralHit::PaletteRecorder) => {
                 (*core).pause_global_hotkeys();
-                (*inner).recording = Some("hotkey.togglePalette".into());
+                (*inner).recorder.begin("hotkey.togglePalette".into());
             }
             Some(GeneralHit::ResetRanking) => {
                 if !(*core).ranking_is_empty() {
@@ -1457,7 +1524,11 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             }
             Some(GeneralHit::HyperKey) => (*core).cycle_hyper_key(),
             Some(GeneralHit::HyperShift) => {
-                (*core).set_hyper_includes_shift(!(*core).settings.hyper_includes_shift)
+                if crate::features::settings::panes::general::hyper_includes_shift_enabled(
+                    &(*core).settings.hyper_key,
+                ) {
+                    (*core).set_hyper_includes_shift(!(*core).settings.hyper_includes_shift);
+                }
             }
             Some(GeneralHit::Appearance) => (*core).cycle_appearance(),
             Some(GeneralHit::Compact) => (*core).toggle_setting_bool(GeneralToggle::Compact),
@@ -1626,7 +1697,8 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             .is_some_and(|k| (*core).hotkeys.get(&k).is_some())
     }) {
         Some(Hit::KindToggle) => {
-            if (*inner).recording.take().is_some() {
+            if (*inner).recorder.is_recording() {
+                (*inner).recorder.cancel();
                 (*core).resume_global_hotkeys();
             }
             let on = !kind_on;
@@ -1655,11 +1727,11 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         Some(Hit::Recorder(i)) => {
             commit_alias(inner);
             if let Some(key) = filtered.get(i).and_then(|e| hotkey_action_key(e)) {
-                if (*inner).recording.as_deref() == Some(key.as_str()) {
-                    (*inner).recording = None;
+                if (*inner).recorder.action.as_deref() == Some(key.as_str()) {
+                    (*inner).recorder.cancel();
                     (*core).resume_global_hotkeys();
                 } else {
-                    (*inner).recording = Some(key);
+                    (*inner).recorder.begin(key);
                     (*core).pause_global_hotkeys();
                     let _ = SetFocus(hwnd);
                 }
@@ -1668,14 +1740,15 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         }
         Some(Hit::RecorderClear(i)) => {
             if let Some(key) = filtered.get(i).and_then(|e| hotkey_action_key(e)) {
-                (*inner).recording = None;
+                (*inner).recorder.cancel();
                 (*core).set_hotkey(&key, None);
                 (*core).resume_global_hotkeys();
             }
         }
         _ => {
             commit_alias(inner);
-            if (*inner).recording.take().is_some() {
+            if (*inner).recorder.is_recording() {
+                (*inner).recorder.cancel();
                 (*core).resume_global_hotkeys();
             }
             let _ = InvalidateRect(hwnd, None, FALSE);
@@ -1738,6 +1811,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
+        WM_KEYUP | WM_SYSKEYUP => {
+            if handle_keyup(hwnd, wparam) {
+                LRESULT(0)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
         WM_LBUTTONDOWN => {
             handle_lbutton(hwnd, lparam);
             LRESULT(0)
@@ -1772,7 +1852,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 (*inner).confirming_reset = false;
                 (*inner).confirming_clear = false;
                 (*inner).confirming_snippets = false;
-                if (*inner).recording.take().is_some() {
+                if (*inner).recorder.is_recording() {
+                    (*inner).recorder.cancel();
                     if let Some(core) = core_from_host((*inner).host) {
                         (*core).resume_global_hotkeys();
                     }

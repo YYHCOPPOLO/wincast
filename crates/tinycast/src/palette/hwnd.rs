@@ -22,7 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, ShowCaret, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GA_ROOT,
     GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MA_NOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE,
     WA_INACTIVE, WM_ACTIVATE, WM_CHAR, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_HOTKEY, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEACTIVATE,
+    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEACTIVATE,
     WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSW,
     WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
@@ -32,7 +32,6 @@ use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
 use crate::features::launcher::ui::list::{client_point_to_dip, IconCache};
-use crate::platform::hotkey::{self, TOGGLE_PALETTE_ID};
 use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
 
@@ -134,10 +133,6 @@ impl PaletteWindow {
                     let _ = DestroyWindow(hwnd);
                     return Err(err);
                 }
-            }
-            if let Err(err) = hotkey::register_toggle_palette(hwnd) {
-                // Combo may already be taken (ERROR_HOTKEY_ALREADY_REGISTERED); tray still toggles.
-                eprintln!("{err}");
             }
             Ok(Self { hwnd })
         }
@@ -303,7 +298,6 @@ impl Drop for PaletteWindow {
     fn drop(&mut self) {
         unsafe {
             if IsWindow(self.hwnd).as_bool() {
-                hotkey::unregister_toggle_palette(self.hwnd);
                 let _ = DestroyWindow(self.hwnd);
             }
         }
@@ -702,16 +696,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
-        WM_HOTKEY => {
-            if wparam.0 as i32 == TOGGLE_PALETTE_ID {
-                if let Some(inner) = inner_from(hwnd) {
-                    if let Some(core) = core_from_host((*inner).host) {
-                        (*core).toggle_palette();
-                    }
-                }
-            }
-            LRESULT(0)
-        }
         WM_ACTIVATE => {
             if (wparam.0 as u32) & 0xffff == WA_INACTIVE {
                 // Defer hide: tray click deactivates us before WM_TOGGLE_PALETTE.
@@ -733,7 +717,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_DESTROY => {
-            hotkey::unregister_toggle_palette(hwnd);
             let _ = KillTimer(hwnd, ANIM_TIMER_ID);
             let _ = KillTimer(hwnd, RESIGN_TIMER_ID);
             LRESULT(0)

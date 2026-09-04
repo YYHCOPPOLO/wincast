@@ -2,7 +2,7 @@
 
 use std::sync::Mutex;
 
-use tinycast_pure::hotkey::{HotKeyBinding, KeyShortcut, Modifiers};
+use tinycast_pure::hotkey::{registered_combos, HotKeyBinding, KeyShortcut, Modifiers};
 use tinycast_pure::hotkey_store::HotKeyStore;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -25,52 +25,34 @@ pub fn set_host(host: HWND) {
 }
 
 pub fn pause(hwnd: HWND) {
+    // Hyper first: the LL hook runs on another thread and must pass through
+    // while the recorder is capturing.
+    crate::features::hotkeys::service::hyper::set_paused(true);
     PAUSED.store(true, std::sync::atomic::Ordering::SeqCst);
     unregister_all(hwnd);
+    crate::features::hotkeys::service::double_tap_monitor::sync(&[]);
 }
 
 pub fn resume(hwnd: HWND, store: &HotKeyStore) {
     PAUSED.store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::features::hotkeys::service::hyper::set_paused(false);
     sync(hwnd, store);
 }
 
 pub fn sync(hwnd: HWND, store: &HotKeyStore) {
     unregister_all(hwnd);
     if PAUSED.load(std::sync::atomic::Ordering::SeqCst) {
+        crate::features::hotkeys::service::double_tap_monitor::sync(&[]);
         return;
-    }
-    let mut next_id = 2i32;
-    let mut map = Vec::new();
-    // toggle palette always
-    if let Some(HotKeyBinding::Combo(shortcut)) = store.get("hotkey.togglePalette").cloned() {
-        if register(hwnd, 1, shortcut) {
-            map.push((1, "hotkey.togglePalette".into(), shortcut));
-        }
-    } else if register(
-        hwnd,
-        1,
-        match tinycast_pure::hotkey::default_toggle_palette() {
-            HotKeyBinding::Combo(s) => s,
-            _ => return,
-        },
-    ) {
-        let s = match tinycast_pure::hotkey::default_toggle_palette() {
-            HotKeyBinding::Combo(s) => s,
-            _ => return,
-        };
-        map.push((1, "hotkey.togglePalette".into(), s));
     }
     let snapshot = store_bindings(store);
     crate::features::hotkeys::service::double_tap_monitor::sync(&snapshot);
-    for (action, binding) in snapshot {
-        if action == "hotkey.togglePalette" {
-            continue;
-        }
-        if let HotKeyBinding::Combo(shortcut) = binding {
-            if register(hwnd, next_id, shortcut) {
-                map.push((next_id, action, shortcut));
-                next_id += 1;
-            }
+    let mut next_id = 1i32;
+    let mut map = Vec::new();
+    for (action, shortcut) in registered_combos(&snapshot) {
+        if register(hwnd, next_id, shortcut) {
+            map.push((next_id, action, shortcut));
+            next_id += 1;
         }
     }
     if let Ok(mut slot) = MAP.lock() {
@@ -88,7 +70,14 @@ pub fn on_hotkey_id(id: i32) {
     }
 }
 
-pub fn dispatch_combo(shortcut: KeyShortcut) {
+pub fn has_combo(shortcut: KeyShortcut) -> bool {
+    MAP.lock()
+        .ok()
+        .map(|m| m.iter().any(|(_, _, s)| *s == shortcut))
+        .unwrap_or(false)
+}
+
+pub fn dispatch_combo(shortcut: KeyShortcut) -> bool {
     let action = MAP.lock().ok().and_then(|m| {
         m.iter()
             .find(|(_, _, s)| *s == shortcut)
@@ -96,6 +85,9 @@ pub fn dispatch_combo(shortcut: KeyShortcut) {
     });
     if let Some(action) = action {
         dispatch_action(&action);
+        true
+    } else {
+        false
     }
 }
 
@@ -196,5 +188,25 @@ mod tests {
             Some("hotkey.togglePalette".into())
         );
         assert_eq!(conflict_owner(&store, &combo, "hotkey.togglePalette"), None);
+    }
+
+    #[test]
+    fn clearing_or_double_tapping_toggle_palette_does_not_keep_alt_space() {
+        use tinycast_pure::hotkey::{default_toggle_palette, registered_combos, DoubleTapModifier};
+        let empty = HotKeyStore::default();
+        assert!(registered_combos(&empty.snapshot()).is_empty());
+        let mut store = HotKeyStore::default();
+        store.set(
+            "hotkey.togglePalette".into(),
+            Some(HotKeyBinding::DoubleTap(DoubleTapModifier::Control)),
+        );
+        assert!(registered_combos(&store.snapshot())
+            .iter()
+            .all(|(a, _)| a != "hotkey.togglePalette"));
+        store.set(
+            "hotkey.togglePalette".into(),
+            Some(default_toggle_palette()),
+        );
+        assert_eq!(registered_combos(&store.snapshot()).len(), 1);
     }
 }
