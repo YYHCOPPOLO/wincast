@@ -54,6 +54,8 @@ windows = { version = "0.58", features = [
   "Win32_Globalization",
   "Win32_UI_Controls_Dialogs",
   "ApplicationModel",
+  "ApplicationModel_Appointments",
+  "Media_Capture",
   "ApplicationModel_Core",
   "Management_Deployment",
   "Foundation_Collections",

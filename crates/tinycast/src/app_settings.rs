@@ -61,6 +61,22 @@ pub struct AppSettings {
     pub window_cycle_on_repeat: bool,
     #[serde(default, rename = "calendarEnabled")]
     pub calendar_enabled: bool,
+    #[serde(default = "default_true", rename = "calendarShowInLauncher")]
+    pub calendar_show_in_launcher: bool,
+    #[serde(default = "default_join_window", rename = "joinWindowMinutes")]
+    pub join_window_minutes: i64,
+    #[serde(default, rename = "autoJoinMeetings")]
+    pub auto_join_meetings: bool,
+    #[serde(default = "default_true", rename = "autoJoinConfirms")]
+    pub auto_join_confirms: bool,
+    #[serde(default, rename = "cameraPreview")]
+    pub camera_preview: bool,
+    #[serde(default, rename = "menuBarEvents")]
+    pub menu_bar_events: i64,
+    #[serde(default, rename = "menuBarLinkedEventsOnly")]
+    pub menu_bar_linked_events_only: bool,
+    #[serde(default, rename = "hideCurrentEvent")]
+    pub hide_current_event: i64,
     #[serde(default, rename = "aiEnabled")]
     pub ai_enabled: bool,
     #[serde(default, rename = "quickActionsEnabled")]
@@ -112,6 +128,14 @@ impl Default for AppSettings {
             window_gap: 0,
             window_cycle_on_repeat: false,
             calendar_enabled: false,
+            calendar_show_in_launcher: true,
+            join_window_minutes: default_join_window(),
+            auto_join_meetings: false,
+            auto_join_confirms: true,
+            camera_preview: false,
+            menu_bar_events: 0,
+            menu_bar_linked_events_only: false,
+            hide_current_event: 0,
             ai_enabled: false,
             quick_actions_enabled: false,
             extensions_enabled: false,
@@ -169,6 +193,10 @@ fn default_disabled_apps() -> Vec<String> {
         .iter()
         .map(|s| (*s).to_string())
         .collect()
+}
+
+fn default_join_window() -> i64 {
+    5
 }
 
 fn default_file_search_scopes() -> Vec<String> {

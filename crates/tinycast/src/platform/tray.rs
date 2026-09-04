@@ -81,6 +81,18 @@ pub fn create(core: &mut AppCore) -> windows::core::Result<HWND> {
     }
 }
 
+pub fn set_tooltip(hwnd: HWND, text: &str) {
+    unsafe {
+        let mut data = notify_data(hwnd);
+        data.uFlags = NIF_TIP;
+        write_tip(&mut data.szTip, text);
+        let _ = Shell_NotifyIconW(
+            windows::Win32::UI::Shell::NIM_MODIFY,
+            &data,
+        );
+    }
+}
+
 pub fn set_icon_visible(hwnd: HWND, visible: bool) {
     unsafe {
         if visible {

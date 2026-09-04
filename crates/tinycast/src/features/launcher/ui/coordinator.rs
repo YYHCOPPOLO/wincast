@@ -31,6 +31,11 @@ pub enum LaunchSpec {
     ShowNotes,
     CreateNote,
     SearchNotes,
+    JoinNextMeeting,
+    CopyMeetingLink,
+    MySchedule,
+    OpenInCalendar,
+    CreateEvent,
     CreateQuicklink,
     ImportQuicklinks,
     ExportQuicklinks,
@@ -91,6 +96,11 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:show-notes" => LaunchSpec::ShowNotes,
             "command:create-note" => LaunchSpec::CreateNote,
             "command:search-notes" => LaunchSpec::SearchNotes,
+            "command:join-next-meeting" => LaunchSpec::JoinNextMeeting,
+            "command:copy-meeting-link" => LaunchSpec::CopyMeetingLink,
+            "command:my-schedule" => LaunchSpec::MySchedule,
+            "command:open-in-calendar" => LaunchSpec::OpenInCalendar,
+            "command:create-event" => LaunchSpec::CreateEvent,
             "command:create-quicklink" => LaunchSpec::CreateQuicklink,
             "command:import-quicklinks" => LaunchSpec::ImportQuicklinks,
             "command:export-quicklinks" => LaunchSpec::ExportQuicklinks,
@@ -194,6 +204,11 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::ShowNotes
         | LaunchSpec::CreateNote
         | LaunchSpec::SearchNotes
+        | LaunchSpec::JoinNextMeeting
+        | LaunchSpec::CopyMeetingLink
+        | LaunchSpec::MySchedule
+        | LaunchSpec::OpenInCalendar
+        | LaunchSpec::CreateEvent
         | LaunchSpec::CreateQuicklink
         | LaunchSpec::ImportQuicklinks
         | LaunchSpec::ExportQuicklinks

@@ -97,6 +97,7 @@ pub struct AppCore {
     file_search: crate::features::file_search::service::session::FileSearchSession,
     notes: crate::features::notes::service::store::NotesStore,
     notes_switcher: Vec<tinycast_pure::note::NoteSummary>,
+    calendar: crate::features::calendar::service::store::CalendarStore,
     window_mover: WindowMover,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
@@ -157,6 +158,7 @@ impl AppCore {
             ),
             notes: crate::features::notes::service::store::NotesStore::in_roaming(),
             notes_switcher: Vec::new(),
+            calendar: crate::features::calendar::service::store::CalendarStore::new(),
             window_mover: WindowMover::new(),
             argument_session: None,
             hud: None,
@@ -190,6 +192,11 @@ impl AppCore {
         self.apply_clipboard_retention();
         self.apply_snippets_enabled();
         self.apply_file_search_policy();
+        if self.settings.calendar_enabled {
+            self.calendar.refresh();
+            self.maybe_auto_join();
+            self.apply_calendar_tooltip();
+        }
         self.sync_hotkeys();
         crate::platform::tray::set_icon_visible(self.host, self.settings.show_in_menu_bar);
         if self.hud.is_none() && !self.host.is_invalid() {
@@ -546,6 +553,236 @@ impl AppCore {
         if self.notes_window.is_none() && !self.host.is_invalid() {
             self.notes_window = crate::surfaces::NotesWindow::create(self.host).ok();
         }
+    }
+
+    pub fn set_calendar_enabled(&mut self, enabled: bool) {
+        if self.settings.calendar_enabled == enabled {
+            return;
+        }
+        if enabled {
+            if !crate::features::calendar::ui::coordinator::consent() {
+                return;
+            }
+            if self.calendar.request_and_refresh().is_err() {
+                crate::surfaces::dialog::alert(
+                    "Calendar",
+                    "Calendar access was denied. Meetings will stay empty.",
+                );
+            }
+            self.calendar.arm_now();
+        } else if self.palette.mode == PaletteMode::Schedule {
+            self.palette.prepare(PaletteMode::Launcher);
+        }
+        self.settings.calendar_enabled = enabled;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+        self.apply_calendar_tooltip();
+    }
+
+    pub fn set_auto_join_meetings(&mut self, enabled: bool) {
+        self.settings.auto_join_meetings = enabled;
+        let _ = self.settings.save();
+        if enabled {
+            self.calendar.arm_now();
+        }
+        self.invalidate_settings();
+    }
+
+    pub fn set_camera_preview(&mut self, enabled: bool) {
+        self.settings.camera_preview = enabled;
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
+    pub fn cycle_join_window(&mut self) {
+        self.settings.join_window_minutes =
+            crate::features::calendar::settings::pane::cycle_join_window(
+                self.settings.join_window_minutes,
+            );
+        let _ = self.settings.save();
+        self.invalidate_settings();
+        self.invalidate_palette();
+    }
+
+    fn calendar_window(&self) -> tinycast_pure::meeting::UpcomingWindow {
+        crate::features::calendar::ui::coordinator::window(self.settings.join_window_minutes)
+    }
+
+    fn meeting_card(&self) -> Option<tinycast_pure::meeting::MeetingEvent> {
+        if !crate::features::calendar::ui::coordinator::should_show_card(
+            self.palette.mode,
+            &self.palette.query,
+            self.settings.calendar_enabled,
+        ) {
+            return None;
+        }
+        self.calendar_window()
+            .carded(self.calendar.events(), unix_now())
+    }
+
+    fn calendar_join_next(&mut self) {
+        if !self.settings.calendar_enabled {
+            return;
+        }
+        self.calendar.refresh();
+        let now = unix_now();
+        let Some(event) = self
+            .calendar_window()
+            .joinable(self.calendar.events(), now)
+        else {
+            self.hide_palette();
+            self.show_message_hud_tone(
+                crate::features::calendar::ui::coordinator::NOTHING_TO_JOIN,
+                tinycast_pure::dialog::DialogTone::Neutral,
+            );
+            return;
+        };
+        self.join_meeting(&event);
+    }
+
+    fn calendar_copy_link(&mut self) {
+        if !self.settings.calendar_enabled {
+            return;
+        }
+        let now = unix_now();
+        let Some(event) = self
+            .calendar_window()
+            .joinable(self.calendar.events(), now)
+        else {
+            self.show_message_hud_tone(
+                crate::features::calendar::ui::coordinator::NOTHING_TO_JOIN,
+                tinycast_pure::dialog::DialogTone::Neutral,
+            );
+            return;
+        };
+        if let Some(url) = crate::features::calendar::ui::coordinator::copy_url(&event) {
+            let _ = copy_text(&url);
+            self.show_message_hud_tone("Copied meeting link", tinycast_pure::dialog::DialogTone::Success);
+        }
+    }
+
+    fn calendar_open_app(&mut self) {
+        self.hide_palette();
+        let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));
+    }
+
+    fn calendar_create_event(&mut self) {
+        if !self.settings.calendar_enabled {
+            return;
+        }
+        self.hide_palette();
+        let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));
+    }
+
+    fn open_schedule(&mut self) {
+        if !self.settings.calendar_enabled {
+            return;
+        }
+        self.calendar.refresh();
+        self.close_menu();
+        let was_visible = self.palette_visible;
+        if !was_visible {
+            self.remember_previous_hwnd();
+        }
+        self.palette.prepare(PaletteMode::Schedule);
+        self.palette_visible = true;
+        self.expanded = true;
+        self.list_scroll = 0.0;
+        if was_visible {
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+            }
+            self.relayout_palette();
+            self.invalidate_palette();
+        } else {
+            self.show_palette_window();
+            self.expand_palette();
+        }
+    }
+
+    fn join_meeting(&mut self, event: &tinycast_pure::meeting::MeetingEvent) {
+        self.calendar.mark_joined(&event.id);
+        self.hide_palette();
+        let _ = crate::features::calendar::ui::coordinator::camera_preview_optional(
+            self.settings.camera_preview,
+        );
+        if let Some(link) = &event.link {
+            if crate::features::calendar::ui::coordinator::open_link(link).is_err() {
+                let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));
+            }
+        } else {
+            let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));
+        }
+    }
+
+    fn maybe_auto_join(&mut self) {
+        if !self.settings.calendar_enabled || !self.settings.auto_join_meetings {
+            return;
+        }
+        let now = unix_now();
+        let policy = tinycast_pure::meeting::AutoJoinPolicy {
+            armed_at: self.calendar.armed_at(),
+        };
+        let joined = self.calendar.joined().clone();
+        if let Some(event) = policy.meeting(
+            self.calendar.events(),
+            now,
+            self.calendar_window(),
+            &joined,
+        ) {
+            if self.settings.auto_join_confirms {
+                let ok = crate::surfaces::dialog::confirm(&crate::surfaces::dialog::ConfirmPrompt {
+                    title: format!("Join {}?", event.title),
+                    message: "This meeting is starting now.".into(),
+                    accept: "Join".into(),
+                    cancel: "Cancel".into(),
+                });
+                self.calendar.mark_joined(&event.id);
+                if !ok {
+                    return;
+                }
+            }
+            self.join_meeting(&event);
+        }
+    }
+
+    fn apply_calendar_tooltip(&self) {
+        if self.host.is_invalid() {
+            return;
+        }
+        let summary = tinycast_pure::meeting::MenuBarSummary {
+            lead_minutes: self.settings.join_window_minutes,
+            hide_after_minutes: if self.settings.hide_current_event == 0 {
+                None
+            } else {
+                Some(self.settings.hide_current_event)
+            },
+            linked_only: self.settings.menu_bar_linked_events_only,
+        };
+        let text = if self.settings.calendar_enabled {
+            summary
+                .event(self.calendar.events(), unix_now())
+                .map(|e| {
+                    format!(
+                        "{} · {}",
+                        tinycast_pure::meeting::MenuBarSummary::title(&e.title),
+                        tinycast_pure::meeting::UpcomingWindow::countdown(e.start, unix_now())
+                    )
+                })
+                .unwrap_or_else(|| "Tinycast".into())
+        } else {
+            "Tinycast".into()
+        };
+        crate::platform::tray::set_tooltip(self.host, &text);
+    }
+
+    fn schedule_rows(&self) -> Vec<tinycast_pure::meeting::MeetingEvent> {
+        let q = self.palette.query.to_lowercase();
+        tinycast_pure::meeting::UpcomingWindow::agenda(self.calendar.events(), unix_now())
+            .into_iter()
+            .filter(|e| q.is_empty() || e.title.to_lowercase().contains(&q))
+            .collect()
     }
 
     fn sync_notes_window(&mut self) {
@@ -956,18 +1193,48 @@ impl AppCore {
                 self.palette.selection,
             );
         }
+        if self.palette.mode == PaletteMode::Schedule {
+            let mut items = Vec::new();
+            for (i, event) in self.schedule_rows().into_iter().enumerate() {
+                items.push(PaintItem::Row {
+                    title: event.title,
+                    alias: None,
+                    trailing: tinycast_pure::meeting::UpcomingWindow::countdown(
+                        event.start,
+                        unix_now(),
+                    ),
+                    keycap: None,
+                    icon_source: None,
+                    selected: i == self.palette.selection,
+                });
+            }
+            return items;
+        }
         if self.palette.mode == PaletteMode::CalculatorHistory {
             return self.calc_history_paint_items();
         }
         let card = self.calc_result();
-        let row_sel = if card.is_some() {
-            self.palette.selection.checked_sub(1).unwrap_or(usize::MAX)
-        } else {
-            self.palette.selection
-        };
+        let meeting = self.meeting_card();
+        let lead = if card.is_some() || meeting.is_some() { 1 } else { 0 };
+        let row_sel = self.palette.selection.checked_sub(lead).unwrap_or(usize::MAX);
         let mut items = paint_items(&self.sections(), row_sel, &self.favorites);
         if let Some(result) = card {
             items.insert(0, card::paint_item(&result, self.palette.selection == 0));
+        } else if let Some(event) = meeting {
+            items.insert(
+                0,
+                PaintItem::Row {
+                    title: event.title,
+                    alias: None,
+                    trailing: tinycast_pure::meeting::UpcomingWindow::countdown(
+                        event.start,
+                        unix_now(),
+                    ),
+                    keycap: None,
+                    icon_source: None,
+                    selected: self.palette.selection == 0,
+                },
+            );
         }
         items
     }
@@ -1494,6 +1761,12 @@ impl AppCore {
             self.expand_select_first();
             return;
         }
+        if self.meeting_card().is_some() && self.palette.selection == 0 {
+            if let Some(event) = self.meeting_card() {
+                self.join_meeting(&event);
+            }
+            return;
+        }
         let card = self.calc_result();
         if card.is_some() && self.palette.selection == 0 {
             if let Some(result) = card {
@@ -1528,6 +1801,12 @@ impl AppCore {
         }
         if self.palette.mode == PaletteMode::FileSearch {
             self.activate_file_search_at(self.palette.selection);
+            return;
+        }
+        if self.palette.mode == PaletteMode::Schedule {
+            if let Some(event) = self.schedule_rows().get(self.palette.selection).cloned() {
+                self.join_meeting(&event);
+            }
             return;
         }
         let sections = self.sections();
@@ -1588,6 +1867,11 @@ impl AppCore {
             LaunchSpec::ShowNotes => self.notes_show(),
             LaunchSpec::CreateNote => self.notes_create(),
             LaunchSpec::SearchNotes => self.notes_search(),
+            LaunchSpec::JoinNextMeeting => self.calendar_join_next(),
+            LaunchSpec::CopyMeetingLink => self.calendar_copy_link(),
+            LaunchSpec::MySchedule => self.open_schedule(),
+            LaunchSpec::OpenInCalendar => self.calendar_open_app(),
+            LaunchSpec::CreateEvent => self.calendar_create_event(),
             LaunchSpec::CreateQuicklink => self.create_quicklink_from_command(),
             LaunchSpec::ImportQuicklinks => {
                 self.hide_palette();
@@ -2166,14 +2450,16 @@ impl AppCore {
         if self.palette.mode == PaletteMode::CalculatorHistory
             || self.palette.mode == PaletteMode::Clipboard
             || self.palette.mode == PaletteMode::FileSearch
+            || self.palette.mode == PaletteMode::Schedule
         {
             return None;
         }
-        let index = if self.calc_result().is_some() {
-            self.palette.selection.checked_sub(1)?
+        let lead = if self.calc_result().is_some() || self.meeting_card().is_some() {
+            1
         } else {
-            self.palette.selection
+            0
         };
+        let index = self.palette.selection.checked_sub(lead)?;
         selectable_rows(&self.sections())
             .get(index)
             .cloned()
@@ -2404,6 +2690,7 @@ impl AppCore {
                 .search(&self.palette.query, self.clipboard_filter)
                 .len(),
             PaletteMode::FileSearch => self.file_search.results().len(),
+            PaletteMode::Schedule => self.schedule_rows().len(),
             PaletteMode::Emoji => {
                 let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
                 tinycast_pure::emoji::search_emoji_with_tone(&self.palette.query, tone).len()
@@ -2422,7 +2709,7 @@ impl AppCore {
                 .map(|s| s.filtered_options(&self.palette.query).len())
                 .unwrap_or(0),
             PaletteMode::Launcher => selectable_count(
-                self.calc_result().is_some(),
+                self.calc_result().is_some() || self.meeting_card().is_some(),
                 selectable_rows(&self.sections()).len(),
             ),
             _ => selectable_rows(&self.sections()).len(),

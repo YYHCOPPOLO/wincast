@@ -1,3 +1,4 @@
+pub mod calendar;
 pub mod calculator;
 pub mod clipboard;
 pub mod custom_commands;

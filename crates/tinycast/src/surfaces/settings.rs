@@ -590,6 +590,22 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    if selected == SettingsTab::Calendar {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::calendar::settings::pane::paint(
+                target,
+                formats,
+                core.settings.calendar_enabled,
+                core.settings.auto_join_meetings,
+                core.settings.camera_preview,
+                core.settings.join_window_minutes,
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
     if selected == SettingsTab::Notes {
         hide_edits(inner);
         if let Some(core) = core {
@@ -1225,6 +1241,9 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::Permissions {
         return crate::features::settings::panes::permissions::content_height();
     }
+    if tab == SettingsTab::Calendar {
+        return crate::features::calendar::settings::pane::content_height();
+    }
     if tab == SettingsTab::Notes {
         return crate::features::notes::settings::pane::content_height();
     }
@@ -1492,6 +1511,28 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                     (*core).set_hotkey(&key, None);
                     (*core).resume_global_hotkeys();
                 }
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::Calendar {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        match crate::features::calendar::settings::pane::hit(detail_x, y, (*inner).scroll) {
+            Some(crate::features::calendar::settings::pane::CalendarHit::Enable) => {
+                (*core).set_calendar_enabled(!(*core).settings.calendar_enabled);
+            }
+            Some(crate::features::calendar::settings::pane::CalendarHit::AutoJoin) => {
+                (*core).set_auto_join_meetings(!(*core).settings.auto_join_meetings);
+            }
+            Some(crate::features::calendar::settings::pane::CalendarHit::Camera) => {
+                (*core).set_camera_preview(!(*core).settings.camera_preview);
+            }
+            Some(crate::features::calendar::settings::pane::CalendarHit::JoinWindow) => {
+                (*core).cycle_join_window();
             }
             None => {}
         }
