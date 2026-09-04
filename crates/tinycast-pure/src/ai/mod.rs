@@ -2,6 +2,7 @@ pub mod connection;
 pub mod endpoint;
 pub mod instructions;
 pub mod open_policy;
+pub mod quick_action;
 pub mod request;
 pub mod session;
 pub mod stream;
@@ -13,6 +14,7 @@ pub use endpoint::{
 };
 pub use instructions::compose_instructions;
 pub use open_policy::{should_resume, OpenPolicy};
+pub use quick_action::QuickAction;
 pub use request::{AiEvent, AiMessage, AiRequest, Role};
 pub use session::{
     bounded_context, ChatConversation, ChatMessage, ChatRole, ChatSession, ChatState,

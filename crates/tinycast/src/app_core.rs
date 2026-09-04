@@ -123,6 +123,8 @@ pub struct AppCore {
     ai: crate::features::ai::ui::coordinator::AiChatCoordinator,
     ai_factory: crate::features::ai::service::factory::ProviderFactory,
     chatgpt: crate::features::ai::service::chatgpt::ChatGptManager,
+    quick_actions: crate::features::quick_actions::ui::coordinator::QuickActionCoordinator,
+    qa_panel: Option<crate::features::quick_actions::ui::result::ResultPanel>,
     launcher_query: String,
     ai_model_choices: Vec<tinycast_pure::ai::ModelSelection>,
 }
@@ -196,6 +198,8 @@ impl AppCore {
             ai: crate::features::ai::ui::coordinator::AiChatCoordinator::new(),
             ai_factory: crate::features::ai::service::factory::ProviderFactory::new(HWND::default()),
             chatgpt: crate::features::ai::service::chatgpt::ChatGptManager::new(),
+            quick_actions: crate::features::quick_actions::ui::coordinator::QuickActionCoordinator::new(),
+            qa_panel: None,
             launcher_query: String::new(),
             ai_model_choices: Vec::new(),
         }
@@ -232,6 +236,10 @@ impl AppCore {
         crate::platform::tray::set_icon_visible(self.host, self.settings.show_in_menu_bar);
         if self.hud.is_none() && !self.host.is_invalid() {
             self.hud = MessageHud::create(self.host).ok();
+        }
+        if self.qa_panel.is_none() && !self.host.is_invalid() {
+            self.qa_panel =
+                crate::features::quick_actions::ui::result::ResultPanel::create(self.host).ok();
         }
     }
 
@@ -2423,11 +2431,11 @@ impl AppCore {
                 }
             }
             LaunchSpec::OpenAiChat => self.open_ai_chat(),
-            LaunchSpec::FixGrammar
-            | LaunchSpec::Rewrite
-            | LaunchSpec::Translate
-            | LaunchSpec::Summarize
-            | LaunchSpec::CheckForUpdates => {}
+            LaunchSpec::FixGrammar => self.run_quick_action(tinycast_pure::ai::QuickAction::FixGrammar),
+            LaunchSpec::Rewrite => self.run_quick_action(tinycast_pure::ai::QuickAction::Rewrite),
+            LaunchSpec::Translate => self.run_quick_action(tinycast_pure::ai::QuickAction::Translate),
+            LaunchSpec::Summarize => self.run_quick_action(tinycast_pure::ai::QuickAction::Summarize),
+            LaunchSpec::CheckForUpdates => {}
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -3299,6 +3307,7 @@ impl AppCore {
         if self.ai.drain_events() {
             self.invalidate_palette();
         }
+        self.install_quick_action_events();
     }
 
     pub fn set_ai_enabled(&mut self, enabled: bool) {
@@ -3316,6 +3325,122 @@ impl AppCore {
             }
         }
         self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn run_quick_action(&mut self, action: tinycast_pure::ai::QuickAction) {
+        if !self.settings.quick_actions_enabled {
+            return;
+        }
+        let target = self.action_target();
+        let selection =
+            crate::features::quick_actions::ui::coordinator::QuickActionCoordinator::capture(target);
+        self.hide_palette();
+        let Some(selection) = selection.filter(|s| !s.trim().is_empty()) else {
+            if self.hud.is_none() && !self.host.is_invalid() {
+                self.hud = MessageHud::create(self.host).ok();
+            }
+            if let Some(hud) = &self.hud {
+                hud.show("Nothing is selected.");
+            }
+            return;
+        };
+        let model = self
+            .settings
+            .quick_action_model
+            .as_ref()
+            .or(self.settings.ai_default_model.as_ref());
+        let preview = !action.replaces_directly_by_default() || action.always_previews();
+        match self.quick_actions.start(
+            action,
+            selection,
+            target,
+            &self.ai_factory,
+            model,
+            &self.settings.ai_connections,
+            &self.settings.quick_action_language,
+            preview,
+            self.host,
+        ) {
+            Ok(()) => {
+                if preview {
+                    if self.qa_panel.is_none() && !self.host.is_invalid() {
+                        self.qa_panel =
+                            crate::features::quick_actions::ui::result::ResultPanel::create(
+                                self.host,
+                            )
+                            .ok();
+                    }
+                    if let Some(panel) = &self.qa_panel {
+                        panel.show(action.progress_title(), "");
+                    }
+                } else if let Some(hud) = &self.hud {
+                    hud.show(action.progress_title());
+                }
+            }
+            Err(err) => {
+                if self.hud.is_none() && !self.host.is_invalid() {
+                    self.hud = MessageHud::create(self.host).ok();
+                }
+                if let Some(hud) = &self.hud {
+                    hud.show(&err);
+                }
+            }
+        }
+    }
+
+    pub fn install_quick_action_events(&mut self) {
+        if !self.quick_actions.drain() {
+            return;
+        }
+        if self.quick_actions.wants_preview() {
+            if let Some(panel) = &self.qa_panel {
+                panel.set_body(self.quick_actions.result());
+                if !self.quick_actions.is_running() {
+                    if let Some(action) = self.quick_actions.action() {
+                        panel.show(action.title(), self.quick_actions.result());
+                    }
+                }
+            }
+        } else if !self.quick_actions.is_running() {
+            self.quick_actions.apply();
+            if let Some(panel) = &self.qa_panel {
+                panel.hide();
+            }
+        }
+        self.invalidate_palette();
+    }
+
+    pub fn apply_quick_action_result(&mut self) {
+        self.quick_actions.apply();
+        if let Some(panel) = &self.qa_panel {
+            panel.hide();
+        }
+    }
+
+    pub fn set_quick_actions_enabled(&mut self, enabled: bool) {
+        if self.settings.quick_actions_enabled == enabled {
+            return;
+        }
+        self.settings.quick_actions_enabled = enabled;
+        let _ = self.settings.save();
+        if !enabled {
+            self.quick_actions.cancel();
+            if let Some(panel) = &self.qa_panel {
+                panel.hide();
+            }
+        }
+        self.invalidate_settings();
+        self.invalidate_palette();
+    }
+
+    pub fn cycle_quick_action_language(&mut self) {
+        self.settings.quick_action_language =
+            crate::features::quick_actions::settings::pane::cycle_language(
+                &self.settings.quick_action_language,
+            )
+            .to_string();
+        let _ = self.settings.save();
         self.invalidate_settings();
     }
 

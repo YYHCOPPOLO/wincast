@@ -16,7 +16,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::messages::{
     TIMER_CALENDAR, TIMER_SUPPORT, WM_APP_INDEX, WM_CLIPBOARDUPDATE, WM_CLIPBOARD_IMAGE,
     WM_CUSTOM_COMMAND_FAILED, WM_FILE_SEARCH, WM_OPEN_SETTINGS, WM_HOTKEY_ACTION, WM_QUIT_APP,
-    WM_AI, WM_RATES, WM_SNIPPETS, WM_SNIPPET_KEYWORD, WM_TOGGLE_PALETTE, WM_TRAY, WM_UNINSTALL_SIZE,
+    WM_AI, WM_QA, WM_QA_APPLY, WM_RATES, WM_SNIPPETS, WM_SNIPPET_KEYWORD, WM_TOGGLE_PALETTE, WM_TRAY,
+    WM_UNINSTALL_SIZE,
 };
 use crate::app_core::AppCore;
 
@@ -246,6 +247,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_AI => {
             if let Some(core) = core_from(hwnd) {
                 (*core).install_ai_events();
+            }
+            LRESULT(0)
+        }
+        WM_QA => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).install_quick_action_events();
+            }
+            LRESULT(0)
+        }
+        WM_QA_APPLY => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).apply_quick_action_result();
             }
             LRESULT(0)
         }

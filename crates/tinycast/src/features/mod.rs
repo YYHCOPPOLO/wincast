@@ -9,6 +9,7 @@ pub mod file_search;
 pub mod hotkeys;
 pub mod launcher;
 pub mod notes;
+pub mod quick_actions;
 pub mod quicklinks;
 pub mod settings;
 pub mod snippets;

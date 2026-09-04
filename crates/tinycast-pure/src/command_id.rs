@@ -226,6 +226,15 @@ mod tests {
     use crate::app_entry::AppKind;
 
     #[test]
+    fn four_quick_actions_map_to_command_ids() {
+        assert_eq!(
+            CommandID::from_quick(crate::ai::quick_action::QuickAction::FixGrammar),
+            CommandID::FixGrammar
+        );
+        assert_eq!(crate::ai::quick_action::QuickAction::all().len(), 4);
+    }
+
+    #[test]
     fn command_ids_match_upstream_names() {
         assert_eq!(CommandID::AiChat.raw(), "command:ai-chat");
         assert_eq!(CommandID::AiChat.name(), "AI Chat");

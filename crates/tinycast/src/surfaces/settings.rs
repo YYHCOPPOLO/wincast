@@ -610,6 +610,20 @@ unsafe fn paint_detail(
         )?;
         return Ok(());
     }
+    if selected == SettingsTab::QuickActions {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::quick_actions::settings::pane::paint(
+                target,
+                formats,
+                core.settings.quick_actions_enabled,
+                &core.settings.quick_action_language,
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
     if selected == SettingsTab::Ai {
         hide_edits(inner);
         if let Some(core) = core {
@@ -1287,6 +1301,9 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::Backup {
         return crate::features::backup::settings::pane::content_height();
     }
+    if tab == SettingsTab::QuickActions {
+        return crate::features::quick_actions::settings::pane::content_height();
+    }
     if tab == SettingsTab::Ai {
         let n = core_from_host((*inner).host)
             .map(|c| (*c).settings.ai_connections.len())
@@ -1593,6 +1610,22 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             }
             Some(crate::features::backup::settings::pane::BackupHit::Raycast) => {
                 (*core).import_raycast(hwnd);
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::QuickActions {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        match crate::features::quick_actions::settings::pane::hit(detail_x, y, (*inner).scroll) {
+            Some(crate::features::quick_actions::settings::pane::QuickActionsHit::Enable) => {
+                (*core).set_quick_actions_enabled(!(*core).settings.quick_actions_enabled);
+            }
+            Some(crate::features::quick_actions::settings::pane::QuickActionsHit::Language) => {
+                (*core).cycle_quick_action_language();
             }
             None => {}
         }

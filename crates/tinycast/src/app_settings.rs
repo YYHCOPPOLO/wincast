@@ -97,6 +97,10 @@ pub struct AppSettings {
     pub ai_new_chat_after_minutes: i64,
     #[serde(default, rename = "quickActionsEnabled")]
     pub quick_actions_enabled: bool,
+    #[serde(default, rename = "quickActionModel")]
+    pub quick_action_model: Option<tinycast_pure::ai::ModelSelection>,
+    #[serde(default, rename = "quickActionLanguage")]
+    pub quick_action_language: String,
     #[serde(default, rename = "extensionsEnabled")]
     pub extensions_enabled: bool,
     #[serde(default, rename = "quicklinksEnabled")]
@@ -172,6 +176,8 @@ impl Default for AppSettings {
             ai_opens_to: 0,
             ai_new_chat_after_minutes: default_ai_new_after(),
             quick_actions_enabled: false,
+            quick_action_model: None,
+            quick_action_language: String::new(),
             extensions_enabled: false,
             quicklinks_enabled: false,
             quicklink_opens_new_window: false,
