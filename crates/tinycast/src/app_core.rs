@@ -75,6 +75,7 @@ pub struct AppCore {
     pub settings_window: Option<SettingsWindow>,
     pub about_window: Option<StubWindow>,
     pub support_window: Option<StubWindow>,
+    pub notes_window: Option<crate::surfaces::NotesWindow>,
     pub settings_tab: SettingsTab,
     pub entries: Vec<AppEntry>,
     pub app_index: AppIndex,
@@ -94,6 +95,8 @@ pub struct AppCore {
     pub(crate) quicklinks: QuicklinkStore,
     snippet_listener: KeywordListener,
     file_search: crate::features::file_search::service::session::FileSearchSession,
+    notes: crate::features::notes::service::store::NotesStore,
+    notes_switcher: Vec<tinycast_pure::note::NoteSummary>,
     window_mover: WindowMover,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
@@ -118,6 +121,7 @@ impl AppCore {
             settings_window: None,
             about_window: None,
             support_window: None,
+            notes_window: None,
             settings_tab: SettingsTab::General,
             entries: Vec::new(),
             app_index: AppIndex::new(),
@@ -151,6 +155,8 @@ impl AppCore {
                 &[],
                 HWND::default(),
             ),
+            notes: crate::features::notes::service::store::NotesStore::in_roaming(),
+            notes_switcher: Vec::new(),
             window_mover: WindowMover::new(),
             argument_session: None,
             hud: None,
@@ -401,6 +407,162 @@ impl AppCore {
         self.file_search.take_done();
         self.clamp_selection();
         self.invalidate_palette();
+    }
+
+    pub fn set_notes_enabled(&mut self, enabled: bool) {
+        if self.settings.notes_enabled == enabled {
+            return;
+        }
+        self.settings.notes_enabled = enabled;
+        let _ = self.settings.save();
+        if !enabled {
+            self.notes_hide();
+        }
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn notes_show(&mut self) {
+        if !crate::features::notes::ui::coordinator::guarded(self.settings.notes_enabled) {
+            return;
+        }
+        self.hide_palette();
+        if let Err(err) = self.notes.show_last() {
+            crate::surfaces::dialog::alert("Notes", &err.to_string());
+            return;
+        }
+        self.ensure_notes_window();
+        self.sync_notes_window();
+        if let Some(window) = &self.notes_window {
+            window.close_switcher();
+            window.show();
+            window.focus_editor();
+        }
+    }
+
+    pub fn notes_create(&mut self) {
+        if !crate::features::notes::ui::coordinator::guarded(self.settings.notes_enabled) {
+            return;
+        }
+        self.hide_palette();
+        if let Err(err) = self.notes.create() {
+            crate::surfaces::dialog::alert("Notes", &err.to_string());
+            return;
+        }
+        self.ensure_notes_window();
+        self.sync_notes_window();
+        if let Some(window) = &self.notes_window {
+            window.close_switcher();
+            window.show();
+            window.focus_editor();
+        }
+    }
+
+    pub fn notes_search(&mut self) {
+        if !crate::features::notes::ui::coordinator::guarded(self.settings.notes_enabled) {
+            return;
+        }
+        self.notes_show();
+        self.notes_toggle_switcher();
+    }
+
+    pub fn notes_hide(&mut self) {
+        let _ = self.notes.flush();
+        if let Some(window) = &self.notes_window {
+            window.hide();
+        }
+    }
+
+    pub fn notes_toggle_switcher(&mut self) {
+        if !crate::features::notes::ui::coordinator::guarded(self.settings.notes_enabled) {
+            return;
+        }
+        self.ensure_notes_window();
+        let open = self
+            .notes_window
+            .as_ref()
+            .map(|w| w.switcher_is_open())
+            .unwrap_or(false);
+        if open {
+            if let Some(window) = &self.notes_window {
+                window.close_switcher();
+            }
+            return;
+        }
+        let _ = self.notes.reload();
+        self.notes_switcher = self.notes.search("");
+        if let Some(window) = &self.notes_window {
+            window.fill_switcher(
+                &self
+                    .notes_switcher
+                    .iter()
+                    .map(|s| s.title.clone())
+                    .collect::<Vec<_>>(),
+            );
+            window.open_switcher();
+            window.focus_switcher();
+        }
+    }
+
+    pub fn notes_filter_switcher(&mut self, query: &str) {
+        self.notes_switcher = self.notes.search(query);
+        if let Some(window) = &self.notes_window {
+            window.fill_switcher(
+                &self
+                    .notes_switcher
+                    .iter()
+                    .map(|s| s.title.clone())
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    pub fn notes_pick_switcher(&mut self, index: usize) {
+        let Some(id) = self.notes_switcher.get(index).map(|s| s.id.clone()) else {
+            return;
+        };
+        if let Err(err) = self.notes.select(&id) {
+            crate::surfaces::dialog::alert("Notes", &err.to_string());
+            return;
+        }
+        self.sync_notes_window();
+        if let Some(window) = &self.notes_window {
+            window.close_switcher();
+            window.focus_editor();
+        }
+    }
+
+    pub fn notes_body_changed(&mut self, body: String) {
+        self.notes.set_body(body);
+        let _ = self.notes.flush();
+    }
+
+    pub fn notes_open_folder(&mut self) {
+        let path = self.notes.notes_directory().display().to_string();
+        let _ = crate::features::launcher::ui::coordinator::execute(&LaunchSpec::Path(path));
+    }
+
+    fn ensure_notes_window(&mut self) {
+        if self.notes_window.is_none() && !self.host.is_invalid() {
+            self.notes_window = crate::surfaces::NotesWindow::create(self.host).ok();
+        }
+    }
+
+    fn sync_notes_window(&mut self) {
+        let title = self
+            .notes
+            .active()
+            .map(|n| n.title())
+            .unwrap_or_else(|| "Notes".into());
+        let body = self
+            .notes
+            .active()
+            .map(|n| n.body.clone())
+            .unwrap_or_default();
+        if let Some(window) = &self.notes_window {
+            window.set_title(&title);
+            window.set_body(&body);
+        }
     }
 
     pub fn set_snippets_enabled(&mut self, enabled: bool) {
@@ -1423,6 +1585,9 @@ impl AppCore {
             LaunchSpec::SearchQuicklinks => self.open_quicklinks_search(),
             LaunchSpec::SearchEmoji => self.open_emoji(),
             LaunchSpec::SearchFiles => self.open_file_search(),
+            LaunchSpec::ShowNotes => self.notes_show(),
+            LaunchSpec::CreateNote => self.notes_create(),
+            LaunchSpec::SearchNotes => self.notes_search(),
             LaunchSpec::CreateQuicklink => self.create_quicklink_from_command(),
             LaunchSpec::ImportQuicklinks => {
                 self.hide_palette();
@@ -2996,6 +3161,9 @@ mod tests {
         c.perform_hotkey("hotkey.searchFiles");
         assert!(c.palette_visible);
         assert_eq!(c.palette.mode, PaletteMode::FileSearch);
+        c.perform_hotkey("hotkey.showNotes");
+        assert!(c.notes_window.is_none());
+        c.settings.notes_enabled = true;
         c.perform_hotkey("hotkey.toggleClipboard");
         assert!(c.palette_visible);
         assert_eq!(c.palette.mode, PaletteMode::Clipboard);

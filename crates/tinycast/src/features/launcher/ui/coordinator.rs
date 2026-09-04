@@ -28,6 +28,9 @@ pub enum LaunchSpec {
     SearchQuicklinks,
     SearchEmoji,
     SearchFiles,
+    ShowNotes,
+    CreateNote,
+    SearchNotes,
     CreateQuicklink,
     ImportQuicklinks,
     ExportQuicklinks,
@@ -85,6 +88,9 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:search-quicklinks" => LaunchSpec::SearchQuicklinks,
             "command:search-emoji" => LaunchSpec::SearchEmoji,
             "command:search-files" => LaunchSpec::SearchFiles,
+            "command:show-notes" => LaunchSpec::ShowNotes,
+            "command:create-note" => LaunchSpec::CreateNote,
+            "command:search-notes" => LaunchSpec::SearchNotes,
             "command:create-quicklink" => LaunchSpec::CreateQuicklink,
             "command:import-quicklinks" => LaunchSpec::ImportQuicklinks,
             "command:export-quicklinks" => LaunchSpec::ExportQuicklinks,
@@ -185,6 +191,9 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::SearchQuicklinks
         | LaunchSpec::SearchEmoji
         | LaunchSpec::SearchFiles
+        | LaunchSpec::ShowNotes
+        | LaunchSpec::CreateNote
+        | LaunchSpec::SearchNotes
         | LaunchSpec::CreateQuicklink
         | LaunchSpec::ImportQuicklinks
         | LaunchSpec::ExportQuicklinks

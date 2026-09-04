@@ -590,6 +590,19 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    if selected == SettingsTab::Notes {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::notes::settings::pane::paint(
+                target,
+                formats,
+                core.settings.notes_enabled,
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
     if selected == SettingsTab::FileSearch {
         hide_edits(inner);
         if let Some(core) = core {
@@ -1212,6 +1225,9 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::Permissions {
         return crate::features::settings::panes::permissions::content_height();
     }
+    if tab == SettingsTab::Notes {
+        return crate::features::notes::settings::pane::content_height();
+    }
     if tab == SettingsTab::FileSearch {
         let (scopes, ignores) = core_from_host((*inner).host)
             .map(|c| {
@@ -1478,6 +1494,18 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                 }
             }
             None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::Notes {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        if crate::features::notes::settings::pane::hit(detail_x, y, (*inner).scroll)
+            == Some(crate::features::notes::settings::pane::NotesHit::Enable)
+        {
+            (*core).set_notes_enabled(!(*core).settings.notes_enabled);
         }
         let _ = InvalidateRect(hwnd, None, FALSE);
         return;

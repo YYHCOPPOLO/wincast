@@ -16,6 +16,7 @@ pub mod file_search;
 pub mod hotkey;
 pub mod hotkey_store;
 pub mod launcher_ranking;
+pub mod note;
 pub mod launcher_results;
 pub mod palette_menu;
 pub mod palette_mode;
