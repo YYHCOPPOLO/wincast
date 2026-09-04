@@ -1,5 +1,6 @@
 //! Decision layer. Must not depend on `windows`.
 
+pub mod ai;
 pub mod alias;
 pub mod calc;
 pub mod clipboard_text;
