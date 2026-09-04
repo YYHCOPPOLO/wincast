@@ -9,10 +9,9 @@ pub enum TabHop {
 }
 
 pub fn tab_from(mode: PaletteMode, ai_enabled: bool, row_has_arguments: bool) -> TabHop {
-    if row_has_arguments {
-        return TabHop::StayForArguments;
-    }
     match mode {
+        PaletteMode::ExtensionCommand => TabHop::Launcher,
+        _ if row_has_arguments => TabHop::StayForArguments,
         PaletteMode::Launcher => {
             if ai_enabled {
                 TabHop::Ai
@@ -38,15 +37,24 @@ mod tests {
 
     #[test]
     fn tab_ring_without_ai() {
-        assert_eq!(tab_from(PaletteMode::Launcher, false, false), TabHop::Clipboard);
-        assert_eq!(tab_from(PaletteMode::Clipboard, false, false), TabHop::Launcher);
+        assert_eq!(
+            tab_from(PaletteMode::Launcher, false, false),
+            TabHop::Clipboard
+        );
+        assert_eq!(
+            tab_from(PaletteMode::Clipboard, false, false),
+            TabHop::Launcher
+        );
     }
 
     #[test]
     fn tab_ring_with_ai() {
         assert_eq!(tab_from(PaletteMode::Launcher, true, false), TabHop::Ai);
         assert_eq!(tab_from(PaletteMode::Ai, true, false), TabHop::Clipboard);
-        assert_eq!(tab_from(PaletteMode::Clipboard, true, false), TabHop::Launcher);
+        assert_eq!(
+            tab_from(PaletteMode::Clipboard, true, false),
+            TabHop::Launcher
+        );
     }
 
     #[test]
@@ -54,6 +62,18 @@ mod tests {
         assert_eq!(
             tab_from(PaletteMode::Launcher, false, true),
             TabHop::StayForArguments
+        );
+    }
+
+    #[test]
+    fn extension_command_mode_is_never_the_tab_ring() {
+        assert_eq!(
+            tab_from(PaletteMode::ExtensionCommand, false, false),
+            TabHop::Launcher
+        );
+        assert_eq!(
+            tab_from(PaletteMode::ExtensionCommand, true, true),
+            TabHop::Launcher
         );
     }
 }

@@ -1295,6 +1295,21 @@ impl AppCore {
         self.invalidate_settings();
     }
 
+    pub fn try_set_extensions_enabled(&mut self, on: bool) -> Result<(), &'static str> {
+        self.settings.set_extensions_enabled(on)?;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+        Ok(())
+    }
+
+    pub fn set_extensions_show_in_launcher(&mut self, show: bool) {
+        self.settings.extensions_show_in_launcher = show;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
     pub fn cycle_emoji_skin_tone(&mut self) {
         let next =
             tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone).cycle();
@@ -2772,6 +2787,10 @@ impl AppCore {
                 })
                 .map(CommandID::as_entry),
         );
+        entries.extend(tinycast_pure::extensions::launcher_entries(
+            self.settings.extensions_enabled,
+            self.settings.extensions_show_in_launcher,
+        ));
         self.apply_prefs(&mut entries);
         entries
     }

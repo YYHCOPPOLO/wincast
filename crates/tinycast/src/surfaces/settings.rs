@@ -692,6 +692,20 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    if selected == SettingsTab::Extensions {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::extensions::settings::pane::paint(
+                target,
+                formats,
+                core.settings.extensions_enabled,
+                core.settings.extensions_show_in_launcher,
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
     if selected == SettingsTab::Notes {
         hide_edits(inner);
         if let Some(core) = core {
@@ -1462,6 +1476,9 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::Calendar {
         return crate::features::calendar::settings::pane::content_height();
     }
+    if tab == SettingsTab::Extensions {
+        return crate::features::extensions::settings::pane::content_height();
+    }
     if tab == SettingsTab::Notes {
         return crate::features::notes::settings::pane::content_height();
     }
@@ -1859,6 +1876,26 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             }
             Some(crate::features::calendar::settings::pane::CalendarHit::JoinWindow) => {
                 (*core).cycle_join_window();
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::Extensions {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        match crate::features::extensions::settings::pane::hit(detail_x, y, (*inner).scroll) {
+            Some(crate::features::extensions::settings::pane::ExtensionsHit::Enable) => {
+                if let Err(msg) = (*core).try_set_extensions_enabled(true) {
+                    crate::surfaces::dialog::alert("Extensions", msg);
+                }
+            }
+            Some(crate::features::extensions::settings::pane::ExtensionsHit::ShowInLauncher) => {
+                (*core).set_extensions_show_in_launcher(
+                    !(*core).settings.extensions_show_in_launcher,
+                );
             }
             None => {}
         }
@@ -2400,6 +2437,7 @@ mod tests {
         assert!(tabs.iter().any(|t| *t == SettingsTab::Commands));
         assert!(tabs.iter().any(|t| *t == SettingsTab::Quicklinks));
         assert!(tabs.iter().any(|t| *t == SettingsTab::Emoji));
+        assert!(tabs.iter().any(|t| *t == SettingsTab::Extensions));
         assert_eq!(
             tabs.iter().find(|t| **t == SettingsTab::Ai),
             Some(&SettingsTab::Ai)

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use tinycast_pure::extensions::try_set_extensions_enabled;
 use tinycast_pure::feature_flags::FeatureFlags;
 
 use crate::platform::launch_at_login;
@@ -207,7 +208,7 @@ impl AppSettings {
             calendar_enabled: self.calendar_enabled,
             ai_enabled: self.ai_enabled,
             quick_actions_enabled: self.quick_actions_enabled,
-            extensions_enabled: self.extensions_enabled,
+            extensions_enabled: self.extensions_enabled && try_set_extensions_enabled(true).is_ok(),
             quicklinks_enabled: self.quicklinks_enabled,
         }
     }
@@ -299,13 +300,28 @@ impl AppSettings {
         if let Ok(next) = serde_json::from_value(current) {
             *self = next;
         }
+        Self::clamp_extensions(self);
+    }
+
+    pub fn set_extensions_enabled(&mut self, on: bool) -> Result<(), &'static str> {
+        try_set_extensions_enabled(on)?;
+        self.extensions_enabled = on;
+        Ok(())
     }
 
     fn load_from(path: &Path) -> Self {
         let Ok(bytes) = std::fs::read(path) else {
             return Self::default();
         };
-        serde_json::from_slice(&bytes).unwrap_or_default()
+        let mut loaded = serde_json::from_slice(&bytes).unwrap_or_default();
+        Self::clamp_extensions(&mut loaded);
+        loaded
+    }
+
+    fn clamp_extensions(settings: &mut Self) {
+        if try_set_extensions_enabled(settings.extensions_enabled).is_err() {
+            settings.extensions_enabled = false;
+        }
     }
 }
 
@@ -417,5 +433,17 @@ mod tests {
         assert!(text.contains("\"openOnCursorScreen\": false"));
         assert!(text.contains("\"appearance\": \"light\""));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn extensions_json_true_cannot_arm_the_runtime() {
+        let mut s: AppSettings = serde_json::from_str(r#"{"extensionsEnabled":true}"#).unwrap();
+        assert!(s.set_extensions_enabled(true).is_err());
+        assert!(!s.feature_flags().extensions_enabled);
+        AppSettings::clamp_extensions(&mut s);
+        assert!(!s.extensions_enabled);
+        s.apply_backup(serde_json::json!({"extensionsEnabled": true}));
+        assert!(!s.extensions_enabled);
+        assert!(!s.feature_flags().extensions_enabled);
     }
 }
