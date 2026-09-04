@@ -866,7 +866,9 @@ impl AppCore {
             return;
         }
         if let Some(id) = CommandID::from_hotkey_key(action) {
-            if id.shows_in_launcher(self.feature_flags()) {
+            if id.shows_in_launcher(self.feature_flags())
+                && self.visibility.allows_hotkey(AppKind::Command)
+            {
                 self.activate_entry(&id.as_entry());
             }
             return;
@@ -2782,12 +2784,27 @@ mod tests {
     #[test]
     fn perform_hotkey_dispatches_command_id_actions() {
         let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
         c.perform_hotkey("hotkey.searchFiles");
         assert!(!c.palette_visible);
         c.perform_hotkey("hotkey.toggleClipboard");
         assert!(c.palette_visible);
         assert_eq!(c.palette.mode, PaletteMode::Clipboard);
         c.perform_hotkey("hotkey.toggleEmoji");
+        assert_eq!(c.palette.mode, PaletteMode::Emoji);
+    }
+
+    #[test]
+    fn perform_hotkey_command_id_respects_kind_off() {
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.visibility.set_kind_enabled(AppKind::Command, false);
+        c.perform_hotkey("hotkey.toggleEmoji");
+        assert!(!c.palette_visible);
+        assert_ne!(c.palette.mode, PaletteMode::Emoji);
+        c.visibility.set_kind_enabled(AppKind::Command, true);
+        c.perform_hotkey("hotkey.toggleEmoji");
+        assert!(c.palette_visible);
         assert_eq!(c.palette.mode, PaletteMode::Emoji);
     }
 

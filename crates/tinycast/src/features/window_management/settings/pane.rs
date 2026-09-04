@@ -111,14 +111,12 @@ pub fn hit(_x: f32, y: f32, scroll: f32, width: f32) -> Option<WindowHit> {
     if y >= row && y < row + ROW_H {
         return Some(WindowHit::Gap);
     }
-    let pad = theme::spacing::XL;
     let layout = catalog_layout();
     for (index, top) in layout.commands {
         if y < top || y >= top + CMD_H {
             continue;
         }
-        let clear_left = width - pad - CLEAR_W;
-        let rec_left = clear_left - 8.0 - RECORDER_W;
+        let (rec_left, clear_left) = command_wells(width);
         if _x >= clear_left {
             return Some(WindowHit::RecorderClear(index));
         }
@@ -128,6 +126,14 @@ pub fn hit(_x: f32, y: f32, scroll: f32, width: f32) -> Option<WindowHit> {
         return Some(WindowHit::Visible(index));
     }
     None
+}
+
+/// Detail-space x of the Record well and clear control. Paint adds `origin_x`.
+fn command_wells(width: f32) -> (f32, f32) {
+    let pad = theme::spacing::XL;
+    let clear_left = width - pad - CLEAR_W;
+    let rec_left = clear_left - 8.0 - RECORDER_W;
+    (rec_left, clear_left)
 }
 
 pub fn cycle_gap(current: i32) -> i32 {
@@ -149,12 +155,13 @@ pub fn paint(
     visibility: &VisibilityStore,
     hotkeys: &HotKeyStore,
     recording: Option<&str>,
+    origin_x: f32,
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
     let origin = -scroll;
     let mut y = 24.0 + origin;
-    paint_row(target, formats, ENABLE_TITLE, ENABLE_SUBTITLE, enabled, y, width)?;
+    paint_row(target, formats, ENABLE_TITLE, ENABLE_SUBTITLE, enabled, y, origin_x, width)?;
     y += ROW_H + theme::spacing::XL;
     paint_row(
         target,
@@ -163,6 +170,7 @@ pub fn paint(
         "Hide the Window Management section without disabling shortcuts.",
         show_in_launcher,
         y,
+        origin_x,
         width,
     )?;
     y += ROW_H + theme::spacing::XL;
@@ -173,6 +181,7 @@ pub fn paint(
         "Repeated Left/Right/Top/Bottom Half cycles ½ → ⅓ → ⅔.",
         cycle,
         y,
+        origin_x,
         width,
     )?;
     y += ROW_H + theme::spacing::XL;
@@ -183,11 +192,12 @@ pub fn paint(
         &format!("{gap} pt between tiles and screen edges."),
         gap > 0,
         y,
+        origin_x,
         width,
     )?;
     let layout = catalog_layout();
     for (top, title) in layout.headers {
-        paint_header(target, formats, title, top + origin, width)?;
+        paint_header(target, formats, title, top + origin, origin_x, width)?;
     }
     for (index, top) in layout.commands {
         let id = WindowCommandId::all()[index];
@@ -206,6 +216,7 @@ pub fn paint(
             visibility.is_item_visible(&id.entry_id()),
             hotkeys.get(&key).is_some(),
             top + origin,
+            origin_x,
             width,
         )?;
     }
@@ -217,6 +228,7 @@ fn paint_header(
     formats: &Formats<'_>,
     title: &str,
     y: f32,
+    origin_x: f32,
     width: f32,
 ) -> windows::core::Result<()> {
     let muted = D2D1_COLOR_F {
@@ -233,9 +245,9 @@ fn paint_header(
             &wide,
             formats.caption,
             &D2D_RECT_F {
-                left: pad,
+                left: origin_x + pad,
                 top: y,
-                right: width - pad,
+                right: origin_x + width - pad,
                 bottom: y + HEADER_H,
             },
             &brush,
@@ -254,6 +266,7 @@ fn paint_command(
     visible: bool,
     bound: bool,
     y: f32,
+    origin_x: f32,
     width: f32,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
@@ -266,16 +279,15 @@ fn paint_command(
     let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
     let name_w: Vec<u16> = name.encode_utf16().collect();
     let rec_w: Vec<u16> = rec.encode_utf16().collect();
-    let clear_left = width - pad - CLEAR_W;
-    let rec_left = clear_left - 8.0 - RECORDER_W;
+    let (rec_left, clear_left) = command_wells(width);
     unsafe {
         target.DrawText(
             &name_w,
             formats.body,
             &D2D_RECT_F {
-                left: pad,
+                left: origin_x + pad,
                 top: y + 8.0,
-                right: rec_left - 8.0,
+                right: origin_x + rec_left - 8.0,
                 bottom: y + CMD_H - 4.0,
             },
             &brush,
@@ -286,9 +298,9 @@ fn paint_command(
             &rec_w,
             formats.caption,
             &D2D_RECT_F {
-                left: rec_left,
+                left: origin_x + rec_left,
                 top: y + 10.0,
-                right: rec_left + RECORDER_W,
+                right: origin_x + rec_left + RECORDER_W,
                 bottom: y + CMD_H - 6.0,
             },
             &brush,
@@ -301,9 +313,9 @@ fn paint_command(
                 &x,
                 formats.body,
                 &D2D_RECT_F {
-                    left: clear_left,
+                    left: origin_x + clear_left,
                     top: y + 8.0,
-                    right: width - pad,
+                    right: origin_x + width - pad,
                     bottom: y + CMD_H - 4.0,
                 },
                 &brush,
@@ -322,20 +334,21 @@ fn paint_row(
     subtitle: &str,
     on: bool,
     y: f32,
+    origin_x: f32,
     width: f32,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
     let text_w = width - pad * 3.0 - TOGGLE_W;
     let title_rect = D2D_RECT_F {
-        left: pad,
+        left: origin_x + pad,
         top: y + 8.0,
-        right: pad + text_w,
+        right: origin_x + pad + text_w,
         bottom: y + 28.0,
     };
     let sub_rect = D2D_RECT_F {
-        left: pad,
+        left: origin_x + pad,
         top: y + 28.0,
-        right: pad + text_w,
+        right: origin_x + pad + text_w,
         bottom: y + ROW_H - 4.0,
     };
     let white = D2D1_COLOR_F {
@@ -376,9 +389,9 @@ fn paint_row(
     }
     let toggle = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
-            left: width - pad - TOGGLE_W,
+            left: origin_x + width - pad - TOGGLE_W,
             top: y + (ROW_H - TOGGLE_H) / 2.0,
-            right: width - pad,
+            right: origin_x + width - pad,
             bottom: y + (ROW_H - TOGGLE_H) / 2.0 + TOGGLE_H,
         },
         radiusX: TOGGLE_H / 2.0,
@@ -431,6 +444,38 @@ mod tests {
         assert_eq!(
             WindowCommandId::all()[0].entry_id(),
             "window-command:left-half"
+        );
+    }
+
+    #[test]
+    fn painted_record_well_hits_recorder_after_sidebar_translate() {
+        let origin_x = theme::size::SETTINGS_SIDEBAR;
+        let detail_w = theme::size::SETTINGS_WINDOW.0 - origin_x;
+        let (rec_left, clear_left) = command_wells(detail_w);
+        let layout = catalog_layout();
+        let (_, first_y) = layout.commands[0];
+        // paint_command draws Record at origin_x + rec_left (HWND space).
+        // settings hit() gets detail_x = window_x - sidebar.
+        let painted_record_window_x = origin_x + rec_left + 1.0;
+        let detail_x = painted_record_window_x - origin_x;
+        assert_eq!(
+            hit(detail_x, first_y + 8.0, 0.0, detail_w),
+            Some(WindowHit::Recorder(0))
+        );
+        assert_eq!(
+            hit(rec_left - 1.0, first_y + 8.0, 0.0, detail_w),
+            Some(WindowHit::Visible(0))
+        );
+        assert_eq!(
+            hit(clear_left + 1.0, first_y + 8.0, 0.0, detail_w),
+            Some(WindowHit::RecorderClear(0))
+        );
+        // Pre-fix paint used HWND x=rec_left without origin; that click is Visible.
+        let old_paint_as_detail = rec_left - origin_x;
+        assert!(old_paint_as_detail > 0.0);
+        assert_eq!(
+            hit(old_paint_as_detail + 1.0, first_y + 8.0, 0.0, detail_w),
+            Some(WindowHit::Visible(0))
         );
     }
 }

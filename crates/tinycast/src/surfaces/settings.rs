@@ -644,6 +644,7 @@ unsafe fn paint_detail(
                 &core.visibility,
                 &core.hotkeys,
                 (*inner).recorder.action.as_deref(),
+                sidebar_w,
                 detail_w,
                 (*inner).scroll,
             )?;
