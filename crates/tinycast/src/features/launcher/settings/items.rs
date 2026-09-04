@@ -23,14 +23,18 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, GetWindowTextLengthW, GetWindowTextW, SendMessageW, SetWindowPos,
-    SetWindowTextW, ShowWindow, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL, ES_LEFT, HWND_TOP,
-    SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_SETFONT, WS_CHILD,
+    SetWindowTextW, ShowWindow, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL, ES_LEFT,
+    ES_PASSWORD, HWND_TOP, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_SETFONT, WS_CHILD,
 };
 
 use crate::platform::screens::dip_scalar_to_px;
 
 pub const FILTER_EDIT_ID: usize = 201;
 pub const ALIAS_EDIT_ID: usize = 202;
+pub const AI_URL_EDIT_ID: usize = 203;
+pub const AI_MODEL_EDIT_ID: usize = 204;
+pub const AI_KEY_EDIT_ID: usize = 205;
 pub const ENABLE_SUBTITLE: &str =
     "Off hides them all and stops their shortcuts. Uncheck one below to hide just that one.";
 
@@ -560,10 +564,21 @@ pub struct FieldEdit {
 
 impl FieldEdit {
     pub fn create(parent: HWND, id: usize) -> windows::core::Result<Self> {
+        Self::create_with(parent, id, false)
+    }
+
+    pub fn create_secret(parent: HWND, id: usize) -> windows::core::Result<Self> {
+        Self::create_with(parent, id, true)
+    }
+
+    fn create_with(parent: HWND, id: usize, secret: bool) -> windows::core::Result<Self> {
         unsafe {
             let hinstance = GetModuleHandleW(None)?;
-            let style =
+            let mut style =
                 WS_CHILD | WINDOW_STYLE(ES_LEFT as u32) | WINDOW_STYLE(ES_AUTOHSCROLL as u32);
+            if secret {
+                style |= WINDOW_STYLE(ES_PASSWORD as u32);
+            }
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("EDIT"),

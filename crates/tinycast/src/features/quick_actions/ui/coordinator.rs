@@ -6,7 +6,7 @@ use tinycast_pure::ai::{AiEvent, AiMessage, AiRequest, ModelSelection, QuickActi
 use windows::Win32::Foundation::HWND;
 
 use crate::features::ai::service::factory::ProviderFactory;
-use crate::features::ai::service::provider::AiProvider;
+use crate::features::ai::service::provider::{AiProvider, HttpAiProvider};
 use crate::features::snippets::service::injector;
 use crate::platform::messages::WM_QA;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
@@ -14,7 +14,11 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 pub struct QuickActionCoordinator {
     events_tx: Sender<AiEvent>,
     events_rx: Receiver<AiEvent>,
+    provider: Option<HttpAiProvider>,
     running: bool,
+    cancelled: bool,
+    accepted: bool,
+    generation: u64,
     action: Option<QuickAction>,
     target: HWND,
     result: String,
@@ -27,7 +31,11 @@ impl QuickActionCoordinator {
         Self {
             events_tx,
             events_rx,
+            provider: None,
             running: false,
+            cancelled: false,
+            accepted: false,
+            generation: 0,
             action: None,
             target: HWND::default(),
             result: String::new(),
@@ -55,9 +63,13 @@ impl QuickActionCoordinator {
         self.preview
     }
 
+    pub fn can_apply(&self) -> bool {
+        self.accepted && !self.cancelled && !self.result.is_empty() && !self.target.is_invalid()
+    }
+
     /// Read selection from `target` before the caller hides the palette.
-    pub fn capture(target: HWND) -> Option<String> {
-        injector::capture_selection(target, true)
+    pub fn capture(target: HWND) -> Result<String, String> {
+        injector::capture_for_quick_action(target)
     }
 
     pub fn start(
@@ -88,16 +100,24 @@ impl QuickActionCoordinator {
             max_output_tokens: 2048,
             web_search: false,
         };
+        self.generation = self.generation.wrapping_add(1);
         self.running = true;
+        self.cancelled = false;
+        self.accepted = false;
         self.action = Some(action);
         self.target = target;
         self.result.clear();
         self.preview = preview || action.always_previews();
         provider.stream(request, self.events_tx.clone());
-        let _ = provider;
+        self.provider = Some(provider);
         if !host.is_invalid() {
             unsafe {
-                let _ = PostMessageW(host, WM_QA, windows::Win32::Foundation::WPARAM(0), windows::Win32::Foundation::LPARAM(0));
+                let _ = PostMessageW(
+                    host,
+                    WM_QA,
+                    windows::Win32::Foundation::WPARAM(0),
+                    windows::Win32::Foundation::LPARAM(0),
+                );
             }
         }
         Ok(())
@@ -107,11 +127,18 @@ impl QuickActionCoordinator {
         let mut changed = false;
         while let Ok(event) = self.events_rx.try_recv() {
             changed = true;
+            if self.cancelled {
+                continue;
+            }
             match event {
                 AiEvent::Text(delta) => self.result.push_str(&delta),
-                AiEvent::Done => self.running = false,
+                AiEvent::Done => {
+                    self.running = false;
+                    self.accepted = true;
+                }
                 AiEvent::Error(err) => {
                     self.running = false;
+                    self.accepted = false;
                     if self.result.is_empty() {
                         self.result = err;
                     }
@@ -123,14 +150,21 @@ impl QuickActionCoordinator {
     }
 
     pub fn apply(&self) {
-        if self.result.is_empty() || self.target.is_invalid() {
+        if !self.can_apply() {
             return;
         }
-        injector::inject_into(self.target, &self.result, None);
+        injector::replace_selection(self.target, &self.result);
     }
 
     pub fn cancel(&mut self) {
+        self.cancelled = true;
         self.running = false;
+        self.accepted = false;
+        self.generation = self.generation.wrapping_add(1);
+        if let Some(provider) = self.provider.as_mut() {
+            provider.cancel();
+        }
+        while self.events_rx.try_recv().is_ok() {}
     }
 }
 
@@ -140,6 +174,23 @@ mod tests {
 
     #[test]
     fn capture_is_exported_for_previous_app() {
-        assert!(QuickActionCoordinator::capture(HWND::default()).is_none());
+        assert!(QuickActionCoordinator::capture(HWND::default()).is_err());
+    }
+
+    #[test]
+    fn cancel_blocks_apply_and_ignores_later_events() {
+        let mut qa = QuickActionCoordinator::new();
+        qa.target = HWND(1 as *mut core::ffi::c_void);
+        qa.result = "rewritten".into();
+        qa.accepted = true;
+        assert!(qa.can_apply());
+        qa.cancel();
+        assert!(!qa.can_apply());
+        assert!(!qa.is_running());
+        let _ = qa.events_tx.send(AiEvent::Text("late".into()));
+        let _ = qa.events_tx.send(AiEvent::Done);
+        qa.drain();
+        assert!(!qa.can_apply());
+        assert_eq!(qa.result(), "rewritten");
     }
 }

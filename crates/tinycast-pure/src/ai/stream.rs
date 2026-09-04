@@ -1,7 +1,10 @@
 use crate::ai::request::AiEvent;
 
+pub const SSE_BUFFER_CAP: usize = 1_048_576;
+
 pub struct SseParser {
     buffer: Vec<u8>,
+    overflowed: bool,
 }
 
 impl Default for SseParser {
@@ -12,10 +15,25 @@ impl Default for SseParser {
 
 impl SseParser {
     pub fn new() -> Self {
-        Self { buffer: Vec::new() }
+        Self {
+            buffer: Vec::new(),
+            overflowed: false,
+        }
+    }
+
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
     }
 
     pub fn feed(&mut self, data: &[u8]) -> Vec<String> {
+        if self.overflowed {
+            return Vec::new();
+        }
+        if self.buffer.len().saturating_add(data.len()) > SSE_BUFFER_CAP {
+            self.overflowed = true;
+            self.buffer.clear();
+            return Vec::new();
+        }
         self.buffer.extend_from_slice(data);
         let mut payloads = Vec::new();
         while let Some((start, end)) = next_boundary(&self.buffer) {
@@ -98,6 +116,10 @@ impl StreamDecoder {
 
     pub fn feed(&mut self, data: &[u8]) -> Result<Vec<AiEvent>, String> {
         let payloads = self.parser.feed(data);
+        if self.parser.overflowed() {
+            self.terminal = true;
+            return Err("The provider returned malformed streaming data.".into());
+        }
         self.decode(payloads)
     }
 
@@ -158,6 +180,17 @@ impl StreamDecoder {
         }
         if chunk.get("usage").is_some() {
             events.push(AiEvent::Usage);
+        }
+        if let Some(reason) = chunk
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("finish_reason"))
+            .and_then(|r| r.as_str())
+        {
+            if !reason.is_empty() {
+                self.terminal = true;
+                events.push(AiEvent::Done);
+            }
         }
         Ok(events)
     }
@@ -243,6 +276,7 @@ pub fn openai_body(
     messages: &[crate::ai::request::AiMessage],
     web_search: bool,
     openrouter: bool,
+    max_output_tokens: u32,
 ) -> serde_json::Value {
     let mut payload = Vec::new();
     if let Some(text) = instructions.map(str::trim).filter(|s| !s.is_empty()) {
@@ -262,6 +296,7 @@ pub fn openai_body(
         "model": model,
         "messages": payload,
         "stream": true,
+        "max_tokens": max_output_tokens,
     });
     if web_search && openrouter {
         value["plugins"] = serde_json::json!([{"id": "web"}]);
@@ -360,5 +395,39 @@ data: {"type":"message_stop"}
         assert!(events.contains(&AiEvent::Text("Hi".into())));
         assert!(events.contains(&AiEvent::Usage));
         assert_eq!(events.last(), Some(&AiEvent::Done));
+    }
+
+    #[test]
+    fn finish_reason_stop_is_terminal_without_done() {
+        let mut decoder = StreamDecoder::new(StreamShape::OpenAiCompatible);
+        let data = br#"data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}
+
+"#;
+        let events = decoder.feed(data).unwrap();
+        assert!(events.contains(&AiEvent::Text("Hi".into())));
+        assert!(events.contains(&AiEvent::Done));
+        assert!(decoder.is_terminal());
+    }
+
+    #[test]
+    fn sse_buffer_is_capped() {
+        let mut parser = SseParser::new();
+        let chunk = vec![b'x'; SSE_BUFFER_CAP / 2];
+        assert!(parser.feed(&chunk).is_empty());
+        assert!(!parser.overflowed());
+        parser.feed(&chunk);
+        parser.feed(&chunk);
+        assert!(parser.overflowed());
+        let mut decoder = StreamDecoder::new(StreamShape::OpenAiCompatible);
+        let huge = vec![b'y'; SSE_BUFFER_CAP + 8];
+        assert!(decoder.feed(&huge).is_err());
+        assert!(decoder.is_terminal());
+    }
+
+    #[test]
+    fn openai_body_includes_max_tokens() {
+        let body = openai_body("m", None, &[], false, false, 2048);
+        assert_eq!(body["max_tokens"], 2048);
+        assert_eq!(body["stream"], true);
     }
 }

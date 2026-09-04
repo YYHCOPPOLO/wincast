@@ -3371,14 +3371,17 @@ impl AppCore {
         let selection =
             crate::features::quick_actions::ui::coordinator::QuickActionCoordinator::capture(target);
         self.hide_palette();
-        let Some(selection) = selection.filter(|s| !s.trim().is_empty()) else {
-            if self.hud.is_none() && !self.host.is_invalid() {
-                self.hud = MessageHud::create(self.host).ok();
+        let selection = match selection {
+            Ok(text) => text,
+            Err(err) => {
+                if self.hud.is_none() && !self.host.is_invalid() {
+                    self.hud = MessageHud::create(self.host).ok();
+                }
+                if let Some(hud) = &self.hud {
+                    hud.show(&err);
+                }
+                return;
             }
-            if let Some(hud) = &self.hud {
-                hud.show("Nothing is selected.");
-            }
-            return;
         };
         let model = self
             .settings
@@ -3428,6 +3431,9 @@ impl AppCore {
         if !self.quick_actions.drain() {
             return;
         }
+        if !self.settings.quick_actions_enabled {
+            return;
+        }
         if self.quick_actions.wants_preview() {
             if let Some(panel) = &self.qa_panel {
                 panel.set_body(self.quick_actions.result());
@@ -3437,7 +3443,7 @@ impl AppCore {
                     }
                 }
             }
-        } else if !self.quick_actions.is_running() {
+        } else if self.quick_actions.can_apply() {
             self.quick_actions.apply();
             if let Some(panel) = &self.qa_panel {
                 panel.hide();
@@ -3447,7 +3453,23 @@ impl AppCore {
     }
 
     pub fn apply_quick_action_result(&mut self) {
+        if !self.settings.quick_actions_enabled {
+            return;
+        }
         self.quick_actions.apply();
+        if let Some(panel) = &self.qa_panel {
+            panel.hide();
+        }
+    }
+
+    pub fn copy_quick_action_result(&mut self) {
+        let text = self.quick_actions.result();
+        if !text.is_empty() {
+            let _ = copy_text(text);
+        }
+    }
+
+    pub fn dismiss_quick_action_panel(&mut self) {
         if let Some(panel) = &self.qa_panel {
             panel.hide();
         }
@@ -3512,8 +3534,7 @@ impl AppCore {
     }
 
     pub fn add_ai_connection(&mut self) {
-        let mut conn = tinycast_pure::ai::AiConnection::new(tinycast_pure::ai::ProviderKind::OpenAi);
-        conn.models.push("gpt-4.1-mini".into());
+        let conn = tinycast_pure::ai::AiConnection::new(tinycast_pure::ai::ProviderKind::OpenAi);
         self.settings.ai_connections.push(conn);
         let _ = self.settings.save();
         self.invalidate_settings();
@@ -3526,15 +3547,45 @@ impl AppCore {
         let previous = conn.clone();
         conn.provider = crate::features::ai::settings::pane::cycle_provider(conn.provider);
         conn.base_url = conn.provider.default_base_url().to_string();
-        conn.models = vec![match conn.provider {
-            tinycast_pure::ai::ProviderKind::Anthropic => "claude-sonnet-4-5".into(),
-            tinycast_pure::ai::ProviderKind::Gemini => "gemini-2.5-flash".into(),
-            tinycast_pure::ai::ProviderKind::OpenRouter => "openai/gpt-4.1-mini".into(),
-            _ => "gpt-4.1-mini".into(),
-        }];
         self.ai_factory.forget_if_retargeted(&previous, conn);
         let _ = self.settings.save();
         self.invalidate_settings();
+    }
+
+    pub fn apply_ai_connection_fields(
+        &mut self,
+        index: usize,
+        url: String,
+        model: String,
+        key: String,
+    ) -> Result<(), String> {
+        let Some(previous) = self.settings.ai_connections.get(index).cloned() else {
+            return Err("Choose an API connection in Settings.".into());
+        };
+        let mut next = previous.clone();
+        let provider = next.provider;
+        crate::features::ai::settings::pane::apply_draft(&mut next, provider, &url, &model)
+            .map_err(|e| e.message().to_string())?;
+        self.ai_factory.forget_if_retargeted(&previous, &next);
+        let trimmed = key.trim();
+        if !trimmed.is_empty() {
+            self.ai_factory.keys().set(&next.id, trimmed)?;
+        }
+        if let Some(slot) = self.settings.ai_connections.get_mut(index) {
+            *slot = next;
+        }
+        let _ = self.settings.save();
+        self.invalidate_settings();
+        self.invalidate_palette();
+        Ok(())
+    }
+
+    pub fn ai_connection_key_saved(&self, index: usize) -> bool {
+        self.settings
+            .ai_connections
+            .get(index)
+            .map(|c| self.ai_factory.keys().has(&c.id))
+            .unwrap_or(false)
     }
 
     pub fn remove_ai_connection(&mut self, index: usize) {
@@ -3555,14 +3606,10 @@ impl AppCore {
     }
 
     pub fn cycle_ai_default_model(&mut self) {
-        let chatgpt = matches!(
-            self.chatgpt.phase(),
-            crate::features::ai::service::chatgpt::CodexPhase::Connected
-        );
         self.settings.ai_default_model = crate::features::ai::settings::pane::cycle_default_model(
             self.settings.ai_default_model.clone(),
             &self.settings.ai_connections,
-            chatgpt,
+            crate::features::ai::settings::pane::can_offer_chatgpt(),
         );
         let _ = self.settings.save();
         self.invalidate_settings();
@@ -3571,6 +3618,17 @@ impl AppCore {
 
     pub fn chatgpt_row_action(&mut self) {
         use crate::features::ai::service::chatgpt::{which_codex, CodexPhase, INSTALL_DOCS};
+        if !self.settings.ai_enabled
+            && !matches!(self.chatgpt.phase(), CodexPhase::Unavailable)
+        {
+            if self.hud.is_none() && !self.host.is_invalid() {
+                self.hud = MessageHud::create(self.host).ok();
+            }
+            if let Some(hud) = &self.hud {
+                hud.show("Turn on AI to use ChatGPT.");
+            }
+            return;
+        }
         match self.chatgpt.phase() {
             CodexPhase::Unavailable => {
                 let _ = crate::features::launcher::ui::coordinator::execute(&LaunchSpec::Uri(
@@ -4669,6 +4727,36 @@ mod tests {
         c.set_query("abc".into());
         assert_eq!(c.palette.query, "abc");
         assert!(c.expanded);
+    }
+
+    #[test]
+    fn add_ai_connection_does_not_ship_a_catalog() {
+        let mut conn = tinycast_pure::ai::AiConnection::new(
+            tinycast_pure::ai::ProviderKind::OpenAiCompatible,
+        );
+        assert!(conn.models.is_empty());
+        crate::features::ai::settings::pane::apply_draft(
+            &mut conn,
+            tinycast_pure::ai::ProviderKind::OpenAiCompatible,
+            "http://127.0.0.1:11434/v1",
+            "llama3",
+        )
+        .unwrap();
+        assert_eq!(conn.base_url, "http://127.0.0.1:11434/v1");
+        assert_eq!(conn.models, vec!["llama3".to_string()]);
+        let c = AppCore::new();
+        assert!(!c.ai_connection_key_saved(usize::MAX));
+    }
+
+    #[test]
+    fn chatgpt_connect_is_refused_while_ai_is_off() {
+        let mut c = AppCore::new();
+        assert!(!c.settings.ai_enabled);
+        c.chatgpt_row_action();
+        assert_ne!(
+            c.chatgpt_phase(),
+            crate::features::ai::service::chatgpt::CodexPhase::Connected
+        );
     }
 
     #[test]

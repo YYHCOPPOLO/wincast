@@ -7,13 +7,14 @@ use windows::core::{Interface, BSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, RECT};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
 use windows::Win32::System::Threading::{
     GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationTextPattern, IUIAutomationTextRange,
     IUIAutomationValuePattern, TextPatternRangeEndpoint_End, TextPatternRangeEndpoint_Start,
-    TextUnit_Character, UIA_TextPatternId, UIA_ValuePatternId,
+    TextUnit_Character, UIA_IsPasswordPropertyId, UIA_TextPatternId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
@@ -69,7 +70,23 @@ pub fn insertion_refused(hwnd: HWND) -> bool {
     if hwnd.is_invalid() {
         return true;
     }
-    is_cross_integrity(hwnd) || is_exclusive_fullscreen(hwnd)
+    crate::features::window_management::ui::coordinator::hwnd_is_ours(hwnd)
+        || is_password_field(hwnd)
+        || is_cross_integrity(hwnd)
+        || is_exclusive_fullscreen(hwnd)
+}
+
+pub fn password_blocks_capture(is_password: bool) -> bool {
+    is_password
+}
+
+pub fn accept_synthetic_copy(sequence_moved: bool, text: Option<&str>) -> Option<String> {
+    if !sequence_moved {
+        return None;
+    }
+    text.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
 }
 
 #[allow(dead_code)]
@@ -149,6 +166,56 @@ pub fn capture_selection(hwnd: HWND, allow_synthetic_copy: bool) -> Option<Strin
         return None;
     }
     synthetic_copy_restore(hwnd)
+}
+
+pub fn capture_for_quick_action(hwnd: HWND) -> Result<String, String> {
+    if hwnd.is_invalid()
+        || crate::features::window_management::ui::coordinator::hwnd_is_ours(hwnd)
+    {
+        return Err("Tinycast is never the target.".into());
+    }
+    if is_password_field(hwnd) {
+        return Err("Password fields are skipped.".into());
+    }
+    if insertion_refused(hwnd) {
+        return Err("This window cannot be edited.".into());
+    }
+    capture_selection(hwnd, true)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| "Nothing is selected.".into())
+}
+
+/// Replace the live selection (UIA, then paste). Does not type into an empty caret.
+pub fn replace_selection(hwnd: HWND, text: &str) {
+    if text.is_empty() || insertion_refused(hwnd) {
+        return;
+    }
+    let payload = text.to_string();
+    let bits = hwnd.0 as isize;
+    let _ = std::thread::Builder::new()
+        .name("tinycast-replace".into())
+        .spawn(move || {
+            let _ = unsafe {
+                windows::Win32::System::Com::CoInitializeEx(
+                    None,
+                    windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
+                )
+            };
+            std::thread::sleep(Duration::from_millis(80));
+            let hwnd = HWND(bits as *mut core::ffi::c_void);
+            if hwnd.is_invalid() || insertion_refused(hwnd) {
+                return;
+            }
+            restore_foreground(hwnd);
+            std::thread::sleep(Duration::from_millis(40));
+            if insertion_refused(hwnd) {
+                return;
+            }
+            if uia_replace_selected(hwnd, &payload) {
+                return;
+            }
+            paste_over(hwnd, &payload);
+        });
 }
 
 fn restore_foreground(target: HWND) -> bool {
@@ -233,6 +300,19 @@ fn automation() -> Option<IUIAutomation> {
         )
         .ok()
     }
+}
+
+fn is_password_field(hwnd: HWND) -> bool {
+    let Some(automation) = automation() else {
+        return false;
+    };
+    let Ok(element) = (unsafe { automation.ElementFromHandle(hwnd) }) else {
+        return false;
+    };
+    let Ok(value) = (unsafe { element.GetCurrentPropertyValue(UIA_IsPasswordPropertyId) }) else {
+        return false;
+    };
+    bool::try_from(&value).unwrap_or(false)
 }
 
 fn uia_selected_text(hwnd: HWND) -> Option<String> {
@@ -336,15 +416,83 @@ fn select_suffix(range: &IUIAutomationTextRange, keyword: &str) -> bool {
 
 fn synthetic_copy_restore(hwnd: HWND) -> Option<String> {
     let previous = crate::platform::clipboard::read_unicode_text();
+    let before = unsafe { GetClipboardSequenceNumber() };
     restore_foreground(hwnd);
     std::thread::sleep(Duration::from_millis(40));
     send_ctrl(0x43); // C
-    std::thread::sleep(Duration::from_millis(80));
-    let got = crate::platform::clipboard::read_unicode_text();
+    let moved = wait_for_sequence_change(before, Duration::from_millis(300));
+    let got = if moved {
+        crate::platform::clipboard::read_unicode_text()
+    } else {
+        None
+    };
+    if let Some(prev) = previous {
+        let _ = crate::platform::clipboard::write_text(&prev, false);
+    } else if moved {
+        let _ = crate::platform::clipboard::write_text("", false);
+    }
+    accept_synthetic_copy(moved, got.as_deref())
+}
+
+fn wait_for_sequence_change(before: u32, timeout: Duration) -> bool {
+    let start = std::time::Instant::now();
+    while start.elapsed() < timeout {
+        if unsafe { GetClipboardSequenceNumber() } != before {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(15));
+    }
+    false
+}
+
+fn uia_replace_selected(hwnd: HWND, text: &str) -> bool {
+    let Some(automation) = automation() else {
+        return false;
+    };
+    let Ok(element) = (unsafe { automation.ElementFromHandle(hwnd) }) else {
+        return false;
+    };
+    let Ok(unk) = (unsafe { element.GetCurrentPattern(UIA_TextPatternId) }) else {
+        return false;
+    };
+    let Ok(pattern) = unk.cast::<IUIAutomationTextPattern>() else {
+        return false;
+    };
+    let Ok(ranges) = (unsafe { pattern.GetSelection() }) else {
+        return false;
+    };
+    let n = unsafe { ranges.Length() }.ok().unwrap_or(0);
+    if n <= 0 {
+        return false;
+    }
+    let Ok(range) = (unsafe { ranges.GetElement(0) }) else {
+        return false;
+    };
+    let selected = unsafe { range.GetText(-1) }
+        .ok()
+        .map(|b| b.to_string())
+        .unwrap_or_default();
+    if selected.is_empty() {
+        return false;
+    }
+    if unsafe { range.Select() }.is_err() {
+        return false;
+    }
+    send_unicode(text);
+    true
+}
+
+fn paste_over(hwnd: HWND, text: &str) {
+    let _ = hwnd;
+    let previous = crate::platform::clipboard::read_unicode_text();
+    if crate::platform::clipboard::write_text(text, true).is_err() {
+        return;
+    }
+    send_ctrl(0x56); // V
+    std::thread::sleep(Duration::from_millis(40));
     if let Some(prev) = previous {
         let _ = crate::platform::clipboard::write_text(&prev, false);
     }
-    got.filter(|s| !s.is_empty())
 }
 
 fn send_ctrl(vk: u16) {
@@ -438,6 +586,19 @@ mod tests {
     fn synthetic_tag_is_stable() {
         assert!(is_synthetic(SYNTHETIC_EXTRA));
         assert!(!is_synthetic(0));
+    }
+
+    #[test]
+    fn copy_fallback_requires_sequence_move() {
+        assert_eq!(accept_synthetic_copy(false, Some("clip")), None);
+        assert_eq!(
+            accept_synthetic_copy(true, Some("sel")).as_deref(),
+            Some("sel")
+        );
+        assert_eq!(accept_synthetic_copy(true, Some("  ")), None);
+        assert!(password_blocks_capture(true));
+        assert!(!password_blocks_capture(false));
+        assert!(insertion_refused(HWND::default()));
     }
 
     #[test]

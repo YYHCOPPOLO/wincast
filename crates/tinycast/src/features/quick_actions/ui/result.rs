@@ -1,5 +1,7 @@
 //! Quick Action result panel: 520 DIP wide, Replace / Copy / Esc.
 
+use std::sync::atomic::{AtomicIsize, Ordering};
+
 use tinycast_pure::theme;
 use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -9,18 +11,24 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GetAncestor, GetClientRect, GetWindowLongPtrW, LoadCursorW,
-    PostMessageW, RegisterClassW, SetWindowLongPtrW, SetWindowPos, ShowWindow, CS_HREDRAW,
-    CS_VREDRAW, GA_ROOTOWNER, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, SWP_NOACTIVATE, SW_HIDE,
-    SW_SHOWNOACTIVATE, WM_CLOSE, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_NCDESTROY, WM_PAINT,
-    WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, GetAncestor, GetClientRect, GetWindowLongPtrW, IsWindowVisible,
+    LoadCursorW, PostMessageW, RegisterClassW, SetWindowsHookExW, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, UnhookWindowsHookEx, CallNextHookEx, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER,
+    GWLP_USERDATA, HHOOK, HWND_TOPMOST, IDC_ARROW, KBDLLHOOKSTRUCT, SWP_NOACTIVATE, SW_HIDE,
+    SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WM_CLOSE, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN,
+    WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::platform::screens::{dip_scalar_to_px, screens_px};
 
 pub const PANEL_WIDTH_DIP: f32 = 520.0;
 const CLASS: windows::core::PCWSTR = w!("TinycastQuickAction");
+const BAR_H: i32 = 40;
+
+static HOOK_PANEL: AtomicIsize = AtomicIsize::new(0);
+static KEY_HOOK: AtomicIsize = AtomicIsize::new(0);
 
 pub struct ResultPanel {
     hwnd: HWND,
@@ -29,6 +37,25 @@ pub struct ResultPanel {
 struct Inner {
     title: String,
     body: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PanelHit {
+    Replace,
+    Copy,
+    Dismiss,
+}
+
+pub fn hit(x: i32, y: i32, width: i32, height: i32) -> PanelHit {
+    if y >= height - BAR_H && y < height && x >= 0 && x < width {
+        if x < width / 2 {
+            PanelHit::Replace
+        } else {
+            PanelHit::Copy
+        }
+    } else {
+        PanelHit::Dismiss
+    }
 }
 
 impl ResultPanel {
@@ -55,7 +82,7 @@ impl ResultPanel {
                 body: String::new(),
             });
             let hwnd = CreateWindowExW(
-                WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
                 CLASS,
                 w!(""),
                 WS_POPUP,
@@ -105,7 +132,8 @@ impl ResultPanel {
                 h,
                 SWP_NOACTIVATE,
             );
-            ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+            let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+            install_key_hook(self.hwnd);
             let _ = windows::Win32::Graphics::Gdi::InvalidateRect(self.hwnd, None, false);
         }
     }
@@ -121,13 +149,66 @@ impl ResultPanel {
 
     pub fn hide(&self) {
         unsafe {
-            ShowWindow(self.hwnd, SW_HIDE);
+            remove_key_hook(self.hwnd);
+            let _ = ShowWindow(self.hwnd, SW_HIDE);
         }
     }
 
     pub fn hwnd(&self) -> HWND {
         self.hwnd
     }
+}
+
+fn install_key_hook(hwnd: HWND) {
+    HOOK_PANEL.store(hwnd.0 as isize, Ordering::SeqCst);
+    if KEY_HOOK.load(Ordering::SeqCst) != 0 {
+        return;
+    }
+    unsafe {
+        let hinstance = GetModuleHandleW(None).unwrap_or_default();
+        let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(key_hook), hinstance, 0);
+        if let Ok(hook) = hook {
+            KEY_HOOK.store(hook.0 as isize, Ordering::SeqCst);
+        }
+    }
+}
+
+fn remove_key_hook(hwnd: HWND) {
+    let current = HOOK_PANEL.load(Ordering::SeqCst);
+    if current != hwnd.0 as isize {
+        return;
+    }
+    HOOK_PANEL.store(0, Ordering::SeqCst);
+    let bits = KEY_HOOK.swap(0, Ordering::SeqCst);
+    if bits != 0 {
+        unsafe {
+            let _ = UnhookWindowsHookEx(HHOOK(bits as *mut core::ffi::c_void));
+        }
+    }
+}
+
+unsafe extern "system" fn key_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code >= 0 && (wparam.0 as u32 == WM_KEYDOWN || wparam.0 as u32 == 0x0104) {
+        let panel = HWND(HOOK_PANEL.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+        if !panel.is_invalid() && IsWindowVisible(panel).as_bool() {
+            let kb = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+            let vk = kb.vkCode;
+            let owner = GetAncestor(panel, GA_ROOTOWNER);
+            if vk == 0x1B {
+                let _ = PostMessageW(owner, crate::platform::messages::WM_QA_DISMISS, WPARAM(0), LPARAM(0));
+                return LRESULT(1);
+            }
+            if vk == 0x0D {
+                let _ = PostMessageW(owner, crate::platform::messages::WM_QA_APPLY, WPARAM(0), LPARAM(0));
+                return LRESULT(1);
+            }
+            if vk == 0x43 && GetAsyncKeyState(0x11) < 0 {
+                let _ = PostMessageW(owner, crate::platform::messages::WM_QA_COPY, WPARAM(0), LPARAM(0));
+                return LRESULT(1);
+            }
+        }
+    }
+    CallNextHookEx(HHOOK::default(), code, wparam, lparam)
 }
 
 unsafe fn inner_from(hwnd: HWND) -> Option<*mut Inner> {
@@ -150,35 +231,48 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             paint(hwnd);
             return LRESULT(0);
         }
-        WM_KEYDOWN => {
-            let vk = wparam.0 as u32;
-            if vk == 0x1B {
-                ShowWindow(hwnd, SW_HIDE);
-            }
-            if vk == 0x0D {
-                let _ = PostMessageW(
-                    GetAncestor(hwnd, GA_ROOTOWNER),
-                    crate::platform::messages::WM_QA_APPLY,
-                    WPARAM(0),
-                    LPARAM(0),
-                );
-            }
-            return LRESULT(0);
-        }
         WM_LBUTTONDOWN => {
-            let _ = PostMessageW(
-                GetAncestor(hwnd, GA_ROOTOWNER),
-                crate::platform::messages::WM_QA_APPLY,
-                WPARAM(0),
-                LPARAM(0),
-            );
+            let mut rc = RECT::default();
+            let _ = GetClientRect(hwnd, &mut rc);
+            let x = (lparam.0 as i32) & 0xffff;
+            let y = ((lparam.0 as u32) >> 16) as i32;
+            let owner = GetAncestor(hwnd, GA_ROOTOWNER);
+            match hit(x, y, rc.right, rc.bottom) {
+                PanelHit::Replace => {
+                    let _ = PostMessageW(
+                        owner,
+                        crate::platform::messages::WM_QA_APPLY,
+                        WPARAM(0),
+                        LPARAM(0),
+                    );
+                }
+                PanelHit::Copy => {
+                    let _ = PostMessageW(
+                        owner,
+                        crate::platform::messages::WM_QA_COPY,
+                        WPARAM(0),
+                        LPARAM(0),
+                    );
+                }
+                PanelHit::Dismiss => {
+                    let _ = PostMessageW(
+                        owner,
+                        crate::platform::messages::WM_QA_DISMISS,
+                        WPARAM(0),
+                        LPARAM(0),
+                    );
+                }
+            }
             return LRESULT(0);
         }
         WM_CLOSE => {
-            ShowWindow(hwnd, SW_HIDE);
+            remove_key_hook(hwnd);
+            let _ = ShowWindow(hwnd, SW_HIDE);
             return LRESULT(0);
         }
-        WM_DESTROY | WM_NCDESTROY => {}
+        WM_DESTROY | WM_NCDESTROY => {
+            remove_key_hook(hwnd);
+        }
         _ => {}
     }
     DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -196,16 +290,26 @@ fn paint(hwnd: HWND) {
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, COLORREF(0x00F0F0F0));
         if let Some(inner) = inner_from(hwnd) {
-            let title: Vec<u16> = (*inner).title.encode_utf16().chain(std::iter::once(0)).collect();
-            let _ = TextOutW(hdc, 16, 12, &title);
-            let body: Vec<u16> = (*inner).body.encode_utf16().chain(std::iter::once(0)).collect();
-            let _ = TextOutW(hdc, 16, 44, &body);
-            let hint: Vec<u16> = "Enter Replace · Esc dismiss"
+            let title: Vec<u16> = (*inner)
+                .title
                 .encode_utf16()
                 .chain(std::iter::once(0))
                 .collect();
-            SetTextColor(hdc, COLORREF(0x00AAAAAA));
-            let _ = TextOutW(hdc, 16, rc.bottom - 28, &hint);
+            let _ = TextOutW(hdc, 16, 12, &title);
+            let body: Vec<u16> = (*inner)
+                .body
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let _ = TextOutW(hdc, 16, 44, &body);
+            SetTextColor(hdc, COLORREF(0x00CCCCCC));
+            let replace: Vec<u16> = "Replace"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let copy: Vec<u16> = "Copy".encode_utf16().chain(std::iter::once(0)).collect();
+            let _ = TextOutW(hdc, 24, rc.bottom - 28, &replace);
+            let _ = TextOutW(hdc, rc.right / 2 + 24, rc.bottom - 28, &copy);
         }
         let _ = EndPaint(hwnd, &ps);
     }
@@ -219,5 +323,13 @@ mod tests {
     fn panel_is_520_dip() {
         assert_eq!(PANEL_WIDTH_DIP, 520.0);
         let _ = theme::spacing::XL;
+    }
+
+    #[test]
+    fn hits_split_replace_copy_and_dismiss() {
+        assert_eq!(hit(10, 270, 520, 280), PanelHit::Replace);
+        assert_eq!(hit(400, 270, 520, 280), PanelHit::Copy);
+        assert_eq!(hit(10, 40, 520, 280), PanelHit::Dismiss);
+        assert_ne!(hit(10, 40, 520, 280), PanelHit::Replace);
     }
 }

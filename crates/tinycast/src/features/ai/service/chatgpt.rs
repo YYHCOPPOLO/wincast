@@ -2,7 +2,7 @@
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 
 pub const INSTALL_DOCS: &str = "https://developers.openai.com/codex/cli";
 
@@ -44,9 +44,9 @@ impl ChatGptManager {
     }
 
     pub fn refresh(&mut self) {
-        if self.child.is_some() {
-            self.phase = CodexPhase::Connected;
-            return;
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
         }
         self.phase = if which_codex().is_some() {
             CodexPhase::Idle
@@ -55,35 +55,15 @@ impl ChatGptManager {
         };
     }
 
+    /// JSON-RPC turns are not implemented; never report Connected or spawn a disconnected server.
     pub fn connect(&mut self) -> Result<(), String> {
         self.stop();
-        let Some(exe) = which_codex() else {
+        if which_codex().is_none() {
             self.phase = CodexPhase::Unavailable;
             return Err("Codex CLI is not on PATH.".into());
-        };
-        let _ = std::fs::create_dir_all(&self.home);
-        let workspace = self.home.parent().unwrap_or(&self.home).join("Workspace");
-        let _ = std::fs::create_dir_all(&workspace);
-        match Command::new(&exe)
-            .args(codex_args())
-            .current_dir(&workspace)
-            .env("CODEX_HOME", &self.home)
-            .env("NO_COLOR", "1")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            Ok(child) => {
-                self.child = Some(child);
-                self.phase = CodexPhase::Connected;
-                Ok(())
-            }
-            Err(_) => {
-                self.phase = CodexPhase::Failed;
-                Err("Codex CLI could not be started.".into())
-            }
         }
+        self.phase = CodexPhase::Idle;
+        Err("ChatGPT chat is not available yet. Choose an API connection.".into())
     }
 
     pub fn stop(&mut self) {
@@ -168,5 +148,18 @@ mod tests {
         assert_eq!(INSTALL_DOCS, "https://developers.openai.com/codex/cli");
         assert!(codex_args().contains(&"app-server"));
         assert!(codex_args().iter().any(|a| a.contains("shell_tool=false")));
+    }
+
+    #[test]
+    fn connect_does_not_mark_connected_without_a_stream() {
+        let mut mgr = ChatGptManager {
+            child: None,
+            phase: CodexPhase::Idle,
+            home: std::env::temp_dir().join("tinycast-codex-home-test"),
+        };
+        let err = mgr.connect().unwrap_err();
+        assert!(!err.to_lowercase().contains("sk-"));
+        assert_ne!(mgr.phase(), CodexPhase::Connected);
+        assert!(mgr.child.is_none());
     }
 }

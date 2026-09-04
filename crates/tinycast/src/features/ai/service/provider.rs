@@ -107,6 +107,7 @@ fn run_stream(
             &req.messages,
             req.web_search,
             provider == ProviderKind::OpenRouter,
+            req.max_output_tokens,
         )
     };
     let bytes = serde_json::to_vec(&body).unwrap_or_default();

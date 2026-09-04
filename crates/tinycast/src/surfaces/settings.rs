@@ -50,7 +50,8 @@ use crate::features::launcher::settings::items::{
     hit_confirm, hit_launcher, hotkey_action_key, layout_confirm,
     layout_launcher_items, layout_search_section, paint_confirm, paint_confirm_copy,
     paint_launcher_items, paint_search_section, ConfirmCopy, FieldEdit, Formats, Hit,
-    LauncherItemsSection, ALIAS_EDIT_ID, FILTER_EDIT_ID, ITEM_H,
+    LauncherItemsSection, ALIAS_EDIT_ID, AI_KEY_EDIT_ID, AI_MODEL_EDIT_ID, AI_URL_EDIT_ID,
+    FILTER_EDIT_ID, ITEM_H,
 };
 use crate::platform::screens::{dip_scalar_to_px, screens_px, target_screen_from_cursor_px};
 
@@ -152,6 +153,10 @@ struct SettingsInner {
     confirming_clear: bool,
     confirming_snippets: bool,
     shown_tab: SettingsTab,
+    ai_url: Option<FieldEdit>,
+    ai_model: Option<FieldEdit>,
+    ai_key: Option<FieldEdit>,
+    ai_edit: Option<usize>,
 }
 
 struct Renderer {
@@ -199,6 +204,10 @@ impl SettingsWindow {
                 confirming_clear: false,
                 confirming_snippets: false,
                 shown_tab: SettingsTab::General,
+                ai_url: None,
+                ai_model: None,
+                ai_key: None,
+                ai_edit: None,
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -227,6 +236,15 @@ impl SettingsWindow {
             }
             if let Ok(alias) = FieldEdit::create(hwnd, ALIAS_EDIT_ID) {
                 (*ptr).alias = Some(alias);
+            }
+            if let Ok(url) = FieldEdit::create(hwnd, AI_URL_EDIT_ID) {
+                (*ptr).ai_url = Some(url);
+            }
+            if let Ok(model) = FieldEdit::create(hwnd, AI_MODEL_EDIT_ID) {
+                (*ptr).ai_model = Some(model);
+            }
+            if let Ok(key) = FieldEdit::create_secret(hwnd, AI_KEY_EDIT_ID) {
+                (*ptr).ai_key = Some(key);
             }
             Ok(Self { hwnd })
         }
@@ -625,8 +643,17 @@ unsafe fn paint_detail(
         return Ok(());
     }
     if selected == SettingsTab::Ai {
-        hide_edits(inner);
+        if let Some(filter) = (*inner).filter.as_ref() {
+            filter.hide();
+        }
+        if let Some(alias) = (*inner).alias.as_ref() {
+            alias.hide();
+        }
         if let Some(core) = core {
+            let key_saved = (*inner)
+                .ai_edit
+                .map(|i| core.ai_connection_key_saved(i))
+                .unwrap_or(false);
             crate::features::ai::settings::pane::paint(
                 target,
                 formats,
@@ -638,9 +665,14 @@ unsafe fn paint_detail(
                 core.settings.ai_default_model.as_ref(),
                 &core.settings.ai_connections,
                 core.chatgpt_phase(),
+                (*inner).ai_edit,
+                key_saved,
                 detail_w,
                 (*inner).scroll,
             )?;
+            layout_ai_edits(hwnd, inner, sidebar_w, detail_w, (*inner).scroll);
+        } else {
+            hide_ai_edits(inner);
         }
         return Ok(());
     }
@@ -911,10 +943,55 @@ unsafe fn hide_edits(inner: *mut SettingsInner) {
     if let Some(alias) = (*inner).alias.as_ref() {
         alias.hide();
     }
+    hide_ai_edits(inner);
+}
+
+unsafe fn hide_ai_edits(inner: *mut SettingsInner) {
+    if let Some(edit) = (*inner).ai_url.as_ref() {
+        edit.hide();
+    }
+    if let Some(edit) = (*inner).ai_model.as_ref() {
+        edit.hide();
+    }
+    if let Some(edit) = (*inner).ai_key.as_ref() {
+        edit.hide();
+    }
+}
+
+unsafe fn layout_ai_edits(
+    hwnd: HWND,
+    inner: *mut SettingsInner,
+    sidebar_w: f32,
+    detail_w: f32,
+    scroll: f32,
+) {
+    let Some(index) = (*inner).ai_edit else {
+        hide_ai_edits(inner);
+        return;
+    };
+    let Some(rects) =
+        crate::features::ai::settings::pane::editor_rects(index, (*inner).ai_edit, detail_w)
+    else {
+        hide_ai_edits(inner);
+        return;
+    };
+    let place = |edit: Option<&mut FieldEdit>, mut rect: crate::features::launcher::settings::items::Rect| {
+        rect.x += sidebar_w;
+        rect.y -= scroll;
+        if let Some(edit) = edit {
+            edit.layout(hwnd, rect, true);
+        }
+    };
+    place((*inner).ai_url.as_mut(), rects.url);
+    place((*inner).ai_model.as_mut(), rects.model);
+    place((*inner).ai_key.as_mut(), rects.key);
 }
 
 unsafe fn reset_pane_state(inner: *mut SettingsInner, resume_hotkeys: bool) {
     commit_alias(inner);
+    commit_ai_connection(inner);
+    (*inner).ai_edit = None;
+    hide_ai_edits(inner);
     (*inner).scroll = 0.0;
     (*inner).filter_query.clear();
     if let Some(filter) = (*inner).filter.as_ref() {
@@ -1271,6 +1348,78 @@ unsafe fn handle_command(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) {
                 let _ = InvalidateRect(hwnd, None, FALSE);
             }
         }
+        let ai_child = (*inner)
+            .ai_url
+            .as_ref()
+            .map(|e| e.hwnd == child)
+            .unwrap_or(false)
+            || (*inner)
+                .ai_model
+                .as_ref()
+                .map(|e| e.hwnd == child)
+                .unwrap_or(false)
+            || (*inner)
+                .ai_key
+                .as_ref()
+                .map(|e| e.hwnd == child)
+                .unwrap_or(false);
+        if ai_child {
+            commit_ai_connection(inner);
+            let _ = InvalidateRect(hwnd, None, FALSE);
+        }
+    }
+}
+
+unsafe fn open_ai_editor(inner: *mut SettingsInner, index: usize) {
+    let Some(core) = core_from_host((*inner).host) else {
+        return;
+    };
+    let Some(conn) = (&(*core).settings.ai_connections).get(index).cloned() else {
+        (*inner).ai_edit = None;
+        hide_ai_edits(inner);
+        return;
+    };
+    (*inner).ai_edit = Some(index);
+    if let Some(edit) = (*inner).ai_url.as_ref() {
+        edit.set_text(&conn.base_url);
+    }
+    if let Some(edit) = (*inner).ai_model.as_ref() {
+        edit.set_text(conn.models.first().map(String::as_str).unwrap_or(""));
+    }
+    if let Some(edit) = (*inner).ai_key.as_ref() {
+        edit.set_text("");
+    }
+}
+
+unsafe fn commit_ai_connection(inner: *mut SettingsInner) {
+    let Some(index) = (*inner).ai_edit else {
+        return;
+    };
+    let url = (*inner)
+        .ai_url
+        .as_ref()
+        .map(FieldEdit::text)
+        .unwrap_or_default();
+    let model = (*inner)
+        .ai_model
+        .as_ref()
+        .map(FieldEdit::text)
+        .unwrap_or_default();
+    let key = (*inner)
+        .ai_key
+        .as_ref()
+        .map(FieldEdit::text)
+        .unwrap_or_default();
+    if let Some(edit) = (*inner).ai_key.as_ref() {
+        edit.set_text("");
+    }
+    let Some(core) = core_from_host((*inner).host) else {
+        return;
+    };
+    if let Err(err) = (*core).apply_ai_connection_fields(index, url, model, key) {
+        if !err.to_lowercase().contains("sk-") {
+            // Keep the editor open; URL validation failed.
+        }
     }
 }
 
@@ -1308,7 +1457,7 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
         let n = core_from_host((*inner).host)
             .map(|c| (*c).settings.ai_connections.len())
             .unwrap_or(0);
-        return crate::features::ai::settings::pane::content_height(n);
+        return crate::features::ai::settings::pane::content_height(n, (*inner).ai_edit);
     }
     if tab == SettingsTab::Calendar {
         return crate::features::calendar::settings::pane::content_height();
@@ -1643,6 +1792,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             (*inner).scroll,
             n,
             detail_w,
+            (*inner).ai_edit,
         ) {
             Some(crate::features::ai::settings::pane::AiHit::Enable) => {
                 (*core).set_ai_enabled(!(*core).settings.ai_enabled);
@@ -1666,13 +1816,27 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                 (*core).chatgpt_row_action();
             }
             Some(crate::features::ai::settings::pane::AiHit::AddConnection) => {
+                commit_ai_connection(inner);
                 (*core).add_ai_connection();
+                let last = (*core).settings.ai_connections.len().saturating_sub(1);
+                open_ai_editor(inner, last);
             }
             Some(crate::features::ai::settings::pane::AiHit::Connection(i)) => {
-                (*core).cycle_ai_connection(i);
+                commit_ai_connection(inner);
+                open_ai_editor(inner, i);
+            }
+            Some(crate::features::ai::settings::pane::AiHit::CycleProvider) => {
+                if let Some(i) = (*inner).ai_edit {
+                    commit_ai_connection(inner);
+                    (*core).cycle_ai_connection(i);
+                    open_ai_editor(inner, i);
+                }
             }
             Some(crate::features::ai::settings::pane::AiHit::RemoveConnection(i)) => {
+                commit_ai_connection(inner);
                 (*core).remove_ai_connection(i);
+                (*inner).ai_edit = None;
+                hide_ai_edits(inner);
             }
             None => {}
         }
@@ -2148,6 +2312,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_CLOSE => {
             if let Some(inner) = inner_from(hwnd) {
                 commit_alias(inner);
+                commit_ai_connection(inner);
                 (*inner).confirming_reset = false;
                 (*inner).confirming_clear = false;
                 (*inner).confirming_snippets = false;
