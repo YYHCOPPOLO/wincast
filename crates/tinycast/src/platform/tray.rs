@@ -10,13 +10,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, SetWindowLongPtrW, TrackPopupMenu, CREATESTRUCTW, GWLP_USERDATA,
     IDI_APPLICATION, MF_STRING, TPM_RETURNCMD, TPM_RIGHTBUTTON, WINDOW_EX_STYLE,
     WINDOW_STYLE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY, WM_LBUTTONDBLCLK,
-    WM_LBUTTONUP, WM_NCCREATE, WM_RBUTTONUP, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+    WM_LBUTTONUP, WM_NCCREATE, WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 use super::messages::{
-    WM_APP_INDEX, WM_CLIPBOARDUPDATE, WM_CLIPBOARD_IMAGE, WM_CUSTOM_COMMAND_FAILED, WM_FILE_SEARCH,
-    WM_OPEN_SETTINGS, WM_HOTKEY_ACTION, WM_QUIT_APP, WM_RATES, WM_SNIPPETS, WM_SNIPPET_KEYWORD,
-    WM_TOGGLE_PALETTE, WM_TRAY,
+    TIMER_CALENDAR, TIMER_SUPPORT, WM_APP_INDEX, WM_CLIPBOARDUPDATE, WM_CLIPBOARD_IMAGE,
+    WM_CUSTOM_COMMAND_FAILED, WM_FILE_SEARCH, WM_OPEN_SETTINGS, WM_HOTKEY_ACTION, WM_QUIT_APP,
+    WM_RATES, WM_SNIPPETS, WM_SNIPPET_KEYWORD, WM_TOGGLE_PALETTE, WM_TRAY, WM_UNINSTALL_SIZE,
 };
 use crate::app_core::AppCore;
 
@@ -240,6 +240,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_FILE_SEARCH => {
             if let Some(core) = core_from(hwnd) {
                 (*core).install_file_search();
+            }
+            LRESULT(0)
+        }
+        WM_UNINSTALL_SIZE => {
+            if let Some(core) = core_from(hwnd) {
+                (*core).install_uninstall_sizes();
+            }
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            if let Some(core) = core_from(hwnd) {
+                if wparam.0 == TIMER_CALENDAR {
+                    (*core).on_calendar_tick();
+                }
+                if wparam.0 == TIMER_SUPPORT {
+                    (*core).on_support_pump();
+                }
             }
             LRESULT(0)
         }

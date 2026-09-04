@@ -29,7 +29,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_MENU, VK_RETURN, VK_RIGHT, VK_SHIFT,
     VK_UP,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, PostMessageW};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, KillTimer, PostMessageW, SetTimer,
+};
 
 use crate::app_settings::AppSettings;
 use crate::features::calculator::service::rates::CurrencyRateStore;
@@ -63,7 +65,7 @@ use crate::palette::menu::{FooterPaint, MenuPaint};
 use crate::palette::physical;
 use crate::palette::PaletteWindow;
 use crate::platform::clock::{local_naive_unix, unix_now};
-use crate::platform::messages::WM_QUIT_APP;
+use crate::platform::messages::{TIMER_CALENDAR, TIMER_SUPPORT, WM_QUIT_APP};
 use crate::platform::paths;
 use crate::platform::screens::{cursor_target_screen, dip_to_px, dip_to_px_with_dpi};
 use crate::surfaces::{MessageHud, SettingsWindow, StubWindow};
@@ -104,6 +106,7 @@ pub struct AppCore {
     uninstall_candidates: Vec<tinycast_pure::uninstall::plan::UninstallCandidate>,
     uninstall_selection: tinycast_pure::uninstall::UninstallSelection,
     uninstall_name: String,
+    uninstall_entry_id: String,
     window_mover: WindowMover,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
@@ -171,6 +174,7 @@ impl AppCore {
             uninstall_candidates: Vec::new(),
             uninstall_selection: tinycast_pure::uninstall::UninstallSelection::new(),
             uninstall_name: String::new(),
+            uninstall_entry_id: String::new(),
             window_mover: WindowMover::new(),
             argument_session: None,
             hud: None,
@@ -206,11 +210,13 @@ impl AppCore {
         self.apply_file_search_policy();
         self.maybe_onboarding();
         self.maybe_support_reminder();
+        self.schedule_support_pump();
         if self.settings.calendar_enabled {
             self.calendar.refresh();
             self.maybe_auto_join();
             self.apply_calendar_tooltip();
         }
+        self.apply_calendar_clock();
         self.sync_hotkeys();
         crate::platform::tray::set_icon_visible(self.host, self.settings.show_in_menu_bar);
         if self.hud.is_none() && !self.host.is_invalid() {
@@ -592,6 +598,7 @@ impl AppCore {
         self.invalidate_palette();
         self.invalidate_settings();
         self.apply_calendar_tooltip();
+        self.apply_calendar_clock();
     }
 
     pub fn set_auto_join_meetings(&mut self, enabled: bool) {
@@ -601,6 +608,7 @@ impl AppCore {
             self.calendar.arm_now();
         }
         self.invalidate_settings();
+        self.apply_calendar_clock();
     }
 
     pub fn set_camera_preview(&mut self, enabled: bool) {
@@ -686,7 +694,7 @@ impl AppCore {
             return;
         }
         self.hide_palette();
-        let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));
+        crate::features::calendar::ui::coordinator::create_event(self.host);
     }
 
     fn open_schedule(&mut self) {
@@ -718,9 +726,12 @@ impl AppCore {
     fn join_meeting(&mut self, event: &tinycast_pure::meeting::MeetingEvent) {
         self.calendar.mark_joined(&event.id);
         self.hide_palette();
-        let _ = crate::features::calendar::ui::coordinator::camera_preview_optional(
+        if !crate::features::calendar::ui::coordinator::camera_preview_optional(
             self.settings.camera_preview,
-        );
+            &event.title,
+        ) {
+            return;
+        }
         if let Some(link) = &event.link {
             if crate::features::calendar::ui::coordinator::open_link(link).is_err() {
                 let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));
@@ -745,7 +756,7 @@ impl AppCore {
             self.calendar_window(),
             &joined,
         ) {
-            if self.settings.auto_join_confirms {
+            if self.settings.auto_join_confirms && !self.settings.camera_preview {
                 let ok = crate::surfaces::dialog::confirm(&crate::surfaces::dialog::ConfirmPrompt {
                     title: format!("Join {}?", event.title),
                     message: "This meeting is starting now.".into(),
@@ -810,6 +821,29 @@ impl AppCore {
         } else if let Some(window) = &self.support_window {
             window.show();
         }
+        self.schedule_support_pump();
+    }
+
+    pub fn set_support_reminders(&mut self, enabled: bool) {
+        self.settings.support_reminders = enabled;
+        let _ = self.settings.save();
+        self.schedule_support_pump();
+        self.invalidate_settings();
+    }
+
+    pub fn can_interrupt_user(&self) -> bool {
+        if crate::surfaces::dialog::is_up() {
+            return false;
+        }
+        if self
+            .onboarding_window
+            .as_ref()
+            .map(|w| w.is_visible())
+            .unwrap_or(false)
+        {
+            return false;
+        }
+        true
     }
 
     pub fn show_about(&mut self) {
@@ -855,9 +889,39 @@ impl AppCore {
             save_support_state(&state);
         }
         let anchor = state.last_asked_at.unwrap_or(state.first_seen_at);
-        if tinycast_pure::support_reminder::SupportReminderSchedule::wait(anchor, now) == 0 {
+        if tinycast_pure::support_reminder::SupportReminderSchedule::wait(anchor, now) == 0
+            && self.can_interrupt_user()
+        {
             self.show_support();
         }
+    }
+
+    fn schedule_support_pump(&mut self) {
+        if self.host.is_invalid() {
+            return;
+        }
+        unsafe {
+            if !self.settings.support_reminders {
+                let _ = KillTimer(self.host, TIMER_SUPPORT);
+                return;
+            }
+            let state = load_support_state();
+            let now = unix_now();
+            let anchor = if state.first_seen_at == 0 {
+                now
+            } else {
+                state.last_asked_at.unwrap_or(state.first_seen_at)
+            };
+            let wait = tinycast_pure::support_reminder::SupportReminderSchedule::wait(anchor, now);
+            let delay = tinycast_pure::support_reminder::SupportReminderSchedule::pump_delay(wait);
+            let ms = (delay.saturating_mul(1000) as u32).clamp(1_000, 86_400_000);
+            let _ = SetTimer(self.host, TIMER_SUPPORT, ms, None);
+        }
+    }
+
+    pub fn on_support_pump(&mut self) {
+        self.maybe_support_reminder();
+        self.schedule_support_pump();
     }
 
     pub fn export_settings(&mut self, owner: HWND) {
@@ -883,13 +947,11 @@ impl AppCore {
                 Ok(json) => {
                     let summary =
                         crate::features::backup::service::actions::apply_import(&mut self.settings, json);
-                    let _ = self.settings.save();
+                    self.apply_imported_settings();
                     crate::surfaces::dialog::alert(
                         "Import complete",
                         &format!("Applied {} setting(s).", summary.settings_fields),
                     );
-                    self.invalidate_palette();
-                    self.invalidate_settings();
                 }
                 Err(err) => crate::surfaces::dialog::alert("Import failed", &err.to_string()),
             },
@@ -925,15 +987,39 @@ impl AppCore {
         .unwrap_or_default();
         match crate::features::backup::service::raycast::read(&bytes, &passphrase) {
             Ok(json) => {
+                let was_snippets = self.settings.snippets_enabled;
                 crate::features::backup::service::actions::apply_import(&mut self.settings, json);
                 crate::features::backup::service::raycast::apply_raycast_snippets_never_enables(
                     &mut self.settings,
+                    was_snippets,
                 );
-                let _ = self.settings.save();
+                self.apply_imported_settings();
                 crate::surfaces::dialog::alert("Import complete", "Raycast settings were imported.");
             }
             Err(err) => crate::surfaces::dialog::alert("Import failed", err.message()),
         }
+    }
+
+    fn apply_imported_settings(&mut self) {
+        let _ = self.settings.save();
+        self.reproject_imported_settings();
+    }
+
+    fn reproject_imported_settings(&mut self) {
+        self.apply_file_search_policy();
+        self.file_search.cancel();
+        self.apply_snippets_enabled();
+        self.sync_hotkeys();
+        crate::platform::tray::set_icon_visible(self.host, self.settings.show_in_menu_bar);
+        if self.settings.calendar_enabled {
+            self.calendar.refresh();
+            self.calendar.arm_now();
+        }
+        self.apply_calendar_tooltip();
+        self.apply_calendar_clock();
+        self.schedule_support_pump();
+        self.invalidate_palette();
+        self.invalidate_settings();
     }
 
     fn open_uninstall_for_selected(&mut self) {
@@ -954,9 +1040,19 @@ impl AppCore {
             display_name: entry.name.clone(),
             install_path: if path.is_empty() { None } else { Some(path) },
         };
+        let peers: Vec<crate::features::uninstall::service::scanner::InstalledPeer> = self
+            .entries
+            .iter()
+            .filter(|e| e.kind == AppKind::Application)
+            .map(|e| crate::features::uninstall::service::scanner::InstalledPeer {
+                bundle_id: e.fields.bundle_id.clone().unwrap_or_default(),
+                display_name: e.name.clone(),
+            })
+            .collect();
         let Some(candidates) = crate::features::uninstall::service::scanner::discover(
             &target,
             crate::features::uninstall::service::scanner::running_id(),
+            &peers,
         ) else {
             crate::surfaces::dialog::alert(
                 "Can’t Uninstall",
@@ -964,12 +1060,19 @@ impl AppCore {
             );
             return;
         };
-        self.uninstall_name = entry.name;
+        self.uninstall_name = entry.name.clone();
+        self.uninstall_entry_id = entry.id.clone();
         self.uninstall_candidates = candidates;
         self.uninstall_selection =
             crate::features::uninstall::ui::coordinator::default_selection(
                 &self.uninstall_candidates,
             );
+        let paths: Vec<String> = self
+            .uninstall_candidates
+            .iter()
+            .map(|c| c.path.clone())
+            .collect();
+        crate::features::uninstall::service::scanner::begin_measure(paths, self.host);
         self.close_menu();
         let was_visible = self.palette_visible;
         if !was_visible {
@@ -1003,8 +1106,14 @@ impl AppCore {
             &self.uninstall_candidates,
             &self.uninstall_selection,
         );
+        let bundle_selected = self.uninstall_candidates.iter().any(|c| {
+            c.is_bundle && self.uninstall_selection.contains(&c.id)
+        });
         match crate::features::uninstall::service::runner::recycle_all(&order) {
             Ok(_) => {
+                if bundle_selected && !self.uninstall_entry_id.is_empty() {
+                    self.clear_uninstalled_prefs(&self.uninstall_entry_id.clone());
+                }
                 self.hide_palette();
                 self.show_message_hud_tone(
                     "Moved to Recycle Bin",
@@ -1015,6 +1124,65 @@ impl AppCore {
                 crate::surfaces::dialog::alert("Uninstall incomplete", &err);
             }
         }
+    }
+
+    fn clear_uninstalled_prefs(&mut self, entry_id: &str) {
+        if self.favorites.contains(entry_id) {
+            self.favorites.toggle(entry_id.to_string());
+        }
+        self.ranking.reset(entry_id);
+        let _ = self.ranking.save();
+        self.visibility.set_item_visible(entry_id, true);
+        self.persist_visibility();
+        if let Some(rest) = entry_id.strip_prefix("app:") {
+            self.hotkeys.set(format!("hotkey.app.{rest}"), None);
+            self.persist_hotkeys();
+            self.sync_hotkeys();
+        }
+        self.invalidate_palette();
+    }
+
+    pub fn install_uninstall_sizes(&mut self) {
+        let Some(sizes) = crate::features::uninstall::service::scanner::take_sizes() else {
+            return;
+        };
+        for c in &mut self.uninstall_candidates {
+            if let Some((_, sz)) = sizes.iter().find(|(p, _)| p == &c.path) {
+                c.size = Some(*sz);
+            }
+        }
+        self.invalidate_palette();
+    }
+
+    fn apply_calendar_clock(&mut self) {
+        if self.host.is_invalid() {
+            return;
+        }
+        let watching = self.settings.calendar_enabled
+            && (self.palette_visible
+                || self.settings.auto_join_meetings
+                || self.settings.show_in_menu_bar);
+        unsafe {
+            if watching {
+                let rem = (60 - unix_now().rem_euclid(60)) as u32;
+                let ms = rem.saturating_mul(1000).max(1_000);
+                let _ = SetTimer(self.host, TIMER_CALENDAR, ms, None);
+            } else {
+                let _ = KillTimer(self.host, TIMER_CALENDAR);
+            }
+        }
+    }
+
+    pub fn on_calendar_tick(&mut self) {
+        if self.settings.calendar_enabled {
+            self.calendar.refresh();
+            self.maybe_auto_join();
+            self.apply_calendar_tooltip();
+            if self.palette_visible {
+                self.invalidate_palette();
+            }
+        }
+        self.apply_calendar_clock();
     }
 
     fn schedule_rows(&self) -> Vec<tinycast_pure::meeting::MeetingEvent> {
@@ -1697,6 +1865,7 @@ impl AppCore {
             self.expanded = false;
             self.app_index.start();
             self.show_palette_window();
+            self.apply_calendar_clock();
         }
     }
 
@@ -1716,6 +1885,7 @@ impl AppCore {
             window.hide();
         }
         self.list_scroll = 0.0;
+        self.apply_calendar_clock();
     }
 
     pub fn handle_escape(&mut self) {
@@ -3826,6 +3996,7 @@ mod tests {
     fn perform_hotkey_dispatches_command_id_actions() {
         let mut c = AppCore::new();
         c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.settings.file_search_enabled = false;
         c.perform_hotkey("hotkey.searchFiles");
         assert!(!c.palette_visible);
         c.settings.file_search_enabled = true;
@@ -3840,6 +4011,19 @@ mod tests {
         assert_eq!(c.palette.mode, PaletteMode::Clipboard);
         c.perform_hotkey("hotkey.toggleEmoji");
         assert_eq!(c.palette.mode, PaletteMode::Emoji);
+    }
+
+    #[test]
+    fn apply_imported_settings_reprojects_and_cancels_search() {
+        let mut c = AppCore::new();
+        c.settings.file_search_enabled = true;
+        c.settings.file_search_scopes = vec!["~".into()];
+        c.reproject_imported_settings();
+        assert_eq!(
+            c.file_search.state(),
+            crate::features::file_search::service::session::State::Idle
+        );
+        assert!(!c.settings.snippets_enabled);
     }
 
     #[test]

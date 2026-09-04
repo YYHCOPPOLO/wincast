@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use tinycast_pure::file_search::{FileSearchHit, FileSearchPolicy};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use super::search;
@@ -168,15 +169,24 @@ fn queue_work(pending: Pending, host: HWND) {
 }
 
 fn run_worker(host: HWND) {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
     loop {
         let request = {
             let Ok(mut g) = WORKER.lock() else {
+                unsafe {
+                    CoUninitialize();
+                }
                 return;
             };
             match g.pending.take() {
                 Some(p) => p,
                 None => {
                     g.running = false;
+                    unsafe {
+                        CoUninitialize();
+                    }
                     return;
                 }
             }
@@ -187,6 +197,9 @@ fn run_worker(host: HWND) {
         }
         {
             let Ok(g) = WORKER.lock() else {
+                unsafe {
+                    CoUninitialize();
+                }
                 return;
             };
             if g.pending

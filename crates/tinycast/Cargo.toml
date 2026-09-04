@@ -10,6 +10,13 @@ serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 png = "0.17"
 unicode-segmentation = "1"
+aes = "0.8"
+aes-gcm = "0.10"
+cbc = { version = "0.1", features = ["alloc"] }
+cipher = { version = "0.4", features = ["alloc", "block-padding"] }
+flate2 = "1"
+scrypt = "0.11"
+sha2 = "0.10"
 windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",

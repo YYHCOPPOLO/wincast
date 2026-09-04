@@ -41,19 +41,58 @@ pub fn should_show_card(mode: PaletteMode, query: &str, enabled: bool) -> bool {
     enabled && mode == PaletteMode::Launcher && query.is_empty()
 }
 
-/// Camera preview is optional. Deny is not fatal — joining still proceeds.
-pub fn camera_preview_optional(enabled: bool) -> bool {
+/// Camera preview HWND is the confirmation. Deny of the camera is not fatal.
+pub fn camera_preview_optional(enabled: bool, title: &str) -> bool {
     if !enabled {
         return true;
     }
-    try_camera()
+    super::preview::present(title)
 }
 
-fn try_camera() -> bool {
-    match windows::Media::Capture::MediaCapture::new() {
-        Ok(_cap) => true,
-        Err(_) => true,
+pub fn create_event(owner: windows::Win32::Foundation::HWND) {
+    use crate::features::custom_commands::ui::editor::{edit_with, CommandDraft, EditorLabels};
+    let Some(draft) = edit_with(
+        owner,
+        Some(&CommandDraft {
+            name: "Meeting".into(),
+            command: "30".into(),
+            confirm: false,
+        }),
+        EditorLabels {
+            title: "Create Event",
+            value_label: "Duration minutes",
+            show_confirm: false,
+        },
+    ) else {
+        return;
+    };
+    let minutes: i64 = draft.command.trim().parse().unwrap_or(30).max(1);
+    if show_add_appointment(&draft.name, minutes).is_err() {
+        let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));
     }
+}
+
+fn show_add_appointment(title: &str, minutes: i64) -> windows::core::Result<()> {
+    use windows::ApplicationModel::Appointments::{Appointment, AppointmentManager};
+    use windows::Foundation::{DateTime, Rect, TimeSpan};
+    use windows::core::HSTRING;
+    let appt = Appointment::new()?;
+    appt.SetSubject(&HSTRING::from(title))?;
+    let now = crate::platform::clock::unix_now();
+    appt.SetStartTime(DateTime {
+        UniversalTime: (now + 11_644_473_600) * 10_000_000,
+    })?;
+    appt.SetDuration(TimeSpan {
+        Duration: minutes.saturating_mul(60) * 10_000_000,
+    })?;
+    let rect = Rect {
+        X: 200.0,
+        Y: 160.0,
+        Width: 320.0,
+        Height: 240.0,
+    };
+    let _ = AppointmentManager::ShowAddAppointmentAsync(&appt, rect)?.get()?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -92,7 +131,7 @@ mod tests {
 
     #[test]
     fn camera_deny_is_not_fatal() {
-        assert!(camera_preview_optional(false));
-        assert!(camera_preview_optional(true));
+        assert!(crate::features::calendar::ui::preview::probe_camera_nonfatal());
+        assert!(camera_preview_optional(false, "Standup"));
     }
 }

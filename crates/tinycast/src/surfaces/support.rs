@@ -6,13 +6,19 @@ use windows::Win32::Graphics::Gdi::{
     BeginPaint, EndPaint, SetBkMode, SetTextColor, TextOutW, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, IsWindow,
-    LoadCursorW, RegisterClassW, SetWindowLongPtrW, SetWindowTextW, ShowWindow, CREATESTRUCTW,
-    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, IDC_ARROW, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WNDCLASSW,
-    WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU, WS_VISIBLE,
+    LoadCursorW, RegisterClassW, SendMessageW, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
+    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, IDC_ARROW, SW_HIDE, SW_SHOW,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_LBUTTONDOWN, WM_NCCREATE,
+    WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
+    WS_VISIBLE,
 };
+
+const BS_AUTOCHECKBOX: WINDOW_STYLE = WINDOW_STYLE(0x00000003);
+const BM_GETCHECK: u32 = 0x00F0;
+const BM_SETCHECK: u32 = 0x00F1;
 
 use crate::app_core::AppCore;
 use crate::features::launcher::ui::coordinator::{execute, LaunchSpec};
@@ -36,6 +42,7 @@ pub struct AboutWindow {
 struct Inner {
     host: HWND,
     kind: Kind,
+    reminders: HWND,
 }
 
 #[derive(Clone, Copy)]
@@ -53,6 +60,7 @@ impl SupportWindow {
 
     pub fn show(&self) {
         unsafe {
+            sync_reminders_checkbox(self.hwnd);
             let _ = ShowWindow(self.hwnd, SW_SHOW);
             let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(self.hwnd);
         }
@@ -147,8 +155,46 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
             hinstance,
             None,
         );
+        if matches!(kind, Kind::Support) {
+            let box_hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                w!("BUTTON"),
+                w!("Remind me later"),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                40,
+                250,
+                280,
+                24,
+                hwnd,
+                windows::Win32::UI::WindowsAndMessaging::HMENU(ID_REMINDERS as *mut core::ffi::c_void),
+                hinstance,
+                None,
+            )
+            .unwrap_or_default();
+            if let Some(inner) = inner_from(hwnd) {
+                (*inner).reminders = box_hwnd;
+            }
+        }
         Ok(hwnd)
     }
+}
+
+unsafe fn sync_reminders_checkbox(hwnd: HWND) {
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    if (*inner).reminders.is_invalid() {
+        return;
+    }
+    let on = core_from_host((*inner).host)
+        .map(|c| (*c).settings.support_reminders)
+        .unwrap_or(true);
+    let _ = SendMessageW(
+        (*inner).reminders,
+        BM_SETCHECK,
+        WPARAM(if on { BST_CHECKED.0 as usize } else { BST_UNCHECKED.0 as usize }),
+        LPARAM(0),
+    );
 }
 
 unsafe fn inner_from(hwnd: HWND) -> Option<*mut Inner> {
@@ -176,6 +222,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let inner = Box::new(Inner {
                 host: HWND(cs.lpCreateParams),
                 kind: Kind::Support,
+                reminders: HWND::default(),
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
             LRESULT(1)
@@ -201,8 +248,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let id = (wparam.0 as u16) as usize;
             if id == ID_SUPPORT {
                 let _ = execute(&LaunchSpec::Uri(CHECKOUT.into()));
-                if let Some(core) = inner_from(hwnd).and_then(|i| core_from_host((*i).host)) {
-                    (*core).support_mark_asked();
+            }
+            if id == ID_REMINDERS {
+                if let Some(inner) = inner_from(hwnd) {
+                    let checked = SendMessageW((*inner).reminders, BM_GETCHECK, WPARAM(0), LPARAM(0)).0
+                        == BST_CHECKED.0 as isize;
+                    if let Some(core) = core_from_host((*inner).host) {
+                        (*core).set_support_reminders(checked);
+                    }
                 }
             }
             LRESULT(0)

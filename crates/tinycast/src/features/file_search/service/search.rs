@@ -13,7 +13,9 @@ use windows::Win32::Storage::FileSystem::{
     FindClose, FindFirstFileW, FindNextFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN,
     FILE_ATTRIBUTE_REPARSE_POINT, WIN32_FIND_DATAW,
 };
-use windows::Win32::System::Com::{CLSIDFromProgID, CoCreateInstance, CLSCTX_INPROC_SERVER};
+use windows::Win32::System::Com::{
+    CLSIDFromProgID, CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+};
 use windows::Win32::System::Search::{
     IAccessor, ICommandText, IDBCreateCommand, IDBCreateSession, IDBInitialize, IRowset,
     DBBINDING, HACCESSOR,
@@ -31,9 +33,19 @@ pub fn search(query: &str, policy: &FileSearchPolicy) -> Result<Vec<FileSearchHi
     if tinycast_pure::file_search::tokens(query).is_empty() {
         return Ok(Vec::new());
     }
-    match ole_search(query, policy) {
-        Ok(hits) => Ok(rank(hits, query, &policy.ignore)),
-        Err(_) => Ok(rank(walk_search(query, policy), query, &policy.ignore)),
+    let ole = ole_search(query, policy);
+    if use_walk_fallback(&ole) {
+        Ok(rank(walk_search(query, policy), query, &policy.ignore))
+    } else {
+        Ok(rank(ole.unwrap_or_default(), query, &policy.ignore))
+    }
+}
+
+/// Empty OLE success is catalog-useless: fall through to the capped walk.
+pub fn use_walk_fallback(ole: &Result<Vec<FileSearchHit>, SearchError>) -> bool {
+    match ole {
+        Ok(hits) => hits.is_empty(),
+        Err(_) => true,
     }
 }
 
@@ -96,6 +108,7 @@ fn ole_search(query: &str, policy: &FileSearchPolicy) -> Result<Vec<FileSearchHi
 
 fn ole_select_paths(sql: &str) -> Result<Vec<String>, SearchError> {
     unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let clsid = CLSIDFromProgID(w!("Search.CollatorDSO.1")).map_err(|_| SearchError)?;
         let init: IDBInitialize =
             CoCreateInstance(&clsid, None, CLSCTX_INPROC_SERVER).map_err(|_| SearchError)?;
@@ -145,15 +158,12 @@ unsafe fn read_rowset_paths(rowset: &IRowset) -> Result<Vec<String>, SearchError
     let mut paths = Vec::new();
     loop {
         let mut rows_got = 0usize;
-        let mut hrow: usize = 0;
-        let mut row_slot: [*mut usize; 1] = [&mut hrow];
-        if rowset
-            .GetNextRows(0, 0, &mut rows_got, &mut row_slot)
-            .is_err()
-            || rows_got == 0
-        {
+        let mut rows_ptr: *mut usize = std::ptr::null_mut();
+        let hr = get_next_rows(rowset, 1, &mut rows_got, &mut rows_ptr);
+        if hr.is_err() || rows_got == 0 || rows_ptr.is_null() {
             break;
         }
+        let hrow = *rows_ptr;
         let mut buf = vec![0u16; MAX_PATH as usize + 8];
         if rowset
             .GetData(hrow, haccessor, buf.as_mut_ptr().cast())
@@ -165,13 +175,41 @@ unsafe fn read_rowset_paths(rowset: &IRowset) -> Result<Vec<String>, SearchError
                 paths.push(path);
             }
         }
-        let _ = rowset.ReleaseRows(1, &hrow, std::ptr::null(), std::ptr::null_mut(), std::ptr::null_mut());
+        let _ = rowset.ReleaseRows(
+            rows_got,
+            rows_ptr,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
         if rows_got < 1 {
             break;
         }
     }
     let _ = accessor.ReleaseAccessor(haccessor, None);
     Ok(paths)
+}
+
+/// Real OLE arity: `cRows` plus `pcRowsObtained` / `prghRows`.
+unsafe fn get_next_rows(
+    rowset: &IRowset,
+    crows: isize,
+    obtained: &mut usize,
+    prghrows: *mut *mut usize,
+) -> windows::core::HRESULT {
+    let this = windows::core::Interface::as_raw(rowset);
+    let vtbl = *(this as *const *const usize);
+    // IUnknown (3) + AddRefRows + GetData + GetNextRows
+    let slot = *vtbl.add(5);
+    let f: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        usize,
+        isize,
+        isize,
+        *mut usize,
+        *mut *mut usize,
+    ) -> i32 = std::mem::transmute(slot);
+    windows::core::HRESULT(f(this, 0, 0, crows, obtained, prghrows))
 }
 
 fn walk_search(query: &str, policy: &FileSearchPolicy) -> Vec<FileSearchHit> {
@@ -347,5 +385,13 @@ mod tests {
             .any(|n| n.eq_ignore_ascii_case("annual notes.txt")));
         assert!(!hits.iter().any(|h| h.path.contains("node_modules")));
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn empty_ole_success_walks() {
+        assert!(use_walk_fallback(&Err(SearchError)));
+        assert!(use_walk_fallback(&Ok(Vec::new())));
+        let hit = FileSearchHit::from_path("C:/a.txt", false, "C:/Users/test");
+        assert!(!use_walk_fallback(&Ok(vec![hit])));
     }
 }

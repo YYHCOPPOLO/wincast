@@ -7,16 +7,20 @@ use windows::Win32::UI::Shell::{
     SHFILEOPSTRUCTW,
 };
 
+pub fn native_windows_path(path: &str) -> String {
+    path.replace('/', "\\")
+}
+
 pub fn recycle(path: &str) -> Result<(), String> {
     if path.is_empty() {
         return Err("empty path".into());
     }
-    let native = Path::new(path);
-    if !native.exists() {
+    let native = native_windows_path(path);
+    if !Path::new(&native).exists() {
         return Ok(());
     }
     // Double-NUL terminated, as SHFileOperation requires.
-    let mut wide: Vec<u16> = path.encode_utf16().chain([0, 0]).collect();
+    let mut wide: Vec<u16> = native.encode_utf16().chain([0, 0]).collect();
     let mut op = SHFILEOPSTRUCTW {
         wFunc: FO_DELETE,
         pFrom: PCWSTR(wide.as_mut_ptr()),
@@ -58,5 +62,6 @@ mod tests {
         assert!(!impl_src.contains("remove_dir_all"));
         assert!(!impl_src.contains("std::fs::remove_file"));
         let _ = fs::metadata(".");
+        assert_eq!(native_windows_path("C:/Users/me/AppData/Local/Foo"), r"C:\Users\me\AppData\Local\Foo");
     }
 }

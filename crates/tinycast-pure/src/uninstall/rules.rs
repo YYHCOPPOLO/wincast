@@ -81,6 +81,46 @@ pub fn folded(value: &str) -> String {
     value.trim().to_lowercase()
 }
 
+pub const GENERIC_DISPLAY_NAMES: &[&str] = &[
+    "microsoft",
+    "windows",
+    "temp",
+    "tmp",
+    "cache",
+    "caches",
+    "logs",
+    "log",
+    "programs",
+    "program files",
+    "programdata",
+    "local",
+    "roaming",
+    "packages",
+    "common files",
+    "start menu",
+    "installer",
+    "system32",
+    "syswow64",
+    "application data",
+    "appdata",
+    "preferences",
+    "containers",
+    "application support",
+];
+
+pub fn is_generic_display_name(name: &str) -> bool {
+    let f = folded(name);
+    GENERIC_DISPLAY_NAMES.contains(&f.as_str())
+}
+
+pub fn display_name_is_shared(name: &str, peers: &[String]) -> bool {
+    let f = folded(name);
+    if f.len() < 3 {
+        return true;
+    }
+    peers.iter().filter(|p| folded(p) == f).count() > 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +146,14 @@ mod tests {
         assert!(!is_acceptable_candidate("C:/Users/me", "C:/Users/me", "C:/Users/me", "C:/apps/x"));
         assert!(!is_home_root("C:/Users/me/AppData", "C:/Users/me"));
         assert!(is_home_root("C:/Users/me", "C:/Users/me"));
+    }
+
+    #[test]
+    fn generic_and_shared_display_names_are_skipped() {
+        assert!(is_generic_display_name("Microsoft"));
+        assert!(is_generic_display_name("Temp"));
+        assert!(!is_generic_display_name("Slack"));
+        assert!(display_name_is_shared("Mail", &["Mail".into(), "Mail".into()]));
+        assert!(!display_name_is_shared("Slack", &["Slack".into(), "Zoom".into()]));
     }
 }

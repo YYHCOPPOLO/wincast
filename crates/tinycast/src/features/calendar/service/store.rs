@@ -44,16 +44,16 @@ impl CalendarStore {
         self.armed_at = unix_now();
     }
 
-    /// Consent already granted: prompt the OS store, then fetch. Deny yields empty, not an error.
+    /// Consent already granted: prompt the OS store, then fetch. Deny is an error (empty list).
     pub fn request_and_refresh(&mut self) -> Result<(), String> {
         match fetch_appointments() {
             Ok(events) => {
                 self.events = events;
                 Ok(())
             }
-            Err(_) => {
+            Err(err) => {
                 self.events.clear();
-                Ok(())
+                Err(err)
             }
         }
     }
@@ -106,6 +106,7 @@ fn fetch_appointments() -> Result<Vec<MeetingEvent>, String> {
             .map(|s| s.to_string())
             .unwrap_or_default();
         let all_day = appt.AllDay().unwrap_or(false);
+        let declined = appointment_is_declined(&appt);
         let fields = [uri.as_str(), location.as_str(), details.as_str()];
         let link = detect_link(&fields);
         let id = format!("{subject}:{start}");
@@ -115,7 +116,7 @@ fn fetch_appointments() -> Result<Vec<MeetingEvent>, String> {
             start,
             end: start + dur_secs,
             is_all_day: all_day,
-            is_declined: false,
+            is_declined: declined,
             calendar_id: String::new(),
             calendar_name: String::new(),
             calendar_item_id: id,
@@ -124,6 +125,25 @@ fn fetch_appointments() -> Result<Vec<MeetingEvent>, String> {
     }
     let _ = Interface::vtable(&store);
     Ok(events)
+}
+
+fn appointment_is_declined(appt: &windows::ApplicationModel::Appointments::Appointment) -> bool {
+    use windows::ApplicationModel::Appointments::AppointmentParticipantResponse;
+    let Ok(invitees) = appt.Invitees() else {
+        return false;
+    };
+    let Ok(iter) = invitees.First() else {
+        return false;
+    };
+    while iter.HasCurrent().unwrap_or(false) {
+        if let Ok(inv) = iter.Current() {
+            if inv.Response().ok() == Some(AppointmentParticipantResponse::Declined) {
+                return true;
+            }
+        }
+        let _ = iter.MoveNext();
+    }
+    false
 }
 
 fn start_of_today() -> windows::Foundation::DateTime {

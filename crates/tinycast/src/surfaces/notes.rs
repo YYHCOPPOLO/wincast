@@ -12,10 +12,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW, MoveWindow,
     RegisterClassW, SendMessageW, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
     ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, GWLP_WNDPROC, IDC_ARROW,
-    LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_KEYDOWN, WM_NCCREATE, WM_NCDESTROY, WM_SIZE,
-    WM_TIMER, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_TOOLWINDOW,
-    WS_OVERLAPPEDWINDOW, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_THICKFRAME, WS_VISIBLE, WS_VSCROLL,
+    LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, SWP_NOZORDER, SW_HIDE, SW_SHOW,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_KEYDOWN, WM_NCCREATE,
+    WM_NCDESTROY, WM_SIZE, WM_TIMER, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE,
+    WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_THICKFRAME,
+    WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::app_core::AppCore;
@@ -37,6 +38,25 @@ const ES_MULTILINE: WINDOW_STYLE = WINDOW_STYLE(0x0004);
 const ES_AUTOVSCROLL: WINDOW_STYLE = WINDOW_STYLE(0x0040);
 const ES_WANTRETURN: WINDOW_STYLE = WINDOW_STYLE(0x1000);
 const LBS_NOTIFY: WINDOW_STYLE = WINDOW_STYLE(0x0001);
+const EN_CHANGE: u16 = 0x0300;
+const LBN_SELCHANGE: u16 = 1;
+const LBN_DBLCLK: u16 = 2;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SwitcherAction {
+    None,
+    Filter,
+    Pick,
+}
+
+/// Child EDIT/LISTBOX notify the popup; the popup must forward these to the notes owner.
+pub fn switcher_command_action(id: usize, notify: u16) -> SwitcherAction {
+    match (id, notify) {
+        (ID_SWITCHER_EDIT, EN_CHANGE) => SwitcherAction::Filter,
+        (ID_SWITCHER_LIST, LBN_SELCHANGE) | (ID_SWITCHER_LIST, LBN_DBLCLK) => SwitcherAction::Pick,
+        _ => SwitcherAction::None,
+    }
+}
 
 pub struct NotesWindow {
     pub hwnd: HWND,
@@ -51,6 +71,7 @@ struct Inner {
     switcher_open: bool,
     edit_prev: Option<windows::Win32::UI::WindowsAndMessaging::WNDPROC>,
     switcher_prev: Option<windows::Win32::UI::WindowsAndMessaging::WNDPROC>,
+    list_prev: Option<windows::Win32::UI::WindowsAndMessaging::WNDPROC>,
 }
 
 impl NotesWindow {
@@ -161,6 +182,14 @@ impl NotesWindow {
                         LB_ADDSTRING,
                         WPARAM(0),
                         LPARAM(wide.as_ptr() as isize),
+                    );
+                }
+                if !titles.is_empty() {
+                    let _ = SendMessageW(
+                        (*inner).switcher_list,
+                        LB_SETCURSEL,
+                        WPARAM(0),
+                        LPARAM(0),
                     );
                 }
             }
@@ -352,6 +381,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 switcher_open: false,
                 edit_prev: None,
                 switcher_prev: None,
+                list_prev: None,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
             if let Some(inner) = inner_from(hwnd) {
@@ -363,6 +393,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     switcher_edit_subclass as usize as isize,
                 );
                 (*inner).switcher_prev = Some(std::mem::transmute(prev));
+                let prev = SetWindowLongPtrW(
+                    (*inner).switcher_list,
+                    GWLP_WNDPROC,
+                    switcher_list_subclass as usize as isize,
+                );
+                (*inner).list_prev = Some(std::mem::transmute(prev));
             }
             LRESULT(1)
         }
@@ -389,18 +425,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         (*core).notes_open_folder();
                     }
                 }
-                ID_EDIT if notify == 0x0300 => {
+                ID_EDIT if notify == EN_CHANGE => {
                     let _ = SetTimer(hwnd, SAVE_TIMER, SAVE_MS, None);
                 }
-                ID_SWITCHER_EDIT if notify == 0x0300 => {
-                    if let Some(core) = inner_from(hwnd).and_then(|i| core_from_host((*i).host)) {
-                        (*core).notes_filter_switcher(&switcher_query(hwnd));
+                _ => match switcher_command_action(id, notify) {
+                    SwitcherAction::Filter => {
+                        if let Some(core) = inner_from(hwnd).and_then(|i| core_from_host((*i).host)) {
+                            (*core).notes_filter_switcher(&switcher_query(hwnd));
+                        }
                     }
-                }
-                ID_SWITCHER_LIST if notify == 1 => {
-                    pick_switcher(hwnd);
-                }
-                _ => {}
+                    SwitcherAction::Pick => pick_switcher(hwnd),
+                    SwitcherAction::None => {}
+                },
             }
             LRESULT(0)
         }
@@ -442,12 +478,43 @@ unsafe extern "system" fn switcher_wndproc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    let notes = parent_of(hwnd);
+    if msg == WM_COMMAND {
+        return wndproc(notes, msg, wparam, lparam);
+    }
     if msg == WM_KEYDOWN && wparam.0 as u16 == 0x1B {
-        let parent = parent_of(hwnd);
-        close_switcher_of(parent);
+        close_switcher_of(notes);
+        return LRESULT(0);
+    }
+    if msg == WM_KEYDOWN && wparam.0 as u16 == 0x0D {
+        pick_switcher(notes);
         return LRESULT(0);
     }
     DefWindowProcW(hwnd, msg, wparam, lparam)
+}
+
+unsafe extern "system" fn switcher_list_subclass(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    let switcher = parent_of(hwnd);
+    let notes = parent_of(switcher);
+    if msg == WM_KEYDOWN && wparam.0 as u16 == 0x1B {
+        close_switcher_of(notes);
+        return LRESULT(0);
+    }
+    if msg == WM_KEYDOWN && wparam.0 as u16 == 0x0D {
+        pick_switcher(notes);
+        return LRESULT(0);
+    }
+    let prev = inner_from(notes).and_then(|i| (*i).list_prev);
+    if let Some(prev) = prev {
+        CallWindowProcW(prev, hwnd, msg, wparam, lparam)
+    } else {
+        DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
 }
 
 unsafe extern "system" fn edit_subclass(
@@ -640,5 +707,25 @@ mod tests {
     fn switcher_is_300_by_240() {
         assert_eq!(SWITCHER_WIDTH, 300);
         assert_eq!(SWITCHER_HEIGHT, 240);
+    }
+
+    #[test]
+    fn switcher_commands_reach_filter_and_pick() {
+        assert_eq!(
+            switcher_command_action(ID_SWITCHER_EDIT, EN_CHANGE),
+            SwitcherAction::Filter
+        );
+        assert_eq!(
+            switcher_command_action(ID_SWITCHER_LIST, LBN_SELCHANGE),
+            SwitcherAction::Pick
+        );
+        assert_eq!(
+            switcher_command_action(ID_SWITCHER_LIST, LBN_DBLCLK),
+            SwitcherAction::Pick
+        );
+        assert_eq!(
+            switcher_command_action(ID_CREATE, EN_CHANGE),
+            SwitcherAction::None
+        );
     }
 }
