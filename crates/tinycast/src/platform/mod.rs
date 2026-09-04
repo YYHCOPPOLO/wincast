@@ -1,5 +1,6 @@
 pub(crate) mod clipboard;
 pub(crate) mod clock;
+pub(crate) mod dpapi;
 mod dpi;
 pub(crate) mod keyboard_ll;
 pub(crate) mod launch_at_login;

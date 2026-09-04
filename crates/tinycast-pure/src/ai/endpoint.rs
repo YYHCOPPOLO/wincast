@@ -1,12 +1,16 @@
 //! HTTPS endpoint policy. No Apple Intelligence route.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum ProviderKind {
+    #[serde(rename = "openAI")]
     OpenAi,
+    #[serde(rename = "anthropic")]
     Anthropic,
+    #[serde(rename = "gemini")]
     Gemini,
+    #[serde(rename = "openRouter")]
     OpenRouter,
+    #[serde(rename = "openAICompatible")]
     OpenAiCompatible,
 }
 
@@ -42,6 +46,21 @@ pub struct Uuid(String);
 impl Uuid {
     pub fn parse(value: impl Into<String>) -> Self {
         Self(value.into())
+    }
+
+    pub fn generate() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(1);
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
+        let pid = std::process::id() as u64;
+        Self(format!(
+            "{nanos:08x}-{:04x}-4{seq:03x}-8{pid:03x}-{seq:012x}",
+            (nanos >> 32) as u16
+        ))
     }
 
     pub fn as_str(&self) -> &str {
@@ -110,6 +129,22 @@ pub fn is_loopback(host: &str) -> bool {
         host.to_ascii_lowercase().as_str(),
         "localhost" | "127.0.0.1" | "::1"
     )
+}
+
+/// Same host, scheme and port — a completion path is not a new destination.
+pub fn same_destination(a: &str, b: &str) -> bool {
+    match (parse_url(a), parse_url(b)) {
+        (Some(left), Some(right)) => {
+            left.scheme == right.scheme
+                && left.host.eq_ignore_ascii_case(&right.host)
+                && left.port == right.port
+        }
+        _ => a.trim() == b.trim(),
+    }
+}
+
+pub fn url_is_loopback(url: &str) -> bool {
+    parse_url(url).map(|u| is_loopback(&u.host)).unwrap_or(false)
 }
 
 pub fn parse_url(url: &str) -> Option<Url> {
@@ -184,6 +219,18 @@ mod tests {
             model: "gpt-5".into(),
             effort: None,
         });
+    }
+
+    #[test]
+    fn same_destination_policy() {
+        assert!(same_destination(
+            "https://api.openai.com/v1",
+            "https://api.openai.com/v1/chat/completions"
+        ));
+        assert!(!same_destination(
+            "https://api.openai.com/v1",
+            "https://api.anthropic.com"
+        ));
     }
 
     #[test]
