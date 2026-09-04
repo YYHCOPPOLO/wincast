@@ -34,6 +34,7 @@ pub mod system_action;
 pub mod template;
 pub mod template_tokens;
 pub mod theme;
+pub mod uninstall;
 pub mod visibility;
 pub mod volume;
 pub mod window_action_memory;

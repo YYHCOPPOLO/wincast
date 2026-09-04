@@ -98,6 +98,9 @@ pub struct AppCore {
     notes: crate::features::notes::service::store::NotesStore,
     notes_switcher: Vec<tinycast_pure::note::NoteSummary>,
     calendar: crate::features::calendar::service::store::CalendarStore,
+    uninstall_candidates: Vec<tinycast_pure::uninstall::plan::UninstallCandidate>,
+    uninstall_selection: tinycast_pure::uninstall::UninstallSelection,
+    uninstall_name: String,
     window_mover: WindowMover,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
@@ -159,6 +162,9 @@ impl AppCore {
             notes: crate::features::notes::service::store::NotesStore::in_roaming(),
             notes_switcher: Vec::new(),
             calendar: crate::features::calendar::service::store::CalendarStore::new(),
+            uninstall_candidates: Vec::new(),
+            uninstall_selection: tinycast_pure::uninstall::UninstallSelection::new(),
+            uninstall_name: String::new(),
             window_mover: WindowMover::new(),
             argument_session: None,
             hud: None,
@@ -777,6 +783,99 @@ impl AppCore {
         crate::platform::tray::set_tooltip(self.host, &text);
     }
 
+    fn uninstall_visible(&self) -> Vec<&tinycast_pure::uninstall::plan::UninstallCandidate> {
+        let q = self.palette.query.to_lowercase();
+        self.uninstall_candidates
+            .iter()
+            .filter(|c| {
+                q.is_empty()
+                    || c.name.to_lowercase().contains(&q)
+                    || c.path.to_lowercase().contains(&q)
+            })
+            .collect()
+    }
+
+    fn open_uninstall_for_selected(&mut self) {
+        let Some(entry) = self.selected_entry() else {
+            return;
+        };
+        if entry.kind != AppKind::Application {
+            return;
+        }
+        let bundle = entry.fields.bundle_id.clone();
+        let path = entry
+            .id
+            .strip_prefix("app:")
+            .unwrap_or(entry.id.as_str())
+            .to_string();
+        let target = crate::features::uninstall::service::scanner::UninstallTarget {
+            bundle_id: bundle,
+            display_name: entry.name.clone(),
+            install_path: if path.is_empty() { None } else { Some(path) },
+        };
+        let Some(candidates) = crate::features::uninstall::service::scanner::discover(
+            &target,
+            crate::features::uninstall::service::scanner::running_id(),
+        ) else {
+            crate::surfaces::dialog::alert(
+                "Can’t Uninstall",
+                "Tinycast won’t uninstall itself.",
+            );
+            return;
+        };
+        self.uninstall_name = entry.name;
+        self.uninstall_candidates = candidates;
+        self.uninstall_selection =
+            crate::features::uninstall::ui::coordinator::default_selection(
+                &self.uninstall_candidates,
+            );
+        self.close_menu();
+        let was_visible = self.palette_visible;
+        if !was_visible {
+            self.remember_previous_hwnd();
+        }
+        self.palette.prepare(PaletteMode::Uninstall);
+        self.palette_visible = true;
+        self.expanded = true;
+        self.list_scroll = 0.0;
+        if was_visible {
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+            }
+            self.relayout_palette();
+            self.invalidate_palette();
+        } else {
+            self.show_palette_window();
+            self.expand_palette();
+        }
+    }
+
+    fn perform_uninstall(&mut self) {
+        if self.uninstall_selection.is_empty() {
+            return;
+        }
+        let count = self.uninstall_selection.ids().count();
+        if !crate::features::uninstall::ui::coordinator::confirm(&self.uninstall_name, count) {
+            return;
+        }
+        let order = tinycast_pure::uninstall::plan::recycle_order(
+            &self.uninstall_candidates,
+            &self.uninstall_selection,
+        );
+        match crate::features::uninstall::service::runner::recycle_all(&order) {
+            Ok(_) => {
+                self.hide_palette();
+                self.show_message_hud_tone(
+                    "Moved to Recycle Bin",
+                    tinycast_pure::dialog::DialogTone::Success,
+                );
+            }
+            Err(err) => {
+                crate::surfaces::dialog::alert("Uninstall incomplete", &err);
+            }
+        }
+    }
+
     fn schedule_rows(&self) -> Vec<tinycast_pure::meeting::MeetingEvent> {
         let q = self.palette.query.to_lowercase();
         tinycast_pure::meeting::UpcomingWindow::agenda(self.calendar.events(), unix_now())
@@ -1193,6 +1292,36 @@ impl AppCore {
                 self.palette.selection,
             );
         }
+        if self.palette.mode == PaletteMode::Uninstall {
+            let q = self.palette.query.to_lowercase();
+            let mut items = Vec::new();
+            let mut index = 0usize;
+            for c in &self.uninstall_candidates {
+                if !q.is_empty()
+                    && !c.name.to_lowercase().contains(&q)
+                    && !c.path.to_lowercase().contains(&q)
+                {
+                    continue;
+                }
+                let mark = if c.locked {
+                    "locked"
+                } else if self.uninstall_selection.contains(&c.id) {
+                    "on"
+                } else {
+                    "off"
+                };
+                items.push(PaintItem::Row {
+                    title: c.name.clone(),
+                    alias: None,
+                    trailing: mark.to_string(),
+                    keycap: None,
+                    icon_source: None,
+                    selected: index == self.palette.selection,
+                });
+                index += 1;
+            }
+            return items;
+        }
         if self.palette.mode == PaletteMode::Schedule {
             let mut items = Vec::new();
             for (i, event) in self.schedule_rows().into_iter().enumerate() {
@@ -1255,6 +1384,7 @@ impl AppCore {
         FooterPaint {
             show_action_group: self.footer_action_group_visible(),
             primary_label: self.primary_label(),
+            primary_destructive: self.palette.mode == PaletteMode::Uninstall,
         }
     }
 
@@ -1584,6 +1714,23 @@ impl AppCore {
         }
         if vk == VK_RETURN.0 {
             if ctrl_down() && !alt_down() {
+                if self.palette.mode == PaletteMode::Uninstall {
+                    if let Some(c) = self.uninstall_visible().get(self.palette.selection) {
+                        if !c.locked {
+                            let id = c.id.clone();
+                            self.uninstall_selection.toggle(&id);
+                            let removable: Vec<&str> = self
+                                .uninstall_candidates
+                                .iter()
+                                .filter(|x| !x.locked)
+                                .map(|x| x.id.as_str())
+                                .collect();
+                            self.uninstall_selection.intersect_removable(&removable);
+                            self.invalidate_palette();
+                        }
+                    }
+                    return true;
+                }
                 self.reveal_selected();
                 return true;
             }
@@ -1807,6 +1954,10 @@ impl AppCore {
             if let Some(event) = self.schedule_rows().get(self.palette.selection).cloned() {
                 self.join_meeting(&event);
             }
+            return;
+        }
+        if self.palette.mode == PaletteMode::Uninstall {
+            self.perform_uninstall();
             return;
         }
         let sections = self.sections();
@@ -2411,6 +2562,7 @@ impl AppCore {
             }
             ID_UNINSTALL => {
                 self.close_menu();
+                self.open_uninstall_for_selected();
             }
             other => {
                 if let Some(filter) = clip_screen::filter_from_id(other) {
@@ -2451,6 +2603,7 @@ impl AppCore {
             || self.palette.mode == PaletteMode::Clipboard
             || self.palette.mode == PaletteMode::FileSearch
             || self.palette.mode == PaletteMode::Schedule
+            || self.palette.mode == PaletteMode::Uninstall
         {
             return None;
         }
@@ -2691,6 +2844,7 @@ impl AppCore {
                 .len(),
             PaletteMode::FileSearch => self.file_search.results().len(),
             PaletteMode::Schedule => self.schedule_rows().len(),
+            PaletteMode::Uninstall => self.uninstall_visible().len(),
             PaletteMode::Emoji => {
                 let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
                 tinycast_pure::emoji::search_emoji_with_tone(&self.palette.query, tone).len()
@@ -2756,6 +2910,9 @@ impl AppCore {
         }
         if self.palette.mode == PaletteMode::FileSearch {
             return "Open";
+        }
+        if self.palette.mode == PaletteMode::Uninstall {
+            return crate::features::uninstall::ui::coordinator::primary_label();
         }
         if self.palette.mode == PaletteMode::QuicklinkArguments {
             return "Continue";

@@ -17,6 +17,7 @@ use crate::features::launcher::ui::list::ListFonts;
 pub struct FooterPaint<'a> {
     pub show_action_group: bool,
     pub primary_label: &'a str,
+    pub primary_destructive: bool,
 }
 
 pub struct MenuPaint<'a> {
@@ -73,6 +74,10 @@ pub fn paint_footer(
         return Ok(());
     };
     fill_round(target, group.capsule, group.capsule.h / 2.0, chrome)?;
+    if footer.primary_destructive {
+        let danger = color(0.86, 0.22, 0.22, 0.95);
+        fill_round(target, group.primary, group.primary.h / 2.0, danger)?;
+    }
 
     let label = color(1.0, 1.0, 1.0, 0.92);
     let muted = color(1.0, 1.0, 1.0, 0.60);

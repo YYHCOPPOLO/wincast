@@ -11,4 +11,5 @@ pub mod quicklinks;
 pub mod settings;
 pub mod snippets;
 pub mod system_actions;
+pub mod uninstall;
 pub mod window_management;
