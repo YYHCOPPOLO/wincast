@@ -5,6 +5,7 @@ mod onboarding;
 mod settings;
 mod stub;
 mod support;
+pub mod updates;
 pub use hud::MessageHud;
 pub use notes::NotesWindow;
 pub use onboarding::OnboardingWindow;

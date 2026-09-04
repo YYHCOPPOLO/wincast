@@ -2435,7 +2435,7 @@ impl AppCore {
             LaunchSpec::Rewrite => self.run_quick_action(tinycast_pure::ai::QuickAction::Rewrite),
             LaunchSpec::Translate => self.run_quick_action(tinycast_pure::ai::QuickAction::Translate),
             LaunchSpec::Summarize => self.run_quick_action(tinycast_pure::ai::QuickAction::Summarize),
-            LaunchSpec::CheckForUpdates => {}
+            LaunchSpec::CheckForUpdates => self.check_for_updates(),
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -2766,6 +2766,10 @@ impl AppCore {
                 .iter()
                 .copied()
                 .filter(|id| id.shows_in_launcher(flags))
+                .filter(|id| {
+                    *id != CommandID::CheckForUpdates
+                        || crate::features::updates::service::feed::command_visible()
+                })
                 .map(CommandID::as_entry),
         );
         self.apply_prefs(&mut entries);
@@ -3326,6 +3330,37 @@ impl AppCore {
         }
         self.invalidate_palette();
         self.invalidate_settings();
+    }
+
+    pub fn check_for_updates(&mut self) {
+        self.hide_palette();
+        let activity = tinycast_pure::update::UpdateActivity {
+            expanding_snippet: false,
+            uninstalling: false,
+            recording_hotkey: false,
+            dialog_open: crate::surfaces::dialog::is_up(),
+            palette_visible: self.palette_visible,
+        };
+        match crate::surfaces::updates::check_for_updates(activity) {
+            crate::surfaces::updates::UpdateUi::Hidden | crate::surfaces::updates::UpdateUi::Deferred => {}
+            crate::surfaces::updates::UpdateUi::Hud(message) => {
+                if self.hud.is_none() && !self.host.is_invalid() {
+                    self.hud = MessageHud::create(self.host).ok();
+                }
+                if let Some(hud) = &self.hud {
+                    hud.show(message);
+                }
+            }
+            crate::surfaces::updates::UpdateUi::Offer { version, notes } => {
+                if self.hud.is_none() && !self.host.is_invalid() {
+                    self.hud = MessageHud::create(self.host).ok();
+                }
+                if let Some(hud) = &self.hud {
+                    hud.show(&format!("Update {version} available."));
+                }
+                let _ = notes;
+            }
+        }
     }
 
     pub fn run_quick_action(&mut self, action: tinycast_pure::ai::QuickAction) {
