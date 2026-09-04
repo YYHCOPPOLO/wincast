@@ -93,6 +93,7 @@ pub struct AppCore {
     pub(crate) custom_commands: CustomCommandStore,
     pub(crate) quicklinks: QuicklinkStore,
     snippet_listener: KeywordListener,
+    file_search: crate::features::file_search::service::session::FileSearchSession,
     window_mover: WindowMover,
     argument_session: Option<snippet_coordinator::ArgumentSession>,
     hud: Option<MessageHud>,
@@ -145,6 +146,11 @@ impl AppCore {
             custom_commands: CustomCommandStore::load(),
             quicklinks: QuicklinkStore::load(),
             snippet_listener: KeywordListener::new(),
+            file_search: crate::features::file_search::service::session::FileSearchSession::from_settings(
+                &[],
+                &[],
+                HWND::default(),
+            ),
             window_mover: WindowMover::new(),
             argument_session: None,
             hud: None,
@@ -177,6 +183,7 @@ impl AppCore {
         clip_manager::listen(self.host);
         self.apply_clipboard_retention();
         self.apply_snippets_enabled();
+        self.apply_file_search_policy();
         self.sync_hotkeys();
         crate::platform::tray::set_icon_visible(self.host, self.settings.show_in_menu_bar);
         if self.hud.is_none() && !self.host.is_invalid() {
@@ -312,6 +319,88 @@ impl AppCore {
     pub fn set_host(&mut self, host: HWND) {
         self.host = host;
         self.app_index.set_host(host);
+        self.file_search.set_host(host);
+    }
+
+    pub fn set_file_search_enabled(&mut self, enabled: bool) {
+        if self.settings.file_search_enabled == enabled {
+            return;
+        }
+        self.settings.file_search_enabled = enabled;
+        let _ = self.settings.save();
+        if crate::features::file_search::ui::coordinator::should_leave_file_search(
+            enabled,
+            self.palette.mode,
+        ) {
+            self.file_search.cancel();
+            self.palette.prepare(PaletteMode::Launcher);
+            self.relayout_palette();
+        }
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn add_file_search_scope(&mut self, path: String) {
+        if path.is_empty() {
+            return;
+        }
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        let mut scopes = self.settings.file_search_scopes.clone();
+        scopes.push(path);
+        self.settings.file_search_scopes =
+            tinycast_pure::file_search::policy::normalize_scopes(&scopes, &home);
+        let _ = self.settings.save();
+        self.apply_file_search_policy();
+        self.invalidate_settings();
+    }
+
+    pub fn remove_file_search_scope(&mut self, index: usize) {
+        if index < self.settings.file_search_scopes.len() {
+            self.settings.file_search_scopes.remove(index);
+            let _ = self.settings.save();
+            self.apply_file_search_policy();
+            self.invalidate_settings();
+        }
+    }
+
+    pub fn add_file_search_ignore(&mut self, pattern: String) {
+        let pattern = pattern.trim().to_string();
+        if pattern.is_empty() {
+            return;
+        }
+        if !self
+            .settings
+            .file_search_ignore_patterns
+            .iter()
+            .any(|p| p == &pattern)
+        {
+            self.settings.file_search_ignore_patterns.push(pattern);
+            let _ = self.settings.save();
+            self.apply_file_search_policy();
+            self.invalidate_settings();
+        }
+    }
+
+    pub fn remove_file_search_ignore(&mut self, index: usize) {
+        if index < self.settings.file_search_ignore_patterns.len() {
+            self.settings.file_search_ignore_patterns.remove(index);
+            let _ = self.settings.save();
+            self.apply_file_search_policy();
+            self.invalidate_settings();
+        }
+    }
+
+    fn apply_file_search_policy(&mut self) {
+        self.file_search.apply(
+            &self.settings.file_search_scopes,
+            &self.settings.file_search_ignore_patterns,
+        );
+    }
+
+    pub fn install_file_search(&mut self) {
+        self.file_search.take_done();
+        self.clamp_selection();
+        self.invalidate_palette();
     }
 
     pub fn set_snippets_enabled(&mut self, enabled: bool) {
@@ -697,6 +786,14 @@ impl AppCore {
                 .search(&self.palette.query, self.clipboard_filter);
             return clip_screen::paint_items(&rows, self.palette.selection);
         }
+        if self.palette.mode == PaletteMode::FileSearch {
+            return crate::features::file_search::ui::screen::paint_items(
+                self.file_search.state(),
+                &self.palette.query,
+                self.file_search.results(),
+                self.palette.selection,
+            );
+        }
         if self.palette.mode == PaletteMode::CalculatorHistory {
             return self.calc_history_paint_items();
         }
@@ -905,6 +1002,9 @@ impl AppCore {
 
     pub fn hide_palette(&mut self) {
         self.argument_session = None;
+        if self.palette.mode == PaletteMode::FileSearch {
+            self.file_search.cancel();
+        }
         self.close_menu();
         self.palette_visible = false;
         self.expanded = false;
@@ -928,6 +1028,9 @@ impl AppCore {
             EscapeOutcome::ClearQuery => {
                 self.palette.query.clear();
                 self.palette.is_composing = false;
+                if self.palette.mode == PaletteMode::FileSearch {
+                    self.file_search.cancel();
+                }
                 if let Some(window) = &self.palette_window {
                     window.reset_search();
                 }
@@ -969,6 +1072,9 @@ impl AppCore {
         if !self.palette.query.is_empty() {
             self.expand_palette();
         }
+        if self.palette.mode == PaletteMode::FileSearch {
+            self.file_search.search(&self.palette.query);
+        }
         self.clamp_selection();
         self.invalidate_palette();
     }
@@ -990,6 +1096,9 @@ impl AppCore {
         self.list_scroll = 0.0;
         if !self.palette.query.is_empty() {
             self.expand_palette();
+        }
+        if self.palette.mode == PaletteMode::FileSearch {
+            self.file_search.search(&self.palette.query);
         }
         self.clamp_selection();
         self.invalidate_palette();
@@ -1255,6 +1364,10 @@ impl AppCore {
             self.paste_clipboard_at(row_index);
             return;
         }
+        if self.palette.mode == PaletteMode::FileSearch {
+            self.activate_file_search_at(self.palette.selection);
+            return;
+        }
         let sections = self.sections();
         let Some(entry) = selectable_rows(&sections).get(row_index).cloned() else {
             return;
@@ -1309,6 +1422,7 @@ impl AppCore {
             LaunchSpec::OpenQuicklink(id) => self.open_quicklink(&id),
             LaunchSpec::SearchQuicklinks => self.open_quicklinks_search(),
             LaunchSpec::SearchEmoji => self.open_emoji(),
+            LaunchSpec::SearchFiles => self.open_file_search(),
             LaunchSpec::CreateQuicklink => self.create_quicklink_from_command(),
             LaunchSpec::ImportQuicklinks => {
                 self.hide_palette();
@@ -1751,6 +1865,36 @@ impl AppCore {
     }
 
     fn open_actions(&mut self) {
+        if self.palette.mode == PaletteMode::FileSearch {
+            let Some(hit) = self.file_search.results().get(self.palette.selection) else {
+                return;
+            };
+            self.menu_header = hit.name.clone();
+            self.menu_items = vec![
+                MenuItem {
+                    id: ID_OPEN,
+                    label: "Open",
+                    shortcut: Some("↵"),
+                },
+                MenuItem {
+                    id: ID_SHOW_IN_FOLDER,
+                    label: "Show in Folder",
+                    shortcut: Some("Ctrl+↵"),
+                },
+                MenuItem {
+                    id: ID_COPY_PATH,
+                    label: "Copy Path",
+                    shortcut: Some("Ctrl+Alt+C"),
+                },
+            ];
+            self.menu_selection = 0;
+            self.menu = OpenMenu::Actions;
+            if let Some(window) = &self.palette_window {
+                window.set_search_caret_visible(false);
+            }
+            self.invalidate_palette();
+            return;
+        }
         let Some(entry) = self.selected_entry() else {
             return;
         };
@@ -1856,6 +2000,7 @@ impl AppCore {
     fn selected_entry(&self) -> Option<AppEntry> {
         if self.palette.mode == PaletteMode::CalculatorHistory
             || self.palette.mode == PaletteMode::Clipboard
+            || self.palette.mode == PaletteMode::FileSearch
         {
             return None;
         }
@@ -1973,6 +2118,12 @@ impl AppCore {
     }
 
     fn copy_path_selected(&mut self) {
+        if self.palette.mode == PaletteMode::FileSearch {
+            if let Some(hit) = self.file_search.results().get(self.palette.selection) {
+                let _ = copy_text(&hit.path.replace('/', "\\"));
+            }
+            return;
+        }
         let Some(entry) = self.selected_entry() else {
             return;
         };
@@ -1983,6 +2134,14 @@ impl AppCore {
     }
 
     fn reveal_selected(&mut self) {
+        if self.palette.mode == PaletteMode::FileSearch {
+            if let Some(hit) = self.file_search.results().get(self.palette.selection).cloned()
+            {
+                self.hide_palette();
+                let _ = crate::features::file_search::ui::coordinator::reveal(&hit);
+            }
+            return;
+        }
         let Some(entry) = self.selected_entry() else {
             return;
         };
@@ -1991,6 +2150,48 @@ impl AppCore {
         };
         self.hide_palette();
         let _ = show_in_folder(&path);
+    }
+
+    fn open_file_search(&mut self) {
+        if !crate::features::file_search::ui::coordinator::guarded_show(
+            self.settings.file_search_enabled,
+        ) {
+            return;
+        }
+        self.apply_file_search_policy();
+        self.close_menu();
+        let was_visible = self.palette_visible;
+        if !was_visible {
+            self.remember_previous_hwnd();
+        }
+        self.palette.prepare(PaletteMode::FileSearch);
+        self.file_search.cancel();
+        self.palette_visible = true;
+        self.expanded = true;
+        self.list_scroll = 0.0;
+        if was_visible {
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+            }
+            self.relayout_palette();
+            self.invalidate_palette();
+        } else {
+            self.show_palette_window();
+            self.expand_palette();
+        }
+    }
+
+    fn activate_file_search_at(&mut self, index: usize) {
+        let Some(hit) = self.file_search.results().get(index).cloned() else {
+            return;
+        };
+        self.hide_palette();
+        if crate::features::file_search::ui::coordinator::open(&hit).is_err() {
+            crate::surfaces::dialog::alert(
+                &format!("Couldn’t Open {}", hit.name),
+                "The file could not be opened.",
+            );
+        }
     }
 
     fn persist_visibility(&self) {
@@ -2037,6 +2238,7 @@ impl AppCore {
                 .clipboard
                 .search(&self.palette.query, self.clipboard_filter)
                 .len(),
+            PaletteMode::FileSearch => self.file_search.results().len(),
             PaletteMode::Emoji => {
                 let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
                 tinycast_pure::emoji::search_emoji_with_tone(&self.palette.query, tone).len()
@@ -2099,6 +2301,9 @@ impl AppCore {
         }
         if self.palette.mode == PaletteMode::Clipboard {
             return "Paste";
+        }
+        if self.palette.mode == PaletteMode::FileSearch {
+            return "Open";
         }
         if self.palette.mode == PaletteMode::QuicklinkArguments {
             return "Continue";
@@ -2787,6 +2992,10 @@ mod tests {
         c.visibility = tinycast_pure::visibility::VisibilityStore::default();
         c.perform_hotkey("hotkey.searchFiles");
         assert!(!c.palette_visible);
+        c.settings.file_search_enabled = true;
+        c.perform_hotkey("hotkey.searchFiles");
+        assert!(c.palette_visible);
+        assert_eq!(c.palette.mode, PaletteMode::FileSearch);
         c.perform_hotkey("hotkey.toggleClipboard");
         assert!(c.palette_visible);
         assert_eq!(c.palette.mode, PaletteMode::Clipboard);

@@ -2,6 +2,7 @@ pub mod calculator;
 pub mod clipboard;
 pub mod custom_commands;
 pub mod emoji;
+pub mod file_search;
 pub mod hotkeys;
 pub mod launcher;
 pub mod quicklinks;

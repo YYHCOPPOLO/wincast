@@ -37,6 +37,10 @@ pub struct AppSettings {
     pub launcher_search_scopes: Vec<String>,
     #[serde(default, rename = "fileSearchEnabled")]
     pub file_search_enabled: bool,
+    #[serde(default = "default_file_search_scopes", rename = "fileSearchScopes")]
+    pub file_search_scopes: Vec<String>,
+    #[serde(default, rename = "fileSearchIgnorePatterns")]
+    pub file_search_ignore_patterns: Vec<String>,
     #[serde(default, rename = "notesEnabled")]
     pub notes_enabled: bool,
     #[serde(default, rename = "customCommandsEnabled")]
@@ -96,6 +100,8 @@ impl Default for AppSettings {
             hyper_quick_press: default_hyper_quick(),
             launcher_search_scopes: default_search_scopes(),
             file_search_enabled: false,
+            file_search_scopes: default_file_search_scopes(),
+            file_search_ignore_patterns: Vec::new(),
             notes_enabled: false,
             custom_commands_enabled: false,
             custom_commands_show_in_launcher: true,
@@ -163,6 +169,10 @@ fn default_disabled_apps() -> Vec<String> {
         .iter()
         .map(|s| (*s).to_string())
         .collect()
+}
+
+fn default_file_search_scopes() -> Vec<String> {
+    vec!["~".into()]
 }
 
 fn default_search_scopes() -> Vec<String> {

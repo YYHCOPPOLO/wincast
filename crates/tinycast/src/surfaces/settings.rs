@@ -590,6 +590,21 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    if selected == SettingsTab::FileSearch {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::file_search::settings::pane::paint(
+                target,
+                formats,
+                core.settings.file_search_enabled,
+                &core.settings.file_search_scopes,
+                &core.settings.file_search_ignore_patterns,
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
     if selected == SettingsTab::Snippets {
         hide_edits(inner);
         if let Some(core) = core {
@@ -1197,6 +1212,17 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::Permissions {
         return crate::features::settings::panes::permissions::content_height();
     }
+    if tab == SettingsTab::FileSearch {
+        let (scopes, ignores) = core_from_host((*inner).host)
+            .map(|c| {
+                (
+                    (*c).settings.file_search_scopes.len(),
+                    (*c).settings.file_search_ignore_patterns.len(),
+                )
+            })
+            .unwrap_or((0, 0));
+        return crate::features::file_search::settings::pane::content_height(scopes, ignores);
+    }
     if tab == SettingsTab::Snippets {
         return crate::features::snippets::settings::pane::content_height();
     }
@@ -1450,6 +1476,47 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                     (*core).set_hotkey(&key, None);
                     (*core).resume_global_hotkeys();
                 }
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::FileSearch {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        let scopes = (*core).settings.file_search_scopes.len();
+        let ignores = (*core).settings.file_search_ignore_patterns.len();
+        match crate::features::file_search::settings::pane::hit(
+            detail_x,
+            y,
+            (*inner).scroll,
+            scopes,
+            ignores,
+        ) {
+            Some(crate::features::file_search::settings::pane::FileSearchHit::Enable) => {
+                (*core).set_file_search_enabled(!(*core).settings.file_search_enabled);
+            }
+            Some(crate::features::file_search::settings::pane::FileSearchHit::AddFolder) => {
+                if let Some(path) =
+                    crate::features::file_search::settings::pane::pick_folder(hwnd)
+                {
+                    (*core).add_file_search_scope(path);
+                }
+            }
+            Some(crate::features::file_search::settings::pane::FileSearchHit::RemoveScope(i)) => {
+                (*core).remove_file_search_scope(i);
+            }
+            Some(crate::features::file_search::settings::pane::FileSearchHit::AddIgnore) => {
+                if let Some(pattern) =
+                    crate::features::file_search::settings::pane::ask_pattern(hwnd)
+                {
+                    (*core).add_file_search_ignore(pattern);
+                }
+            }
+            Some(crate::features::file_search::settings::pane::FileSearchHit::RemoveIgnore(i)) => {
+                (*core).remove_file_search_ignore(i);
             }
             None => {}
         }

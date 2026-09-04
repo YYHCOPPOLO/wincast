@@ -27,6 +27,7 @@ pub enum LaunchSpec {
     OpenQuicklink(String),
     SearchQuicklinks,
     SearchEmoji,
+    SearchFiles,
     CreateQuicklink,
     ImportQuicklinks,
     ExportQuicklinks,
@@ -83,6 +84,7 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:clipboard-history" => LaunchSpec::OpenClipboardHistory,
             "command:search-quicklinks" => LaunchSpec::SearchQuicklinks,
             "command:search-emoji" => LaunchSpec::SearchEmoji,
+            "command:search-files" => LaunchSpec::SearchFiles,
             "command:create-quicklink" => LaunchSpec::CreateQuicklink,
             "command:import-quicklinks" => LaunchSpec::ImportQuicklinks,
             "command:export-quicklinks" => LaunchSpec::ExportQuicklinks,
@@ -182,6 +184,7 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::OpenQuicklink(_)
         | LaunchSpec::SearchQuicklinks
         | LaunchSpec::SearchEmoji
+        | LaunchSpec::SearchFiles
         | LaunchSpec::CreateQuicklink
         | LaunchSpec::ImportQuicklinks
         | LaunchSpec::ExportQuicklinks

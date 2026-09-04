@@ -10,4 +10,5 @@ pub const WM_SNIPPETS: u32 = 0x8000 + 9;
 pub const WM_SNIPPET_KEYWORD: u32 = 0x8000 + 10;
 pub const WM_CUSTOM_COMMAND_FAILED: u32 = 0x8000 + 11;
 pub const WM_HOTKEY_ACTION: u32 = 0x8000 + 12;
+pub const WM_FILE_SEARCH: u32 = 0x8000 + 13;
 pub const WM_CLIPBOARDUPDATE: u32 = 0x031D;
