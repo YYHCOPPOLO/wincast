@@ -28,6 +28,7 @@ pub mod palette_tab;
 pub mod quicklink;
 pub mod search_relevance;
 pub mod search_scopes;
+pub mod settings_backup;
 pub mod settings_tab;
 pub mod snippet;
 pub mod system_action;

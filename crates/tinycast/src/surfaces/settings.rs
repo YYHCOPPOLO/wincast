@@ -590,6 +590,16 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    if selected == SettingsTab::Backup {
+        hide_edits(inner);
+        crate::features::backup::settings::pane::paint(
+            target,
+            formats,
+            detail_w,
+            (*inner).scroll,
+        )?;
+        return Ok(());
+    }
     if selected == SettingsTab::Calendar {
         hide_edits(inner);
         if let Some(core) = core {
@@ -1241,6 +1251,9 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::Permissions {
         return crate::features::settings::panes::permissions::content_height();
     }
+    if tab == SettingsTab::Backup {
+        return crate::features::backup::settings::pane::content_height();
+    }
     if tab == SettingsTab::Calendar {
         return crate::features::calendar::settings::pane::content_height();
     }
@@ -1511,6 +1524,25 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                     (*core).set_hotkey(&key, None);
                     (*core).resume_global_hotkeys();
                 }
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::Backup {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        match crate::features::backup::settings::pane::hit(detail_x, y, (*inner).scroll) {
+            Some(crate::features::backup::settings::pane::BackupHit::Export) => {
+                (*core).export_settings(hwnd);
+            }
+            Some(crate::features::backup::settings::pane::BackupHit::Import) => {
+                (*core).import_settings(hwnd);
+            }
+            Some(crate::features::backup::settings::pane::BackupHit::Raycast) => {
+                (*core).import_raycast(hwnd);
             }
             None => {}
         }

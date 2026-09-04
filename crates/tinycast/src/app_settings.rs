@@ -85,6 +85,16 @@ pub struct AppSettings {
     pub extensions_enabled: bool,
     #[serde(default, rename = "quicklinksEnabled")]
     pub quicklinks_enabled: bool,
+    #[serde(default, rename = "quicklinkOpensNewWindow")]
+    pub quicklink_opens_new_window: bool,
+    #[serde(default, rename = "quicklinkSelectionFallback")]
+    pub quicklink_selection_fallback: String,
+    #[serde(default = "default_true", rename = "quicklinkConfirmsBeforeDelete")]
+    pub quicklink_confirms_before_delete: bool,
+    #[serde(default = "default_true", rename = "extensionsShowInLauncher")]
+    pub extensions_show_in_launcher: bool,
+    #[serde(default = "default_true", rename = "supportReminders")]
+    pub support_reminders: bool,
     #[serde(default = "default_true", rename = "quicklinksShowInLauncher")]
     pub quicklinks_show_in_launcher: bool,
     #[serde(default = "default_retention_days", rename = "clipboardRetentionDays")]
@@ -140,6 +150,11 @@ impl Default for AppSettings {
             quick_actions_enabled: false,
             extensions_enabled: false,
             quicklinks_enabled: false,
+            quicklink_opens_new_window: false,
+            quicklink_selection_fallback: String::new(),
+            quicklink_confirms_before_delete: true,
+            extensions_show_in_launcher: true,
+            support_reminders: true,
             quicklinks_show_in_launcher: true,
             clipboard_retention_days: default_retention_days(),
             clipboard_disabled_apps: default_disabled_apps(),
@@ -233,6 +248,21 @@ impl AppSettings {
         )
     }
 
+    pub fn apply_backup(&mut self, incoming: serde_json::Value) {
+        let filtered = tinycast_pure::settings_backup::filter_import(&incoming);
+        let Ok(mut current) = serde_json::to_value(&*self) else {
+            return;
+        };
+        if let (Some(cur), Some(inc)) = (current.as_object_mut(), filtered.as_object()) {
+            for (k, v) in inc {
+                cur.insert(k.clone(), v.clone());
+            }
+        }
+        if let Ok(next) = serde_json::from_value(current) {
+            *self = next;
+        }
+    }
+
     fn load_from(path: &Path) -> Self {
         let Ok(bytes) = std::fs::read(path) else {
             return Self::default();
@@ -305,6 +335,16 @@ mod tests {
         assert!(!s.extensions_enabled);
         assert!(!s.quicklinks_enabled);
         assert!(!s.custom_commands_enabled);
+        assert!(s.support_reminders);
+        assert!(!s.snippets_enabled);
+    }
+
+    #[test]
+    fn import_cannot_enable_snippets() {
+        let mut s = AppSettings::default();
+        s.apply_backup(serde_json::json!({"snippetsEnabled": true, "compactMode": false}));
+        assert!(!s.snippets_enabled);
+        assert!(!s.compact_mode);
         assert!(s.custom_commands_show_in_launcher);
         assert!(s.quicklinks_show_in_launcher);
         assert_eq!(s.emoji_skin_tone, "none");

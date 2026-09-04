@@ -795,6 +795,82 @@ impl AppCore {
             .collect()
     }
 
+    pub fn export_settings(&mut self, owner: HWND) {
+        let Some(path) = crate::features::backup::service::actions::pick_save_json(owner) else {
+            return;
+        };
+        let json = crate::features::backup::service::actions::export_json(&self.settings);
+        match std::fs::write(&path, serde_json::to_vec_pretty(&json).unwrap_or_default()) {
+            Ok(()) => self.show_message_hud_tone(
+                "Settings exported",
+                tinycast_pure::dialog::DialogTone::Success,
+            ),
+            Err(err) => crate::surfaces::dialog::alert("Export failed", &err.to_string()),
+        }
+    }
+
+    pub fn import_settings(&mut self, owner: HWND) {
+        let Some(path) = crate::features::backup::service::actions::pick_open_json(owner) else {
+            return;
+        };
+        match std::fs::read(&path) {
+            Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                Ok(json) => {
+                    let summary =
+                        crate::features::backup::service::actions::apply_import(&mut self.settings, json);
+                    let _ = self.settings.save();
+                    crate::surfaces::dialog::alert(
+                        "Import complete",
+                        &format!("Applied {} setting(s).", summary.settings_fields),
+                    );
+                    self.invalidate_palette();
+                    self.invalidate_settings();
+                }
+                Err(err) => crate::surfaces::dialog::alert("Import failed", &err.to_string()),
+            },
+            Err(err) => crate::surfaces::dialog::alert("Import failed", &err.to_string()),
+        }
+    }
+
+    pub fn import_raycast(&mut self, owner: HWND) {
+        let Some(path) = crate::features::backup::service::actions::pick_open_json(owner) else {
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&path) else {
+            crate::surfaces::dialog::alert("Import failed", "Could not read the file.");
+            return;
+        };
+        if crate::features::backup::service::raycast::detect(&bytes).is_none() {
+            crate::surfaces::dialog::alert(
+                "Import failed",
+                crate::features::backup::service::raycast::RaycastError::BadFormat.message(),
+            );
+            return;
+        }
+        let passphrase = crate::features::custom_commands::ui::editor::edit_with(
+            owner,
+            None,
+            crate::features::custom_commands::ui::editor::EditorLabels {
+                title: "Raycast passphrase",
+                value_label: "Passphrase",
+                show_confirm: false,
+            },
+        )
+        .map(|d| d.command)
+        .unwrap_or_default();
+        match crate::features::backup::service::raycast::read(&bytes, &passphrase) {
+            Ok(json) => {
+                crate::features::backup::service::actions::apply_import(&mut self.settings, json);
+                crate::features::backup::service::raycast::apply_raycast_snippets_never_enables(
+                    &mut self.settings,
+                );
+                let _ = self.settings.save();
+                crate::surfaces::dialog::alert("Import complete", "Raycast settings were imported.");
+            }
+            Err(err) => crate::surfaces::dialog::alert("Import failed", err.message()),
+        }
+    }
+
     fn open_uninstall_for_selected(&mut self) {
         let Some(entry) = self.selected_entry() else {
             return;
@@ -2023,6 +2099,18 @@ impl AppCore {
             LaunchSpec::MySchedule => self.open_schedule(),
             LaunchSpec::OpenInCalendar => self.calendar_open_app(),
             LaunchSpec::CreateEvent => self.calendar_create_event(),
+            LaunchSpec::ExportSettings => {
+                self.hide_palette();
+                self.export_settings(self.host);
+            }
+            LaunchSpec::ImportSettings => {
+                self.hide_palette();
+                self.import_settings(self.host);
+            }
+            LaunchSpec::ImportFromRaycast => {
+                self.hide_palette();
+                self.import_raycast(self.host);
+            }
             LaunchSpec::CreateQuicklink => self.create_quicklink_from_command(),
             LaunchSpec::ImportQuicklinks => {
                 self.hide_palette();

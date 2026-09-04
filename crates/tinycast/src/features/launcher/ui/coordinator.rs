@@ -36,6 +36,9 @@ pub enum LaunchSpec {
     MySchedule,
     OpenInCalendar,
     CreateEvent,
+    ExportSettings,
+    ImportSettings,
+    ImportFromRaycast,
     CreateQuicklink,
     ImportQuicklinks,
     ExportQuicklinks,
@@ -101,6 +104,9 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:my-schedule" => LaunchSpec::MySchedule,
             "command:open-in-calendar" => LaunchSpec::OpenInCalendar,
             "command:create-event" => LaunchSpec::CreateEvent,
+            "command:export-settings" => LaunchSpec::ExportSettings,
+            "command:import-settings" => LaunchSpec::ImportSettings,
+            "command:import-from-raycast" => LaunchSpec::ImportFromRaycast,
             "command:create-quicklink" => LaunchSpec::CreateQuicklink,
             "command:import-quicklinks" => LaunchSpec::ImportQuicklinks,
             "command:export-quicklinks" => LaunchSpec::ExportQuicklinks,
@@ -209,6 +215,9 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::MySchedule
         | LaunchSpec::OpenInCalendar
         | LaunchSpec::CreateEvent
+        | LaunchSpec::ExportSettings
+        | LaunchSpec::ImportSettings
+        | LaunchSpec::ImportFromRaycast
         | LaunchSpec::CreateQuicklink
         | LaunchSpec::ImportQuicklinks
         | LaunchSpec::ExportQuicklinks
