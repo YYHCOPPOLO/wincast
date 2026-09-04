@@ -610,6 +610,26 @@ unsafe fn paint_detail(
         )?;
         return Ok(());
     }
+    if selected == SettingsTab::Ai {
+        hide_edits(inner);
+        if let Some(core) = core {
+            crate::features::ai::settings::pane::paint(
+                target,
+                formats,
+                core.settings.ai_enabled,
+                core.settings.ai_web_search,
+                core.settings.ai_system_prompt_enabled,
+                core.settings.ai_opens_to,
+                core.settings.ai_retention_days,
+                core.settings.ai_default_model.as_ref(),
+                &core.settings.ai_connections,
+                core.chatgpt_phase(),
+                detail_w,
+                (*inner).scroll,
+            )?;
+        }
+        return Ok(());
+    }
     if selected == SettingsTab::Calendar {
         hide_edits(inner);
         if let Some(core) = core {
@@ -1267,6 +1287,12 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::Backup {
         return crate::features::backup::settings::pane::content_height();
     }
+    if tab == SettingsTab::Ai {
+        let n = core_from_host((*inner).host)
+            .map(|c| (*c).settings.ai_connections.len())
+            .unwrap_or(0);
+        return crate::features::ai::settings::pane::content_height(n);
+    }
     if tab == SettingsTab::Calendar {
         return crate::features::calendar::settings::pane::content_height();
     }
@@ -1567,6 +1593,53 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             }
             Some(crate::features::backup::settings::pane::BackupHit::Raycast) => {
                 (*core).import_raycast(hwnd);
+            }
+            None => {}
+        }
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::Ai {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        let n = (*core).settings.ai_connections.len();
+        match crate::features::ai::settings::pane::hit(
+            detail_x,
+            y,
+            (*inner).scroll,
+            n,
+            detail_w,
+        ) {
+            Some(crate::features::ai::settings::pane::AiHit::Enable) => {
+                (*core).set_ai_enabled(!(*core).settings.ai_enabled);
+            }
+            Some(crate::features::ai::settings::pane::AiHit::WebSearch) => {
+                (*core).toggle_ai_web_search();
+            }
+            Some(crate::features::ai::settings::pane::AiHit::SystemPrompt) => {
+                (*core).toggle_ai_system_prompt();
+            }
+            Some(crate::features::ai::settings::pane::AiHit::OpensTo) => {
+                (*core).cycle_ai_opens_to();
+            }
+            Some(crate::features::ai::settings::pane::AiHit::Retention) => {
+                (*core).cycle_ai_retention();
+            }
+            Some(crate::features::ai::settings::pane::AiHit::DefaultModel) => {
+                (*core).cycle_ai_default_model();
+            }
+            Some(crate::features::ai::settings::pane::AiHit::Codex) => {
+                (*core).chatgpt_row_action();
+            }
+            Some(crate::features::ai::settings::pane::AiHit::AddConnection) => {
+                (*core).add_ai_connection();
+            }
+            Some(crate::features::ai::settings::pane::AiHit::Connection(i)) => {
+                (*core).cycle_ai_connection(i);
+            }
+            Some(crate::features::ai::settings::pane::AiHit::RemoveConnection(i)) => {
+                (*core).remove_ai_connection(i);
             }
             None => {}
         }

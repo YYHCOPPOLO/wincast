@@ -1,3 +1,4 @@
+pub mod chatgpt;
 pub mod factory;
 pub mod history;
 pub mod keys;

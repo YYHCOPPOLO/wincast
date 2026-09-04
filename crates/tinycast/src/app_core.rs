@@ -122,6 +122,7 @@ pub struct AppCore {
     menu_header: String,
     ai: crate::features::ai::ui::coordinator::AiChatCoordinator,
     ai_factory: crate::features::ai::service::factory::ProviderFactory,
+    chatgpt: crate::features::ai::service::chatgpt::ChatGptManager,
     launcher_query: String,
     ai_model_choices: Vec<tinycast_pure::ai::ModelSelection>,
 }
@@ -194,6 +195,7 @@ impl AppCore {
             menu_header: String::new(),
             ai: crate::features::ai::ui::coordinator::AiChatCoordinator::new(),
             ai_factory: crate::features::ai::service::factory::ProviderFactory::new(HWND::default()),
+            chatgpt: crate::features::ai::service::chatgpt::ChatGptManager::new(),
             launcher_query: String::new(),
             ai_model_choices: Vec::new(),
         }
@@ -3307,12 +3309,130 @@ impl AppCore {
         let _ = self.settings.save();
         self.ai.apply_enabled(enabled, self.settings.ai_retention_days);
         if !enabled {
+            self.chatgpt.stop();
             if matches!(self.palette.mode, PaletteMode::Ai | PaletteMode::AiHistory) {
                 self.palette.prepare(PaletteMode::Launcher);
                 self.relayout_palette();
             }
         }
         self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    pub fn chatgpt_phase(&self) -> crate::features::ai::service::chatgpt::CodexPhase {
+        self.chatgpt.phase()
+    }
+
+    pub fn cycle_ai_opens_to(&mut self) {
+        self.settings.ai_opens_to =
+            crate::features::ai::settings::pane::cycle_opens_to(self.settings.ai_opens_to);
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
+    pub fn cycle_ai_retention(&mut self) {
+        self.settings.ai_retention_days =
+            crate::features::ai::settings::pane::cycle_retention(self.settings.ai_retention_days);
+        let _ = self.settings.save();
+        self.ai
+            .apply_retention(self.settings.ai_enabled, self.settings.ai_retention_days);
+        self.invalidate_settings();
+    }
+
+    pub fn toggle_ai_web_search(&mut self) {
+        self.settings.ai_web_search = !self.settings.ai_web_search;
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
+    pub fn toggle_ai_system_prompt(&mut self) {
+        self.settings.ai_system_prompt_enabled = !self.settings.ai_system_prompt_enabled;
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
+    pub fn add_ai_connection(&mut self) {
+        let mut conn = tinycast_pure::ai::AiConnection::new(tinycast_pure::ai::ProviderKind::OpenAi);
+        conn.models.push("gpt-4.1-mini".into());
+        self.settings.ai_connections.push(conn);
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
+    pub fn cycle_ai_connection(&mut self, index: usize) {
+        let Some(conn) = self.settings.ai_connections.get_mut(index) else {
+            return;
+        };
+        let previous = conn.clone();
+        conn.provider = crate::features::ai::settings::pane::cycle_provider(conn.provider);
+        conn.base_url = conn.provider.default_base_url().to_string();
+        conn.models = vec![match conn.provider {
+            tinycast_pure::ai::ProviderKind::Anthropic => "claude-sonnet-4-5".into(),
+            tinycast_pure::ai::ProviderKind::Gemini => "gemini-2.5-flash".into(),
+            tinycast_pure::ai::ProviderKind::OpenRouter => "openai/gpt-4.1-mini".into(),
+            _ => "gpt-4.1-mini".into(),
+        }];
+        self.ai_factory.forget_if_retargeted(&previous, conn);
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
+    pub fn remove_ai_connection(&mut self, index: usize) {
+        if index >= self.settings.ai_connections.len() {
+            return;
+        }
+        let removed = self.settings.ai_connections.remove(index);
+        self.ai_factory.keys().remove(&removed.id);
+        if let Some(tinycast_pure::ai::ModelSelection::Api { connection, .. }) =
+            &self.settings.ai_default_model
+        {
+            if connection.as_str() == removed.id.as_str() {
+                self.settings.ai_default_model = None;
+            }
+        }
+        let _ = self.settings.save();
+        self.invalidate_settings();
+    }
+
+    pub fn cycle_ai_default_model(&mut self) {
+        let chatgpt = matches!(
+            self.chatgpt.phase(),
+            crate::features::ai::service::chatgpt::CodexPhase::Connected
+        );
+        self.settings.ai_default_model = crate::features::ai::settings::pane::cycle_default_model(
+            self.settings.ai_default_model.clone(),
+            &self.settings.ai_connections,
+            chatgpt,
+        );
+        let _ = self.settings.save();
+        self.invalidate_settings();
+        self.invalidate_palette();
+    }
+
+    pub fn chatgpt_row_action(&mut self) {
+        use crate::features::ai::service::chatgpt::{which_codex, CodexPhase, INSTALL_DOCS};
+        match self.chatgpt.phase() {
+            CodexPhase::Unavailable => {
+                let _ = crate::features::launcher::ui::coordinator::execute(&LaunchSpec::Uri(
+                    INSTALL_DOCS.into(),
+                ));
+            }
+            CodexPhase::Connected => self.chatgpt.stop(),
+            CodexPhase::Idle | CodexPhase::Failed => {
+                if which_codex().is_none() {
+                    let _ = crate::features::launcher::ui::coordinator::execute(&LaunchSpec::Uri(
+                        INSTALL_DOCS.into(),
+                    ));
+                } else if let Err(err) = self.chatgpt.connect() {
+                    if self.hud.is_none() && !self.host.is_invalid() {
+                        self.hud = MessageHud::create(self.host).ok();
+                    }
+                    if let Some(hud) = &self.hud {
+                        hud.show(&err);
+                    }
+                }
+            }
+        }
         self.invalidate_settings();
     }
 

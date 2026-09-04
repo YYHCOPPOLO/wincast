@@ -39,7 +39,7 @@ impl ProviderFactory {
     ) -> Result<HttpAiProvider, String> {
         match selection {
             ModelSelection::ChatGpt { .. } => {
-                Err("Connect ChatGPT in Settings, or choose an API connection.".into())
+                Err("ChatGPT uses Codex on PATH. Connect it in Settings, or choose an API connection.".into())
             }
             ModelSelection::Api { connection, model } => {
                 let conn = connections

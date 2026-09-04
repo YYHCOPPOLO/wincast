@@ -208,6 +208,12 @@ mod tests {
     }
 
     #[test]
+    fn ai_settings_do_not_serialize_into_backup() {
+        assert_eq!(coverage_bucket(AppSettingsKey::AiEnabled), Bucket::Excluded);
+        assert_eq!(coverage_bucket(AppSettingsKey::AiConnections), Bucket::Excluded);
+    }
+
+    #[test]
     fn import_cannot_enable_snippets() {
         let filtered = filter_import(&serde_json::json!({
             "snippetsEnabled": true,
