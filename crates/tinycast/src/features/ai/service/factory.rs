@@ -19,6 +19,10 @@ impl ProviderFactory {
         }
     }
 
+    pub fn set_host(&mut self, host: HWND) {
+        self.host = host;
+    }
+
     pub fn keys(&self) -> &ApiKeyStore {
         &self.keys
     }

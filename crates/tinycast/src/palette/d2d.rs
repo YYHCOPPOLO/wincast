@@ -52,11 +52,11 @@ pub struct PaintParams<'a> {
     pub menu: Option<MenuPaint<'a>>,
     pub clipboard_preview: Option<&'a str>,
     pub tab_hint: Option<&'a str>,
-    pub clipboard_filter: Option<FilterButtonPaint<'a>>,
+    pub clipboard_filter: Option<FilterButtonPaint>,
 }
 
-pub struct FilterButtonPaint<'a> {
-    pub title: &'a str,
+pub struct FilterButtonPaint {
+    pub title: String,
     pub open: bool,
     pub rect: tinycast_pure::palette_placement::DipRect,
 }
@@ -511,7 +511,7 @@ fn paint_clipboard_preview(
 fn paint_filter_button(
     target: &ID2D1RenderTarget,
     fonts: &ListFonts,
-    filter: &FilterButtonPaint<'_>,
+    filter: &FilterButtonPaint,
 ) -> windows::core::Result<()> {
     let rect = filter.rect;
     let fill = D2D1_COLOR_F {

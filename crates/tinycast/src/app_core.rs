@@ -120,6 +120,10 @@ pub struct AppCore {
     menu_selection: usize,
     menu_items: Vec<MenuItem>,
     menu_header: String,
+    ai: crate::features::ai::ui::coordinator::AiChatCoordinator,
+    ai_factory: crate::features::ai::service::factory::ProviderFactory,
+    launcher_query: String,
+    ai_model_choices: Vec<tinycast_pure::ai::ModelSelection>,
 }
 
 impl AppCore {
@@ -188,6 +192,10 @@ impl AppCore {
             menu_selection: 0,
             menu_items: Vec::new(),
             menu_header: String::new(),
+            ai: crate::features::ai::ui::coordinator::AiChatCoordinator::new(),
+            ai_factory: crate::features::ai::service::factory::ProviderFactory::new(HWND::default()),
+            launcher_query: String::new(),
+            ai_model_choices: Vec::new(),
         }
     }
 
@@ -208,6 +216,7 @@ impl AppCore {
         self.apply_clipboard_retention();
         self.apply_snippets_enabled();
         self.apply_file_search_policy();
+        self.ai.apply_enabled(self.settings.ai_enabled, self.settings.ai_retention_days);
         self.maybe_onboarding();
         self.maybe_support_reminder();
         self.schedule_support_pump();
@@ -299,17 +308,26 @@ impl AppCore {
     pub fn search_trailing_width(&self) -> f32 {
         if self.palette.mode == PaletteMode::Clipboard {
             clip_screen::filter_trailing_width()
+        } else if self.palette.mode == PaletteMode::Ai {
+            crate::features::ai::ui::screen::model_trailing_width()
         } else {
             0.0
         }
     }
 
-    pub fn clipboard_filter_paint(&self) -> Option<crate::palette::d2d::FilterButtonPaint<'_>> {
+    pub fn clipboard_filter_paint(&self) -> Option<crate::palette::d2d::FilterButtonPaint> {
+        if self.palette.mode == PaletteMode::Ai {
+            return Some(crate::palette::d2d::FilterButtonPaint {
+                title: self.ai_model_label(),
+                open: self.menu == OpenMenu::AiModel,
+                rect: crate::features::ai::ui::screen::model_button_rect(theme::size::PANEL_WIDTH),
+            });
+        }
         if self.palette.mode != PaletteMode::Clipboard {
             return None;
         }
         Some(crate::palette::d2d::FilterButtonPaint {
-            title: clip_screen::filter_title(self.clipboard_filter),
+            title: clip_screen::filter_title(self.clipboard_filter).to_string(),
             open: self.menu == OpenMenu::ClipboardFilter,
             rect: clip_screen::filter_button_rect(theme::size::PANEL_WIDTH),
         })
@@ -353,6 +371,7 @@ impl AppCore {
         self.host = host;
         self.app_index.set_host(host);
         self.file_search.set_host(host);
+        self.ai_factory.set_host(host);
     }
 
     pub fn set_file_search_enabled(&mut self, enabled: bool) {
@@ -1535,6 +1554,12 @@ impl AppCore {
                 return session.current_name().to_string();
             }
         }
+        if self.palette.mode == PaletteMode::Ai {
+            return crate::features::ai::ui::screen::chat_placeholder().to_string();
+        }
+        if self.palette.mode == PaletteMode::AiHistory {
+            return crate::features::ai::ui::screen::history_placeholder().to_string();
+        }
         crate::palette::edit::PLACEHOLDER_LAUNCHER.to_string()
     }
 
@@ -1548,6 +1573,17 @@ impl AppCore {
     }
 
     pub fn launcher_paint_items(&self) -> Vec<PaintItem> {
+        if self.palette.mode == PaletteMode::Ai {
+            return crate::features::ai::ui::screen::paint_chat(
+                &self.ai.session.messages,
+                self.ai.notice.as_deref(),
+                self.ai.thinking,
+            );
+        }
+        if self.palette.mode == PaletteMode::AiHistory {
+            let rows = self.ai.history().search(&self.palette.query);
+            return crate::features::ai::ui::screen::paint_history(&rows, self.palette.selection);
+        }
         if self.palette.mode == PaletteMode::Emoji {
             let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
             return crate::features::emoji::paint_items(
@@ -1871,6 +1907,9 @@ impl AppCore {
 
     pub fn hide_palette(&mut self) {
         self.argument_session = None;
+        if matches!(self.palette.mode, PaletteMode::Ai | PaletteMode::AiHistory) {
+            self.ai.draft = self.palette.query.clone();
+        }
         if self.palette.mode == PaletteMode::FileSearch {
             self.file_search.cancel();
         }
@@ -1891,6 +1930,14 @@ impl AppCore {
     pub fn handle_escape(&mut self) {
         if self.menu.is_open() {
             self.close_menu();
+            return;
+        }
+        if self.palette.mode == PaletteMode::AiHistory {
+            self.palette.prepare(PaletteMode::Ai);
+            self.palette.query = self.ai.draft.clone();
+            self.expanded = true;
+            self.relayout_palette();
+            self.invalidate_palette();
             return;
         }
         let launcher = self.palette.mode == PaletteMode::Launcher;
@@ -2211,6 +2258,14 @@ impl AppCore {
             }
             return;
         }
+        if self.palette.mode == PaletteMode::Ai {
+            self.ai_activate();
+            return;
+        }
+        if self.palette.mode == PaletteMode::AiHistory {
+            self.ai_open_selected_history();
+            return;
+        }
         if self.palette.mode == PaletteMode::QuicklinkArguments {
             self.commit_argument();
             return;
@@ -2365,6 +2420,12 @@ impl AppCore {
                     self.run_window_command(command);
                 }
             }
+            LaunchSpec::OpenAiChat => self.open_ai_chat(),
+            LaunchSpec::FixGrammar
+            | LaunchSpec::Rewrite
+            | LaunchSpec::Translate
+            | LaunchSpec::Summarize
+            | LaunchSpec::CheckForUpdates => {}
             other => {
                 self.hide_palette();
                 let _ = execute(&other);
@@ -2713,6 +2774,13 @@ impl AppCore {
             self.close_menu();
             return;
         }
+        if matches!(self.palette.mode, PaletteMode::Ai | PaletteMode::AiHistory) {
+            if !self.expanded {
+                return;
+            }
+            self.open_ai_actions();
+            return;
+        }
         if !can_open_actions(self.expanded, self.has_selectable_rows()) {
             return;
         }
@@ -2743,6 +2811,13 @@ impl AppCore {
             let button = clip_screen::filter_button_rect(panel_w);
             if point_in(button, x, y) {
                 self.toggle_clipboard_filter_menu();
+                return;
+            }
+        }
+        if self.palette.mode == PaletteMode::Ai {
+            let button = crate::features::ai::ui::screen::model_button_rect(panel_w);
+            if point_in(button, x, y) {
+                self.toggle_ai_model_menu();
                 return;
             }
         }
@@ -2796,17 +2871,17 @@ impl AppCore {
         self.menu_items = vec![
             MenuItem {
                 id: "about",
-                label: "About Tinycast",
+                label: "About Tinycast".into(),
                 shortcut: None,
             },
             MenuItem {
                 id: "support",
-                label: "Support Tinycast",
+                label: "Support Tinycast".into(),
                 shortcut: None,
             },
             MenuItem {
                 id: "settings",
-                label: "Settings",
+                label: "Settings".into(),
                 shortcut: None,
             },
         ];
@@ -2827,17 +2902,17 @@ impl AppCore {
             self.menu_items = vec![
                 MenuItem {
                     id: ID_OPEN,
-                    label: "Open",
+                    label: "Open".into(),
                     shortcut: Some("↵"),
                 },
                 MenuItem {
                     id: ID_SHOW_IN_FOLDER,
-                    label: "Show in Folder",
+                    label: "Show in Folder".into(),
                     shortcut: Some("Ctrl+↵"),
                 },
                 MenuItem {
                     id: ID_COPY_PATH,
-                    label: "Copy Path",
+                    label: "Copy Path".into(),
                     shortcut: Some("Ctrl+Alt+C"),
                 },
             ];
@@ -2881,7 +2956,7 @@ impl AppCore {
     }
 
     fn activate_menu_item(&mut self) {
-        let Some(item) = self.menu_items.get(self.menu_selection).copied() else {
+        let Some(item) = self.menu_items.get(self.menu_selection).cloned() else {
             self.close_menu();
             return;
         };
@@ -2914,6 +2989,31 @@ impl AppCore {
                 self.copy_path_selected();
                 self.close_menu();
             }
+            crate::features::ai::ui::coordinator::ID_AI_NEW => {
+                self.close_menu();
+                self.ai_new_chat();
+            }
+            crate::features::ai::ui::coordinator::ID_AI_HISTORY => {
+                self.close_menu();
+                self.ai_show_history();
+            }
+            crate::features::ai::ui::coordinator::ID_AI_SETTINGS => {
+                self.close_menu();
+                self.hide_palette();
+                self.settings_tab = SettingsTab::Ai;
+                self.open_settings();
+            }
+            crate::features::ai::ui::coordinator::ID_AI_STOP => {
+                self.close_menu();
+                self.ai.cancel();
+                self.invalidate_palette();
+            }
+            crate::features::ai::ui::coordinator::ID_AI_COPY => {
+                self.close_menu();
+                if let Some(text) = self.ai.last_assistant_text() {
+                    let _ = copy_text(&text);
+                }
+            }
             ID_UNINSTALL => {
                 self.close_menu();
                 self.open_uninstall_for_selected();
@@ -2932,6 +3032,17 @@ impl AppCore {
                 self.open_settings();
             }
             other => {
+                if let Some(rest) = other.strip_prefix("ai-m") {
+                    if let Ok(index) = rest.parse::<usize>() {
+                        if let Some(sel) = self.ai_model_choices.get(index).cloned() {
+                            self.settings.ai_default_model = Some(sel);
+                            let _ = self.settings.save();
+                        }
+                    }
+                    self.close_menu();
+                    self.invalidate_palette();
+                    return;
+                }
                 if let Some(filter) = clip_screen::filter_from_id(other) {
                     self.clipboard_filter = filter;
                     self.palette.selection = 0;
@@ -2958,6 +3069,9 @@ impl AppCore {
     }
 
     fn footer_action_group_visible(&self) -> bool {
+        if matches!(self.palette.mode, PaletteMode::Ai | PaletteMode::AiHistory) {
+            return self.expanded;
+        }
         self.expanded && self.has_selectable_rows()
     }
 
@@ -2971,6 +3085,8 @@ impl AppCore {
             || self.palette.mode == PaletteMode::FileSearch
             || self.palette.mode == PaletteMode::Schedule
             || self.palette.mode == PaletteMode::Uninstall
+            || self.palette.mode == PaletteMode::Ai
+            || self.palette.mode == PaletteMode::AiHistory
         {
             return None;
         }
@@ -3177,6 +3293,175 @@ impl AppCore {
         let _ = self.hotkeys.save(store_path("hotkeys.json"));
     }
 
+    pub fn install_ai_events(&mut self) {
+        if self.ai.drain_events() {
+            self.invalidate_palette();
+        }
+    }
+
+    pub fn set_ai_enabled(&mut self, enabled: bool) {
+        if self.settings.ai_enabled == enabled {
+            return;
+        }
+        self.settings.ai_enabled = enabled;
+        let _ = self.settings.save();
+        self.ai.apply_enabled(enabled, self.settings.ai_retention_days);
+        if !enabled {
+            if matches!(self.palette.mode, PaletteMode::Ai | PaletteMode::AiHistory) {
+                self.palette.prepare(PaletteMode::Launcher);
+                self.relayout_palette();
+            }
+        }
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
+    fn ai_model_label(&self) -> String {
+        match &self.settings.ai_default_model {
+            Some(tinycast_pure::ai::ModelSelection::Api { model, .. }) => model.clone(),
+            Some(tinycast_pure::ai::ModelSelection::ChatGpt { model, .. }) => {
+                format!("ChatGPT · {model}")
+            }
+            None => "Model".into(),
+        }
+    }
+
+    fn open_ai_chat(&mut self) {
+        if !self.settings.ai_enabled {
+            return;
+        }
+        if self.palette.mode == PaletteMode::Launcher {
+            self.launcher_query = self.palette.query.clone();
+        }
+        let draft = self.ai.draft.clone();
+        let was_visible = self.palette_visible;
+        self.palette.prepare(PaletteMode::Ai);
+        self.palette.query = draft;
+        self.ai.apply_open_policy(crate::features::ai::ui::coordinator::open_policy(
+            self.settings.ai_opens_to,
+            self.settings.ai_new_chat_after_minutes,
+        ));
+        self.palette_visible = true;
+        self.expanded = true;
+        self.list_scroll = 0.0;
+        if was_visible {
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+                window.set_search_text(&self.palette.query);
+            }
+            self.relayout_palette();
+            self.invalidate_palette();
+        } else {
+            self.show_palette_window();
+            self.expand_palette();
+        }
+    }
+
+    fn ai_activate(&mut self) {
+        if self.ai.is_streaming() {
+            self.ai.cancel();
+            self.invalidate_palette();
+            return;
+        }
+        let input = self.palette.query.clone();
+        if self.ai.send(
+            &input,
+            &self.ai_factory,
+            self.settings.ai_default_model.as_ref(),
+            &self.settings.ai_connections,
+            Some(&self.settings.ai_system_prompt),
+            self.settings.ai_system_prompt_enabled,
+            self.settings.ai_web_search,
+        ) {
+            self.palette.query.clear();
+            self.ai.draft.clear();
+            if let Some(window) = &self.palette_window {
+                window.reset_search();
+            }
+        }
+        self.invalidate_palette();
+    }
+
+    fn ai_open_selected_history(&mut self) {
+        let rows = self.ai.history().search(&self.palette.query);
+        let Some(row) = rows.get(self.palette.selection) else {
+            return;
+        };
+        let id = row.id.clone();
+        if self.ai.open(&id) {
+            self.palette.prepare(PaletteMode::Ai);
+            self.palette.query = self.ai.draft.clone();
+            self.expanded = true;
+            self.relayout_palette();
+            self.invalidate_palette();
+        }
+    }
+
+    fn ai_new_chat(&mut self) {
+        self.ai.start_new();
+        self.palette.prepare(PaletteMode::Ai);
+        self.expanded = true;
+        self.relayout_palette();
+        self.invalidate_palette();
+    }
+
+    fn ai_show_history(&mut self) {
+        self.ai.draft = self.palette.query.clone();
+        self.palette.prepare(PaletteMode::AiHistory);
+        self.expanded = true;
+        self.relayout_palette();
+        self.invalidate_palette();
+    }
+
+    fn open_ai_actions(&mut self) {
+        self.menu_header = "AI Chat".into();
+        self.menu_items = self.ai.actions();
+        self.menu_selection = 0;
+        self.menu = OpenMenu::Actions;
+        if let Some(window) = &self.palette_window {
+            window.set_search_caret_visible(false);
+        }
+        self.invalidate_palette();
+    }
+
+    fn toggle_ai_model_menu(&mut self) {
+        if self.menu == OpenMenu::AiModel {
+            self.close_menu();
+            return;
+        }
+        self.ai_model_choices.clear();
+        let mut items = Vec::new();
+        let slots = crate::features::ai::ui::coordinator::MODEL_SLOT_IDS;
+        for conn in &self.settings.ai_connections {
+            for model in &conn.models {
+                if items.len() >= slots.len() {
+                    break;
+                }
+                let id = slots[items.len()];
+                self.ai_model_choices.push(tinycast_pure::ai::ModelSelection::Api {
+                    connection: conn.id.clone(),
+                    model: model.clone(),
+                });
+                items.push(MenuItem {
+                    id,
+                    label: format!("{} · {model}", conn.title()),
+                    shortcut: None,
+                });
+            }
+        }
+        if items.is_empty() {
+            return;
+        }
+        self.menu_header = self.ai_model_label();
+        self.menu_items = items;
+        self.menu_selection = 0;
+        self.menu = OpenMenu::AiModel;
+        if let Some(window) = &self.palette_window {
+            window.set_search_caret_visible(false);
+        }
+        self.invalidate_palette();
+    }
+
     fn persist_favorites(&self) {
         let _ = self.favorites.save(store_path("favorites.json"));
     }
@@ -3233,6 +3518,8 @@ impl AppCore {
                 self.calc_result().is_some() || self.meeting_card().is_some(),
                 selectable_rows(&self.sections()).len(),
             ),
+            PaletteMode::Ai => 1,
+            PaletteMode::AiHistory => self.ai.history().search(&self.palette.query).len(),
             _ => selectable_rows(&self.sections()).len(),
         }
     }
@@ -3284,6 +3571,12 @@ impl AppCore {
         if self.palette.mode == PaletteMode::QuicklinkArguments {
             return "Continue";
         }
+        if self.palette.mode == PaletteMode::Ai {
+            return if self.ai.is_streaming() { "Stop" } else { "Send" };
+        }
+        if self.palette.mode == PaletteMode::AiHistory {
+            return "Open";
+        }
         self.selected_entry()
             .map(|e| e.kind.open_verb())
             .unwrap_or("Open")
@@ -3293,31 +3586,52 @@ impl AppCore {
         if !self.palette_visible {
             return;
         }
+        let from = self.palette.mode;
         let hop = tab_from(
-            self.palette.mode,
+            from,
             self.settings.ai_enabled,
-            self.palette.mode == PaletteMode::QuicklinkArguments,
+            from == PaletteMode::QuicklinkArguments,
         );
         let query = self.palette.query.clone();
         match hop {
             TabHop::StayForArguments => return,
             TabHop::Clipboard => {
-                if !self.previous_hwnd.is_invalid() {
-                    // keep existing previous app
+                if matches!(from, PaletteMode::Ai | PaletteMode::AiHistory) {
+                    self.ai.draft = query;
+                    self.palette.query.clear();
+                } else {
+                    self.palette.query = query;
                 }
                 self.palette.mode = PaletteMode::Clipboard;
             }
             TabHop::Launcher => {
+                if matches!(from, PaletteMode::Ai | PaletteMode::AiHistory) {
+                    self.ai.draft = query;
+                    self.palette.query = self.launcher_query.clone();
+                } else {
+                    self.palette.query = query;
+                }
                 self.palette.mode = PaletteMode::Launcher;
             }
             TabHop::Ai => {
                 if !self.settings.ai_enabled {
                     return;
                 }
+                if from == PaletteMode::Launcher {
+                    self.launcher_query = query;
+                    self.palette.query = self.ai.draft.clone();
+                } else if from == PaletteMode::AiHistory {
+                    self.palette.query = self.ai.draft.clone();
+                } else {
+                    self.palette.query = self.ai.draft.clone();
+                }
                 self.palette.mode = PaletteMode::Ai;
+                self.ai.apply_open_policy(crate::features::ai::ui::coordinator::open_policy(
+                    self.settings.ai_opens_to,
+                    self.settings.ai_new_chat_after_minutes,
+                ));
             }
         }
-        self.palette.query = query;
         self.palette.selection = 0;
         self.list_scroll = 0.0;
         self.expanded = true;
@@ -3442,27 +3756,27 @@ impl AppCore {
         self.menu_items = vec![
             tinycast_pure::palette_menu::MenuItem {
                 id: "clip-filter-all",
-                label: "All Types",
+                label: "All Types".into(),
                 shortcut: None,
             },
             tinycast_pure::palette_menu::MenuItem {
                 id: "clip-filter-text",
-                label: "Text Only",
+                label: "Text Only".into(),
                 shortcut: None,
             },
             tinycast_pure::palette_menu::MenuItem {
                 id: "clip-filter-images",
-                label: "Images Only",
+                label: "Images Only".into(),
                 shortcut: None,
             },
             tinycast_pure::palette_menu::MenuItem {
                 id: "clip-filter-links",
-                label: "Links Only",
+                label: "Links Only".into(),
                 shortcut: None,
             },
             tinycast_pure::palette_menu::MenuItem {
                 id: "clip-filter-emails",
-                label: "Emails Only",
+                label: "Emails Only".into(),
                 shortcut: None,
             },
         ];
@@ -4075,6 +4389,21 @@ mod tests {
         c.set_query("abc".into());
         assert_eq!(c.palette.query, "abc");
         assert!(c.expanded);
+    }
+
+    #[test]
+    fn tab_ring_with_ai_does_not_seed_chat_from_query() {
+        let mut c = AppCore::new();
+        c.settings.ai_enabled = true;
+        c.toggle_palette();
+        c.set_query("search term".into());
+        c.handle_key(0x09);
+        assert_eq!(c.palette.mode, PaletteMode::Ai);
+        assert_ne!(c.palette.query, "search term");
+        c.palette.query = "chat draft".into();
+        c.handle_key(0x09);
+        assert_eq!(c.palette.mode, PaletteMode::Clipboard);
+        assert_ne!(c.palette.query, "chat draft");
     }
 
     #[test]

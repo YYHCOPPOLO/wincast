@@ -20,15 +20,15 @@ pub const PRIMARY_BUTTON_WIDTH: f32 = 176.0;
 pub const ACTIONS_BUTTON_WIDTH: f32 = 126.0;
 pub const ACTIONS_SHORTCUT: &str = "Ctrl+K";
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MenuItem {
     pub id: &'static str,
-    pub label: &'static str,
+    pub label: String,
     pub shortcut: Option<&'static str>,
 }
 
 impl MenuItem {
-    pub fn is_destructive(self) -> bool {
+    pub fn is_destructive(&self) -> bool {
         matches!(self.id, ID_UNINSTALL | ID_QUIT)
     }
 }
@@ -112,7 +112,7 @@ fn can_copy_path(kind: AppKind) -> bool {
 fn item(id: &'static str, label: &'static str, shortcut: Option<&'static str>) -> MenuItem {
     MenuItem {
         id,
-        label,
+        label: label.to_string(),
         shortcut,
     }
 }
@@ -124,6 +124,7 @@ pub enum OpenMenu {
     None,
     Actions,
     ClipboardFilter,
+    AiModel,
     AppMenu,
 }
 
@@ -135,7 +136,9 @@ impl OpenMenu {
     pub fn toggle_actions(self) -> Self {
         match self {
             OpenMenu::Actions => OpenMenu::None,
-            OpenMenu::None | OpenMenu::ClipboardFilter | OpenMenu::AppMenu => OpenMenu::Actions,
+            OpenMenu::None | OpenMenu::ClipboardFilter | OpenMenu::AiModel | OpenMenu::AppMenu => {
+                OpenMenu::Actions
+            }
         }
     }
 }
@@ -207,7 +210,7 @@ pub fn menu_frame(
     has_header: bool,
 ) -> DipRect {
     match kind {
-        OpenMenu::ClipboardFilter => {
+        OpenMenu::ClipboardFilter | OpenMenu::AiModel => {
             clipboard_filter_menu_frame(panel_w, panel_h, item_count, has_header)
         }
         _ => actions_menu_frame(panel_w, panel_h, item_count, has_header),
@@ -357,10 +360,8 @@ mod tests {
 
     #[test]
     fn app_actions_include_uninstall_and_favorite() {
-        let labels: Vec<_> = launcher_actions(AppKind::Application)
-            .iter()
-            .map(|i| i.label)
-            .collect();
+        let items = launcher_actions(AppKind::Application);
+        let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"Uninstall Application"));
         assert!(
             labels.contains(&"Toggle Favorite") || labels.iter().any(|l| l.contains("Favorite"))
@@ -370,7 +371,7 @@ mod tests {
     #[test]
     fn app_actions_include_open_show_in_folder_and_copy_path() {
         let items = launcher_actions(AppKind::Application);
-        let labels: Vec<_> = items.iter().map(|i| i.label).collect();
+        let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"Open Application"));
         assert!(labels.contains(&"Show in Folder"));
         assert!(labels.contains(&"Copy Path"));
@@ -387,10 +388,8 @@ mod tests {
 
     #[test]
     fn command_actions_omit_uninstall_and_show_in_folder() {
-        let labels: Vec<_> = launcher_actions(AppKind::Command)
-            .iter()
-            .map(|i| i.label)
-            .collect();
+        let items = launcher_actions(AppKind::Command);
+        let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"Run Command"));
         assert!(!labels.contains(&"Uninstall Application"));
         assert!(!labels.contains(&"Show in Folder"));
@@ -406,7 +405,8 @@ mod tests {
         ctx.can_move_down = true;
         ctx.has_ranking = true;
         ctx.running = true;
-        let labels: Vec<_> = actions_for(ctx).iter().map(|i| i.label).collect();
+        let items = actions_for(ctx);
+        let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"Remove from Favorites"));
         assert!(!labels.contains(&"Add to Favorites"));
         assert!(labels.contains(&"Move Favorite Up"));

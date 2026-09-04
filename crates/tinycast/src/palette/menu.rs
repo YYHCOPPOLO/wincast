@@ -213,7 +213,7 @@ pub fn paint_menu(
                 right: (right - theme::spacing::SM).max(text_left + 8.0),
                 bottom: row.y + row.h,
             },
-            item.label,
+            &item.label,
         )?;
     }
     Ok(())

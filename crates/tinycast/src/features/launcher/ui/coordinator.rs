@@ -44,6 +44,12 @@ pub enum LaunchSpec {
     ExportQuicklinks,
     RunSystemAction(String),
     RunWindowCommand(String),
+    OpenAiChat,
+    CheckForUpdates,
+    FixGrammar,
+    Rewrite,
+    Translate,
+    Summarize,
     Noop,
 }
 
@@ -110,6 +116,12 @@ pub fn launch_spec(entry: &AppEntry) -> LaunchSpec {
             "command:create-quicklink" => LaunchSpec::CreateQuicklink,
             "command:import-quicklinks" => LaunchSpec::ImportQuicklinks,
             "command:export-quicklinks" => LaunchSpec::ExportQuicklinks,
+            "command:ai-chat" => LaunchSpec::OpenAiChat,
+            "command:check-for-updates" => LaunchSpec::CheckForUpdates,
+            "command:fix-grammar" => LaunchSpec::FixGrammar,
+            "command:rewrite" => LaunchSpec::Rewrite,
+            "command:translate" => LaunchSpec::Translate,
+            "command:summarize" => LaunchSpec::Summarize,
             _ => LaunchSpec::Noop,
         },
         AppKind::Snippet => LaunchSpec::ExpandSnippet(entry.id.clone()),
@@ -223,6 +235,12 @@ pub fn execute(spec: &LaunchSpec) -> windows::core::Result<()> {
         | LaunchSpec::ExportQuicklinks
         | LaunchSpec::RunSystemAction(_)
         | LaunchSpec::RunWindowCommand(_)
+        | LaunchSpec::OpenAiChat
+        | LaunchSpec::CheckForUpdates
+        | LaunchSpec::FixGrammar
+        | LaunchSpec::Rewrite
+        | LaunchSpec::Translate
+        | LaunchSpec::Summarize
         | LaunchSpec::Noop => Ok(()),
     }
 }
@@ -382,7 +400,10 @@ mod tests {
             launch_spec(&CommandID::Support.as_entry()),
             LaunchSpec::OpenSupport
         );
-        assert_eq!(launch_spec(&CommandID::AiChat.as_entry()), LaunchSpec::Noop);
+        assert_eq!(
+            launch_spec(&CommandID::AiChat.as_entry()),
+            LaunchSpec::OpenAiChat
+        );
         assert_eq!(
             launch_spec(&CommandID::CreateQuicklink.as_entry()),
             LaunchSpec::CreateQuicklink

@@ -79,6 +79,22 @@ pub struct AppSettings {
     pub hide_current_event: i64,
     #[serde(default, rename = "aiEnabled")]
     pub ai_enabled: bool,
+    #[serde(default, rename = "aiConnections")]
+    pub ai_connections: Vec<tinycast_pure::ai::AiConnection>,
+    #[serde(default, rename = "aiDefaultModel")]
+    pub ai_default_model: Option<tinycast_pure::ai::ModelSelection>,
+    #[serde(default, rename = "aiWebSearch")]
+    pub ai_web_search: bool,
+    #[serde(default, rename = "aiSystemPrompt")]
+    pub ai_system_prompt: String,
+    #[serde(default = "default_true", rename = "aiSystemPromptEnabled")]
+    pub ai_system_prompt_enabled: bool,
+    #[serde(default = "default_ai_retention", rename = "aiRetentionDays")]
+    pub ai_retention_days: i64,
+    #[serde(default, rename = "aiOpensTo")]
+    pub ai_opens_to: i64,
+    #[serde(default = "default_ai_new_after", rename = "aiNewChatAfterMinutes")]
+    pub ai_new_chat_after_minutes: i64,
     #[serde(default, rename = "quickActionsEnabled")]
     pub quick_actions_enabled: bool,
     #[serde(default, rename = "extensionsEnabled")]
@@ -147,6 +163,14 @@ impl Default for AppSettings {
             menu_bar_linked_events_only: false,
             hide_current_event: 0,
             ai_enabled: false,
+            ai_connections: Vec::new(),
+            ai_default_model: None,
+            ai_web_search: false,
+            ai_system_prompt: String::new(),
+            ai_system_prompt_enabled: true,
+            ai_retention_days: default_ai_retention(),
+            ai_opens_to: 0,
+            ai_new_chat_after_minutes: default_ai_new_after(),
             quick_actions_enabled: false,
             extensions_enabled: false,
             quicklinks_enabled: false,
@@ -212,6 +236,14 @@ fn default_disabled_apps() -> Vec<String> {
 
 fn default_join_window() -> i64 {
     5
+}
+
+fn default_ai_retention() -> i64 {
+    30
+}
+
+fn default_ai_new_after() -> i64 {
+    10
 }
 
 fn default_file_search_scopes() -> Vec<String> {

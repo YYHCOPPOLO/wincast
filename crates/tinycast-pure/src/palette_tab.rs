@@ -13,15 +13,21 @@ pub fn tab_from(mode: PaletteMode, ai_enabled: bool, row_has_arguments: bool) ->
         return TabHop::StayForArguments;
     }
     match mode {
-        PaletteMode::Launcher => TabHop::Clipboard,
-        PaletteMode::Clipboard => {
+        PaletteMode::Launcher => {
             if ai_enabled {
                 TabHop::Ai
+            } else {
+                TabHop::Clipboard
+            }
+        }
+        PaletteMode::Ai | PaletteMode::AiHistory => {
+            if ai_enabled {
+                TabHop::Clipboard
             } else {
                 TabHop::Launcher
             }
         }
-        PaletteMode::Ai => TabHop::Launcher,
+        PaletteMode::Clipboard => TabHop::Launcher,
         _ => TabHop::Launcher,
     }
 }
@@ -38,9 +44,9 @@ mod tests {
 
     #[test]
     fn tab_ring_with_ai() {
-        assert_eq!(tab_from(PaletteMode::Launcher, true, false), TabHop::Clipboard);
-        assert_eq!(tab_from(PaletteMode::Clipboard, true, false), TabHop::Ai);
-        assert_eq!(tab_from(PaletteMode::Ai, true, false), TabHop::Launcher);
+        assert_eq!(tab_from(PaletteMode::Launcher, true, false), TabHop::Ai);
+        assert_eq!(tab_from(PaletteMode::Ai, true, false), TabHop::Clipboard);
+        assert_eq!(tab_from(PaletteMode::Clipboard, true, false), TabHop::Launcher);
     }
 
     #[test]
