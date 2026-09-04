@@ -11,8 +11,8 @@ use tinycast_pure::launcher_results::{
     is_category_listing, ordered_results, selectable_rows, LauncherSection,
 };
 use tinycast_pure::palette_menu::{
-    action_group_rects, actions_for, can_open_actions, clamp_menu_selection, menu_frame,
-    menu_row_at, point_in, ActionContext, MenuItem, OpenMenu, ID_COPY_PATH, ID_FAVORITE,
+    action_group_rects, actions_for, can_open_actions, clamp_menu_selection, menu_button_rect,
+    menu_frame, menu_row_at, point_in, ActionContext, MenuItem, OpenMenu, ID_COPY_PATH, ID_FAVORITE,
     ID_MOVE_DOWN, ID_MOVE_UP, ID_OPEN, ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
 };
 use tinycast_pure::palette_mode::PaletteMode;
@@ -75,6 +75,9 @@ pub struct AppCore {
     pub settings_window: Option<SettingsWindow>,
     pub about_window: Option<StubWindow>,
     pub support_window: Option<StubWindow>,
+    pub about_surface: Option<crate::surfaces::AboutWindow>,
+    pub support_surface: Option<crate::surfaces::SupportWindow>,
+    pub onboarding_window: Option<crate::surfaces::OnboardingWindow>,
     pub notes_window: Option<crate::surfaces::NotesWindow>,
     pub settings_tab: SettingsTab,
     pub entries: Vec<AppEntry>,
@@ -125,6 +128,9 @@ impl AppCore {
             settings_window: None,
             about_window: None,
             support_window: None,
+            about_surface: None,
+            support_surface: None,
+            onboarding_window: None,
             notes_window: None,
             settings_tab: SettingsTab::General,
             entries: Vec::new(),
@@ -198,6 +204,8 @@ impl AppCore {
         self.apply_clipboard_retention();
         self.apply_snippets_enabled();
         self.apply_file_search_policy();
+        self.maybe_onboarding();
+        self.maybe_support_reminder();
         if self.settings.calendar_enabled {
             self.calendar.refresh();
             self.maybe_auto_join();
@@ -793,6 +801,63 @@ impl AppCore {
                     || c.path.to_lowercase().contains(&q)
             })
             .collect()
+    }
+
+    pub fn show_support(&mut self) {
+        self.support_mark_asked();
+        if let Some(window) = &self.support_surface {
+            window.show();
+        } else if let Some(window) = &self.support_window {
+            window.show();
+        }
+    }
+
+    pub fn show_about(&mut self) {
+        if let Some(window) = &self.about_surface {
+            window.show();
+        } else if let Some(window) = &self.about_window {
+            window.show();
+        }
+    }
+
+    pub fn support_mark_asked(&mut self) {
+        let mut state = load_support_state();
+        state.last_asked_at = Some(unix_now());
+        save_support_state(&state);
+    }
+
+    pub fn finish_onboarding(&mut self) {
+        let _ = std::fs::write(onboarding_done_path(), b"1");
+        if let Some(window) = &self.onboarding_window {
+            window.hide();
+        }
+        self.resume_global_hotkeys();
+        self.toggle_palette();
+    }
+
+    fn maybe_onboarding(&mut self) {
+        if onboarding_done_path().exists() {
+            return;
+        }
+        if let Some(window) = &self.onboarding_window {
+            window.show();
+        }
+    }
+
+    fn maybe_support_reminder(&mut self) {
+        if !self.settings.support_reminders {
+            return;
+        }
+        let mut state = load_support_state();
+        let now = unix_now();
+        if state.first_seen_at == 0 {
+            state.first_seen_at = now;
+            save_support_state(&state);
+        }
+        let anchor = state.last_asked_at.unwrap_or(state.first_seen_at);
+        if tinycast_pure::support_reminder::SupportReminderSchedule::wait(anchor, now) == 0 {
+            self.show_support();
+        }
     }
 
     pub fn export_settings(&mut self, owner: HWND) {
@@ -2073,15 +2138,11 @@ impl AppCore {
             }
             LaunchSpec::OpenAbout => {
                 self.hide_palette();
-                if let Some(window) = &self.about_window {
-                    window.show();
-                }
+                self.show_about();
             }
             LaunchSpec::OpenSupport => {
                 self.hide_palette();
-                if let Some(window) = &self.support_window {
-                    window.show();
-                }
+                self.show_support();
             }
             LaunchSpec::OpenCalculatorHistory => self.open_calculator_history(),
             LaunchSpec::OpenClipboardHistory => self.open_clipboard_history(),
@@ -2515,6 +2576,10 @@ impl AppCore {
                 return;
             }
         }
+        if point_in(menu_button_rect(panel_h), x, y) {
+            self.toggle_app_menu();
+            return;
+        }
         if self.footer_action_group_visible() {
             if let Some(group) = action_group_rects(panel_w, panel_h) {
                 if point_in(group.actions, x, y) {
@@ -2550,6 +2615,37 @@ impl AppCore {
                 self.invalidate_palette();
             }
         }
+    }
+
+    fn toggle_app_menu(&mut self) {
+        if self.menu == OpenMenu::AppMenu {
+            self.close_menu();
+            return;
+        }
+        self.menu_header = "Tinycast".into();
+        self.menu_items = vec![
+            MenuItem {
+                id: "about",
+                label: "About Tinycast",
+                shortcut: None,
+            },
+            MenuItem {
+                id: "support",
+                label: "Support Tinycast",
+                shortcut: None,
+            },
+            MenuItem {
+                id: "settings",
+                label: "Settings",
+                shortcut: None,
+            },
+        ];
+        self.menu_selection = 0;
+        self.menu = OpenMenu::AppMenu;
+        if let Some(window) = &self.palette_window {
+            window.set_search_caret_visible(false);
+        }
+        self.invalidate_palette();
     }
 
     fn open_actions(&mut self) {
@@ -2651,6 +2747,19 @@ impl AppCore {
             ID_UNINSTALL => {
                 self.close_menu();
                 self.open_uninstall_for_selected();
+            }
+            "about" => {
+                self.close_menu();
+                self.show_about();
+            }
+            "support" => {
+                self.close_menu();
+                self.show_support();
+            }
+            "settings" => {
+                self.close_menu();
+                self.hide_palette();
+                self.open_settings();
             }
             other => {
                 if let Some(filter) = clip_screen::filter_from_id(other) {
@@ -3642,6 +3751,36 @@ fn user_locale() -> String {
         String::from_utf16_lossy(&buf[..n as usize - 1])
     } else {
         "en".into()
+    }
+}
+
+fn onboarding_done_path() -> std::path::PathBuf {
+    crate::platform::paths::roaming_dir().join("onboarding-done")
+}
+
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct SupportState {
+    #[serde(default, rename = "firstSeenAt")]
+    first_seen_at: i64,
+    #[serde(default, rename = "lastAskedAt")]
+    last_asked_at: Option<i64>,
+}
+
+fn support_state_path() -> std::path::PathBuf {
+    crate::platform::paths::roaming_dir().join("support-reminder.json")
+}
+
+fn load_support_state() -> SupportState {
+    let Ok(bytes) = std::fs::read(support_state_path()) else {
+        return SupportState::default();
+    };
+    serde_json::from_slice(&bytes).unwrap_or_default()
+}
+
+fn save_support_state(state: &SupportState) {
+    let _ = std::fs::create_dir_all(crate::platform::paths::roaming_dir());
+    if let Ok(bytes) = serde_json::to_vec_pretty(state) {
+        let _ = std::fs::write(support_state_path(), bytes);
     }
 }
 

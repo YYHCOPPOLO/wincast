@@ -124,6 +124,7 @@ pub enum OpenMenu {
     None,
     Actions,
     ClipboardFilter,
+    AppMenu,
 }
 
 impl OpenMenu {
@@ -134,7 +135,7 @@ impl OpenMenu {
     pub fn toggle_actions(self) -> Self {
         match self {
             OpenMenu::Actions => OpenMenu::None,
-            OpenMenu::None | OpenMenu::ClipboardFilter => OpenMenu::Actions,
+            OpenMenu::None | OpenMenu::ClipboardFilter | OpenMenu::AppMenu => OpenMenu::Actions,
         }
     }
 }
@@ -234,6 +235,19 @@ fn popover_menu_frame(
         (panel_h - MENU_INSET - h).max(MENU_INSET)
     };
     DipRect { x, y, w, h }
+}
+
+pub fn menu_button_rect(panel_h: f32) -> DipRect {
+    let bar_h = theme::size::BOTTOM_BAR_HEIGHT;
+    let bar_y = panel_h - bar_h;
+    let inset = theme::spacing::XXL;
+    let d = theme::size::MENU_BUTTON;
+    DipRect {
+        x: inset,
+        y: bar_y + (bar_h - d) / 2.0,
+        w: d,
+        h: d,
+    }
 }
 
 pub fn point_in(rect: DipRect, x: f32, y: f32) -> bool {

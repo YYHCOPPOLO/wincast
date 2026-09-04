@@ -31,6 +31,7 @@ pub mod search_scopes;
 pub mod settings_backup;
 pub mod settings_tab;
 pub mod snippet;
+pub mod support_reminder;
 pub mod system_action;
 pub mod template;
 pub mod template_tokens;

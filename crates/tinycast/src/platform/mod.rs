@@ -25,8 +25,10 @@ pub fn run() -> windows::core::Result<()> {
     let host = tray::create(&mut core)?;
     core.palette_window = Some(crate::palette::PaletteWindow::create(host)?);
     core.settings_window = Some(crate::surfaces::SettingsWindow::create(host)?);
-    core.about_window = Some(crate::surfaces::StubWindow::about(host)?);
-    core.support_window = Some(crate::surfaces::StubWindow::support(host)?);
+    core.about_window = None;
+    core.support_surface = crate::surfaces::SupportWindow::create(host).ok();
+    core.about_surface = crate::surfaces::AboutWindow::create(host).ok();
+    core.onboarding_window = crate::surfaces::OnboardingWindow::create(host).ok();
     core.set_host(host);
     core.start();
     pump()

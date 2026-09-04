@@ -590,6 +590,16 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    if selected == SettingsTab::About {
+        hide_edits(inner);
+        crate::features::settings::panes::about::paint(
+            target,
+            formats,
+            detail_w,
+            (*inner).scroll,
+        )?;
+        return Ok(());
+    }
     if selected == SettingsTab::Backup {
         hide_edits(inner);
         crate::features::backup::settings::pane::paint(
@@ -1251,6 +1261,9 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     if tab == SettingsTab::Permissions {
         return crate::features::settings::panes::permissions::content_height();
     }
+    if tab == SettingsTab::About {
+        return crate::features::settings::panes::about::content_height();
+    }
     if tab == SettingsTab::Backup {
         return crate::features::backup::settings::pane::content_height();
     }
@@ -1528,6 +1541,17 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             None => {}
         }
         let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    if tab == SettingsTab::About {
+        let Some(core) = core_from_host((*inner).host) else {
+            return;
+        };
+        if crate::features::settings::panes::about::hit(detail_x, y, (*inner).scroll)
+            == Some(crate::features::settings::panes::about::AboutHit::Support)
+        {
+            (*core).show_support();
+        }
         return;
     }
     if tab == SettingsTab::Backup {
