@@ -35,7 +35,7 @@ use windows::Win32::UI::Shell::{
 
 use super::coordinator::icon_source;
 
-pub const ROW_HEIGHT: f32 = 40.0;
+pub const ROW_HEIGHT: f32 = tinycast_pure::layout::list::ROW_HEIGHT;
 pub const SECTION_HEADER_HEIGHT: f32 = 22.0;
 pub const LIST_FADE: f32 = 24.0;
 const ICON_CACHE_MAX: usize = 8 * 1024 * 1024;
@@ -158,11 +158,11 @@ pub struct ListFonts {
 }
 
 pub fn list_top() -> f32 {
-    theme::size::COMPACT_HEIGHT
+    tinycast_pure::layout::list::content_top()
 }
 
 pub fn list_bottom(panel_h: f32) -> f32 {
-    (panel_h - theme::size::BOTTOM_BAR_HEIGHT).max(list_top())
+    panel_h.max(list_top())
 }
 
 pub fn slot_height(kind: SlotKind) -> f32 {
@@ -481,26 +481,27 @@ pub fn paint(
     dpi: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let top = list_top();
+    let origin = list_top();
+    let clip_top = tinycast_pure::layout::list::paint_clip_top();
     let bottom = list_bottom(panel_h);
-    if bottom - top < ROW_HEIGHT || items.is_empty() {
+    if bottom - origin < ROW_HEIGHT || items.is_empty() {
         return Ok(());
     }
     let clip = D2D_RECT_F {
         left: 0.0,
-        top,
+        top: clip_top,
         right: panel_w,
         bottom,
     };
     unsafe {
         target.PushAxisAlignedClip(&clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     }
-    let mut y = top - scroll;
+    let mut y = origin - scroll;
     for item in items {
         match item {
             PaintItem::Header { title } => {
                 let h = SECTION_HEADER_HEIGHT;
-                if y + h > top && y < bottom {
+                if y + h > clip_top && y < bottom {
                     paint_header(target, fonts, title, y, panel_w, h)?;
                 }
                 y += h;
@@ -514,7 +515,7 @@ pub fn paint(
                 selected,
             } => {
                 let h = ROW_HEIGHT;
-                if y + h > top && y < bottom {
+                if y + h > clip_top && y < bottom {
                     paint_row(
                         target,
                         dwrite,
@@ -544,7 +545,7 @@ pub fn paint(
                 is_error,
             } => {
                 let h = theme::size::CALC_CARD_HEIGHT;
-                if y + h > top && y < bottom {
+                if y + h > clip_top && y < bottom {
                     crate::features::calculator::ui::card::paint(
                         target,
                         dwrite,
@@ -569,7 +570,7 @@ pub fn paint(
                 selected,
             } => {
                 let h = tinycast_pure::emoji::CELL_DIP;
-                if y + h > top && y < bottom {
+                if y + h > clip_top && y < bottom {
                     paint_emoji_row(
                         target, fonts, glyphs, *columns, *start, *selected, y, panel_w, h,
                     )?;
@@ -584,7 +585,7 @@ pub fn paint(
     unsafe {
         target.PopAxisAlignedClip();
     }
-    paint_fade(target, panel_w, top, bottom)?;
+    paint_fade(target, panel_w, origin, bottom)?;
     Ok(())
 }
 
@@ -662,9 +663,9 @@ fn paint_header(
 ) -> windows::core::Result<()> {
     let brush = unsafe { target.CreateSolidColorBrush(&muted_color(0.45), None)? };
     let rect = D2D_RECT_F {
-        left: theme::spacing::XXL,
+        left: theme::spacing::MD,
         top: y,
-        right: panel_w - theme::spacing::XXL,
+        right: panel_w - theme::spacing::MD,
         bottom: y + h,
     };
     draw_text(target, &fonts.header, &brush, rect, title)
@@ -687,27 +688,15 @@ fn paint_row(
     dpi: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let inset = theme::spacing::XXL;
+    let inset = theme::spacing::MD;
     if selected {
-        let pill = D2D1_ROUNDED_RECT {
-            rect: D2D_RECT_F {
-                left: theme::spacing::MD,
-                top: y + 2.0,
-                right: panel_w - theme::spacing::MD,
-                bottom: y + h - 2.0,
-            },
-            radiusX: theme::radius::ROW,
-            radiusY: theme::radius::ROW,
-        };
-        let brush = unsafe { target.CreateSolidColorBrush(&selection_color(), None)? };
-        unsafe {
-            target.FillRoundedRectangle(&pill, &brush);
-        }
+        crate::design_system::paint_row_fill(target, panel_w, y, true, false, appearance)?;
     }
 
-    let icon_size = theme::size::ROW_ICON;
-    let icon_x = inset;
-    let icon_y = y + (h - icon_size) / 2.0;
+    let icon_rect = tinycast_pure::layout::list::row_icon_rect(y);
+    let icon_size = icon_rect.w;
+    let icon_x = icon_rect.x;
+    let icon_y = icon_rect.y;
     if let Some(source) = icon {
         if let Some(pixels) = cache.get_or_load(source, dpi.round() as u32, appearance) {
             let _ = draw_icon(target, pixels, icon_x, icon_y, icon_size);
@@ -1073,7 +1062,13 @@ mod tests {
     fn row_metrics_match_theme_tokens() {
         assert_eq!(theme::size::ROW_ICON, 24.0);
         assert_eq!(theme::radius::ROW, 10.0);
-        assert_eq!(ROW_HEIGHT, 40.0);
+        assert_eq!(ROW_HEIGHT, 36.0);
+    }
+
+    #[test]
+    fn row_height_matches_pure_layout() {
+        assert_eq!(ROW_HEIGHT, tinycast_pure::layout::list::ROW_HEIGHT);
+        assert_eq!(ROW_HEIGHT, 36.0);
     }
 
     #[test]
@@ -1128,9 +1123,9 @@ mod tests {
     #[test]
     fn ensure_visible_scrolls_selected_row_into_view() {
         let view = 100.0;
-        assert_eq!(ensure_visible(0.0, 0.0, 40.0, view), 0.0);
-        assert_eq!(ensure_visible(0.0, 80.0, 40.0, view), 20.0);
-        assert_eq!(ensure_visible(50.0, 0.0, 40.0, view), 0.0);
+        assert_eq!(ensure_visible(0.0, 0.0, ROW_HEIGHT, view), 0.0);
+        assert_eq!(ensure_visible(0.0, 80.0, ROW_HEIGHT, view), 16.0);
+        assert_eq!(ensure_visible(50.0, 0.0, ROW_HEIGHT, view), 0.0);
     }
 
     #[test]
