@@ -243,7 +243,7 @@ fn popover_menu_frame(
 pub fn menu_button_rect(panel_h: f32) -> DipRect {
     let bar_h = theme::size::BOTTOM_BAR_HEIGHT;
     let bar_y = panel_h - bar_h;
-    let inset = theme::spacing::XXL;
+    let inset = theme::spacing::MD;
     let d = theme::size::MENU_BUTTON;
     DipRect {
         x: inset,
@@ -251,6 +251,24 @@ pub fn menu_button_rect(panel_h: f32) -> DipRect {
         w: d,
         h: d,
     }
+}
+
+pub fn menu_line_rects(circle: DipRect) -> (DipRect, DipRect) {
+    let x = circle.x + (circle.w - 14.0) / 2.0;
+    let mid = circle.y + circle.h / 2.0;
+    let top = DipRect {
+        x,
+        y: mid - 1.5 - 1.5,
+        w: 14.0,
+        h: 1.5,
+    };
+    let bot = DipRect {
+        x,
+        y: mid + 1.5,
+        w: 8.0,
+        h: 1.5,
+    };
+    (top, bot)
 }
 
 pub fn point_in(rect: DipRect, x: f32, y: f32) -> bool {
@@ -311,7 +329,12 @@ pub struct ActionGroupRects {
     pub actions: DipRect,
 }
 
-pub fn action_group_rects(panel_w: f32, panel_h: f32) -> Option<ActionGroupRects> {
+pub fn action_group_rects_measured(
+    panel_w: f32,
+    panel_h: f32,
+    primary_w: f32,
+    actions_w: f32,
+) -> Option<ActionGroupRects> {
     if panel_h < theme::size::COMPACT_HEIGHT + theme::size::BOTTOM_BAR_HEIGHT {
         return None;
     }
@@ -319,8 +342,8 @@ pub fn action_group_rects(panel_w: f32, panel_h: f32) -> Option<ActionGroupRects
     let bar_y = panel_h - bar_h;
     let cap_h = theme::size::BAR_BUTTON_HEIGHT;
     let pad = theme::spacing::XS;
-    let inset = theme::spacing::XXL;
-    let capsule_w = pad * 2.0 + PRIMARY_BUTTON_WIDTH + FOOTER_BUTTON_GAP + ACTIONS_BUTTON_WIDTH;
+    let inset = theme::spacing::MD;
+    let capsule_w = pad * 2.0 + primary_w + FOOTER_BUTTON_GAP + actions_w;
     let capsule = DipRect {
         x: panel_w - inset - capsule_w,
         y: bar_y + (bar_h - cap_h) / 2.0,
@@ -330,13 +353,13 @@ pub fn action_group_rects(panel_w: f32, panel_h: f32) -> Option<ActionGroupRects
     let primary = DipRect {
         x: capsule.x + pad,
         y: capsule.y,
-        w: PRIMARY_BUTTON_WIDTH,
+        w: primary_w,
         h: cap_h,
     };
     let actions = DipRect {
-        x: primary.x + PRIMARY_BUTTON_WIDTH + FOOTER_BUTTON_GAP,
+        x: primary.x + primary_w + FOOTER_BUTTON_GAP,
         y: capsule.y,
-        w: ACTIONS_BUTTON_WIDTH,
+        w: actions_w,
         h: cap_h,
     };
     Some(ActionGroupRects {
@@ -344,6 +367,15 @@ pub fn action_group_rects(panel_w: f32, panel_h: f32) -> Option<ActionGroupRects
         primary,
         actions,
     })
+}
+
+pub fn action_group_rects(panel_w: f32, panel_h: f32) -> Option<ActionGroupRects> {
+    action_group_rects_measured(
+        panel_w,
+        panel_h,
+        PRIMARY_BUTTON_WIDTH,
+        ACTIONS_BUTTON_WIDTH,
+    )
 }
 
 pub fn clamp_menu_selection(selection: usize, count: usize) -> usize {
@@ -479,5 +511,32 @@ mod tests {
         assert_eq!(menu_row_at(frame, true, 3, 10.0, 10.0), None);
         assert_eq!(clamp_menu_selection(9, 3), 2);
         assert_eq!(clamp_menu_selection(0, 0), 0);
+    }
+
+    #[test]
+    fn menu_circle_uses_md_inset() {
+        let r = menu_button_rect(475.0);
+        assert_eq!(r.x, theme::spacing::MD);
+        assert_eq!(r.w, theme::size::MENU_BUTTON);
+    }
+
+    #[test]
+    fn measured_action_group_sits_in_md_margin() {
+        let g = action_group_rects_measured(750.0, 475.0, 100.0, 80.0).unwrap();
+        assert!((g.capsule.x + g.capsule.w - (750.0 - theme::spacing::MD)).abs() < 0.5);
+    }
+
+    #[test]
+    fn hamburger_lines_are_14_and_8() {
+        let c = DipRect {
+            x: 8.0,
+            y: 400.0,
+            w: 36.0,
+            h: 36.0,
+        };
+        let (a, b) = menu_line_rects(c);
+        assert_eq!(a.w, 14.0);
+        assert_eq!(b.w, 8.0);
+        assert_eq!(a.h, 1.5);
     }
 }
