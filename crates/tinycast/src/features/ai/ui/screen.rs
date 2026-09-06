@@ -1,6 +1,7 @@
 //! AI Chat / History palette rows. Assistant text is shown as markdown-ish lines; user is literal.
 
 use tinycast_pure::ai::{ChatConversation, ChatMessage, ChatRole, ChatState};
+use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 
@@ -23,11 +24,11 @@ pub fn model_button_rect(panel_w: f32) -> DipRect {
 }
 
 pub fn chat_placeholder() -> &'static str {
-    "Message"
+    PaletteMode::Ai.placeholder()
 }
 
 pub fn history_placeholder() -> &'static str {
-    "Search chats"
+    PaletteMode::AiHistory.placeholder()
 }
 
 pub fn paint_chat(
@@ -120,6 +121,12 @@ fn strip_inline(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chat_placeholder_is_ask_anything() {
+        assert_eq!(chat_placeholder(), "Ask anything…");
+        assert_eq!(history_placeholder(), "Search chats…");
+    }
 
     #[test]
     fn user_stays_literal_assistant_drops_fences() {

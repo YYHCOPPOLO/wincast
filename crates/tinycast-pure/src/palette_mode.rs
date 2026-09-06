@@ -64,4 +64,22 @@ mod tests {
         assert_eq!(PaletteMode::Ai.placeholder(), "Ask anything…");
         assert_eq!(PaletteMode::Launcher.header_symbol(), "magnifyingglass");
     }
+
+    #[test]
+    fn every_mode_placeholder_matches_v0102() {
+        use PaletteMode::*;
+        assert_eq!(Clipboard.placeholder(), "Type to filter entries…");
+        assert_eq!(Ai.placeholder(), "Ask anything…");
+        assert_eq!(AiHistory.placeholder(), "Search chats…");
+        assert_eq!(
+            CalculatorHistory.placeholder(),
+            "Do math, convert units, or search your past calculations…"
+        );
+        assert_eq!(Emoji.placeholder(), "Search emoji and symbols…");
+        assert_eq!(FileSearch.placeholder(), "Search files and folders…");
+        assert_eq!(Schedule.placeholder(), "Search today and tomorrow…");
+        assert_eq!(Uninstall.placeholder(), "Filter files and folders by name…");
+        assert_eq!(Quicklinks.placeholder(), "Search quicklinks…");
+        assert_eq!(QuicklinkArguments.placeholder(), "Enter a value…");
+    }
 }

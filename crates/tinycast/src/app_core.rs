@@ -4726,6 +4726,11 @@ mod tests {
     }
 
     #[test]
+    fn ai_live_placeholder_is_ask_anything() {
+        assert_eq!(placeholder_for(PaletteMode::Ai, None), "Ask anything…");
+    }
+
+    #[test]
     fn toggle_palette_flips_visible_and_prepares_launcher() {
         let mut c = AppCore::new();
         assert!(!c.palette_visible);
