@@ -99,6 +99,30 @@ impl SettingsTab {
             SettingsTab::About => "About",
         }
     }
+
+    pub fn system_image(self) -> &'static str {
+        match self {
+            SettingsTab::General => "switch.2",
+            SettingsTab::Applications => "square.grid.2x2",
+            SettingsTab::SystemSettings => "gearshape",
+            SettingsTab::SystemActions => "bolt",
+            SettingsTab::Commands => "terminal",
+            SettingsTab::Quicklinks => "link",
+            SettingsTab::Ai => "sparkles",
+            SettingsTab::QuickActions => "wand.and.sparkles",
+            SettingsTab::FileSearch => "doc.text.magnifyingglass",
+            SettingsTab::Notes => "text.page",
+            SettingsTab::Snippets => "curlybraces",
+            SettingsTab::WindowManagement => "macwindow",
+            SettingsTab::Clipboard => "doc.on.clipboard",
+            SettingsTab::Emoji => "face.smiling",
+            SettingsTab::Calendar => "calendar",
+            SettingsTab::Extensions => "puzzlepiece.extension",
+            SettingsTab::Permissions => "lock.shield",
+            SettingsTab::Backup => "arrow.up.arrow.down.circle",
+            SettingsTab::About => "info.circle",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -154,6 +178,12 @@ mod tests {
     fn permissions_tab_is_under_general_section() {
         assert_eq!(SettingsSection::General.tabs()[1], SettingsTab::Permissions);
         assert_eq!(SettingsTab::Permissions.title(), "Permissions");
+    }
+
+    #[test]
+    fn general_tab_symbol_is_switch() {
+        assert_eq!(SettingsTab::General.system_image(), "switch.2");
+        assert_eq!(SettingsTab::About.system_image(), "info.circle");
     }
 
     #[test]

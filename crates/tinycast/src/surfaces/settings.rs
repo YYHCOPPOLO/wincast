@@ -1,7 +1,8 @@
 use tinycast_pure::hotkey::{CaptureOutcome, Modifiers};
+use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
 use tinycast_pure::theme;
-use windows::core::w;
+use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{
     COLORREF, D2DERR_RECREATE_TARGET, FALSE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
@@ -36,13 +37,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetWindowLongPtrW,
     GetWindowRect, IsWindow, LoadCursorW, LoadIconW, RegisterClassW, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE,
-    EN_KILLFOCUS, GWLP_USERDATA, HWND_TOP, IDC_ARROW, IDI_APPLICATION, MINMAXINFO, SWP_NOACTIVATE,
-    SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
-    WM_PAINT, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_APPWINDOW,
-    WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_SYSMENU,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, CREATESTRUCTW, CS_HREDRAW,
+    CS_VREDRAW, EN_CHANGE, EN_KILLFOCUS, GWLP_USERDATA, HWND_TOP, IDC_ARROW, IDI_APPLICATION,
+    MINMAXINFO, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE,
+    WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN,
+    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_SYSMENU,
 };
 
 use crate::app_core::AppCore;
@@ -162,6 +163,7 @@ struct SettingsInner {
 
 struct Renderer {
     factory: ID2D1Factory,
+    dwrite: IDWriteFactory,
     header_format: IDWriteTextFormat,
     tab_format: IDWriteTextFormat,
     body_format: IDWriteTextFormat,
@@ -214,7 +216,7 @@ impl SettingsWindow {
             let hwnd = match CreateWindowExW(
                 settings_ex_style(),
                 CLASS,
-                w!("Tinycast"),
+                w!("General"),
                 settings_style(),
                 0,
                 0,
@@ -270,6 +272,7 @@ impl SettingsWindow {
         unsafe {
             if let Some(inner) = inner_from(self.hwnd) {
                 reset_pane_state(inner, true);
+                set_caption(self.hwnd, selected_tab(inner));
             }
         }
         self.invalidate();
@@ -350,6 +353,7 @@ impl Renderer {
         }
         Ok(Self {
             factory,
+            dwrite,
             header_format,
             tab_format,
             body_format,
@@ -391,6 +395,7 @@ impl Renderer {
         let err = paint_scene(
             hwnd,
             target,
+            &self.dwrite,
             &self.header_format,
             &self.tab_format,
             &self.body_format,
@@ -458,6 +463,7 @@ fn client_size(hwnd: HWND) -> (u32, u32) {
 fn paint_scene(
     hwnd: HWND,
     target: &ID2D1RenderTarget,
+    dwrite: &IDWriteFactory,
     header_format: &IDWriteTextFormat,
     tab_format: &IDWriteTextFormat,
     body_format: &IDWriteTextFormat,
@@ -467,6 +473,7 @@ fn paint_scene(
 ) -> windows::core::Result<()> {
     unsafe {
         target.BeginDraw();
+        set_caption(hwnd, selected);
         let size = target.GetSize();
         target.Clear(Some(&grouped_form_bg()));
         let sidebar_w = theme::size::SETTINGS_SIDEBAR;
@@ -517,6 +524,19 @@ fn paint_scene(
                         };
                         target.FillRoundedRectangle(&pill, &sel_brush);
                     }
+                    let icon = theme::size::SETTINGS_ROW_ICON;
+                    let _ = crate::design_system::symbols::paint_fluent_in(
+                        target,
+                        dwrite,
+                        tab.system_image(),
+                        DipRect {
+                            x: theme::spacing::XL,
+                            y: row.y + (row.height - icon) / 2.0,
+                            w: icon,
+                            h: icon,
+                        },
+                        (1.0, 1.0, 1.0, 0.92),
+                    );
                     draw_label(target, tab_format, &tab_brush, tab_rect(&row), tab.title())?;
                 }
             }
@@ -1120,6 +1140,14 @@ unsafe fn commit_alias(inner: *mut SettingsInner) {
     if let Some(entry) = filtered.get(idx) {
         let id = entry.id.clone();
         (*core).set_alias_draft(&id, &text);
+    }
+}
+
+fn set_caption(hwnd: HWND, tab: SettingsTab) {
+    let mut wide: Vec<u16> = tab.title().encode_utf16().collect();
+    wide.push(0);
+    unsafe {
+        let _ = SetWindowTextW(hwnd, PCWSTR(wide.as_ptr()));
     }
 }
 
