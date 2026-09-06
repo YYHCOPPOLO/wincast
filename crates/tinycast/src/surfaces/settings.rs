@@ -475,19 +475,15 @@ fn paint_scene(
         target.BeginDraw();
         set_caption(hwnd, selected);
         let size = target.GetSize();
-        target.Clear(Some(&grouped_form_bg()));
+        let appearance = settings_appearance(inner);
+        crate::design_system::settings::paint_window_background(
+            target,
+            size.width,
+            size.height,
+            appearance,
+        )?;
         let sidebar_w = theme::size::SETTINGS_SIDEBAR;
-        let sidebar_brush = target.CreateSolidColorBrush(&sidebar_bg(), None)?;
-        target.FillRectangle(
-            &D2D_RECT_F {
-                left: 0.0,
-                top: 0.0,
-                right: sidebar_w,
-                bottom: size.height,
-            },
-            &sidebar_brush,
-        );
-        let line_brush = target.CreateSolidColorBrush(&hairline_color(), None)?;
+        let line_brush = target.CreateSolidColorBrush(&hairline_color(appearance), None)?;
         target.DrawLine(
             D2D_POINT_2F {
                 x: sidebar_w,
@@ -501,9 +497,9 @@ fn paint_scene(
             theme::size::HAIRLINE,
             None,
         );
-        let sel_brush = target.CreateSolidColorBrush(&selection_color(), None)?;
-        let header_brush = target.CreateSolidColorBrush(&header_text_color(), None)?;
-        let tab_brush = target.CreateSolidColorBrush(&tab_text_color(), None)?;
+        let sel_brush = target.CreateSolidColorBrush(&selection_color(appearance), None)?;
+        let header_brush = target.CreateSolidColorBrush(&header_text_color(appearance), None)?;
+        let tab_brush = target.CreateSolidColorBrush(&tab_text_color(appearance), None)?;
         for row in sidebar_rows() {
             match row.kind {
                 RowKind::Header(section) => {
@@ -525,6 +521,11 @@ fn paint_scene(
                         target.FillRoundedRectangle(&pill, &sel_brush);
                     }
                     let icon = theme::size::SETTINGS_ROW_ICON;
+                    let ink = theme::colors::ramp_rgba(
+                        appearance,
+                        theme::colors::TEXT_PRIMARY_ALPHA,
+                        theme::colors::TEXT_PRIMARY_ALPHA,
+                    );
                     let _ = crate::design_system::symbols::paint_fluent_in(
                         target,
                         dwrite,
@@ -535,7 +536,7 @@ fn paint_scene(
                             w: icon,
                             h: icon,
                         },
-                        (1.0, 1.0, 1.0, 0.92),
+                        ink,
                     );
                     draw_label(target, tab_format, &tab_brush, tab_rect(&row), tab.title())?;
                 }
@@ -671,9 +672,18 @@ unsafe fn paint_detail(
         }
         return Ok(());
     }
+    let appearance = settings_appearance(inner);
     with_detail_origin(target, || {
         paint_detail_panes(
             hwnd, target, formats, selected, inner, core, sidebar_w, detail_w,
+        )?;
+        crate::design_system::settings::paint_overflow_fade(
+            target,
+            detail_w,
+            height,
+            pane_content_height(inner, width),
+            (*inner).scroll,
+            appearance,
         )
     })
 }
@@ -1199,58 +1209,47 @@ fn pill_rect(row: &SidebarRow) -> D2D_RECT_F {
     }
 }
 
-fn sidebar_bg() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 0.11,
-        g: 0.11,
-        b: 0.11,
-        a: 1.0,
+fn settings_appearance(inner: *mut SettingsInner) -> u8 {
+    unsafe {
+        core_from_host((*inner).host)
+            .map(|core| match (*core).settings.appearance {
+                crate::app_settings::Appearance::Light => 1,
+                _ => 0,
+            })
+            .unwrap_or(0)
     }
 }
 
-fn grouped_form_bg() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 0.16,
-        g: 0.16,
-        b: 0.16,
-        a: 1.0,
-    }
+fn hairline_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::SEPARATOR_DARK_ALPHA,
+        theme::colors::SEPARATOR_LIGHT_ALPHA,
+    ))
 }
 
-fn hairline_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.08,
-    }
+fn selection_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::SELECTION_DARK_ALPHA,
+        theme::colors::SELECTION_LIGHT_ALPHA,
+    ))
 }
 
-fn selection_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: theme::colors::SELECTION_DARK_ALPHA,
-    }
+fn header_text_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_TERTIARY_DARK_ALPHA,
+        theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
+    ))
 }
 
-fn header_text_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.45,
-    }
-}
-
-fn tab_text_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    }
+fn tab_text_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+    ))
 }
 
 unsafe fn place_hidden(hwnd: HWND) {

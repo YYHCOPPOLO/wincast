@@ -219,4 +219,11 @@ mod tests {
         assert_eq!(colors::scrim_rgba(0), (0.0, 0.0, 0.0, 0.40));
         assert_eq!(colors::scrim_rgba(1), (1.0, 1.0, 1.0, 0.55));
     }
+
+    #[test]
+    fn settings_chrome_colors_are_pinned() {
+        use crate::theme::settings_chrome::*;
+        assert!((SIDEBAR_DARK.0 - 28.0 / 255.0).abs() < 0.001);
+        assert!((DETAIL_LIGHT.0 - 242.0 / 255.0).abs() < 0.001);
+    }
 }

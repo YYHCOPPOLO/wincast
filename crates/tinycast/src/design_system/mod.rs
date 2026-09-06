@@ -4,6 +4,7 @@ pub mod fonts;
 pub mod keycap;
 pub mod panel;
 pub mod row;
+pub mod settings;
 pub mod squircle;
 pub mod symbols;
 
