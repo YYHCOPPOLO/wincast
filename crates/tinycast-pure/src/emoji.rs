@@ -1,6 +1,7 @@
 //! Bundled compact emoji catalog. Search is case-insensitive substring on name/keywords.
 
 pub const CELL_DIP: f32 = 56.0;
+pub const GRID_COLUMNS: usize = 8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EmojiSkinTone {

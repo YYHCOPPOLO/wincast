@@ -3,14 +3,21 @@
 
 pub mod settings;
 
-use tinycast_pure::emoji::{columns_for_width, search_emoji_with_tone, EmojiSkinTone, CELL_DIP};
+use tinycast_pure::emoji::{
+    search_emoji_with_tone, EmojiSkinTone, CELL_DIP, GRID_COLUMNS,
+};
 use tinycast_pure::theme;
 
 use crate::features::launcher::ui::list::PaintItem;
 
-pub fn paint_items(query: &str, tone: EmojiSkinTone, selection: usize, width: f32) -> Vec<PaintItem> {
+pub fn paint_items(
+    query: &str,
+    tone: EmojiSkinTone,
+    selection: usize,
+    _width: f32,
+) -> Vec<PaintItem> {
     let hits = search_emoji_with_tone(query, tone);
-    let columns = columns_for_width(width).max(1);
+    let columns = GRID_COLUMNS;
     let mut items = Vec::new();
     let mut index = 0usize;
     let mut i = 0usize;
@@ -44,8 +51,8 @@ pub fn glyph_at(query: &str, tone: EmojiSkinTone, index: usize) -> Option<String
         .map(|e| e.glyph.clone())
 }
 
-pub fn columns(width: f32) -> usize {
-    columns_for_width(width).max(1)
+pub fn columns(_width: f32) -> usize {
+    GRID_COLUMNS
 }
 
 pub fn cell_dip() -> f32 {
@@ -106,12 +113,22 @@ mod tests {
             .iter()
             .any(|i| matches!(i, PaintItem::EmojiRow { glyphs, .. } if !glyphs.is_empty())));
         assert_eq!(cell_dip(), 56.0);
-        let cols = columns_for_width(theme::size::PANEL_WIDTH);
         if let Some(PaintItem::EmojiRow { columns, .. }) = items
             .iter()
             .find(|i| matches!(i, PaintItem::EmojiRow { .. }))
         {
-            assert_eq!(*columns, cols);
+            assert_eq!(*columns, GRID_COLUMNS);
         }
+    }
+
+    #[test]
+    fn emoji_cell_is_56_and_eight_columns() {
+        assert_eq!(tinycast_pure::emoji::CELL_DIP, 56.0);
+        let items = paint_items("", EmojiSkinTone::None, 0, 750.0);
+        let row = items.iter().find_map(|i| match i {
+            PaintItem::EmojiRow { columns, .. } => Some(*columns),
+            _ => None,
+        });
+        assert_eq!(row, Some(8));
     }
 }
