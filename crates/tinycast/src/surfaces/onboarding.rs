@@ -2,31 +2,50 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, SetBkMode, SetTextColor, TextOutW, TRANSPARENT,
-};
+use tinycast_pure::hotkey::{CaptureOutcome, Modifiers};
+use tinycast_pure::palette_placement::DipRect;
+use tinycast_pure::theme;
+use windows::core::w;
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, SetFocus, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW,
-    IsWindow, LoadCursorW, RegisterClassW, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
-    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, GWLP_WNDPROC, IDC_ARROW, SW_HIDE, SW_SHOW,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_KEYDOWN, WM_KEYUP,
-    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU,
-    WS_VISIBLE,
+    CallWindowProcW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, IsWindow,
+    LoadCursorW, RegisterClassW, SetWindowLongPtrW, ShowWindow, CREATESTRUCTW, CS_HREDRAW,
+    CS_VREDRAW, GWLP_USERDATA, GWLP_WNDPROC, IDC_ARROW, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_OVERLAPPED, WS_SYSMENU,
 };
 
 use crate::app_core::AppCore;
-use crate::features::hotkeys::ui::recorder::Recorder;
-use tinycast_pure::hotkey::{CaptureOutcome, HotKeyBinding, Modifiers};
+use crate::design_system::host::OverlayPainter;
+use crate::design_system::panel::paint_sheen;
+use crate::design_system::squircle::fill_squircle;
+use crate::design_system::text;
+use crate::features::hotkeys::ui::recorder::{self, Recorder};
 
 const CLASS: windows::core::PCWSTR = w!("TinycastOnboarding");
 const ID_CONTINUE: usize = 1;
 const ID_RECORD: usize = 2;
+pub const WINDOW: (f32, f32) = (520.0, 400.0);
+
+const STEPS: [&str; 4] = [
+    "Welcome to Tinycast",
+    "Enable Pasting",
+    "Import from Raycast",
+    "You're all set",
+];
+
+const SUBTITLES: [&str; 4] = [
+    "Set a shortcut to summon the launcher from anywhere.",
+    "Let Tinycast paste items back into the app you were using.",
+    "Bring your shortcuts, favorites, and clipboard history along.",
+    "Tinycast is ready. Press your shortcut anytime to start.",
+];
 
 pub struct OnboardingWindow {
     pub hwnd: HWND,
@@ -37,6 +56,10 @@ struct Inner {
     recorder: Recorder,
     record_btn: HWND,
     record_prev: Option<windows::Win32::UI::WindowsAndMessaging::WNDPROC>,
+    step: usize,
+    painter: Option<OverlayPainter>,
+    continue_rect: DipRect,
+    record_rect: DipRect,
 }
 
 impl OnboardingWindow {
@@ -59,8 +82,8 @@ impl OnboardingWindow {
                 WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
                 220,
                 160,
-                480,
-                280,
+                WINDOW.0.round() as i32,
+                WINDOW.1.round() as i32,
                 host,
                 None,
                 hinstance,
@@ -135,6 +158,27 @@ fn current_modifiers() -> Modifiers {
     }
 }
 
+fn empty_rect() -> DipRect {
+    DipRect {
+        x: 0.0,
+        y: 0.0,
+        w: 0.0,
+        h: 0.0,
+    }
+}
+
+fn contains(rect: DipRect, x: f32, y: f32) -> bool {
+    x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h
+}
+
+fn client_dip(hwnd: HWND, lparam: LPARAM) -> (f32, f32) {
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
+    let dpi = if dpi == 0 { 96.0 } else { dpi as f32 };
+    let x = (lparam.0 as u32 & 0xFFFF) as i16 as f32 * 96.0 / dpi;
+    let y = ((lparam.0 as u32 >> 16) & 0xFFFF) as i16 as f32 * 96.0 / dpi;
+    (x, y)
+}
+
 unsafe fn apply_capture(hwnd: HWND, outcome: CaptureOutcome) {
     let Some(inner) = inner_from(hwnd) else {
         return;
@@ -167,6 +211,43 @@ unsafe fn apply_capture(hwnd: HWND, outcome: CaptureOutcome) {
     }
 }
 
+fn continue_clicked(hwnd: HWND) {
+    unsafe {
+        let Some(inner) = inner_from(hwnd) else {
+            return;
+        };
+        if (*inner).step + 1 < STEPS.len() {
+            (*inner).step += 1;
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(
+                hwnd,
+                None,
+                windows::Win32::Foundation::FALSE,
+            );
+            return;
+        }
+        if let Some(core) = core_from_host((*inner).host) {
+            (*core).finish_onboarding();
+        }
+    }
+}
+
+fn record_clicked(hwnd: HWND) {
+    unsafe {
+        if let Some(inner) = inner_from(hwnd) {
+            (*inner).recorder.begin("hotkey.togglePalette".into());
+            if let Some(core) = core_from_host((*inner).host) {
+                (*core).pause_global_hotkeys();
+            }
+            let _ = SetFocus(hwnd);
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(
+                hwnd,
+                None,
+                windows::Win32::Foundation::FALSE,
+            );
+        }
+    }
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_NCCREATE => {
@@ -176,7 +257,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
                 w!("Record shortcut"),
-                WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+                WINDOW_STYLE(WS_CHILD.0),
                 40,
                 140,
                 160,
@@ -187,11 +268,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 None,
             )
             .unwrap_or_default();
-            let _ = CreateWindowExW(
+            let continue_btn = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
                 w!("Continue"),
-                WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | 1),
+                WINDOW_STYLE(WS_CHILD.0 | 1),
                 220,
                 140,
                 120,
@@ -200,12 +281,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 windows::Win32::UI::WindowsAndMessaging::HMENU(ID_CONTINUE as *mut core::ffi::c_void),
                 hinstance,
                 None,
-            );
+            )
+            .unwrap_or_default();
+            let _ = ShowWindow(record_btn, SW_HIDE);
+            let _ = ShowWindow(continue_btn, SW_HIDE);
             let inner = Box::new(Inner {
                 host: HWND(cs.lpCreateParams),
                 recorder: Recorder::new(),
                 record_btn,
                 record_prev: None,
+                step: 0,
+                painter: OverlayPainter::new().ok(),
+                continue_rect: empty_rect(),
+                record_rect: empty_rect(),
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
             if let Some(inner) = inner_from(hwnd) {
@@ -218,45 +306,29 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(1)
         }
+        WM_ERASEBKGND => LRESULT(1),
         WM_PAINT => {
-            let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
-            let hdc = BeginPaint(hwnd, &mut ps);
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, windows::Win32::Foundation::COLORREF(0x202020));
-            let _ = GetClientRect(hwnd, &mut RECT::default());
-            let recording = inner_from(hwnd)
-                .map(|i| (*i).recorder.is_recording())
-                .unwrap_or(false);
-            let text = if recording {
-                "Recording… press the palette shortcut."
-            } else {
-                "Welcome to Tinycast.\nRecord the palette shortcut, then continue."
-            };
-            let wide: Vec<u16> = text.encode_utf16().collect();
-            TextOutW(hdc, 40, 40, &wide);
-            let _ = EndPaint(hwnd, &ps);
+            paint(hwnd);
+            LRESULT(0)
+        }
+        WM_LBUTTONDOWN => {
+            let (x, y) = client_dip(hwnd, lparam);
+            if let Some(inner) = inner_from(hwnd) {
+                if contains((*inner).continue_rect, x, y) {
+                    continue_clicked(hwnd);
+                } else if (*inner).step == 0 && contains((*inner).record_rect, x, y) {
+                    record_clicked(hwnd);
+                }
+            }
             LRESULT(0)
         }
         WM_COMMAND => {
             let id = (wparam.0 as u16) as usize;
             if id == ID_RECORD {
-                if let Some(inner) = inner_from(hwnd) {
-                    (*inner).recorder.begin("hotkey.togglePalette".into());
-                    if let Some(core) = core_from_host((*inner).host) {
-                        (*core).pause_global_hotkeys();
-                    }
-                    let _ = SetFocus(hwnd);
-                    let _ = windows::Win32::Graphics::Gdi::InvalidateRect(
-                        hwnd,
-                        None,
-                        windows::Win32::Foundation::FALSE,
-                    );
-                }
+                record_clicked(hwnd);
             }
             if id == ID_CONTINUE {
-                if let Some(core) = inner_from(hwnd).and_then(|i| core_from_host((*i).host)) {
-                    (*core).finish_onboarding();
-                }
+                continue_clicked(hwnd);
             }
             LRESULT(0)
         }
@@ -306,6 +378,165 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
 }
 
+fn paint(hwnd: HWND) {
+    unsafe {
+        let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
+        let hdc = windows::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut ps);
+        if hdc.is_invalid() {
+            return;
+        }
+        let Some(inner) = inner_from(hwnd) else {
+            let _ = windows::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
+            return;
+        };
+        let step = (*inner).step.min(3);
+        let recording = (*inner).recorder.is_recording();
+        let mut continue_rect = empty_rect();
+        let mut record_rect = empty_rect();
+        if let Some(painter) = (*inner).painter.as_mut() {
+            let _ = painter.paint(hwnd, |target, fonts| {
+                let size = target.GetSize();
+                fill_squircle(
+                    target,
+                    DipRect {
+                        x: 0.0,
+                        y: 0.0,
+                        w: size.width,
+                        h: size.height,
+                    },
+                    theme::radius::PANEL,
+                    theme::colors::scrim_rgba(0),
+                )?;
+                paint_sheen(target, size.width, size.height, 0)?;
+                let pad = theme::spacing::XXL;
+                let hero = 60.0;
+                let hero_rect = DipRect {
+                    x: (size.width - hero) / 2.0,
+                    y: pad,
+                    w: hero,
+                    h: hero,
+                };
+                fill_squircle(target, hero_rect, 16.0, text::control_surface(0))?;
+                let glyph = match step {
+                    1 => "lock.shield",
+                    2 => "wand.and.sparkles",
+                    3 => "checkmark",
+                    _ => "magnifyingglass",
+                };
+                crate::design_system::symbols::paint_fluent_in(
+                    target,
+                    &fonts.dwrite,
+                    glyph,
+                    DipRect {
+                        x: hero_rect.x + 14.0,
+                        y: hero_rect.y + 14.0,
+                        w: 32.0,
+                        h: 32.0,
+                    },
+                    text::primary_ink(0),
+                )?;
+                text::draw(
+                    target,
+                    &fonts.headline_center,
+                    STEPS[step],
+                    DipRect {
+                        x: pad,
+                        y: pad + hero + theme::spacing::MD,
+                        w: size.width - pad * 2.0,
+                        h: 24.0,
+                    },
+                    text::primary_ink(0),
+                )?;
+                text::draw(
+                    target,
+                    &fonts.wrap_callout,
+                    SUBTITLES[step],
+                    DipRect {
+                        x: pad,
+                        y: pad + hero + 36.0,
+                        w: size.width - pad * 2.0,
+                        h: 48.0,
+                    },
+                    text::secondary_ink(0),
+                )?;
+                if step == 0 {
+                    let well_w = theme::size::SHORTCUT_RECORDER;
+                    record_rect = DipRect {
+                        x: (size.width - well_w) / 2.0,
+                        y: 210.0,
+                        w: well_w,
+                        h: 28.0,
+                    };
+                    fill_squircle(
+                        target,
+                        record_rect,
+                        theme::radius::MENU,
+                        text::control_surface(0),
+                    )?;
+                    let caption = recorder::well_caption(None, recording);
+                    text::draw(
+                        target,
+                        &fonts.bar,
+                        &caption,
+                        record_rect,
+                        text::secondary_ink(0),
+                    )?;
+                }
+                let btn_h = theme::size::MENU_BUTTON;
+                continue_rect = DipRect {
+                    x: (size.width - 140.0) / 2.0,
+                    y: size.height - pad - btn_h,
+                    w: 140.0,
+                    h: btn_h,
+                };
+                fill_squircle(
+                    target,
+                    continue_rect,
+                    btn_h / 2.0,
+                    text::control_surface(0),
+                )?;
+                let label = if step + 1 == STEPS.len() {
+                    "Get Started"
+                } else {
+                    "Continue"
+                };
+                text::draw(
+                    target,
+                    &fonts.bar,
+                    label,
+                    continue_rect,
+                    text::primary_ink(0),
+                )?;
+                let mut dot_x = size.width / 2.0 - 18.0;
+                let dot_y = continue_rect.y - 18.0;
+                for i in 0..STEPS.len() {
+                    let on = i == step;
+                    fill_squircle(
+                        target,
+                        DipRect {
+                            x: dot_x,
+                            y: dot_y,
+                            w: 7.0,
+                            h: 7.0,
+                        },
+                        3.5,
+                        if on {
+                            text::primary_ink(0)
+                        } else {
+                            text::tertiary_ink(0)
+                        },
+                    )?;
+                    dot_x += 12.0;
+                }
+                Ok(())
+            });
+            (*inner).continue_rect = continue_rect;
+            (*inner).record_rect = record_rect;
+        }
+        let _ = windows::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
+    }
+}
+
 unsafe extern "system" fn record_subclass(
     hwnd: HWND,
     msg: u32,
@@ -348,5 +579,18 @@ mod tests {
         assert!(r.is_recording());
         let _ = now_ms();
         let _ = current_modifiers();
+    }
+
+    #[test]
+    fn onboarding_size_is_520x400() {
+        assert_eq!(crate::surfaces::onboarding::WINDOW, (520.0, 400.0));
+    }
+
+    #[test]
+    fn onboarding_has_no_textout() {
+        let src = include_str!("onboarding.rs");
+        let impl_src = src.split("mod tests").next().unwrap_or(src);
+        let marker = ["Text", "OutW"].concat();
+        assert!(!impl_src.contains(&marker));
     }
 }
