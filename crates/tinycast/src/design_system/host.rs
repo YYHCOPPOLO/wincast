@@ -90,6 +90,12 @@ impl OverlayPainter {
         if width == 0 || height == 0 {
             return Ok(());
         }
+        if let Some(target) = &self.hwnd_target {
+            let size = D2D_SIZE_U { width, height };
+            if unsafe { target.Resize(&size) }.is_err() {
+                self.hwnd_target = None;
+            }
+        }
         if self.hwnd_target.is_none() {
             match create_hwnd_target(&self.factory, hwnd, width, height) {
                 Ok(target) => self.hwnd_target = Some(target),
