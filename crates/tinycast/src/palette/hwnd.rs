@@ -1,3 +1,4 @@
+use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
 use tinycast_pure::palette_state::should_draw_placeholder;
 use tinycast_pure::theme;
@@ -365,6 +366,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         let params = PaintParams {
             placeholder: false,
             placeholder_text: "",
+            header_symbol: "magnifyingglass",
             items: &[],
             scroll: 0.0,
             cache: &mut inner.icons,
@@ -393,9 +395,15 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     let tab_hint = (*core).tab_hint();
     let filter = (*core).clipboard_filter_paint();
     layout_edit(hwnd, inner, (*core).search_trailing_width());
+    let header_symbol = if (*core).palette.mode == PaletteMode::Launcher {
+        "magnifyingglass"
+    } else {
+        "chevron.left"
+    };
     let params = PaintParams {
         placeholder,
         placeholder_text: placeholder_owned.as_str(),
+        header_symbol,
         items: &items,
         scroll,
         cache: &mut inner.icons,

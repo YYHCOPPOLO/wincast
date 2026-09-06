@@ -44,6 +44,7 @@ pub struct Renderer {
 pub struct PaintParams<'a> {
     pub placeholder: bool,
     pub placeholder_text: &'a str,
+    pub header_symbol: &'a str,
     pub items: &'a [PaintItem],
     pub scroll: f32,
     pub cache: &'a mut IconCache,
@@ -382,6 +383,12 @@ fn paint_scene(
         let color = scrim_color();
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
+        let _ = crate::design_system::symbols::paint_header_glyph(
+            target,
+            dwrite,
+            params.header_symbol,
+            params.appearance,
+        );
         if params.placeholder {
             let _ = paint_placeholder(
                 target,

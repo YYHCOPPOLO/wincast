@@ -4,6 +4,7 @@ pub mod keycap;
 pub mod panel;
 pub mod row;
 pub mod squircle;
+pub mod symbols;
 
 pub use fonts::Fonts;
 pub use keycap::paint_keycap;
