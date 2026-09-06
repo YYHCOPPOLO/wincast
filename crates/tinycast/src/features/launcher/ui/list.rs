@@ -37,7 +37,19 @@ use super::coordinator::icon_source;
 
 pub const ROW_HEIGHT: f32 = tinycast_pure::layout::list::ROW_HEIGHT;
 pub const SECTION_HEADER_HEIGHT: f32 = 22.0;
-pub const LIST_FADE: f32 = 24.0;
+
+fn fade_top() -> f32 {
+    tinycast_pure::layout::list::edge_dissolve_top_band()
+}
+
+fn fade_bottom() -> f32 {
+    tinycast_pure::layout::list::edge_dissolve_bottom_band()
+}
+
+#[cfg(test)]
+pub(crate) fn fade_top_for_test() -> f32 {
+    fade_top()
+}
 const ICON_CACHE_MAX: usize = 8 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -585,7 +597,17 @@ pub fn paint(
     unsafe {
         target.PopAxisAlignedClip();
     }
-    paint_fade(target, panel_w, origin, bottom)?;
+    let content_h = content_height(&slots_of(items));
+    let visible = (bottom - origin).max(0.0);
+    paint_fade(
+        target,
+        panel_w,
+        clip_top,
+        bottom,
+        content_h,
+        visible,
+        appearance,
+    )?;
     Ok(())
 }
 
@@ -870,27 +892,61 @@ fn draw_icon(
 fn paint_fade(
     target: &ID2D1RenderTarget,
     panel_w: f32,
-    top: f32,
+    clip_top: f32,
     bottom: f32,
+    content_h: f32,
+    visible: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let fade = LIST_FADE.min((bottom - top) / 3.0);
-    if fade <= 1.0 {
+    if content_h <= visible + 0.5 {
         return Ok(());
     }
-    let opaque = D2D1_COLOR_F {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: theme::colors::PANEL_SCRIM_DARK_ALPHA,
+    let top_band = fade_top();
+    let bot_band = fade_bottom();
+    if top_band <= 1.0 && bot_band <= 1.0 {
+        return Ok(());
+    }
+    let (sr, sg, sb, _) = theme::colors::scrim_rgba(appearance);
+    let top_floor = 0.15;
+    let bot_floor = 0.25;
+    let top_outer = D2D1_COLOR_F {
+        r: sr,
+        g: sg,
+        b: sb,
+        a: 1.0 - top_floor,
+    };
+    let bot_outer = D2D1_COLOR_F {
+        r: sr,
+        g: sg,
+        b: sb,
+        a: 1.0 - bot_floor,
     };
     let clear = D2D1_COLOR_F {
-        r: opaque.r,
-        g: opaque.g,
-        b: opaque.b,
+        r: sr,
+        g: sg,
+        b: sb,
         a: 0.0,
     };
-    fill_fade(target, panel_w, top, top + fade, opaque, clear)?;
-    fill_fade(target, panel_w, bottom - fade, bottom, clear, opaque)?;
+    if top_band > 1.0 {
+        fill_fade(
+            target,
+            panel_w,
+            clip_top,
+            clip_top + top_band,
+            top_outer,
+            clear,
+        )?;
+    }
+    if bot_band > 1.0 {
+        fill_fade(
+            target,
+            panel_w,
+            (bottom - bot_band).max(clip_top),
+            bottom,
+            clear,
+            bot_outer,
+        )?;
+    }
     Ok(())
 }
 
@@ -1063,6 +1119,17 @@ mod tests {
         assert_eq!(theme::size::ROW_ICON, 24.0);
         assert_eq!(theme::radius::ROW, 10.0);
         assert_eq!(ROW_HEIGHT, 36.0);
+    }
+
+    #[test]
+    fn fade_constants_match_spec() {
+        assert_eq!(tinycast_pure::layout::list::edge_dissolve_top_band(), 86.0);
+        assert_eq!(tinycast_pure::layout::list::edge_dissolve_bottom_band(), 80.0);
+    }
+
+    #[test]
+    fn list_fade_uses_dissolve_bands() {
+        assert!((crate::features::launcher::ui::list::fade_top_for_test() - 86.0).abs() < 0.01);
     }
 
     #[test]
