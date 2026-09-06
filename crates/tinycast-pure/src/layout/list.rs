@@ -108,6 +108,65 @@ pub fn chat_message_gap() -> f32 {
     theme::spacing::XL
 }
 
+pub const CHAT_NOTICE_HEIGHT: f32 = 48.0;
+
+fn chat_wrap_inner(is_user: bool, panel_w: f32) -> f32 {
+    let pad = chat_pad_x();
+    if is_user {
+        (panel_w - pad * 2.0 - theme::spacing::XL * 2.0).max(40.0)
+    } else {
+        (panel_w - pad * 2.0 - theme::spacing::SM * 2.0).max(40.0)
+    }
+}
+
+pub fn chat_text_height(text: &str, inner_w: f32) -> f32 {
+    let line = theme::typography::ROW_TITLE;
+    if text.is_empty() {
+        return line;
+    }
+    let cols = ((inner_w / (line * 0.5)).floor() as usize).max(1);
+    let mut lines = 0usize;
+    for para in text.split('\n') {
+        let n = para.chars().count().max(1);
+        lines += n.div_ceil(cols);
+    }
+    (lines as f32 * line).max(line)
+}
+
+pub fn chat_message_height(is_user: bool, text: &str, panel_w: f32) -> f32 {
+    let display = if text.is_empty() { "Thinking" } else { text };
+    let th = chat_text_height(display, chat_wrap_inner(is_user, panel_w));
+    let pad_y = theme::spacing::MD * 2.0;
+    if is_user {
+        (th + pad_y).max(theme::size::BAR_BUTTON_HEIGHT)
+    } else {
+        (th + pad_y).max(theme::typography::ROW_TITLE + pad_y)
+    }
+}
+
+/// Scrollable transcript height: top pad + bubbles + gaps + optional notice + bottom pad (28).
+pub fn chat_transcript_height<'a, I>(blocks: I, notice: Option<&str>, panel_w: f32) -> f32
+where
+    I: IntoIterator<Item = (bool, &'a str)>,
+{
+    let mut h = chat_pad_top();
+    let mut n = 0usize;
+    for (is_user, text) in blocks {
+        if n > 0 {
+            h += chat_message_gap();
+        }
+        h += chat_message_height(is_user, text, panel_w);
+        n += 1;
+    }
+    if notice.filter(|s| !s.is_empty()).is_some() {
+        if n > 0 {
+            h += chat_message_gap();
+        }
+        h += CHAT_NOTICE_HEIGHT;
+    }
+    h + chat_pad_bottom()
+}
+
 pub fn chat_user_bubble(panel_w: f32, y: f32, bubble_w: f32) -> DipRect {
     let pad = chat_pad_x();
     let max_w = (panel_w - pad - pad).max(0.0);
@@ -207,6 +266,26 @@ mod tests {
         let r = chat_user_bubble(750.0, 80.0, 200.0);
         assert!(r.x > 20.0);
         assert!((r.x + r.w - (750.0 - 20.0)).abs() < 0.01);
+    }
+
+    #[test]
+    fn chat_transcript_includes_bottom_pad() {
+        let empty = chat_transcript_height(std::iter::empty(), None, 750.0);
+        assert_eq!(chat_pad_bottom(), theme::spacing::XXXL);
+        assert_eq!(chat_pad_bottom(), 28.0);
+        assert!((empty - (chat_pad_top() + chat_pad_bottom())).abs() < 0.01);
+        let one = chat_transcript_height(std::iter::once((true, "hi")), None, 750.0);
+        assert!(one > empty);
+        assert!(one + 0.01 >= empty + theme::size::BAR_BUTTON_HEIGHT);
+        let notice = chat_transcript_height(std::iter::empty(), Some("err"), 750.0);
+        assert!((notice - (empty + CHAT_NOTICE_HEIGHT)).abs() < 0.01);
+    }
+
+    #[test]
+    fn chat_transcript_can_exceed_view() {
+        let texts: Vec<String> = (0..24).map(|i| format!("message {i} with extra words")).collect();
+        let h = chat_transcript_height(texts.iter().map(|t| (true, t.as_str())), None, 750.0);
+        assert!(h > view_height(theme::size::PANEL_HEIGHT));
     }
 
     #[test]

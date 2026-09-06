@@ -1,6 +1,6 @@
 //! AI Chat / History palette chrome. Transcript paint lives in `design_system::chat`.
 
-use tinycast_pure::ai::{ChatConversation, ChatMessage};
+use tinycast_pure::ai::{ChatConversation, ChatMessage, ChatRole};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
@@ -38,6 +38,20 @@ pub fn paint_chat(
 ) -> Vec<PaintItem> {
     let _ = (messages, notice, thinking);
     Vec::new()
+}
+
+pub fn transcript_content_height(
+    messages: &[ChatMessage],
+    notice: Option<&str>,
+    panel_w: f32,
+) -> f32 {
+    tinycast_pure::layout::list::chat_transcript_height(
+        messages
+            .iter()
+            .map(|m| (m.role == ChatRole::User, m.text.as_str())),
+        notice,
+        panel_w,
+    )
 }
 
 pub fn assistant_plain(text: &str) -> String {
@@ -103,6 +117,20 @@ mod tests {
         let user = ChatMessage::user("hello", 1);
         let items = paint_chat(&[user], None, false);
         assert!(items.is_empty());
+    }
+
+    #[test]
+    fn transcript_height_includes_bottom_pad() {
+        let empty = transcript_content_height(&[], None, 750.0);
+        assert!(
+            (empty
+                - (tinycast_pure::layout::list::chat_pad_top()
+                    + tinycast_pure::layout::list::chat_pad_bottom()))
+            .abs()
+                < 0.01
+        );
+        let user = ChatMessage::user("hello", 1);
+        assert!(transcript_content_height(&[user], None, 750.0) > empty);
     }
 
     #[test]

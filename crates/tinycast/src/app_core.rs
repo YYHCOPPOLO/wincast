@@ -406,11 +406,10 @@ impl AppCore {
             } else {
                 "No emoji found"
             }),
-            PaletteMode::FileSearch => Some(if q.is_empty() {
-                "Type to search files and folders"
-            } else {
-                "No files found"
-            }),
+            PaletteMode::FileSearch => Some(crate::features::file_search::ui::screen::empty_message(
+                self.file_search.state(),
+                q,
+            )),
             PaletteMode::Schedule => Some(if q.is_empty() {
                 "Nothing scheduled today or tomorrow"
             } else {
@@ -2263,6 +2262,12 @@ impl AppCore {
             }
             return;
         }
+        if self.palette.mode == PaletteMode::Ai {
+            self.list_scroll += delta as f32 * ROW_HEIGHT;
+            self.clamp_scroll();
+            self.invalidate_palette();
+            return;
+        }
         let count = self.selectable_len();
         if count == 0 {
             return;
@@ -3833,6 +3838,7 @@ impl AppCore {
             if let Some(window) = &self.palette_window {
                 window.reset_search();
             }
+            self.follow_transcript_tail();
         }
         self.invalidate_palette();
     }
@@ -4306,11 +4312,30 @@ impl AppCore {
         );
     }
 
-    fn clamp_scroll(&mut self) {
-        let items = self.launcher_paint_items();
-        let slots = slots_of(&items);
+    fn scroll_content_height(&self) -> f32 {
+        if self.palette.mode == PaletteMode::Ai {
+            crate::features::ai::ui::screen::transcript_content_height(
+                &self.ai.session.messages,
+                self.ai.notice.as_deref(),
+                theme::size::PANEL_WIDTH,
+            )
+        } else {
+            content_height(&slots_of(&self.launcher_paint_items()))
+        }
+    }
+
+    fn follow_transcript_tail(&mut self) {
+        if self.palette.mode != PaletteMode::Ai {
+            return;
+        }
         let view_h = tinycast_pure::layout::list::view_height(theme::size::PANEL_HEIGHT);
-        self.list_scroll = clamp_scroll(self.list_scroll, content_height(&slots), view_h);
+        let content_h = self.scroll_content_height();
+        self.list_scroll = clamp_scroll(content_h, content_h, view_h);
+    }
+
+    fn clamp_scroll(&mut self) {
+        let view_h = tinycast_pure::layout::list::view_height(theme::size::PANEL_HEIGHT);
+        self.list_scroll = clamp_scroll(self.list_scroll, self.scroll_content_height(), view_h);
     }
 
     fn open_emoji(&mut self) {
@@ -4807,6 +4832,46 @@ mod tests {
     fn launcher_empty_results_is_no_apps_found() {
         let c = AppCore::new();
         assert_eq!(c.empty_results_text(), Some("No apps found"));
+    }
+
+    #[test]
+    fn file_search_empty_states_use_empty_results() {
+        let mut c = AppCore::new();
+        c.settings.file_search_enabled = true;
+        c.perform_hotkey("hotkey.searchFiles");
+        assert_eq!(c.palette.mode, PaletteMode::FileSearch);
+        assert!(c.launcher_paint_items().is_empty());
+        assert_eq!(
+            c.empty_results_text(),
+            Some("Type to search files and folders")
+        );
+        c.set_query("abc".into());
+        assert!(c.launcher_paint_items().is_empty());
+        assert_eq!(c.empty_results_text(), Some("Searching files…"));
+    }
+
+    #[test]
+    fn ai_transcript_wheel_and_keys_scroll() {
+        let mut c = AppCore::new();
+        c.settings.ai_enabled = true;
+        c.toggle_palette();
+        c.handle_key(0x09);
+        assert_eq!(c.palette.mode, PaletteMode::Ai);
+        for i in 0..24 {
+            c.ai.session.messages.push(tinycast_pure::ai::ChatMessage::user(
+                format!("message {i} with extra words so the transcript is tall"),
+                1,
+            ));
+        }
+        assert_eq!(c.list_scroll, 0.0);
+        c.scroll_list(-120);
+        assert!(c.list_scroll > 0.0, "wheel down should increase scroll");
+        let after_wheel = c.list_scroll;
+        c.move_selection(1);
+        assert!(c.list_scroll > after_wheel);
+        assert_eq!(c.palette.selection, 0);
+        c.move_selection(-1);
+        assert!((c.list_scroll - after_wheel).abs() < 0.01);
     }
 
     #[test]

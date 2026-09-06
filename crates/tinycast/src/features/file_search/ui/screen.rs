@@ -3,26 +3,27 @@ use tinycast_pure::file_search::FileSearchHit;
 use crate::features::file_search::service::session::State;
 use crate::features::launcher::ui::list::PaintItem;
 
+pub fn empty_message(state: State, query: &str) -> &'static str {
+    if query.trim().is_empty() {
+        return "Type to search files and folders";
+    }
+    match state {
+        State::Failed => "File search is unavailable",
+        State::Ready => "No files found",
+        State::Searching | State::Idle => "Searching files…",
+    }
+}
+
 pub fn paint_items(
     state: State,
     query: &str,
     results: &[FileSearchHit],
     selection: usize,
 ) -> Vec<PaintItem> {
-    if query.trim().is_empty() {
+    if query.trim().is_empty() || results.is_empty() || state == State::Failed {
         return Vec::new();
     }
     match state {
-        State::Idle => Vec::new(),
-        State::Searching if results.is_empty() => vec![PaintItem::Header {
-            title: "Searching files…".into(),
-        }],
-        State::Failed => vec![PaintItem::Header {
-            title: "File search is unavailable".into(),
-        }],
-        State::Ready if results.is_empty() => vec![PaintItem::Header {
-            title: "No files found".into(),
-        }],
         State::Searching | State::Ready => results
             .iter()
             .enumerate()
@@ -35,6 +36,7 @@ pub fn paint_items(
                 selected: i == selection,
             })
             .collect(),
+        State::Idle | State::Failed => Vec::new(),
     }
 }
 
@@ -49,18 +51,24 @@ mod tests {
     }
 
     #[test]
-    fn in_flight_and_empty_copy() {
-        match &paint_items(State::Searching, "a", &[], 0)[0] {
-            PaintItem::Header { title } => assert_eq!(title, "Searching files…"),
-            _ => panic!("expected header"),
-        }
-        match &paint_items(State::Ready, "a", &[], 0)[0] {
-            PaintItem::Header { title } => assert_eq!(title, "No files found"),
-            _ => panic!("expected header"),
-        }
-        match &paint_items(State::Failed, "a", &[], 0)[0] {
-            PaintItem::Header { title } => assert_eq!(title, "File search is unavailable"),
-            _ => panic!("expected header"),
-        }
+    fn empty_states_paint_no_items() {
+        assert!(paint_items(State::Searching, "a", &[], 0).is_empty());
+        assert!(paint_items(State::Ready, "a", &[], 0).is_empty());
+        assert!(paint_items(State::Failed, "a", &[], 0).is_empty());
+        assert!(paint_items(State::Idle, "a", &[], 0).is_empty());
+    }
+
+    #[test]
+    fn empty_message_matches_oracle() {
+        assert_eq!(
+            empty_message(State::Idle, ""),
+            "Type to search files and folders"
+        );
+        assert_eq!(empty_message(State::Searching, "a"), "Searching files…");
+        assert_eq!(empty_message(State::Ready, "a"), "No files found");
+        assert_eq!(
+            empty_message(State::Failed, "a"),
+            "File search is unavailable"
+        );
     }
 }
