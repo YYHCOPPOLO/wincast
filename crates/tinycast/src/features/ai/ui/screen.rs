@@ -1,6 +1,6 @@
-//! AI Chat / History palette rows. Assistant text is shown as markdown-ish lines; user is literal.
+//! AI Chat / History palette chrome. Transcript paint lives in `design_system::chat`.
 
-use tinycast_pure::ai::{ChatConversation, ChatMessage, ChatRole, ChatState};
+use tinycast_pure::ai::{ChatConversation, ChatMessage};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
@@ -36,42 +36,12 @@ pub fn paint_chat(
     notice: Option<&str>,
     thinking: bool,
 ) -> Vec<PaintItem> {
-    let mut items = Vec::new();
-    for (i, message) in messages.iter().enumerate() {
-        let title = match message.role {
-            ChatRole::User => message.text.clone(),
-            ChatRole::Assistant => display_assistant(&message.text),
-        };
-        let trailing = match message.state {
-            ChatState::Streaming if thinking => "Thinking".into(),
-            ChatState::Streaming => String::new(),
-            ChatState::Failed => "Failed".into(),
-            ChatState::Complete => String::new(),
-        };
-        items.push(PaintItem::Row {
-            title,
-            alias: Some(if message.role == ChatRole::User {
-                "You".into()
-            } else {
-                "Tinycast".into()
-            }),
-            trailing,
-            keycap: None,
-            icon_source: None,
-            selected: i + 1 == messages.len(),
-        });
-    }
-    if let Some(notice) = notice.filter(|s| !s.is_empty()) {
-        items.push(PaintItem::Row {
-            title: notice.to_string(),
-            alias: None,
-            trailing: String::new(),
-            keycap: None,
-            icon_source: None,
-            selected: false,
-        });
-    }
-    items
+    let _ = (messages, notice, thinking);
+    Vec::new()
+}
+
+pub fn assistant_plain(text: &str) -> String {
+    display_assistant(text)
 }
 
 pub fn paint_history(rows: &[ChatConversation], selection: usize) -> Vec<PaintItem> {
@@ -129,23 +99,19 @@ mod tests {
     }
 
     #[test]
+    fn paint_chat_does_not_emit_you_alias_rows() {
+        let user = ChatMessage::user("hello", 1);
+        let items = paint_chat(&[user], None, false);
+        assert!(items.is_empty());
+    }
+
+    #[test]
     fn user_stays_literal_assistant_drops_fences() {
         let user = ChatMessage::user("**keep stars**", 1);
-        let mut assistant = tinycast_pure::ai::ChatMessage::assistant_streaming(1);
-        assistant.state = ChatState::Complete;
-        assistant.text = "```\ncode\n```\n**bold**".into();
-        let items = paint_chat(&[user, assistant], None, false);
-        match &items[0] {
-            PaintItem::Row { title, .. } => assert_eq!(title, "**keep stars**"),
-            _ => panic!("row"),
-        }
-        match &items[1] {
-            PaintItem::Row { title, .. } => {
-                assert!(title.contains("code"));
-                assert!(title.contains("bold"));
-                assert!(!title.contains('`'));
-            }
-            _ => panic!("row"),
-        }
+        assert_eq!(user.text, "**keep stars**");
+        let rendered = assistant_plain("```\ncode\n```\n**bold**");
+        assert!(rendered.contains("code"));
+        assert!(rendered.contains("bold"));
+        assert!(!rendered.contains('`'));
     }
 }

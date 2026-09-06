@@ -395,6 +395,22 @@ impl AppCore {
         None
     }
 
+    pub fn ai_chat_messages(&self) -> Option<&[tinycast_pure::ai::ChatMessage]> {
+        if self.palette.mode == PaletteMode::Ai {
+            Some(self.ai.session.messages.as_slice())
+        } else {
+            None
+        }
+    }
+
+    pub fn ai_chat_notice(&self) -> Option<&str> {
+        if self.palette.mode == PaletteMode::Ai {
+            self.ai.notice.as_deref()
+        } else {
+            None
+        }
+    }
+
     pub fn install_rates(&mut self) {
         self.currency_rates.install();
         self.invalidate_palette();

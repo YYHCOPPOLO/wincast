@@ -56,6 +56,7 @@ pub struct PaintParams<'a> {
     pub clipboard_filter: Option<FilterButtonPaint>,
     pub compact_favorite_icons: &'a [Option<String>],
     pub empty_results: Option<&'a str>,
+    pub chat: Option<crate::design_system::chat::ChatPaint<'a>>,
 }
 
 pub struct FilterButtonPaint {
@@ -399,45 +400,62 @@ fn paint_layers(
         let color = scrim_color();
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
-        let split = params.clipboard_preview.is_some() && !params.items.is_empty();
-        let list_w = if split {
-            tinycast_pure::layout::list::clipboard_columns(size.width).0.w
+        if let Some(chat) = params.chat {
+            let ds = crate::design_system::Fonts::new(dwrite)?;
+            let chat = crate::design_system::chat::ChatPaint {
+                messages: chat.messages,
+                notice: chat.notice,
+                scroll: params.scroll,
+            };
+            let _ = crate::design_system::chat::paint_transcript(
+                target,
+                &ds,
+                chat,
+                size.width,
+                size.height,
+                params.appearance,
+            );
         } else {
-            size.width
-        };
-        let _ = list::paint(
-            target,
-            dwrite,
-            list_fonts,
-            params.items,
-            params.scroll,
-            list_w,
-            size.height,
-            params.cache,
-            dpi,
-            params.appearance,
-        );
-        if split {
-            if let Some(preview) = params.clipboard_preview {
-                let _ = paint_clipboard_preview(
+            let split = params.clipboard_preview.is_some() && !params.items.is_empty();
+            let list_w = if split {
+                tinycast_pure::layout::list::clipboard_columns(size.width).0.w
+            } else {
+                size.width
+            };
+            let _ = list::paint(
+                target,
+                dwrite,
+                list_fonts,
+                params.items,
+                params.scroll,
+                list_w,
+                size.height,
+                params.cache,
+                dpi,
+                params.appearance,
+            );
+            if split {
+                if let Some(preview) = params.clipboard_preview {
+                    let _ = paint_clipboard_preview(
+                        target,
+                        list_fonts,
+                        preview,
+                        list_w,
+                        size.width,
+                        size.height,
+                        params.appearance,
+                    );
+                }
+            } else if let Some(text) = params.empty_results {
+                let _ = paint_empty_results(
                     target,
-                    list_fonts,
-                    preview,
-                    list_w,
+                    dwrite,
+                    text,
                     size.width,
                     size.height,
                     params.appearance,
                 );
             }
-        } else if let Some(text) = params.empty_results {
-            let _ = paint_empty_results(
-                target,
-                dwrite,
-                text,
-                size.width,
-                size.height,
-                params.appearance,
-            );
         }
         let _ = crate::design_system::symbols::paint_header_glyph(
             target,
@@ -848,6 +866,7 @@ mod tests {
                     clipboard_filter: None,
                     compact_favorite_icons: &[],
                     empty_results: None,
+                    chat: None,
                 },
                 96.0,
             )

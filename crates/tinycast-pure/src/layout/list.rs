@@ -80,6 +80,44 @@ pub fn calc_error_icon_rect(inner: DipRect) -> DipRect {
     }
 }
 
+pub fn chat_pad_x() -> f32 {
+    theme::spacing::XXL
+}
+
+pub fn chat_pad_top() -> f32 {
+    theme::spacing::XL
+}
+
+pub fn chat_pad_bottom() -> f32 {
+    theme::spacing::XXXL
+}
+
+pub fn chat_message_gap() -> f32 {
+    theme::spacing::XL
+}
+
+pub fn chat_user_bubble(panel_w: f32, y: f32, bubble_w: f32) -> DipRect {
+    let pad = chat_pad_x();
+    let max_w = (panel_w - pad - pad).max(0.0);
+    let w = bubble_w.min(max_w);
+    DipRect {
+        x: (panel_w - pad - w).max(pad),
+        y,
+        w,
+        h: 0.0,
+    }
+}
+
+pub fn chat_assistant_rect(panel_w: f32, y: f32) -> DipRect {
+    let pad = chat_pad_x();
+    DipRect {
+        x: pad,
+        y,
+        w: (panel_w - pad - pad).max(0.0),
+        h: 0.0,
+    }
+}
+
 pub fn clipboard_columns(panel_w: f32) -> (DipRect, DipRect) {
     let w = theme::size::CLIPBOARD_LIST_WIDTH.min(panel_w);
     (
@@ -143,6 +181,13 @@ mod tests {
         assert_eq!(list.w, 290.0);
         assert_eq!(preview.x, 290.0);
         assert!((preview.w - 460.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn user_bubble_is_trailing_fill() {
+        let r = chat_user_bubble(750.0, 80.0, 200.0);
+        assert!(r.x > 20.0);
+        assert!((r.x + r.w - (750.0 - 20.0)).abs() < 0.01);
     }
 
     #[test]

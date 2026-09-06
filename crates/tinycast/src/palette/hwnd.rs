@@ -382,6 +382,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
             clipboard_filter: None,
             compact_favorite_icons: &[],
             empty_results: None,
+            chat: None,
         };
         inner.renderer.paint(hwnd, params, inner.present_alpha);
         return;
@@ -396,11 +397,18 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     let preview = (*core).clipboard_preview();
     let tab_hint = (*core).tab_hint();
     let filter = (*core).clipboard_filter_paint();
-    let empty_results = if items.is_empty() {
+    let empty_results = if items.is_empty() && (*core).ai_chat_messages().is_none() {
         (*core).empty_results_text()
     } else {
         None
     };
+    let chat_messages = (*core).ai_chat_messages();
+    let chat_notice = (*core).ai_chat_notice();
+    let chat = chat_messages.map(|messages| crate::design_system::chat::ChatPaint {
+        messages,
+        notice: chat_notice,
+        scroll,
+    });
     layout_edit(hwnd, inner, (*core).search_trailing_width());
     let header_symbol = if (*core).palette.mode == PaletteMode::Launcher {
         "magnifyingglass"
@@ -423,6 +431,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         clipboard_filter: filter,
         compact_favorite_icons: &compact_favorite_icons,
         empty_results,
+        chat,
     };
     inner.renderer.paint(hwnd, params, inner.present_alpha);
 }

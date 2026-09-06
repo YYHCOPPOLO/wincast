@@ -1,4 +1,5 @@
 pub mod appearance;
+pub mod chat;
 pub mod fonts;
 pub mod keycap;
 pub mod panel;
