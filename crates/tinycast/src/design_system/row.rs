@@ -59,7 +59,20 @@ mod tests {
     fn selected_row_is_white_10_on_dark() {
         let bits = render_selected_row();
         let i = (18 * 200 + 100) * 4;
-        let a = bits[i + 3] as f32 / 255.0;
-        assert!(a > 0.05 && a < 0.20, "selection alpha {a}");
+        let b = bits[i] as i16;
+        let g = bits[i + 1] as i16;
+        let r = bits[i + 2] as i16;
+        let a = bits[i + 3] as i16;
+        let expected = (tinycast_pure::theme::colors::SELECTION_DARK_ALPHA * 255.0).round() as i16;
+        assert!(
+            (a - expected).abs() <= 8,
+            "selection alpha {a} expected ~{expected}"
+        );
+        assert!((r - expected).abs() <= 8, "r {r} expected ~{expected}");
+        assert!((g - expected).abs() <= 8, "g {g} expected ~{expected}");
+        assert!((b - expected).abs() <= 8, "b {b} expected ~{expected}");
+        assert!((r - a).abs() <= 8, "r {r} vs a {a}");
+        assert!((g - a).abs() <= 8, "g {g} vs a {a}");
+        assert!((b - a).abs() <= 8, "b {b} vs a {a}");
     }
 }

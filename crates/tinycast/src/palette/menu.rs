@@ -1,6 +1,7 @@
 use tinycast_pure::palette_menu::MenuItem;
 use tinycast_pure::palette_menu::{
-    action_group_rects, menu_frame, menu_header_rect, menu_row_rect, OpenMenu, ACTIONS_SHORTCUT,
+    action_group_rects, menu_button_rect, menu_frame, menu_header_rect, menu_line_rects,
+    menu_row_rect, OpenMenu, ACTIONS_SHORTCUT,
 };
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
@@ -52,13 +53,12 @@ pub fn paint_footer(
         );
     }
 
-    let inset = theme::spacing::XXL;
-    let menu_d = theme::size::MENU_BUTTON;
-    let menu_r = menu_d / 2.0;
+    let circle = menu_button_rect(height);
+    let menu_r = circle.w / 2.0;
     let ellipse = D2D1_ELLIPSE {
         point: D2D_POINT_2F {
-            x: inset + menu_r,
-            y: bar_y + bar_h / 2.0,
+            x: circle.x + menu_r,
+            y: circle.y + circle.h / 2.0,
         },
         radiusX: menu_r,
         radiusY: menu_r,
@@ -66,6 +66,10 @@ pub fn paint_footer(
     unsafe {
         target.FillEllipse(&ellipse, &brush);
     }
+    let ink = color(1.0, 1.0, 1.0, theme::colors::TEXT_SECONDARY_ALPHA);
+    let (top, bot) = menu_line_rects(circle);
+    fill_round(target, top, top.h / 2.0, ink)?;
+    fill_round(target, bot, bot.h / 2.0, ink)?;
 
     if !footer.show_action_group {
         return Ok(());
