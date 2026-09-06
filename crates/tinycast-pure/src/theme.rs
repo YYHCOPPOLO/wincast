@@ -114,6 +114,14 @@ pub mod size {
 }
 
 pub mod typography {
+    pub const SEARCH_FIELD: f32 = 20.0;
+    pub const HEADER_ICON: f32 = 18.0;
+    pub const ROW_TITLE: f32 = 13.0;
+    pub const ROW_TRAILING: f32 = 12.0;
+    pub const BAR: f32 = 12.0;
+    pub const SECTION_HEADER: f32 = 11.0;
+    pub const KEY_CAP: f32 = 10.0;
+    pub const PANEL_TITLE: f32 = 13.0;
     pub const CALC_RESULT: f32 = 22.0;
     pub const CALC_BADGE: f32 = 11.0;
 }
@@ -121,13 +129,54 @@ pub mod typography {
 pub mod duration {
     pub const ENTER_SECS: f32 = 0.18;
     pub const EXIT_SECS: f32 = 0.12;
+    pub const MESSAGE_HUD_SECS: f32 = 2.4;
+    pub const VOLUME_HUD_SECS: f32 = 1.6;
 }
 
 pub mod colors {
     pub const PANEL_SCRIM_DARK_ALPHA: f32 = 0.40;
     pub const PANEL_SCRIM_LIGHT_ALPHA: f32 = 0.55;
     pub const SELECTION_DARK_ALPHA: f32 = 0.10;
+    pub const SELECTION_LIGHT_ALPHA: f32 = 0.09;
     pub const ROW_HOVER_DARK_ALPHA: f32 = 0.05;
+    pub const ROW_HOVER_LIGHT_ALPHA: f32 = 0.045;
+    pub const TEXT_PRIMARY_ALPHA: f32 = 1.0;
+    pub const TEXT_SECONDARY_ALPHA: f32 = 0.60;
+    pub const TEXT_TERTIARY_DARK_ALPHA: f32 = 0.40;
+    pub const TEXT_TERTIARY_LIGHT_ALPHA: f32 = 0.42;
+    pub const CONTROL_SURFACE_DARK_ALPHA: f32 = 0.10;
+    pub const CONTROL_SURFACE_LIGHT_ALPHA: f32 = 0.08;
+    pub const BORDER_DARK_ALPHA: f32 = 0.20;
+    pub const BORDER_LIGHT_ALPHA: f32 = 0.18;
+    pub const CARD_FILL_DARK_ALPHA: f32 = 0.05;
+    pub const CARD_FILL_LIGHT_ALPHA: f32 = 0.04;
+    pub const CARD_STROKE_ALPHA: f32 = 0.10;
+    pub const SEPARATOR_DARK_ALPHA: f32 = 0.10;
+    pub const SEPARATOR_LIGHT_ALPHA: f32 = 0.12;
+
+    /// 0 = Dark, 1 = Light.
+    pub fn ramp_rgba(appearance: u8, dark_alpha: f32, light_alpha: f32) -> (f32, f32, f32, f32) {
+        if appearance == 0 {
+            (1.0, 1.0, 1.0, dark_alpha)
+        } else {
+            (0.0, 0.0, 0.0, light_alpha)
+        }
+    }
+
+    pub fn scrim_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        if appearance == 0 {
+            (0.0, 0.0, 0.0, PANEL_SCRIM_DARK_ALPHA)
+        } else {
+            (1.0, 1.0, 1.0, PANEL_SCRIM_LIGHT_ALPHA)
+        }
+    }
+}
+
+pub mod settings_chrome {
+    pub const SIDEBAR_DARK: (f32, f32, f32) = (28.0 / 255.0, 28.0 / 255.0, 28.0 / 255.0);
+    pub const DETAIL_DARK: (f32, f32, f32) = (41.0 / 255.0, 41.0 / 255.0, 41.0 / 255.0);
+    pub const SIDEBAR_LIGHT: (f32, f32, f32) = (230.0 / 255.0, 230.0 / 255.0, 230.0 / 255.0);
+    pub const DETAIL_LIGHT: (f32, f32, f32) = (242.0 / 255.0, 242.0 / 255.0, 242.0 / 255.0);
 }
 
 #[cfg(test)]
@@ -143,5 +192,31 @@ mod tests {
     #[test]
     fn dark_scrim_is_frozen() {
         assert_eq!(colors::PANEL_SCRIM_DARK_ALPHA, 0.40);
+    }
+
+    #[test]
+    fn typography_matches_v0102_dip() {
+        assert_eq!(typography::SEARCH_FIELD, 20.0);
+        assert_eq!(typography::ROW_TITLE, 13.0);
+        assert_eq!(typography::SECTION_HEADER, 11.0);
+        assert_eq!(typography::KEY_CAP, 10.0);
+    }
+
+    #[test]
+    fn hud_durations_are_split() {
+        assert_eq!(duration::MESSAGE_HUD_SECS, 2.4);
+        assert_eq!(duration::VOLUME_HUD_SECS, 1.6);
+    }
+
+    #[test]
+    fn ramp_inverts_ink() {
+        assert_eq!(colors::ramp_rgba(0, 0.60, 0.60), (1.0, 1.0, 1.0, 0.60));
+        assert_eq!(colors::ramp_rgba(1, 0.60, 0.60), (0.0, 0.0, 0.0, 0.60));
+    }
+
+    #[test]
+    fn scrim_is_inverse_of_ink() {
+        assert_eq!(colors::scrim_rgba(0), (0.0, 0.0, 0.0, 0.40));
+        assert_eq!(colors::scrim_rgba(1), (1.0, 1.0, 1.0, 0.55));
     }
 }
