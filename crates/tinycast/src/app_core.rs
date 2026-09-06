@@ -2853,7 +2853,9 @@ impl AppCore {
             return;
         }
         if self.footer_action_group_visible() {
-            if let Some(group) = action_group_rects(panel_w, panel_h) {
+            if let Some(group) = crate::palette::menu::last_action_group_rects()
+                .or_else(|| action_group_rects(panel_w, panel_h))
+            {
                 if point_in(group.actions, x, y) {
                     self.toggle_actions();
                     return;

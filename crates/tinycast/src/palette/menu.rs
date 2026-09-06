@@ -1,7 +1,9 @@
+use std::sync::Mutex;
+
 use tinycast_pure::palette_menu::MenuItem;
 use tinycast_pure::palette_menu::{
-    action_group_rects, menu_button_rect, menu_frame, menu_header_rect, menu_line_rects,
-    menu_row_rect, OpenMenu, ACTIONS_SHORTCUT,
+    action_group_rects_measured, menu_button_rect, menu_frame, menu_header_rect, menu_line_rects,
+    menu_row_rect, ActionGroupRects, OpenMenu, ACTIONS_SHORTCUT,
 };
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
@@ -13,7 +15,20 @@ use windows::Win32::Graphics::DirectWrite::{
     IDWriteFactory, IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_METRICS,
 };
 
+use crate::design_system::Fonts;
 use crate::features::launcher::ui::list::ListFonts;
+
+static LAST_ACTION_GROUP: Mutex<Option<ActionGroupRects>> = Mutex::new(None);
+
+pub fn last_action_group_rects() -> Option<ActionGroupRects> {
+    LAST_ACTION_GROUP.lock().ok().and_then(|g| *g)
+}
+
+fn store_action_group(group: Option<ActionGroupRects>) {
+    if let Ok(mut slot) = LAST_ACTION_GROUP.lock() {
+        *slot = group;
+    }
+}
 
 pub struct FooterPaint<'a> {
     pub show_action_group: bool,
@@ -37,21 +52,16 @@ pub fn paint_footer(
     footer: &FooterPaint<'_>,
 ) -> windows::core::Result<()> {
     if height < theme::size::COMPACT_HEIGHT + theme::size::BOTTOM_BAR_HEIGHT {
+        store_action_group(None);
         return Ok(());
     }
-    let bar_h = theme::size::BOTTOM_BAR_HEIGHT;
-    let bar_y = height - bar_h;
-    let chrome = color(1.0, 1.0, 1.0, theme::colors::SELECTION_DARK_ALPHA);
-    let brush = unsafe { target.CreateSolidColorBrush(&chrome, None)? };
-    unsafe {
-        target.DrawLine(
-            D2D_POINT_2F { x: 0.0, y: bar_y },
-            D2D_POINT_2F { x: width, y: bar_y },
-            &brush,
-            theme::size::HAIRLINE,
-            None,
-        );
-    }
+    let appearance = 0u8;
+    let surface = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::CONTROL_SURFACE_DARK_ALPHA,
+        theme::colors::CONTROL_SURFACE_LIGHT_ALPHA,
+    ));
+    let brush = unsafe { target.CreateSolidColorBrush(&surface, None)? };
 
     let circle = menu_button_rect(height);
     let menu_r = circle.w / 2.0;
@@ -66,29 +76,58 @@ pub fn paint_footer(
     unsafe {
         target.FillEllipse(&ellipse, &brush);
     }
-    let ink = color(1.0, 1.0, 1.0, theme::colors::TEXT_SECONDARY_ALPHA);
+    let ink = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+    ));
     let (top, bot) = menu_line_rects(circle);
     fill_round(target, top, top.h / 2.0, ink)?;
     fill_round(target, bot, bot.h / 2.0, ink)?;
 
     if !footer.show_action_group {
+        store_action_group(None);
         return Ok(());
     }
-    let Some(group) = action_group_rects(width, height) else {
+    let ds = Fonts::new(dwrite)?;
+    let action_caps: Vec<&str> = ACTIONS_SHORTCUT.split('+').collect();
+    let primary_w = bar_button_width(&ds, footer.primary_label, &["↵"]);
+    let actions_w = bar_button_width(&ds, "Actions", &action_caps);
+    let Some(group) = action_group_rects_measured(width, height, primary_w, actions_w) else {
+        store_action_group(None);
         return Ok(());
     };
-    fill_round(target, group.capsule, group.capsule.h / 2.0, chrome)?;
+    store_action_group(Some(group));
+    crate::design_system::fill_squircle(
+        target,
+        group.capsule,
+        group.capsule.h / 2.0,
+        theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::CONTROL_SURFACE_DARK_ALPHA,
+            theme::colors::CONTROL_SURFACE_LIGHT_ALPHA,
+        ),
+    )?;
     if footer.primary_destructive {
         let danger = color(0.86, 0.22, 0.22, 0.95);
         fill_round(target, group.primary, group.primary.h / 2.0, danger)?;
     }
 
-    let label = color(1.0, 1.0, 1.0, 0.92);
-    let muted = color(1.0, 1.0, 1.0, 0.60);
+    let label = color(1.0, 1.0, 1.0, theme::colors::TEXT_PRIMARY_ALPHA);
+    let muted = color(1.0, 1.0, 1.0, theme::colors::TEXT_SECONDARY_ALPHA);
     let pad = theme::spacing::MD;
     let primary = group.primary;
     let mut right = primary.x + primary.w - pad;
-    right -= paint_keycap(target, dwrite, fonts, "↵", right, primary.y, primary.h)?;
+    right -= crate::design_system::paint_keycap(
+        target,
+        &ds,
+        "↵",
+        right,
+        primary.y,
+        primary.h,
+        true,
+        appearance,
+    )?;
     draw_text(
         target,
         &fonts.header,
@@ -104,8 +143,17 @@ pub fn paint_footer(
 
     let actions = group.actions;
     right = actions.x + actions.w - pad;
-    for token in ACTIONS_SHORTCUT.split('+').rev() {
-        right -= paint_keycap(target, dwrite, fonts, token, right, actions.y, actions.h)?;
+    for token in action_caps.iter().rev() {
+        right -= crate::design_system::paint_keycap(
+            target,
+            &ds,
+            token,
+            right,
+            actions.y,
+            actions.h,
+            true,
+            appearance,
+        )?;
         right -= theme::spacing::XXS;
     }
     draw_text(
@@ -121,6 +169,27 @@ pub fn paint_footer(
         "Actions",
     )?;
     Ok(())
+}
+
+fn bar_button_width(fonts: &Fonts, label: &str, caps: &[&str]) -> f32 {
+    let pad = theme::spacing::MD;
+    let mut w = pad + text_width(&fonts.dwrite, &fonts.bar, label, 240.0, theme::size::BAR_BUTTON_HEIGHT);
+    if !caps.is_empty() {
+        w += theme::spacing::SM;
+    }
+    for (i, cap) in caps.iter().enumerate() {
+        if i > 0 {
+            w += theme::spacing::XXS;
+        }
+        w += keycap_width(fonts, cap);
+    }
+    w + pad
+}
+
+fn keycap_width(fonts: &Fonts, text: &str) -> f32 {
+    let pad = theme::spacing::XS;
+    let text_w = text_width(&fonts.dwrite, &fonts.keycap, text, 80.0, theme::size::KEY_CAP);
+    (text_w + pad * 2.0).max(theme::size::KEY_CAP)
 }
 
 pub fn paint_menu(
@@ -337,4 +406,96 @@ fn rect_of(r: DipRect) -> D2D_RECT_F {
 
 fn color(r: f32, g: f32, b: f32, a: f32) -> D2D1_COLOR_F {
     D2D1_COLOR_F { r, g, b, a }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::core::w;
+    use windows::Win32::Graphics::DirectWrite::{
+        DWriteCreateFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
+        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+        DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_WORD_WRAPPING_NO_WRAP,
+    };
+
+    fn render_footer_scene() -> (usize, Vec<u8>) {
+        let (w, _h, bits) = crate::design_system::test_render::with_offscreen(750, 475, |target| {
+            unsafe {
+                target.Clear(Some(&D2D1_COLOR_F {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.0,
+                }));
+            }
+            let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
+            let fonts = test_list_fonts(&dwrite)?;
+            paint_footer(
+                target,
+                &dwrite,
+                &fonts,
+                750.0,
+                475.0,
+                &FooterPaint {
+                    show_action_group: true,
+                    primary_label: "Open Application",
+                    primary_destructive: false,
+                },
+            )
+        })
+        .expect("footer scene");
+        (w, bits)
+    }
+
+    fn test_list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
+        let format = unsafe {
+            dwrite.CreateTextFormat(
+                w!("Segoe UI"),
+                None,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                11.0,
+                w!("en-US"),
+            )?
+        };
+        unsafe {
+            format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+            format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+        }
+        Ok(ListFonts {
+            title: format.clone(),
+            trailing: format.clone(),
+            header: format.clone(),
+            chip: format.clone(),
+            keycap: format.clone(),
+            calc_result: format.clone(),
+            calc_badge: format.clone(),
+            emoji: format,
+        })
+    }
+
+    #[test]
+    fn footer_has_no_full_width_hairline() {
+        let (w, bits) = render_footer_scene();
+        let y = 475 - 52;
+        let mut longest = 0usize;
+        let mut run = 0usize;
+        for x in 0..w {
+            let a = bits[(y * w + x) * 4 + 3];
+            if a > 8 {
+                run += 1;
+                if run > longest {
+                    longest = run;
+                }
+            } else {
+                run = 0;
+            }
+        }
+        assert!(
+            longest < 200,
+            "hairline would make most of y={y} opaque, longest={longest} w={w}"
+        );
+    }
 }
