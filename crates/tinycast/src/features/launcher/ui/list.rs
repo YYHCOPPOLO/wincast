@@ -580,6 +580,7 @@ pub fn paint(
                         y,
                         panel_w,
                         h,
+                        appearance,
                     )?;
                 }
                 y += h;
@@ -1183,6 +1184,22 @@ mod tests {
     fn row_height_matches_pure_layout() {
         assert_eq!(ROW_HEIGHT, tinycast_pure::layout::list::ROW_HEIGHT);
         assert_eq!(ROW_HEIGHT, 36.0);
+    }
+
+    #[test]
+    fn calc_card_height_is_96() {
+        assert_eq!(tinycast_pure::theme::size::CALC_CARD_HEIGHT, 96.0);
+        assert_eq!(
+            crate::features::launcher::ui::list::slot_height(
+                crate::features::launcher::ui::list::SlotKind::Calc
+            ),
+            96.0
+        );
+    }
+
+    #[test]
+    fn calc_card_uses_card_radius() {
+        assert_eq!(tinycast_pure::theme::radius::CARD, 10.0);
     }
 
     #[test]

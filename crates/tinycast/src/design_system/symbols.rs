@@ -20,6 +20,8 @@ pub fn fluent_for_sf(sf: &str) -> Option<&'static str> {
     Some(match sf {
         "magnifyingglass" => "\u{E721}",
         "chevron.left" => "\u{E76B}",
+        "arrow.right" => "\u{E72A}",
+        "exclamationmark.triangle" => "\u{E7BA}",
         _ => return None,
     })
 }
@@ -63,7 +65,46 @@ pub fn paint_header_glyph(
     Ok(())
 }
 
+pub fn paint_fluent_in(
+    target: &ID2D1RenderTarget,
+    dwrite: &IDWriteFactory,
+    symbol: &str,
+    slot: DipRect,
+    rgba: (f32, f32, f32, f32),
+) -> windows::core::Result<()> {
+    let Some(glyph) = fluent_for_sf(symbol) else {
+        return Ok(());
+    };
+    let format = fluent_format_sized(dwrite, slot.h.max(1.0))?;
+    let brush = unsafe { target.CreateSolidColorBrush(&appearance::color(rgba), None)? };
+    let wide: Vec<u16> = glyph.encode_utf16().collect();
+    let layout = D2D_RECT_F {
+        left: slot.x,
+        top: slot.y,
+        right: slot.x + slot.w,
+        bottom: slot.y + slot.h,
+    };
+    unsafe {
+        target.DrawText(
+            &wide,
+            &format,
+            &layout,
+            &brush,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
+    Ok(())
+}
+
 fn fluent_format(dwrite: &IDWriteFactory) -> windows::core::Result<IDWriteTextFormat> {
+    fluent_format_sized(dwrite, theme::typography::HEADER_ICON)
+}
+
+fn fluent_format_sized(
+    dwrite: &IDWriteFactory,
+    size: f32,
+) -> windows::core::Result<IDWriteTextFormat> {
     let format = match unsafe {
         dwrite.CreateTextFormat(
             w!("Segoe Fluent Icons"),
@@ -71,7 +112,7 @@ fn fluent_format(dwrite: &IDWriteFactory) -> windows::core::Result<IDWriteTextFo
             DWRITE_FONT_WEIGHT_MEDIUM,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            theme::typography::HEADER_ICON,
+            size,
             w!("en-US"),
         )
     } {
@@ -83,7 +124,7 @@ fn fluent_format(dwrite: &IDWriteFactory) -> windows::core::Result<IDWriteTextFo
                 DWRITE_FONT_WEIGHT_MEDIUM,
                 DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL,
-                theme::typography::HEADER_ICON,
+                size,
                 w!("en-US"),
             )?
         },
@@ -120,5 +161,7 @@ mod tests {
     fn magnifying_glass_maps() {
         assert!(fluent_for_sf("magnifyingglass").is_some());
         assert!(fluent_for_sf("chevron.left").is_some());
+        assert!(fluent_for_sf("arrow.right").is_some());
+        assert!(fluent_for_sf("exclamationmark.triangle").is_some());
     }
 }

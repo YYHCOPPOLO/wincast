@@ -51,6 +51,35 @@ pub fn section_header_height(is_first: bool) -> f32 {
     }
 }
 
+pub fn calc_card_rect(panel_w: f32, y: f32) -> DipRect {
+    DipRect {
+        x: theme::spacing::XL,
+        y,
+        w: (panel_w - theme::spacing::XL * 2.0).max(0.0),
+        h: theme::size::CALC_CARD_HEIGHT,
+    }
+}
+
+pub fn calc_card_inner_rect(panel_w: f32, y: f32) -> DipRect {
+    let card = calc_card_rect(panel_w, y);
+    DipRect {
+        x: card.x + theme::spacing::XL,
+        y: card.y + theme::spacing::XXXL,
+        w: (card.w - theme::spacing::XL * 2.0).max(0.0),
+        h: (card.h - theme::spacing::XXXL * 2.0).max(0.0),
+    }
+}
+
+pub fn calc_error_icon_rect(inner: DipRect) -> DipRect {
+    let size = theme::typography::HEADER_ICON;
+    DipRect {
+        x: inner.x,
+        y: inner.y + (inner.h - size).max(0.0) / 2.0,
+        w: size,
+        h: size,
+    }
+}
+
 pub fn clipboard_columns(panel_w: f32) -> (DipRect, DipRect) {
     let w = theme::size::CLIPBOARD_LIST_WIDTH.min(panel_w);
     (
@@ -114,5 +143,17 @@ mod tests {
         assert_eq!(list.w, 290.0);
         assert_eq!(preview.x, 290.0);
         assert!((preview.w - 460.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn calc_card_inner_uses_xl_xxxl() {
+        let inner = calc_card_inner_rect(750.0, 64.0);
+        assert_eq!(inner.x, theme::spacing::XL * 2.0);
+        assert_eq!(inner.y, 64.0 + theme::spacing::XXXL);
+        assert!((inner.h - (96.0 - theme::spacing::XXXL * 2.0)).abs() < 0.01);
+        assert_eq!(theme::radius::CARD, 10.0);
+        let icon = calc_error_icon_rect(inner);
+        assert!(icon.x >= inner.x);
+        assert!(icon.w >= 16.0);
     }
 }
