@@ -27,11 +27,11 @@ pub fn section_header() -> &'static str {
 }
 
 pub fn content_height() -> f32 {
-    24.0 + ROW_H * 4.0 + theme::spacing::XL * 3.0
+    ds::form_origin() + ROW_H * 4.0 + ds::CARD_PAD + theme::spacing::SECTION_SPACING
 }
 
 fn row_y(i: usize) -> f32 {
-    ds::form_origin() + i as f32 * (ROW_H + theme::spacing::XL)
+    ds::form_origin() + i as f32 * ROW_H
 }
 
 pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<CalendarHit> {
@@ -80,12 +80,13 @@ pub fn paint(
     join_minutes: i64,
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (section, _, _) =
         ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
     let mut section = section;
     section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 4.0;
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     paint_toggle(
         target,
         formats,
@@ -94,6 +95,7 @@ pub fn paint(
         enabled,
         row_y(0) - scroll,
         width,
+        appearance,
     )?;
     paint_toggle(
         target,
@@ -103,6 +105,7 @@ pub fn paint(
         auto_join,
         row_y(1) - scroll,
         width,
+        appearance,
     )?;
     paint_toggle(
         target,
@@ -112,6 +115,7 @@ pub fn paint(
         camera,
         row_y(2) - scroll,
         width,
+        appearance,
     )?;
     paint_row(
         target,
@@ -120,6 +124,7 @@ pub fn paint(
         join_window_title(join_minutes),
         row_y(3) - scroll,
         width,
+        appearance,
     )?;
     Ok(())
 }
@@ -132,8 +137,9 @@ fn paint_toggle(
     on: bool,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    paint_row(target, formats, title, subtitle, y, width)?;
+    paint_row(target, formats, title, subtitle, y, width, appearance)?;
     let pad = theme::spacing::XL;
     let toggle = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
@@ -153,12 +159,7 @@ fn paint_toggle(
             a: 1.0,
         }
     } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 0.18,
-        }
+        ds::ramp_color(appearance, 0.18)
     };
     let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     unsafe {
@@ -174,21 +175,10 @@ fn paint_row(
     subtitle: &str,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    };
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let t: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -205,7 +195,7 @@ fn paint_row(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let s: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -236,5 +226,10 @@ mod tests {
             Some(CalendarHit::Enable)
         );
         assert_eq!(cycle_join_window(5), 10);
+        assert_eq!(
+            hit(20.0, row_y(1) + 4.0, 0.0),
+            Some(CalendarHit::AutoJoin)
+        );
+        assert!((row_y(1) - row_y(0) - ROW_H).abs() < 0.001);
     }
 }

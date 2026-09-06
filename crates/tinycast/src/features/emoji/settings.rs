@@ -2,7 +2,7 @@
 
 use tinycast_pure::emoji::EmojiSkinTone;
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
@@ -43,10 +43,11 @@ pub fn paint(
     tone_raw: &str,
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (section, enable, _) =
         ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let y = enable.y;
     let pad = theme::spacing::XL;
     let tone = EmojiSkinTone::from_raw(tone_raw);
@@ -58,6 +59,7 @@ pub fn paint(
         y + 8.0,
         width - pad,
         y + 28.0,
+        appearance,
         0.92,
     )?;
     draw(
@@ -68,6 +70,7 @@ pub fn paint(
         y + 28.0,
         width - 140.0,
         y + ROW_H - 4.0,
+        appearance,
         0.55,
     )?;
     draw(
@@ -78,6 +81,7 @@ pub fn paint(
         y + 14.0,
         width - pad,
         y + 38.0,
+        appearance,
         0.92,
     )?;
     Ok(())
@@ -91,14 +95,10 @@ fn draw(
     top: f32,
     right: f32,
     bottom: f32,
+    appearance: u8,
     alpha: f32,
 ) -> windows::core::Result<()> {
-    let color = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: alpha,
-    };
+    let color = ds::ramp_color(appearance, alpha);
     let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
     let wide: Vec<u16> = text.encode_utf16().collect();
     unsafe {

@@ -43,7 +43,7 @@ pub fn editor_height() -> f32 {
 }
 
 pub fn content_height(connection_count: usize, editing: Option<usize>) -> f32 {
-    let mut h = ds::form_origin() + FIXED_ROWS as f32 * (ROW_H + theme::spacing::XL);
+    let mut h = row_y(FIXED_ROWS);
     for i in 0..connection_count {
         h += ROW_H + theme::spacing::XL;
         if editing == Some(i) {
@@ -54,7 +54,11 @@ pub fn content_height(connection_count: usize, editing: Option<usize>) -> f32 {
 }
 
 fn row_y(i: usize) -> f32 {
-    ds::form_origin() + i as f32 * (ROW_H + theme::spacing::XL)
+    if i == 0 {
+        ds::form_origin()
+    } else {
+        ds::switch_section_next_y(false) + (i - 1) as f32 * (ROW_H + theme::spacing::XL)
+    }
 }
 
 pub fn hit(
@@ -285,10 +289,11 @@ pub fn paint(
     key_saved: bool,
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (section, _, _) =
         ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     paint_toggle(
         target,
         formats,
@@ -297,6 +302,7 @@ pub fn paint(
         enabled,
         row_y(0) - scroll,
         width,
+        appearance,
     )?;
     paint_toggle(
         target,
@@ -306,6 +312,7 @@ pub fn paint(
         web_search,
         row_y(1) - scroll,
         width,
+        appearance,
     )?;
     paint_toggle(
         target,
@@ -315,6 +322,7 @@ pub fn paint(
         system_prompt,
         row_y(2) - scroll,
         width,
+        appearance,
     )?;
     paint_row(
         target,
@@ -323,6 +331,7 @@ pub fn paint(
         opens_to_title(opens_to),
         row_y(3) - scroll,
         width,
+        appearance,
     )?;
     paint_row(
         target,
@@ -331,6 +340,7 @@ pub fn paint(
         retention_title(retention),
         row_y(4) - scroll,
         width,
+        appearance,
     )?;
     let model = default_model_title(default_model, connections);
     paint_row(
@@ -340,6 +350,7 @@ pub fn paint(
         &model,
         row_y(5) - scroll,
         width,
+        appearance,
     )?;
     paint_row(
         target,
@@ -348,6 +359,7 @@ pub fn paint(
         codex_title(codex),
         row_y(6) - scroll,
         width,
+        appearance,
     )?;
     paint_row(
         target,
@@ -356,6 +368,7 @@ pub fn paint(
         "OpenAI, Anthropic, Gemini, OpenRouter, or compatible.",
         row_y(7) - scroll,
         width,
+        appearance,
     )?;
     for (i, conn) in connections.iter().enumerate() {
         let top = connection_row_top(i, editing) - scroll;
@@ -366,6 +379,7 @@ pub fn paint(
             conn.provider.title(),
             top,
             width,
+            appearance,
         )?;
         if editing == Some(i) {
             let editor_top = top + ROW_H + theme::spacing::SM;
@@ -376,6 +390,7 @@ pub fn paint(
                 conn.provider.title(),
                 editor_top,
                 width,
+                appearance,
             )?;
             paint_row(
                 target,
@@ -384,6 +399,7 @@ pub fn paint(
                 "",
                 editor_top + EDITOR_ROW_H,
                 width,
+                appearance,
             )?;
             paint_row(
                 target,
@@ -392,6 +408,7 @@ pub fn paint(
                 "",
                 editor_top + EDITOR_ROW_H * 2.0,
                 width,
+                appearance,
             )?;
             paint_row(
                 target,
@@ -400,6 +417,7 @@ pub fn paint(
                 key_status(key_saved),
                 editor_top + EDITOR_ROW_H * 3.0,
                 width,
+                appearance,
             )?;
         }
     }
@@ -414,8 +432,9 @@ fn paint_toggle(
     on: bool,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    paint_row(target, formats, title, subtitle, y, width)?;
+    paint_row(target, formats, title, subtitle, y, width, appearance)?;
     let pad = theme::spacing::XL;
     let toggle = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
@@ -435,12 +454,7 @@ fn paint_toggle(
             a: 1.0,
         }
     } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 0.18,
-        }
+        ds::ramp_color(appearance, 0.18)
     };
     let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     unsafe { target.FillRoundedRectangle(&toggle, &brush) };
@@ -454,21 +468,10 @@ fn paint_row(
     subtitle: &str,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    };
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let title_w: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -485,7 +488,7 @@ fn paint_row(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let sub: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(

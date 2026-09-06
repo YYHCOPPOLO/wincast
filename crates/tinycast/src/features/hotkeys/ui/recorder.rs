@@ -78,6 +78,16 @@ pub fn well_in_row(row: DipRect) -> DipRect {
     }
 }
 
+pub fn well_caption(binding: Option<&str>, listening: bool) -> String {
+    if listening {
+        "Listening…".into()
+    } else if let Some(text) = binding.filter(|s| !s.is_empty()) {
+        text.to_string()
+    } else {
+        "Record".into()
+    }
+}
+
 pub fn paint_callout(
     target: &ID2D1RenderTarget,
     formats: &Formats<'_>,
@@ -276,6 +286,15 @@ mod tests {
         assert!(r.is_recording());
         r.cancel();
         assert!(!r.is_recording());
+    }
+
+    #[test]
+    fn well_caption_shows_record_listening_or_binding() {
+        assert_eq!(well_caption(None, false), "Record");
+        assert_eq!(well_caption(Some(""), false), "Record");
+        assert_eq!(well_caption(None, true), "Listening…");
+        assert_eq!(well_caption(Some("Ctrl+Space"), false), "Ctrl+Space");
+        assert_eq!(well_caption(Some("Ctrl+Space"), true), "Listening…");
     }
 
     #[test]

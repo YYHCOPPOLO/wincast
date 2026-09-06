@@ -1,10 +1,11 @@
 //! Settings → Permissions. No prompt at launch; Open Settings uses Windows URIs.
 
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 56.0;
@@ -64,23 +65,12 @@ pub fn paint(
     formats: &Formats<'_>,
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let origin = -scroll;
     let pad = theme::spacing::XL;
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    };
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
+    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     for (i, row) in ROWS.iter().enumerate() {
         let y = 24.0 + i as f32 * ROW_H + origin;
         let title: Vec<u16> = row.title.encode_utf16().collect();

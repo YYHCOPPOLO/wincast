@@ -638,6 +638,7 @@ unsafe fn paint_detail(
                         &core.settings.clipboard_disabled_apps,
                         detail_w,
                         (*inner).scroll,
+                        settings_appearance(inner),
                     )
                 } else {
                     paint_search_section(
@@ -646,6 +647,7 @@ unsafe fn paint_detail(
                         &layout_search_section(detail_w),
                         core.ranking_is_empty(),
                         (*inner).scroll,
+                        settings_appearance(inner),
                     )
                 }
             })?;
@@ -722,8 +724,13 @@ unsafe fn recording_well_rect(
 ) -> Option<tinycast_pure::palette_placement::DipRect> {
     let action = (*inner).recorder.action.as_deref()?;
     let tab = selected_tab(inner);
+    if tab == SettingsTab::WindowManagement {
+        return crate::features::window_management::settings::pane::recorder_well_for_action(
+            action, detail_w, scroll,
+        );
+    }
     if tab == SettingsTab::General && action == "hotkey.togglePalette" {
-        let hits = crate::features::settings::panes::general::layout_general(scroll);
+        let hits = crate::features::settings::panes::general::layout_general(detail_w, scroll);
         let row = hits
             .iter()
             .find(|(h, _)| *h == crate::features::settings::panes::general::GeneralHit::PaletteRecorder)?
@@ -774,6 +781,7 @@ unsafe fn paint_detail_panes(
     sidebar_w: f32,
     detail_w: f32,
 ) -> windows::core::Result<()> {
+    let appearance = settings_appearance(inner);
     if selected == SettingsTab::About {
         hide_edits(inner);
         crate::features::settings::panes::about::paint(
@@ -781,6 +789,7 @@ unsafe fn paint_detail_panes(
             formats,
             detail_w,
             (*inner).scroll,
+            appearance,
         )?;
         return Ok(());
     }
@@ -791,6 +800,7 @@ unsafe fn paint_detail_panes(
             formats,
             detail_w,
             (*inner).scroll,
+            appearance,
         )?;
         return Ok(());
     }
@@ -804,6 +814,7 @@ unsafe fn paint_detail_panes(
                 &core.settings.quick_action_language,
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
         }
         return Ok(());
@@ -835,6 +846,7 @@ unsafe fn paint_detail_panes(
                 key_saved,
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
             layout_ai_edits(hwnd, inner, sidebar_w, detail_w, (*inner).scroll);
         } else {
@@ -854,6 +866,7 @@ unsafe fn paint_detail_panes(
                 core.settings.join_window_minutes,
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
         }
         return Ok(());
@@ -868,6 +881,7 @@ unsafe fn paint_detail_panes(
                 core.settings.extensions_show_in_launcher,
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
         }
         return Ok(());
@@ -897,6 +911,7 @@ unsafe fn paint_detail_panes(
                 &core.settings.file_search_ignore_patterns,
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
         }
         return Ok(());
@@ -926,6 +941,7 @@ unsafe fn paint_detail_panes(
                 &core.settings.clipboard_disabled_apps,
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
         }
         return Ok(());
@@ -939,6 +955,7 @@ unsafe fn paint_detail_panes(
                 &core.settings.emoji_skin_tone,
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
         }
         return Ok(());
@@ -959,6 +976,7 @@ unsafe fn paint_detail_panes(
                 0.0,
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
         }
         return Ok(());
@@ -974,6 +992,7 @@ unsafe fn paint_detail_panes(
                 core.quicklink_records(),
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
         }
         return Ok(());
@@ -988,6 +1007,7 @@ unsafe fn paint_detail_panes(
                 core.custom_command_records(),
                 detail_w,
                 (*inner).scroll,
+                appearance,
             )?;
             crate::features::custom_commands::settings::pane::content_height(
                 core.custom_command_records().len(),
@@ -1001,6 +1021,10 @@ unsafe fn paint_detail_panes(
     if selected == SettingsTab::General {
         hide_edits(inner);
         if let Some(core) = core {
+            let palette_label = core
+                .hotkeys
+                .get("hotkey.togglePalette")
+                .map(|b| b.label());
             crate::features::settings::panes::general::paint(
                 target,
                 formats,
@@ -1017,7 +1041,10 @@ unsafe fn paint_detail_panes(
                     show_in_menu_bar: core.settings.show_in_menu_bar,
                     pop_to_root: core.settings.pop_to_root_timeout,
                     auto_switch: core.settings.auto_switch_input_source,
-                    chrome: settings_appearance(inner),
+                    chrome: appearance,
+                    palette_binding: palette_label.as_deref(),
+                    recording_palette: (*inner).recorder.action.as_deref()
+                        == Some("hotkey.togglePalette"),
                 },
                 detail_w,
                 (*inner).scroll,
@@ -1032,6 +1059,7 @@ unsafe fn paint_detail_panes(
             formats,
             detail_w,
             (*inner).scroll,
+            appearance,
         )?;
         return Ok(());
     }
@@ -1076,6 +1104,7 @@ unsafe fn paint_detail_panes(
         (*inner).alias_index,
         &(*inner).filter_query,
         scroll,
+        appearance,
     )?;
     layout_edits(
         hwnd,
@@ -2140,7 +2169,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         let Some(core) = core_from_host((*inner).host) else {
             return;
         };
-        match crate::features::snippets::settings::pane::hit(detail_x, detail_y, (*inner).scroll) {
+        match crate::features::snippets::settings::pane::hit(detail_x, y, (*inner).scroll) {
             Some(crate::features::snippets::settings::pane::SnippetsHit::Enable) => {
                 if (*core).settings.snippets_enabled {
                     (*core).set_snippets_enabled(false);
@@ -2163,7 +2192,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         let disabled_len = (*core).settings.clipboard_disabled_apps.len();
         match crate::features::clipboard::settings::pane::hit(
             detail_x,
-            detail_y,
+            y,
             (*inner).scroll,
             disabled_len,
         ) {
@@ -2193,7 +2222,12 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             return;
         };
         use crate::features::settings::panes::general::{GeneralHit, GeneralToggle};
-        match crate::features::settings::panes::general::hit(detail_x, y, (*inner).scroll) {
+        match crate::features::settings::panes::general::hit(
+            detail_x,
+            y,
+            (*inner).scroll,
+            detail_w,
+        ) {
             Some(GeneralHit::PaletteRecorder) => {
                 (*core).pause_global_hotkeys();
                 (*inner).recorder.begin("hotkey.togglePalette".into());

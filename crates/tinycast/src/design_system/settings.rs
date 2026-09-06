@@ -260,6 +260,7 @@ pub fn paint_settings_row(
                 },
                 on,
                 enabled,
+                appearance,
             )?;
         }
         RowTrailing::Label(label) => {
@@ -283,6 +284,40 @@ pub fn paint_settings_row(
 
 pub fn form_origin() -> f32 {
     CARD_INSET + HEADER_H + theme::spacing::SECTION_HEADER_BOTTOM + CARD_PAD
+}
+
+/// Ink that follows Appearance: white on Dark, black on Light (straight alpha).
+pub fn ramp_color(appearance: u8, alpha: f32) -> D2D1_COLOR_F {
+    appearance::color(theme::colors::ramp_rgba(appearance, alpha, alpha))
+}
+
+pub fn primary_ink(appearance: u8) -> D2D1_COLOR_F {
+    ramp_color(appearance, theme::colors::TEXT_PRIMARY_ALPHA)
+}
+
+pub fn secondary_ink(appearance: u8) -> D2D1_COLOR_F {
+    ramp_color(appearance, theme::colors::TEXT_SECONDARY_ALPHA)
+}
+
+pub fn tertiary_ink(appearance: u8) -> D2D1_COLOR_F {
+    appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_TERTIARY_DARK_ALPHA,
+        theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
+    ))
+}
+
+/// Content-space y after a FeatureSwitchSection card (scroll = 0).
+pub fn switch_section_next_y(launcher_row: bool) -> f32 {
+    let rows = if launcher_row { 2 } else { 1 };
+    GroupedSection {
+        header: Some(""),
+        footer: None,
+        y: CARD_INSET,
+        width: 420.0,
+        body_h: CARD_PAD * 2.0 + ROW_H * rows as f32,
+    }
+    .next_y()
 }
 
 pub fn feature_switch_section(
@@ -377,6 +412,7 @@ fn paint_toggle(
     rect: DipRect,
     on: bool,
     enabled: bool,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let fill = if on {
         D2D1_COLOR_F {
@@ -386,12 +422,7 @@ fn paint_toggle(
             a: if enabled { 1.0 } else { 0.45 },
         }
     } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: if enabled { 0.18 } else { 0.08 },
-        }
+        ramp_color(appearance, if enabled { 0.18 } else { 0.08 })
     };
     let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     let rounded = D2D1_ROUNDED_RECT {
@@ -463,4 +494,26 @@ fn draw_text(
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feature_switch_rows_are_stacked_row_h() {
+        let (_, enable, show) = feature_switch_section(420.0, CARD_INSET, "Notes", true);
+        let show = show.expect("launcher row");
+        assert!((show.y - enable.y - ROW_H).abs() < 0.001);
+        assert!((show.y - enable.y - (ROW_H + theme::spacing::XL)).abs() > 1.0);
+        assert!((enable.y - form_origin()).abs() < 0.001);
+    }
+
+    #[test]
+    fn primary_ink_inverts_with_appearance() {
+        let dark = primary_ink(0);
+        let light = primary_ink(1);
+        assert!(dark.r > 0.9);
+        assert!(light.r < 0.1);
+    }
 }

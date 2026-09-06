@@ -5,7 +5,7 @@ use std::path::Path;
 use tinycast_pure::theme;
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{
     ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
 };
@@ -63,12 +63,11 @@ struct ClipboardLayout {
     clear: f32,
 }
 
-fn layout(disabled_len: usize, origin: f32) -> ClipboardLayout {
-    let mut y = origin + ds::form_origin();
+fn layout(disabled_len: usize) -> ClipboardLayout {
+    let mut y = ds::switch_section_next_y(false);
     let retention = y;
     y += ROW_H + theme::spacing::XL + 24.0;
     let mut apps = Vec::new();
-    // Caption row, then each disabled app.
     y += ROW_H;
     for _ in 0..disabled_len {
         apps.push(y);
@@ -92,6 +91,7 @@ pub fn paint(
     disabled: &[String],
     detail_w: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (section, _, _) = ds::feature_switch_section(
         detail_w,
@@ -99,79 +99,94 @@ pub fn paint(
         section_header(),
         false,
     );
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
-    let origin = theme::spacing::XXL - scroll;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    let origin = -scroll;
     let inset = theme::spacing::XXL;
-    let rows = layout(disabled.len(), origin);
-    draw_header(target, formats.header, inset, origin, detail_w, "History")?;
+    let rows = layout(disabled.len());
+    draw_header(
+        target,
+        formats.header,
+        inset,
+        rows.retention + origin - 24.0,
+        detail_w,
+        "History",
+        appearance,
+    )?;
     draw_row(
         target,
         formats,
         inset,
-        rows.retention,
+        rows.retention + origin,
         detail_w,
         "Keep history for",
         retention_title(retention_days),
+        appearance,
     )?;
     draw_header(
         target,
         formats.header,
         inset,
-        rows.retention + ROW_H + theme::spacing::XL,
+        rows.retention + ROW_H + theme::spacing::XL + origin,
         detail_w,
         "Disabled Applications",
+        appearance,
     )?;
     draw_caption(
         target,
         formats.caption,
         inset,
-        rows.retention + ROW_H + theme::spacing::XL + 24.0,
+        rows.retention + ROW_H + theme::spacing::XL + 24.0 + origin,
         detail_w,
         "Copies from these apps are not recorded.",
+        appearance,
     )?;
     for (i, name) in disabled.iter().enumerate() {
         draw_row(
             target,
             formats,
             inset,
-            rows.apps[i],
+            rows.apps[i] + origin,
             detail_w,
             name,
             "Remove",
+            appearance,
         )?;
     }
     draw_row(
         target,
         formats,
         inset,
-        rows.add_app,
+        rows.add_app + origin,
         detail_w,
         ADD_APPLICATION_TITLE,
         "Add",
+        appearance,
     )?;
     draw_header(
         target,
         formats.header,
         inset,
-        rows.add_app + ROW_H + theme::spacing::XL,
+        rows.add_app + ROW_H + theme::spacing::XL + origin,
         detail_w,
         "Clear",
+        appearance,
     )?;
     draw_row(
         target,
         formats,
         inset,
-        rows.clear,
+        rows.clear + origin,
         detail_w,
         CLEAR_HISTORY_TITLE,
         "Clear…",
+        appearance,
     )?;
     Ok(())
 }
 
 pub fn hit(x: f32, y: f32, scroll: f32, disabled_len: usize) -> Option<ClipboardHit> {
-    let origin = theme::spacing::XXL - scroll;
-    let rows = layout(disabled_len, origin);
+    let y = y + scroll;
+    let rows = layout(disabled_len);
     if in_row(y, rows.retention) && x > theme::spacing::XXL {
         return Some(ClipboardHit::Retention);
     }
@@ -233,8 +248,9 @@ fn draw_header(
     y: f32,
     w: f32,
     text: &str,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&muted(), None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::tertiary_ink(appearance), None)? };
     draw_text(
         target,
         format,
@@ -256,8 +272,9 @@ fn draw_caption(
     y: f32,
     w: f32,
     text: &str,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&muted(), None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::tertiary_ink(appearance), None)? };
     draw_text(
         target,
         format,
@@ -280,6 +297,7 @@ fn draw_row(
     w: f32,
     title: &str,
     trailing: &str,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pill = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
@@ -291,11 +309,16 @@ fn draw_row(
         radiusX: theme::radius::ROW,
         radiusY: theme::radius::ROW,
     };
-    let fill = unsafe { target.CreateSolidColorBrush(&row_fill(), None)? };
+    let fill = unsafe {
+        target.CreateSolidColorBrush(
+            &crate::design_system::appearance::color(ds::card_fill(appearance)),
+            None,
+        )?
+    };
     unsafe {
         target.FillRoundedRectangle(&pill, &fill);
     }
-    let title_brush = unsafe { target.CreateSolidColorBrush(&title_color(), None)? };
+    let title_brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     draw_text(
         target,
         formats.body,
@@ -308,7 +331,7 @@ fn draw_row(
         },
         title,
     )?;
-    let trail = unsafe { target.CreateSolidColorBrush(&muted(), None)? };
+    let trail = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     draw_text(
         target,
         formats.caption,
@@ -344,33 +367,6 @@ fn draw_text(
     Ok(())
 }
 
-fn title_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 0.1,
-        g: 0.1,
-        b: 0.1,
-        a: 1.0,
-    }
-}
-
-fn muted() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 0.35,
-        g: 0.35,
-        b: 0.35,
-        a: 1.0,
-    }
-}
-
-fn row_fill() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.65,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,8 +380,7 @@ mod tests {
 
     #[test]
     fn add_application_and_clear_are_hittable() {
-        let origin = theme::spacing::XXL;
-        let rows = layout(2, origin);
+        let rows = layout(2);
         assert_eq!(
             hit(theme::spacing::XXL + 1.0, rows.add_app + 1.0, 0.0, 2),
             Some(ClipboardHit::AddApp)
@@ -398,11 +393,12 @@ mod tests {
             hit(theme::spacing::XXL + 1.0, rows.apps[1] + 1.0, 0.0, 2),
             Some(ClipboardHit::RemoveApp(1))
         );
-        let empty = layout(0, origin);
+        let empty = layout(0);
         assert_eq!(
             hit(theme::spacing::XXL + 1.0, empty.add_app + 1.0, 0.0, 0),
             Some(ClipboardHit::AddApp)
         );
+        assert!(rows.retention >= ds::switch_section_next_y(false) - 0.001);
         assert_eq!(ADD_APPLICATION_TITLE, "Add Application…");
         assert_eq!(CLEAR_CONFIRM_ACTION, "Clear History");
     }

@@ -1,6 +1,7 @@
 //! Settings → Window Management: enable, show in launcher, gap, cycle, per-command recorders.
 
 use tinycast_pure::hotkey_store::HotKeyStore;
+use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use tinycast_pure::visibility::VisibilityStore;
 use tinycast_pure::window_command::{WindowCommandId, WindowGroup};
@@ -18,7 +19,7 @@ const CMD_H: f32 = 40.0;
 const HEADER_H: f32 = 22.0;
 const TOGGLE_W: f32 = 40.0;
 const TOGGLE_H: f32 = 22.0;
-const RECORDER_W: f32 = 140.0;
+const RECORDER_W: f32 = theme::size::SHORTCUT_RECORDER;
 const CLEAR_W: f32 = 22.0;
 
 pub fn section_header() -> &'static str {
@@ -46,8 +47,36 @@ pub fn catalog_commands() -> Vec<WindowCommandId> {
     WindowCommandId::all().to_vec()
 }
 
+fn switch_card() -> ds::GroupedSection {
+    let mut section = ds::feature_switch_section(420.0, ds::CARD_INSET, section_header(), true).0;
+    section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 4.0;
+    section
+}
+
 pub fn toggles_bottom() -> f32 {
-    ds::form_origin() + ROW_H * 4.0 + theme::spacing::XL * 3.0
+    switch_card().next_y()
+}
+
+fn toggle_row_y(index: usize) -> f32 {
+    ds::form_origin() + index as f32 * ROW_H
+}
+
+pub fn recorder_well_for_action(action: &str, width: f32, scroll: f32) -> Option<DipRect> {
+    let rest = action.strip_prefix("hotkey.windowCommand.")?;
+    let index = WindowCommandId::all()
+        .iter()
+        .position(|id| id.raw() == rest)?;
+    let (_, top) = catalog_layout()
+        .commands
+        .into_iter()
+        .find(|(i, _)| *i == index)?;
+    let (rec_left, _) = command_wells(width);
+    Some(DipRect {
+        x: rec_left,
+        y: top - scroll,
+        w: RECORDER_W,
+        h: 24.0,
+    })
 }
 
 fn group_blocks() -> Vec<(WindowGroup, Vec<WindowCommandId>)> {
@@ -100,21 +129,17 @@ pub fn content_height() -> f32 {
 
 pub fn hit(_x: f32, y: f32, scroll: f32, width: f32) -> Option<WindowHit> {
     let y = y + scroll;
-    let mut row = ds::form_origin();
-    if y >= row && y < row + ROW_H {
-        return Some(WindowHit::Enable);
-    }
-    row += ROW_H + theme::spacing::XL;
-    if y >= row && y < row + ROW_H {
-        return Some(WindowHit::ShowInLauncher);
-    }
-    row += ROW_H + theme::spacing::XL;
-    if y >= row && y < row + ROW_H {
-        return Some(WindowHit::Cycle);
-    }
-    row += ROW_H + theme::spacing::XL;
-    if y >= row && y < row + ROW_H {
-        return Some(WindowHit::Gap);
+    let toggles = [
+        WindowHit::Enable,
+        WindowHit::ShowInLauncher,
+        WindowHit::Cycle,
+        WindowHit::Gap,
+    ];
+    for (i, hit) in toggles.into_iter().enumerate() {
+        let top = toggle_row_y(i);
+        if y >= top && y < top + ROW_H {
+            return Some(hit);
+        }
     }
     let layout = catalog_layout();
     for (index, top) in layout.commands {
@@ -163,53 +188,73 @@ pub fn paint(
     origin_x: f32,
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, _, _) = ds::feature_switch_section(
+    let mut section = ds::feature_switch_section(
         width,
         ds::CARD_INSET - scroll,
         section_header(),
         true,
-    );
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    )
+    .0;
+    section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 4.0;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let origin = -scroll;
-    let mut y = ds::form_origin() + origin;
-    paint_row(target, formats, ENABLE_TITLE, ENABLE_SUBTITLE, enabled, y, origin_x, width)?;
-    y += ROW_H + theme::spacing::XL;
+    paint_row(
+        target,
+        formats,
+        ENABLE_TITLE,
+        ENABLE_SUBTITLE,
+        enabled,
+        toggle_row_y(0) + origin,
+        origin_x,
+        width,
+        appearance,
+    )?;
     paint_row(
         target,
         formats,
         SHOW_IN_LAUNCHER,
         "Hide the Window Management section without disabling shortcuts.",
         show_in_launcher,
-        y,
+        toggle_row_y(1) + origin,
         origin_x,
         width,
+        appearance,
     )?;
-    y += ROW_H + theme::spacing::XL;
     paint_row(
         target,
         formats,
         CYCLE_TITLE,
         "Repeated Left/Right/Top/Bottom Half cycles ½ → ⅓ → ⅔.",
         cycle,
-        y,
+        toggle_row_y(2) + origin,
         origin_x,
         width,
+        appearance,
     )?;
-    y += ROW_H + theme::spacing::XL;
     paint_row(
         target,
         formats,
         GAP_TITLE,
         &format!("{gap} pt between tiles and screen edges."),
         gap > 0,
-        y,
+        toggle_row_y(3) + origin,
         origin_x,
         width,
+        appearance,
     )?;
     let layout = catalog_layout();
     for (top, title) in layout.headers {
-        paint_header(target, formats, title, top + origin, origin_x, width)?;
+        paint_header(
+            target,
+            formats,
+            title,
+            top + origin,
+            origin_x,
+            width,
+            appearance,
+        )?;
     }
     for (index, top) in layout.commands {
         let id = WindowCommandId::all()[index];
@@ -230,6 +275,7 @@ pub fn paint(
             top + origin,
             origin_x,
             width,
+            appearance,
         )?;
     }
     Ok(())
@@ -242,14 +288,9 @@ fn paint_header(
     y: f32,
     origin_x: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let wide: Vec<u16> = title.encode_utf16().collect();
     let pad = theme::spacing::XL;
     unsafe {
@@ -280,15 +321,12 @@ fn paint_command(
     y: f32,
     origin_x: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: if visible { 0.92 } else { 0.4 },
+    let brush = unsafe {
+        target.CreateSolidColorBrush(&ds::ramp_color(appearance, if visible { 0.92 } else { 0.4 }), None)?
     };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
     let name_w: Vec<u16> = name.encode_utf16().collect();
     let rec_w: Vec<u16> = rec.encode_utf16().collect();
     let (rec_left, clear_left) = command_wells(width);
@@ -348,6 +386,7 @@ fn paint_row(
     y: f32,
     origin_x: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
     let text_w = width - pad * 3.0 - TOGGLE_W;
@@ -363,19 +402,7 @@ fn paint_row(
         right: origin_x + pad + text_w,
         bottom: y + ROW_H - 4.0,
     };
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    };
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let title_wide: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -387,7 +414,7 @@ fn paint_row(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let sub_wide: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -417,12 +444,7 @@ fn paint_row(
             a: 1.0,
         }
     } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 0.18,
-        }
+        ds::ramp_color(appearance, 0.18)
     };
     let toggle_brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     unsafe {
@@ -441,8 +463,25 @@ mod tests {
             hit(20.0, ds::form_origin() + 4.0, 0.0, 400.0),
             Some(WindowHit::Enable)
         );
+        let (_, _, show) =
+            ds::feature_switch_section(420.0, ds::CARD_INSET, section_header(), true);
+        assert_eq!(
+            hit(20.0, show.unwrap().y + 4.0, 0.0, 400.0),
+            Some(WindowHit::ShowInLauncher)
+        );
         assert_eq!(cycle_gap(0), 8);
         assert_eq!(cycle_gap(24), 0);
+    }
+
+    #[test]
+    fn window_command_recorder_well_is_120() {
+        let key = format!(
+            "hotkey.windowCommand.{}",
+            WindowCommandId::all()[0].raw()
+        );
+        let well = recorder_well_for_action(&key, 400.0, 0.0).unwrap();
+        assert_eq!(well.w, theme::size::SHORTCUT_RECORDER);
+        assert_eq!(RECORDER_W, 120.0);
     }
 
     #[test]

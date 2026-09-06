@@ -1,10 +1,11 @@
 //! Settings → Backup: export, import, Raycast import.
 
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 44.0;
@@ -41,15 +42,17 @@ pub fn paint(
     formats: &Formats<'_>,
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    row(target, formats, "Export Settings…", row_y(0) - scroll, width)?;
-    row(target, formats, "Import Settings…", row_y(1) - scroll, width)?;
+    row(target, formats, "Export Settings…", row_y(0) - scroll, width, appearance)?;
+    row(target, formats, "Import Settings…", row_y(1) - scroll, width, appearance)?;
     row(
         target,
         formats,
         "Import from Raycast…",
         row_y(2) - scroll,
         width,
+        appearance,
     )?;
     Ok(())
 }
@@ -60,14 +63,9 @@ fn row(
     title: &str,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let t: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(

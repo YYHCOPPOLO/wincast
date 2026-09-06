@@ -1,8 +1,9 @@
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,15 +29,10 @@ pub fn paint(
     formats: &Formats<'_>,
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let y = 24.0 - scroll;
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let t: Vec<u16> = "Tinycast for Windows".encode_utf16().collect();
     unsafe {
         target.DrawText(

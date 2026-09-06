@@ -34,11 +34,11 @@ pub enum ExtensionsHit {
 }
 
 pub fn content_height() -> f32 {
-    24.0 + ROW_H * 2.0 + theme::spacing::XL * 2.0 + NOTICE_H + 24.0
+    ds::switch_section_next_y(true) + NOTICE_H + 24.0
 }
 
 fn row_y(i: usize) -> f32 {
-    ds::form_origin() + i as f32 * (ROW_H + theme::spacing::XL)
+    ds::form_origin() + i as f32 * ROW_H
 }
 
 pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<ExtensionsHit> {
@@ -59,19 +59,21 @@ pub fn paint(
     show_in_launcher: bool,
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (section, _, _) =
         ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     paint_toggle(
         target,
         formats,
         ENABLE_TITLE,
         ENABLE_SUBTITLE,
         enabled,
-        true,
+        false,
         row_y(0) - scroll,
         width,
+        appearance,
     )?;
     paint_toggle(
         target,
@@ -79,18 +81,13 @@ pub fn paint(
         SHOW_IN_LAUNCHER,
         LAUNCHER_SUBTITLE,
         show_in_launcher,
-        false,
+        !enabled,
         row_y(1) - scroll,
         width,
+        appearance,
     )?;
-    let notice_y = row_y(2) - scroll;
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let notice_y = ds::switch_section_next_y(true) - scroll;
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let wide: Vec<u16> = RUNTIME_NOTICE.encode_utf16().collect();
     let pad = theme::spacing::XL;
     unsafe {
@@ -120,24 +117,13 @@ fn paint_toggle(
     disabled: bool,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
     let text_w = width - pad * 3.0 - TOGGLE_W;
     let title_a = if disabled { 0.45 } else { 0.92 };
     let sub_a = if disabled { 0.32 } else { 0.55 };
-    let title_color = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: title_a,
-    };
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: sub_a,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&title_color, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::ramp_color(appearance, title_a), None)? };
     let title_wide: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -154,7 +140,7 @@ fn paint_toggle(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::ramp_color(appearance, sub_a), None)? };
     let sub_wide: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -189,12 +175,7 @@ fn paint_toggle(
             a: if disabled { 0.35 } else { 1.0 },
         }
     } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: if disabled { 0.08 } else { 0.18 },
-        }
+        ds::ramp_color(appearance, if disabled { 0.08 } else { 0.18 })
     };
     let toggle_brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     unsafe {
@@ -221,5 +202,11 @@ mod tests {
             Some(ExtensionsHit::ShowInLauncher)
         );
         assert!(content_height() > row_y(1) + ROW_H);
+        let (_, _, show) =
+            ds::feature_switch_section(420.0, ds::CARD_INSET, section_header(), true);
+        assert_eq!(
+            hit(20.0, show.unwrap().y + 4.0, 0.0),
+            Some(ExtensionsHit::ShowInLauncher)
+        );
     }
 }

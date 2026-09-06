@@ -62,7 +62,7 @@ struct Layout {
 fn layout(scope_len: usize, ignore_len: usize) -> Layout {
     let mut y = ds::form_origin();
     let enable = y;
-    y += ROW_H + theme::spacing::XL;
+    y = ds::switch_section_next_y(false);
     y += 22.0;
     let mut scopes = Vec::new();
     for _ in 0..scope_len {
@@ -132,10 +132,11 @@ pub fn paint(
     ignores: &[String],
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (section, _, _) =
         ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let origin = -scroll;
     let l = layout(scopes.len(), ignores.len());
     paint_toggle(
@@ -146,12 +147,21 @@ pub fn paint(
         enabled,
         l.enable + origin,
         width,
+        appearance,
     )?;
-    header(target, formats, "Folders", 24.0, l.enable + ROW_H + theme::spacing::SM + origin, width)?;
+    header(
+        target,
+        formats,
+        "Folders",
+        24.0,
+        ds::switch_section_next_y(false) + origin,
+        width,
+        appearance,
+    )?;
     for (i, scope) in scopes.iter().enumerate() {
-        paint_item(target, formats, scope, "Remove", l.scopes[i] + origin, width)?;
+        paint_item(target, formats, scope, "Remove", l.scopes[i] + origin, width, appearance)?;
     }
-    paint_item(target, formats, ADD_FOLDER, "", l.add_folder + origin, width)?;
+    paint_item(target, formats, ADD_FOLDER, "", l.add_folder + origin, width, appearance)?;
     header(
         target,
         formats,
@@ -159,11 +169,20 @@ pub fn paint(
         24.0,
         l.add_folder + ITEM_H + theme::spacing::SM + origin,
         width,
+        appearance,
     )?;
     for (i, pattern) in ignores.iter().enumerate() {
-        paint_item(target, formats, pattern, "Remove", l.ignores[i] + origin, width)?;
+        paint_item(
+            target,
+            formats,
+            pattern,
+            "Remove",
+            l.ignores[i] + origin,
+            width,
+            appearance,
+        )?;
     }
-    paint_item(target, formats, ADD_IGNORE, "", l.add_ignore + origin, width)?;
+    paint_item(target, formats, ADD_IGNORE, "", l.add_ignore + origin, width, appearance)?;
     Ok(())
 }
 
@@ -174,14 +193,9 @@ fn header(
     x: f32,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let wide: Vec<u16> = text.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -209,22 +223,11 @@ fn paint_toggle(
     on: bool,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
     let text_w = width - pad * 3.0 - TOGGLE_W;
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    };
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let title_wide: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -241,7 +244,7 @@ fn paint_toggle(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let sub_wide: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -276,12 +279,7 @@ fn paint_toggle(
             a: 1.0,
         }
     } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 0.18,
-        }
+        ds::ramp_color(appearance, 0.18)
     };
     let toggle_brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     unsafe {
@@ -297,15 +295,10 @@ fn paint_item(
     trailing: &str,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let title_wide: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -323,13 +316,7 @@ fn paint_item(
         );
     }
     if !trailing.is_empty() {
-        let muted = D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 0.55,
-        };
-        let muted_brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+        let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
         let t: Vec<u16> = trailing.encode_utf16().collect();
         unsafe {
             target.DrawText(

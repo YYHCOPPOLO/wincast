@@ -34,8 +34,7 @@ pub enum CustomCommandsHit {
 }
 
 pub fn content_height(count: usize) -> f32 {
-    ds::form_origin() + ROW_H * 2.0
-        + theme::spacing::XL * 2.0
+    ds::switch_section_next_y(true)
         + ITEM_H
         + theme::spacing::SM
         + ITEM_H * count as f32
@@ -48,11 +47,11 @@ pub fn hit(x: f32, y: f32, scroll: f32, count: usize) -> Option<CustomCommandsHi
     if y >= row && y < row + ROW_H {
         return Some(CustomCommandsHit::Enable);
     }
-    row += ROW_H + theme::spacing::XL;
+    row += ROW_H;
     if y >= row && y < row + ROW_H {
         return Some(CustomCommandsHit::ShowInLauncher);
     }
-    row += ROW_H + theme::spacing::XL;
+    row = ds::switch_section_next_y(true);
     if y >= row && y < row + ITEM_H {
         return Some(CustomCommandsHit::New);
     }
@@ -75,10 +74,11 @@ pub fn paint(
     commands: &[CustomCommand],
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (section, _, _) =
         ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let origin = -scroll;
     let mut y = ds::form_origin() + origin;
     paint_toggle_row(
@@ -89,8 +89,9 @@ pub fn paint(
         enabled,
         y,
         width,
+        appearance,
     )?;
-    y += ROW_H + theme::spacing::XL;
+    y += ROW_H;
     paint_toggle_row(
         target,
         formats,
@@ -99,12 +100,13 @@ pub fn paint(
         show_in_launcher,
         y,
         width,
+        appearance,
     )?;
-    y += ROW_H + theme::spacing::XL;
-    paint_button(target, formats, NEW_LABEL, y, width)?;
+    y = ds::switch_section_next_y(true) + origin;
+    paint_button(target, formats, NEW_LABEL, y, width, appearance)?;
     y += ITEM_H + theme::spacing::SM;
     for cmd in commands {
-        paint_item(target, formats, &cmd.name, &cmd.command, y, width)?;
+        paint_item(target, formats, &cmd.name, &cmd.command, y, width, appearance)?;
         y += ITEM_H;
     }
     Ok(())
@@ -118,6 +120,7 @@ fn paint_toggle_row(
     on: bool,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
     let text_w = width - pad * 3.0 - TOGGLE_W;
@@ -129,6 +132,7 @@ fn paint_toggle_row(
         y + 8.0,
         pad + text_w,
         y + 28.0,
+        appearance,
         0.92,
     )?;
     draw_text(
@@ -139,6 +143,7 @@ fn paint_toggle_row(
         y + 28.0,
         pad + text_w,
         y + ROW_H - 4.0,
+        appearance,
         0.55,
     )?;
     paint_toggle(
@@ -146,6 +151,7 @@ fn paint_toggle_row(
         width - pad - TOGGLE_W,
         y + (ROW_H - TOGGLE_H) / 2.0,
         on,
+        appearance,
     )
 }
 
@@ -155,6 +161,7 @@ fn paint_button(
     label: &str,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
     let rect = D2D1_ROUNDED_RECT {
@@ -185,6 +192,7 @@ fn paint_button(
         y,
         rect.rect.right - 12.0,
         y + ITEM_H,
+        appearance,
         1.0,
     )
 }
@@ -196,6 +204,7 @@ fn paint_item(
     command: &str,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
     draw_text(
@@ -206,6 +215,7 @@ fn paint_item(
         y,
         width - pad,
         y + 20.0,
+        appearance,
         0.92,
     )?;
     draw_text(
@@ -216,11 +226,18 @@ fn paint_item(
         y + 18.0,
         width - pad,
         y + ITEM_H,
+        appearance,
         0.5,
     )
 }
 
-fn paint_toggle(target: &ID2D1RenderTarget, x: f32, y: f32, on: bool) -> windows::core::Result<()> {
+fn paint_toggle(
+    target: &ID2D1RenderTarget,
+    x: f32,
+    y: f32,
+    on: bool,
+    appearance: u8,
+) -> windows::core::Result<()> {
     let toggle = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
             left: x,
@@ -239,12 +256,7 @@ fn paint_toggle(target: &ID2D1RenderTarget, x: f32, y: f32, on: bool) -> windows
             a: 1.0,
         }
     } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 0.18,
-        }
+        ds::ramp_color(appearance, 0.18)
     };
     let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     unsafe {
@@ -261,14 +273,10 @@ fn draw_text(
     top: f32,
     right: f32,
     bottom: f32,
+    appearance: u8,
     alpha: f32,
 ) -> windows::core::Result<()> {
-    let color = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: alpha,
-    };
+    let color = ds::ramp_color(appearance, alpha);
     let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
     let wide: Vec<u16> = text.encode_utf16().collect();
     unsafe {
@@ -301,13 +309,13 @@ mod tests {
             Some(CustomCommandsHit::Enable)
         );
         assert_eq!(
-            hit(20.0, ds::form_origin() + ROW_H + theme::spacing::XL + 4.0, 0.0, 0),
+            hit(20.0, ds::form_origin() + ROW_H + 4.0, 0.0, 0),
             Some(CustomCommandsHit::ShowInLauncher)
         );
         assert_eq!(
             hit(
                 20.0,
-                ds::form_origin() + ROW_H * 2.0 + theme::spacing::XL * 2.0 + 4.0,
+                ds::switch_section_next_y(true) + 4.0,
                 0.0,
                 0
             ),

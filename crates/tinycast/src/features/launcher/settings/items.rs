@@ -731,13 +731,14 @@ pub fn paint_launcher_items(
     editing_alias: Option<usize>,
     query: &str,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let kind_on = visibility.is_kind_enabled(section.kind);
-    let header_brush = solid(target, header_text_color())?;
-    let body_brush = solid(target, tab_text_color())?;
-    let caption_brush = solid(target, header_text_color())?;
-    let card_brush = solid(target, card_fill())?;
-    let stroke_brush = solid(target, hairline_color())?;
+    let header_brush = solid(target, header_text_color(appearance))?;
+    let body_brush = solid(target, tab_text_color(appearance))?;
+    let caption_brush = solid(target, header_text_color(appearance))?;
+    let card_brush = solid(target, card_fill(appearance))?;
+    let stroke_brush = solid(target, hairline_color(appearance))?;
     draw_label(
         target,
         formats.header,
@@ -745,7 +746,12 @@ pub fn paint_launcher_items(
         shifted(layout.header, scroll),
         section.header,
     )?;
-    fill_card(target, &card_brush, shifted(layout.enable_row, scroll))?;
+    fill_card(
+        target,
+        &card_brush,
+        shifted(layout.enable_row, scroll),
+        appearance,
+    )?;
     draw_label(
         target,
         formats.body,
@@ -776,8 +782,13 @@ pub fn paint_launcher_items(
         ),
         ENABLE_SUBTITLE,
     )?;
-    paint_toggle(target, shifted(layout.toggle, scroll), kind_on)?;
-    fill_card(target, &card_brush, shifted(layout.list_card, scroll))?;
+    paint_toggle(target, shifted(layout.toggle, scroll), kind_on, appearance)?;
+    fill_card(
+        target,
+        &card_brush,
+        shifted(layout.list_card, scroll),
+        appearance,
+    )?;
     if query.is_empty() {
         draw_label(
             target,
@@ -843,6 +854,7 @@ pub fn paint_launcher_items(
                 if alias.is_empty() { "Add Alias" } else { alias },
                 alias.is_empty(),
                 false,
+                appearance,
             )?;
         }
         if let Some(rec) = item.recorder {
@@ -865,6 +877,7 @@ pub fn paint_launcher_items(
                 &label,
                 placeholder,
                 listening,
+                appearance,
             )?;
             if bound.is_some() && !listening {
                 if let Some(clear) = item.recorder_clear {
@@ -882,11 +895,12 @@ pub fn paint_launcher_items(
             target,
             shifted(item.checkbox, scroll),
             visibility.is_item_visible(&entry.id),
+            appearance,
         )?;
     }
     if !kind_on {
-        let dim = solid(target, dim_fill())?;
-        fill_card(target, &dim, shifted(layout.list_card, scroll))?;
+        let dim = solid(target, dim_fill(appearance))?;
+        fill_card(target, &dim, shifted(layout.list_card, scroll), appearance)?;
     }
     Ok(())
 }
@@ -897,11 +911,12 @@ pub fn paint_search_section(
     layout: &SearchLayout,
     ranking_empty: bool,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let header_brush = solid(target, header_text_color())?;
-    let body_brush = solid(target, tab_text_color())?;
-    let caption_brush = solid(target, header_text_color())?;
-    let card_brush = solid(target, card_fill())?;
+    let header_brush = solid(target, header_text_color(appearance))?;
+    let body_brush = solid(target, tab_text_color(appearance))?;
+    let caption_brush = solid(target, header_text_color(appearance))?;
+    let card_brush = solid(target, card_fill(appearance))?;
     draw_label(
         target,
         formats.header,
@@ -909,7 +924,7 @@ pub fn paint_search_section(
         shifted(layout.header, scroll),
         SEARCH_HEADER,
     )?;
-    fill_card(target, &card_brush, shifted(layout.row, scroll))?;
+    fill_card(target, &card_brush, shifted(layout.row, scroll), appearance)?;
     draw_label(
         target,
         formats.body,
@@ -932,6 +947,7 @@ pub fn paint_search_section(
         RESET_RANKING_BUTTON,
         true,
         !ranking_empty,
+        appearance,
     )?;
     draw_label(
         target,
@@ -977,10 +993,10 @@ pub fn paint_confirm_copy(
             &scrim,
         );
     }
-    let card_brush = solid(target, card_fill())?;
-    fill_card(target, &card_brush, layout.card)?;
-    let body_brush = solid(target, tab_text_color())?;
-    let caption_brush = solid(target, header_text_color())?;
+    let card_brush = solid(target, card_fill(0))?;
+    fill_card(target, &card_brush, layout.card, 0)?;
+    let body_brush = solid(target, tab_text_color(0))?;
+    let caption_brush = solid(target, header_text_color(0))?;
     draw_label(
         target,
         formats.body,
@@ -1012,6 +1028,7 @@ pub fn paint_confirm_copy(
         copy.cancel,
         false,
         true,
+        0,
     )?;
     paint_button(
         target,
@@ -1020,6 +1037,7 @@ pub fn paint_confirm_copy(
         copy.accept,
         true,
         true,
+        0,
     )?;
     Ok(())
 }
@@ -1035,6 +1053,7 @@ fn fill_card(
     target: &ID2D1RenderTarget,
     brush: &ID2D1SolidColorBrush,
     rect: Rect,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let rounded = D2D1_ROUNDED_RECT {
         rect: rect.d2d(),
@@ -1043,15 +1062,27 @@ fn fill_card(
     };
     unsafe {
         target.FillRoundedRectangle(&rounded, brush);
-        let stroke = solid(target, hairline_color())?;
+        let stroke = solid(target, hairline_color(appearance))?;
         target.DrawRoundedRectangle(&rounded, &stroke, theme::size::HAIRLINE, None);
     }
     Ok(())
 }
 
-fn paint_toggle(target: &ID2D1RenderTarget, rect: Rect, on: bool) -> windows::core::Result<()> {
-    let fill = solid(target, if on { accent_color() } else { toggle_off() })?;
-    let knob = solid(target, tab_text_color())?;
+fn paint_toggle(
+    target: &ID2D1RenderTarget,
+    rect: Rect,
+    on: bool,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    let fill = solid(
+        target,
+        if on {
+            accent_color()
+        } else {
+            toggle_off(appearance)
+        },
+    )?;
+    let knob = solid(target, tab_text_color(appearance))?;
     let rounded = D2D1_ROUNDED_RECT {
         rect: rect.d2d(),
         radiusX: rect.h / 2.0,
@@ -1083,8 +1114,13 @@ fn paint_toggle(target: &ID2D1RenderTarget, rect: Rect, on: bool) -> windows::co
     Ok(())
 }
 
-fn paint_checkbox(target: &ID2D1RenderTarget, rect: Rect, on: bool) -> windows::core::Result<()> {
-    let stroke = solid(target, hairline_color())?;
+fn paint_checkbox(
+    target: &ID2D1RenderTarget,
+    rect: Rect,
+    on: bool,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    let stroke = solid(target, hairline_color(appearance))?;
     let rounded = D2D1_ROUNDED_RECT {
         rect: rect.d2d(),
         radiusX: 3.0,
@@ -1098,7 +1134,7 @@ fn paint_checkbox(target: &ID2D1RenderTarget, rect: Rect, on: bool) -> windows::
         unsafe {
             target.FillRoundedRectangle(&rounded, &fill);
         }
-        let mark = solid(target, tab_text_color())?;
+        let mark = solid(target, tab_text_color(appearance))?;
         unsafe {
             target.DrawLine(
                 D2D_POINT_2F {
@@ -1138,14 +1174,15 @@ fn paint_well(
     text: &str,
     placeholder: bool,
     recording: bool,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let fill = solid(target, well_fill())?;
+    let fill = solid(target, well_fill(appearance))?;
     let stroke = solid(
         target,
         if recording {
             accent_color()
         } else {
-            hairline_color()
+            hairline_color(appearance)
         },
     )?;
     let rounded = D2D1_ROUNDED_RECT {
@@ -1160,9 +1197,9 @@ fn paint_well(
     let brush = solid(
         target,
         if placeholder {
-            header_text_color()
+            header_text_color(appearance)
         } else {
-            tab_text_color()
+            tab_text_color(appearance)
         },
     )?;
     draw_label(
@@ -1181,13 +1218,14 @@ fn paint_button(
     text: &str,
     destructive: bool,
     enabled: bool,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let fill = solid(
         target,
         if destructive && enabled {
             destructive_fill()
         } else {
-            well_fill()
+            well_fill(appearance)
         },
     )?;
     let rounded = D2D1_ROUNDED_RECT {
@@ -1201,9 +1239,9 @@ fn paint_button(
     let brush = solid(
         target,
         if enabled {
-            tab_text_color()
+            tab_text_color(appearance)
         } else {
-            header_text_color()
+            header_text_color(appearance)
         },
     )?;
     draw_label(target, format, &brush, rect, text)
@@ -1237,39 +1275,24 @@ fn solid(
     unsafe { target.CreateSolidColorBrush(&color, None) }
 }
 
-fn header_text_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.45,
-    }
+fn header_text_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::settings::tertiary_ink(appearance)
 }
 
-fn tab_text_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    }
+fn tab_text_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::settings::primary_ink(appearance)
 }
 
-fn hairline_color() -> D2D1_COLOR_F {
-    crate::design_system::appearance::color(crate::design_system::settings::card_stroke(0))
+fn hairline_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(crate::design_system::settings::card_stroke(appearance))
 }
 
-fn card_fill() -> D2D1_COLOR_F {
-    crate::design_system::appearance::color(crate::design_system::settings::card_fill(0))
+fn card_fill(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(crate::design_system::settings::card_fill(appearance))
 }
 
-fn well_fill() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.06,
-    }
+fn well_fill(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::settings::ramp_color(appearance, 0.06)
 }
 
 fn accent_color() -> D2D1_COLOR_F {
@@ -1281,21 +1304,25 @@ fn accent_color() -> D2D1_COLOR_F {
     }
 }
 
-fn toggle_off() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.18,
-    }
+fn toggle_off(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::settings::ramp_color(appearance, 0.18)
 }
 
-fn dim_fill() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 0.16,
-        g: 0.16,
-        b: 0.16,
-        a: 0.55,
+fn dim_fill(appearance: u8) -> D2D1_COLOR_F {
+    if appearance == 0 {
+        D2D1_COLOR_F {
+            r: 0.16,
+            g: 0.16,
+            b: 0.16,
+            a: 0.55,
+        }
+    } else {
+        D2D1_COLOR_F {
+            r: 0.95,
+            g: 0.95,
+            b: 0.95,
+            a: 0.55,
+        }
     }
 }
 

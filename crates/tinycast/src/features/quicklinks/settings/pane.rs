@@ -47,8 +47,7 @@ pub enum QuicklinksHit {
 }
 
 pub fn content_height(count: usize) -> f32 {
-    ds::form_origin() + ROW_H * 2.0
-        + theme::spacing::XL * 2.0
+    ds::switch_section_next_y(true)
         + ITEM_H
         + theme::spacing::SM
         + ITEM_H * count as f32
@@ -61,11 +60,11 @@ pub fn hit(x: f32, y: f32, scroll: f32, count: usize) -> Option<QuicklinksHit> {
     if y >= row && y < row + ROW_H {
         return Some(QuicklinksHit::Enable);
     }
-    row += ROW_H + theme::spacing::XL;
+    row += ROW_H;
     if y >= row && y < row + ROW_H {
         return Some(QuicklinksHit::ShowInLauncher);
     }
-    row += ROW_H + theme::spacing::XL;
+    row = ds::switch_section_next_y(true);
     let pad = theme::spacing::XL;
     if y >= row && y < row + ITEM_H {
         if x >= pad && x < pad + BTN_W {
@@ -96,10 +95,11 @@ pub fn paint(
     links: &[Quicklink],
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (section, _, _) =
         ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let origin = -scroll;
     let mut y = ds::form_origin() + origin;
     paint_toggle_row(
@@ -110,8 +110,9 @@ pub fn paint(
         enabled,
         y,
         width,
+        appearance,
     )?;
-    y += ROW_H + theme::spacing::XL;
+    y += ROW_H;
     paint_toggle_row(
         target,
         formats,
@@ -120,12 +121,13 @@ pub fn paint(
         show_in_launcher,
         y,
         width,
+        appearance,
     )?;
-    y += ROW_H + theme::spacing::XL;
+    y = ds::switch_section_next_y(true) + origin;
     let pad = theme::spacing::XL;
-    paint_btn(target, formats, CREATE_LABEL, pad, y)?;
-    paint_btn(target, formats, IMPORT_LABEL, pad + BTN_W + 8.0, y)?;
-    paint_btn(target, formats, EXPORT_LABEL, pad + BTN_W * 2.0 + 16.0, y)?;
+    paint_btn(target, formats, CREATE_LABEL, pad, y, appearance)?;
+    paint_btn(target, formats, IMPORT_LABEL, pad + BTN_W + 8.0, y, appearance)?;
+    paint_btn(target, formats, EXPORT_LABEL, pad + BTN_W * 2.0 + 16.0, y, appearance)?;
     y += ITEM_H + theme::spacing::SM;
     for link in links {
         draw_text(
@@ -136,6 +138,7 @@ pub fn paint(
             y,
             width - pad,
             y + 20.0,
+            appearance,
             0.92,
         )?;
         draw_text(
@@ -146,6 +149,7 @@ pub fn paint(
             y + 18.0,
             width - pad,
             y + ITEM_H,
+            appearance,
             0.5,
         )?;
         y += ITEM_H;
@@ -210,6 +214,7 @@ fn paint_toggle_row(
     on: bool,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
     let text_w = width - pad * 3.0 - TOGGLE_W;
@@ -221,6 +226,7 @@ fn paint_toggle_row(
         y + 8.0,
         pad + text_w,
         y + 28.0,
+        appearance,
         0.92,
     )?;
     draw_text(
@@ -231,6 +237,7 @@ fn paint_toggle_row(
         y + 28.0,
         pad + text_w,
         y + ROW_H - 4.0,
+        appearance,
         0.55,
     )?;
     let toggle = D2D1_ROUNDED_RECT {
@@ -251,12 +258,7 @@ fn paint_toggle_row(
             a: 1.0,
         }
     } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 0.18,
-        }
+        ds::ramp_color(appearance, 0.18)
     };
     let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     unsafe {
@@ -271,6 +273,7 @@ fn paint_btn(
     label: &str,
     x: f32,
     y: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let rect = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
@@ -300,6 +303,7 @@ fn paint_btn(
         y,
         x + BTN_W - 12.0,
         y + ITEM_H,
+        appearance,
         1.0,
     )
 }
@@ -312,14 +316,10 @@ fn draw_text(
     top: f32,
     right: f32,
     bottom: f32,
+    appearance: u8,
     alpha: f32,
 ) -> windows::core::Result<()> {
-    let color = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: alpha,
-    };
+    let color = ds::ramp_color(appearance, alpha);
     let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
     let wide: Vec<u16> = text.encode_utf16().collect();
     unsafe {
@@ -352,10 +352,10 @@ mod tests {
             Some(QuicklinksHit::Enable)
         );
         assert_eq!(
-            hit(20.0, ds::form_origin() + ROW_H + theme::spacing::XL + 4.0, 0.0, 0),
+            hit(20.0, ds::form_origin() + ROW_H + 4.0, 0.0, 0),
             Some(QuicklinksHit::ShowInLauncher)
         );
-        let y = ds::form_origin() + ROW_H * 2.0 + theme::spacing::XL * 2.0 + 4.0;
+        let y = ds::switch_section_next_y(true) + 4.0;
         assert_eq!(hit(theme::spacing::XL + 4.0, y, 0.0, 0), Some(QuicklinksHit::Create));
         assert_eq!(
             hit(theme::spacing::XL + BTN_W + 12.0, y, 0.0, 0),

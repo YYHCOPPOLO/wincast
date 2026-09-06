@@ -55,6 +55,8 @@ pub struct GeneralState<'a> {
     pub pop_to_root: i64,
     pub auto_switch: bool,
     pub chrome: u8,
+    pub palette_binding: Option<&'a str>,
+    pub recording_palette: bool,
 }
 
 pub fn general_sections() -> [&'static str; 5] {
@@ -127,11 +129,8 @@ fn row_rect(card: DipRect, index: usize) -> DipRect {
     }
 }
 
-pub fn layout_general(scroll: f32) -> Vec<(GeneralHit, DipRect)> {
-    layout_general_sized(
-        theme::size::SETTINGS_WINDOW.0 - theme::size::SETTINGS_SIDEBAR,
-        scroll,
-    )
+pub fn layout_general(width: f32, scroll: f32) -> Vec<(GeneralHit, DipRect)> {
+    layout_general_sized(width, scroll)
 }
 
 fn layout_general_sized(width: f32, scroll: f32) -> Vec<(GeneralHit, DipRect)> {
@@ -159,8 +158,8 @@ pub fn content_height() -> f32 {
     y + ds::CARD_INSET
 }
 
-pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<GeneralHit> {
-    for (hit, rect) in layout_general(scroll) {
+pub fn hit(_x: f32, y: f32, scroll: f32, width: f32) -> Option<GeneralHit> {
+    for (hit, rect) in layout_general(width, scroll) {
         if y >= rect.y && y < rect.y + rect.h {
             return Some(hit);
         }
@@ -327,7 +326,20 @@ pub fn paint(
                 trailing,
             )?;
             if hit == GeneralHit::PaletteRecorder {
-                paint_recorder_well(target, rect)?;
+                let listening = state.recording_palette;
+                let caption = crate::features::hotkeys::ui::recorder::well_caption(
+                    state.palette_binding,
+                    listening,
+                );
+                paint_recorder_well(
+                    target,
+                    formats,
+                    rect,
+                    &caption,
+                    listening || state.palette_binding.filter(|s| !s.is_empty()).is_none(),
+                    listening,
+                    state.chrome,
+                )?;
             }
         }
         y = section.next_y();
@@ -335,33 +347,34 @@ pub fn paint(
     Ok(())
 }
 
-fn paint_recorder_well(target: &ID2D1RenderTarget, row: DipRect) -> windows::core::Result<()> {
-    let w = theme::size::SHORTCUT_RECORDER;
-    let h = 24.0;
+fn paint_recorder_well(
+    target: &ID2D1RenderTarget,
+    formats: &Formats<'_>,
+    row: DipRect,
+    label: &str,
+    placeholder: bool,
+    listening: bool,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    let well = crate::features::hotkeys::ui::recorder::well_in_row(row);
     let rect = D2D_RECT_F {
-        left: row.x + row.w - CARD_PAD - w,
-        top: row.y + (row.h - h) / 2.0,
-        right: row.x + row.w - CARD_PAD,
-        bottom: row.y + (row.h - h) / 2.0 + h,
+        left: well.x,
+        top: well.y,
+        right: well.x + well.w,
+        bottom: well.y + well.h,
     };
-    let fill = unsafe {
-        target.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 0.06,
-            },
-            None,
-        )?
-    };
+    let fill = unsafe { target.CreateSolidColorBrush(&ds::ramp_color(appearance, 0.06), None)? };
     let stroke = unsafe {
         target.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: theme::colors::CARD_STROKE_ALPHA,
+            &if listening {
+                D2D1_COLOR_F {
+                    r: 0.0,
+                    g: 0.47,
+                    b: 0.83,
+                    a: 1.0,
+                }
+            } else {
+                ds::ramp_color(appearance, theme::colors::CARD_STROKE_ALPHA)
             },
             None,
         )?
@@ -374,6 +387,28 @@ fn paint_recorder_well(target: &ID2D1RenderTarget, row: DipRect) -> windows::cor
     unsafe {
         target.FillRoundedRectangle(&rounded, &fill);
         target.DrawRoundedRectangle(&rounded, &stroke, theme::size::HAIRLINE, None);
+    }
+    let ink = if placeholder {
+        ds::tertiary_ink(appearance)
+    } else {
+        ds::primary_ink(appearance)
+    };
+    let brush = unsafe { target.CreateSolidColorBrush(&ink, None)? };
+    let wide: Vec<u16> = label.encode_utf16().collect();
+    unsafe {
+        target.DrawText(
+            &wide,
+            formats.caption,
+            &D2D_RECT_F {
+                left: well.x + theme::spacing::SM,
+                top: well.y,
+                right: well.x + well.w - theme::spacing::SM,
+                bottom: well.y + well.h,
+            },
+            &brush,
+            windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_NONE,
+            windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL,
+        );
     }
     Ok(())
 }
@@ -398,7 +433,8 @@ mod tests {
 
     #[test]
     fn general_hits_hyper_and_menu_bar() {
-        let hits = layout_general(0.0);
+        let width = theme::size::SETTINGS_WINDOW.0 - theme::size::SETTINGS_SIDEBAR;
+        let hits = layout_general(width, 0.0);
         let hyper = hits
             .iter()
             .find(|(h, _)| *h == GeneralHit::HyperKey)
@@ -407,9 +443,12 @@ mod tests {
             .iter()
             .find(|(h, _)| *h == GeneralHit::ShowInMenuBar)
             .unwrap();
-        assert_eq!(hit(10.0, hyper.1.y + 4.0, 0.0), Some(GeneralHit::HyperKey));
         assert_eq!(
-            hit(10.0, menu.1.y + 4.0, 0.0),
+            hit(10.0, hyper.1.y + 4.0, 0.0, width),
+            Some(GeneralHit::HyperKey)
+        );
+        assert_eq!(
+            hit(10.0, menu.1.y + 4.0, 0.0, width),
             Some(GeneralHit::ShowInMenuBar)
         );
         assert_eq!(cycle_hyper("none"), "capsLock");
@@ -417,5 +456,24 @@ mod tests {
         assert!(hyper_subtitle("capsLock").contains("logoff"));
         assert!(!hyper_includes_shift_enabled("none"));
         assert!(hyper_includes_shift_enabled("capsLock"));
+    }
+
+    #[test]
+    fn palette_well_tracks_live_detail_width() {
+        let narrow = layout_general(420.0, 0.0)
+            .into_iter()
+            .find(|(h, _)| *h == GeneralHit::PaletteRecorder)
+            .unwrap()
+            .1;
+        let wide = layout_general(800.0, 0.0)
+            .into_iter()
+            .find(|(h, _)| *h == GeneralHit::PaletteRecorder)
+            .unwrap()
+            .1;
+        let n = crate::features::hotkeys::ui::recorder::well_in_row(narrow);
+        let w = crate::features::hotkeys::ui::recorder::well_in_row(wide);
+        assert_eq!(n.w, theme::size::SHORTCUT_RECORDER);
+        assert_eq!(w.w, theme::size::SHORTCUT_RECORDER);
+        assert!(w.x > n.x);
     }
 }

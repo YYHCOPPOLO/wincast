@@ -25,7 +25,7 @@ pub fn section_header() -> &'static str {
 }
 
 pub fn content_height() -> f32 {
-    ds::form_origin() + ROW_H * 2.0 + theme::spacing::XL
+    ds::form_origin() + ROW_H * 2.0 + ds::CARD_PAD + theme::spacing::SECTION_SPACING
 }
 
 pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<QuickActionsHit> {
@@ -33,9 +33,7 @@ pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<QuickActionsHit> {
     let origin = ds::form_origin();
     if y >= origin && y < origin + ROW_H {
         Some(QuickActionsHit::Enable)
-    } else if y >= origin + ROW_H + theme::spacing::XL
-        && y < origin + ROW_H * 2.0 + theme::spacing::XL
-    {
+    } else if y >= origin + ROW_H && y < origin + ROW_H * 2.0 {
         Some(QuickActionsHit::Language)
     } else {
         None
@@ -58,12 +56,13 @@ pub fn paint(
     language: &str,
     width: f32,
     scroll: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (section, _, _) =
         ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
     let mut section = section;
     section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 2.0;
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let y0 = ds::form_origin() - scroll;
     paint_toggle(
         target,
@@ -73,14 +72,16 @@ pub fn paint(
         enabled,
         y0,
         width,
+        appearance,
     )?;
     paint_row(
         target,
         formats,
         "Translate into",
         if language.is_empty() { "English" } else { language },
-        y0 + ROW_H + theme::spacing::XL,
+        y0 + ROW_H,
         width,
+        appearance,
     )?;
     Ok(())
 }
@@ -93,8 +94,9 @@ fn paint_toggle(
     on: bool,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    paint_row(target, formats, title, subtitle, y, width)?;
+    paint_row(target, formats, title, subtitle, y, width, appearance)?;
     let pad = theme::spacing::XL;
     let toggle = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
@@ -114,12 +116,7 @@ fn paint_toggle(
             a: 1.0,
         }
     } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 0.18,
-        }
+        ds::ramp_color(appearance, 0.18)
     };
     let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     unsafe { target.FillRoundedRectangle(&toggle, &brush) };
@@ -133,21 +130,10 @@ fn paint_row(
     subtitle: &str,
     y: f32,
     width: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    };
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let title_w: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -164,7 +150,7 @@ fn paint_row(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
+    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let sub: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(
