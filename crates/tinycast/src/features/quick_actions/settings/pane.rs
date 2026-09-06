@@ -7,6 +7,7 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
@@ -19,16 +20,21 @@ pub enum QuickActionsHit {
     Language,
 }
 
+pub fn section_header() -> &'static str {
+    "Quick Actions"
+}
+
 pub fn content_height() -> f32 {
-    24.0 + ROW_H * 2.0 + theme::spacing::XL
+    ds::form_origin() + ROW_H * 2.0 + theme::spacing::XL
 }
 
 pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<QuickActionsHit> {
     let y = y + scroll;
-    if y >= 24.0 && y < 24.0 + ROW_H {
+    let origin = ds::form_origin();
+    if y >= origin && y < origin + ROW_H {
         Some(QuickActionsHit::Enable)
-    } else if y >= 24.0 + ROW_H + theme::spacing::XL
-        && y < 24.0 + ROW_H * 2.0 + theme::spacing::XL
+    } else if y >= origin + ROW_H + theme::spacing::XL
+        && y < origin + ROW_H * 2.0 + theme::spacing::XL
     {
         Some(QuickActionsHit::Language)
     } else {
@@ -53,7 +59,12 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
-    let y0 = 24.0 - scroll;
+    let (section, _, _) =
+        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    let mut section = section;
+    section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 2.0;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
+    let y0 = ds::form_origin() - scroll;
     paint_toggle(
         target,
         formats,

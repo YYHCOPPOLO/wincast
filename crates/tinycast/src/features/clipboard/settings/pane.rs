@@ -14,11 +14,16 @@ use windows::Win32::UI::Controls::Dialogs::{
     GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 36.0;
 
 const RETENTION_DAYS: [i64; 7] = [1, 7, 30, 90, 180, 365, -1];
+
+pub fn section_header() -> &'static str {
+    "Clipboard"
+}
 
 pub const ADD_APPLICATION_TITLE: &str = "Add Application…";
 pub const CLEAR_HISTORY_TITLE: &str = "Clear history";
@@ -59,7 +64,7 @@ struct ClipboardLayout {
 }
 
 fn layout(disabled_len: usize, origin: f32) -> ClipboardLayout {
-    let mut y = origin + 24.0;
+    let mut y = origin + ds::form_origin();
     let retention = y;
     y += ROW_H + theme::spacing::XL + 24.0;
     let mut apps = Vec::new();
@@ -88,6 +93,13 @@ pub fn paint(
     detail_w: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
+    let (section, _, _) = ds::feature_switch_section(
+        detail_w,
+        ds::CARD_INSET - scroll,
+        section_header(),
+        false,
+    );
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
     let origin = theme::spacing::XXL - scroll;
     let inset = theme::spacing::XXL;
     let rows = layout(disabled.len(), origin);

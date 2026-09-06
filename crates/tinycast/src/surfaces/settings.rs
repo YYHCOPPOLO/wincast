@@ -26,8 +26,8 @@ use windows::Win32::Graphics::DirectWrite::{
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, GetStockObject, InvalidateRect, SetBkMode, SetTextColor, BLACK_BRUSH,
-    HBRUSH, HDC, NULL_BRUSH, TRANSPARENT,
+    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, GetStockObject, InvalidateRect,
+    SetBkColor, SetBkMode, SetTextColor, BLACK_BRUSH, HBRUSH, HDC, OPAQUE,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
@@ -159,6 +159,8 @@ struct SettingsInner {
     ai_model: Option<FieldEdit>,
     ai_key: Option<FieldEdit>,
     ai_edit: Option<usize>,
+    edit_brush: HBRUSH,
+    edit_appearance: u8,
 }
 
 struct Renderer {
@@ -211,6 +213,8 @@ impl SettingsWindow {
                 ai_model: None,
                 ai_key: None,
                 ai_edit: None,
+                edit_brush: HBRUSH::default(),
+                edit_appearance: 255,
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -624,6 +628,7 @@ unsafe fn paint_detail(
                         core.settings.snippets_show_in_launcher,
                         detail_w,
                         (*inner).scroll,
+                        settings_appearance(inner),
                     )
                 } else if (*inner).confirming_clear {
                     crate::features::clipboard::settings::pane::paint(
@@ -805,6 +810,7 @@ unsafe fn paint_detail_panes(
                 core.settings.notes_enabled,
                 detail_w,
                 (*inner).scroll,
+                settings_appearance(inner),
             )?;
         }
         return Ok(());
@@ -834,6 +840,7 @@ unsafe fn paint_detail_panes(
                 core.settings.snippets_show_in_launcher,
                 detail_w,
                 (*inner).scroll,
+                settings_appearance(inner),
             )?;
         }
         return Ok(());
@@ -1208,6 +1215,26 @@ fn pill_rect(row: &SidebarRow) -> D2D_RECT_F {
         right: theme::size::SETTINGS_SIDEBAR - theme::spacing::SM,
         bottom: row.y + row.height,
     }
+}
+
+unsafe fn ensure_edit_brush(hwnd: HWND, appearance: u8) -> HBRUSH {
+    let Some(inner) = inner_from(hwnd) else {
+        return HBRUSH::default();
+    };
+    if (*inner).edit_appearance == appearance && !(*inner).edit_brush.is_invalid() {
+        return (*inner).edit_brush;
+    }
+    if !(*inner).edit_brush.is_invalid() {
+        let _ = DeleteObject((*inner).edit_brush);
+    }
+    let (r, g, b) = crate::design_system::settings::detail_rgb(appearance);
+    let colorref = COLORREF(
+        ((b * 255.0) as u32) << 16 | ((g * 255.0) as u32) << 8 | (r * 255.0) as u32,
+    );
+    let brush = CreateSolidBrush(colorref);
+    (*inner).edit_brush = brush;
+    (*inner).edit_appearance = appearance;
+    brush
 }
 
 fn settings_appearance(inner: *mut SettingsInner) -> u8 {
@@ -2373,11 +2400,27 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_CTLCOLOREDIT => {
             let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
+            let appearance = inner_from(hwnd)
+                .map(|inner| settings_appearance(inner))
+                .unwrap_or(0);
+            let brush = ensure_edit_brush(hwnd, appearance);
+            let (r, g, b) = crate::design_system::settings::detail_rgb(appearance);
+            let colorref = COLORREF(
+                ((b * 255.0) as u32) << 16 | ((g * 255.0) as u32) << 8 | (r * 255.0) as u32,
+            );
             unsafe {
-                SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, COLORREF(0x00FFFFFF));
+                SetBkMode(hdc, OPAQUE);
+                SetBkColor(hdc, colorref);
+                SetTextColor(
+                    hdc,
+                    if appearance == 0 {
+                        COLORREF(0x00FFFFFF)
+                    } else {
+                        COLORREF(0x00000000)
+                    },
+                );
             }
-            LRESULT(unsafe { GetStockObject(NULL_BRUSH) }.0 as isize)
+            LRESULT(brush.0 as isize)
         }
         WM_COMMAND => {
             handle_command(hwnd, wparam, lparam);
@@ -2456,6 +2499,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut SettingsInner;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             if !ptr.is_null() {
+                if !(*ptr).edit_brush.is_invalid() {
+                    let _ = DeleteObject((*ptr).edit_brush);
+                }
                 drop(Box::from_raw(ptr));
             }
             LRESULT(0)

@@ -8,6 +8,7 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
@@ -22,6 +23,10 @@ pub const SHOW_IN_LAUNCHER: &str = "Show in launcher";
 pub const LAUNCHER_SUBTITLE: &str = "List every extension's commands in launcher search.";
 pub const RUNTIME_NOTICE: &str = RUNTIME_ABSENT;
 
+pub fn section_header() -> &'static str {
+    "Extensions"
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExtensionsHit {
     Enable,
@@ -33,7 +38,7 @@ pub fn content_height() -> f32 {
 }
 
 fn row_y(i: usize) -> f32 {
-    24.0 + i as f32 * (ROW_H + theme::spacing::XL)
+    ds::form_origin() + i as f32 * (ROW_H + theme::spacing::XL)
 }
 
 pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<ExtensionsHit> {
@@ -55,6 +60,9 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
+    let (section, _, _) =
+        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
     paint_toggle(
         target,
         formats,
@@ -204,7 +212,10 @@ mod tests {
         assert_eq!(ENABLE_TITLE, "Enable extensions");
         assert_eq!(SHOW_IN_LAUNCHER, "Show in launcher");
         assert_eq!(RUNTIME_NOTICE, RUNTIME_ABSENT);
-        assert_eq!(hit(20.0, 30.0, 0.0), Some(ExtensionsHit::Enable));
+        assert_eq!(
+            hit(20.0, ds::form_origin() + 4.0, 0.0),
+            Some(ExtensionsHit::Enable)
+        );
         assert_eq!(
             hit(20.0, row_y(1) + 4.0, 0.0),
             Some(ExtensionsHit::ShowInLauncher)

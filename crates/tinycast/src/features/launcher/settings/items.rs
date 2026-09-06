@@ -1043,6 +1043,8 @@ fn fill_card(
     };
     unsafe {
         target.FillRoundedRectangle(&rounded, brush);
+        let stroke = solid(target, hairline_color())?;
+        target.DrawRoundedRectangle(&rounded, &stroke, theme::size::HAIRLINE, None);
     }
     Ok(())
 }
@@ -1254,21 +1256,11 @@ fn tab_text_color() -> D2D1_COLOR_F {
 }
 
 fn hairline_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.08,
-    }
+    crate::design_system::appearance::color(crate::design_system::settings::card_stroke(0))
 }
 
 fn card_fill() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 0.20,
-        g: 0.20,
-        b: 0.20,
-        a: 1.0,
-    }
+    crate::design_system::appearance::color(crate::design_system::settings::card_fill(0))
 }
 
 fn well_fill() -> D2D1_COLOR_F {

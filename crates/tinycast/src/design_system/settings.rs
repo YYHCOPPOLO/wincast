@@ -281,6 +281,44 @@ pub fn paint_settings_row(
     Ok(())
 }
 
+pub fn form_origin() -> f32 {
+    CARD_INSET + HEADER_H + theme::spacing::SECTION_HEADER_BOTTOM + CARD_PAD
+}
+
+pub fn feature_switch_section(
+    width: f32,
+    y: f32,
+    header: &'static str,
+    launcher_row: bool,
+) -> (GroupedSection, DipRect, Option<DipRect>) {
+    let rows = if launcher_row { 2 } else { 1 };
+    let section = GroupedSection {
+        header: Some(header),
+        footer: None,
+        y,
+        width,
+        body_h: CARD_PAD * 2.0 + ROW_H * rows as f32,
+    };
+    let card = section.card_rect();
+    let enable = DipRect {
+        x: card.x,
+        y: card.y + CARD_PAD,
+        w: card.w,
+        h: ROW_H,
+    };
+    let show = if launcher_row {
+        Some(DipRect {
+            x: card.x,
+            y: enable.y + ROW_H,
+            w: card.w,
+            h: ROW_H,
+        })
+    } else {
+        None
+    };
+    (section, enable, show)
+}
+
 pub fn paint_overflow_fade(
     target: &ID2D1RenderTarget,
     width: f32,

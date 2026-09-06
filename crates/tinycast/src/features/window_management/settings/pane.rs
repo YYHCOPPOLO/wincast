@@ -10,6 +10,7 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
@@ -19,6 +20,10 @@ const TOGGLE_W: f32 = 40.0;
 const TOGGLE_H: f32 = 22.0;
 const RECORDER_W: f32 = 140.0;
 const CLEAR_W: f32 = 22.0;
+
+pub fn section_header() -> &'static str {
+    "Window Management"
+}
 
 pub const ENABLE_TITLE: &str = "Window Management";
 pub const ENABLE_SUBTITLE: &str = "Move and resize the frontmost window. Off by default.";
@@ -42,7 +47,7 @@ pub fn catalog_commands() -> Vec<WindowCommandId> {
 }
 
 pub fn toggles_bottom() -> f32 {
-    24.0 + ROW_H * 4.0 + theme::spacing::XL * 3.0
+    ds::form_origin() + ROW_H * 4.0 + theme::spacing::XL * 3.0
 }
 
 fn group_blocks() -> Vec<(WindowGroup, Vec<WindowCommandId>)> {
@@ -95,7 +100,7 @@ pub fn content_height() -> f32 {
 
 pub fn hit(_x: f32, y: f32, scroll: f32, width: f32) -> Option<WindowHit> {
     let y = y + scroll;
-    let mut row = 24.0;
+    let mut row = ds::form_origin();
     if y >= row && y < row + ROW_H {
         return Some(WindowHit::Enable);
     }
@@ -159,8 +164,15 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
+    let (section, _, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        section_header(),
+        true,
+    );
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
     let origin = -scroll;
-    let mut y = 24.0 + origin;
+    let mut y = ds::form_origin() + origin;
     paint_row(target, formats, ENABLE_TITLE, ENABLE_SUBTITLE, enabled, y, origin_x, width)?;
     y += ROW_H + theme::spacing::XL;
     paint_row(
@@ -425,7 +437,10 @@ mod tests {
 
     #[test]
     fn window_management_hits_four_rows() {
-        assert_eq!(hit(20.0, 30.0, 0.0, 400.0), Some(WindowHit::Enable));
+        assert_eq!(
+            hit(20.0, ds::form_origin() + 4.0, 0.0, 400.0),
+            Some(WindowHit::Enable)
+        );
         assert_eq!(cycle_gap(0), 8);
         assert_eq!(cycle_gap(24), 0);
     }

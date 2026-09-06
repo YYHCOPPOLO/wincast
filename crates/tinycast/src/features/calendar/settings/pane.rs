@@ -7,6 +7,7 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
@@ -21,12 +22,16 @@ pub enum CalendarHit {
     JoinWindow,
 }
 
+pub fn section_header() -> &'static str {
+    "Calendar"
+}
+
 pub fn content_height() -> f32 {
     24.0 + ROW_H * 4.0 + theme::spacing::XL * 3.0
 }
 
 fn row_y(i: usize) -> f32 {
-    24.0 + i as f32 * (ROW_H + theme::spacing::XL)
+    ds::form_origin() + i as f32 * (ROW_H + theme::spacing::XL)
 }
 
 pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<CalendarHit> {
@@ -76,6 +81,11 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
+    let (section, _, _) =
+        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    let mut section = section;
+    section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 4.0;
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
     paint_toggle(
         target,
         formats,
@@ -221,7 +231,10 @@ mod tests {
 
     #[test]
     fn enable_is_first_row() {
-        assert_eq!(hit(20.0, 30.0, 0.0), Some(CalendarHit::Enable));
+        assert_eq!(
+            hit(20.0, ds::form_origin() + 4.0, 0.0),
+            Some(CalendarHit::Enable)
+        );
         assert_eq!(cycle_join_window(5), 10);
     }
 }

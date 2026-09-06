@@ -9,6 +9,7 @@ use windows::Win32::Graphics::Direct2D::{
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
 use crate::features::ai::service::chatgpt::CodexPhase;
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::{Formats, Rect};
 
 const ROW_H: f32 = 52.0;
@@ -33,12 +34,16 @@ pub enum AiHit {
     CycleProvider,
 }
 
+pub fn section_header() -> &'static str {
+    "AI"
+}
+
 pub fn editor_height() -> f32 {
     EDITOR_ROWS as f32 * EDITOR_ROW_H + theme::spacing::MD
 }
 
 pub fn content_height(connection_count: usize, editing: Option<usize>) -> f32 {
-    let mut h = 24.0 + FIXED_ROWS as f32 * (ROW_H + theme::spacing::XL);
+    let mut h = ds::form_origin() + FIXED_ROWS as f32 * (ROW_H + theme::spacing::XL);
     for i in 0..connection_count {
         h += ROW_H + theme::spacing::XL;
         if editing == Some(i) {
@@ -49,7 +54,7 @@ pub fn content_height(connection_count: usize, editing: Option<usize>) -> f32 {
 }
 
 fn row_y(i: usize) -> f32 {
-    24.0 + i as f32 * (ROW_H + theme::spacing::XL)
+    ds::form_origin() + i as f32 * (ROW_H + theme::spacing::XL)
 }
 
 pub fn hit(
@@ -281,6 +286,9 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
+    let (section, _, _) =
+        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
     paint_toggle(
         target,
         formats,

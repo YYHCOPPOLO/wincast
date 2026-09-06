@@ -8,12 +8,17 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
 const ITEM_H: f32 = 36.0;
 const TOGGLE_W: f32 = 40.0;
 const TOGGLE_H: f32 = 22.0;
+
+pub fn section_header() -> &'static str {
+    "Commands"
+}
 
 pub const ENABLE_TITLE: &str = "Custom Commands";
 pub const ENABLE_SUBTITLE: &str = "Run your own commands from the launcher. Off by default.";
@@ -29,7 +34,7 @@ pub enum CustomCommandsHit {
 }
 
 pub fn content_height(count: usize) -> f32 {
-    24.0 + ROW_H * 2.0
+    ds::form_origin() + ROW_H * 2.0
         + theme::spacing::XL * 2.0
         + ITEM_H
         + theme::spacing::SM
@@ -39,7 +44,7 @@ pub fn content_height(count: usize) -> f32 {
 
 pub fn hit(x: f32, y: f32, scroll: f32, count: usize) -> Option<CustomCommandsHit> {
     let y = y + scroll;
-    let mut row = 24.0;
+    let mut row = ds::form_origin();
     if y >= row && y < row + ROW_H {
         return Some(CustomCommandsHit::Enable);
     }
@@ -71,8 +76,11 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
+    let (section, _, _) =
+        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
     let origin = -scroll;
-    let mut y = 24.0 + origin;
+    let mut y = ds::form_origin() + origin;
     paint_toggle_row(
         target,
         formats,
@@ -288,15 +296,18 @@ mod tests {
     #[test]
     fn custom_commands_settings_exposes_feature_switch() {
         assert_eq!(ENABLE_TITLE, "Custom Commands");
-        assert_eq!(hit(20.0, 30.0, 0.0, 0), Some(CustomCommandsHit::Enable));
         assert_eq!(
-            hit(20.0, 24.0 + ROW_H + theme::spacing::XL + 4.0, 0.0, 0),
+            hit(20.0, ds::form_origin() + 4.0, 0.0, 0),
+            Some(CustomCommandsHit::Enable)
+        );
+        assert_eq!(
+            hit(20.0, ds::form_origin() + ROW_H + theme::spacing::XL + 4.0, 0.0, 0),
             Some(CustomCommandsHit::ShowInLauncher)
         );
         assert_eq!(
             hit(
                 20.0,
-                24.0 + ROW_H * 2.0 + theme::spacing::XL * 2.0 + 4.0,
+                ds::form_origin() + ROW_H * 2.0 + theme::spacing::XL * 2.0 + 4.0,
                 0.0,
                 0
             ),

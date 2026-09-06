@@ -16,6 +16,7 @@ use windows::Win32::UI::Controls::Dialogs::{
     OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
@@ -23,6 +24,10 @@ const ITEM_H: f32 = 36.0;
 const TOGGLE_W: f32 = 40.0;
 const TOGGLE_H: f32 = 22.0;
 const BTN_W: f32 = 120.0;
+
+pub fn section_header() -> &'static str {
+    "Quicklinks"
+}
 
 pub const ENABLE_TITLE: &str = "Quicklinks";
 pub const ENABLE_SUBTITLE: &str = "Open URLs, files, and searches from the launcher. Off by default.";
@@ -42,7 +47,7 @@ pub enum QuicklinksHit {
 }
 
 pub fn content_height(count: usize) -> f32 {
-    24.0 + ROW_H * 2.0
+    ds::form_origin() + ROW_H * 2.0
         + theme::spacing::XL * 2.0
         + ITEM_H
         + theme::spacing::SM
@@ -52,7 +57,7 @@ pub fn content_height(count: usize) -> f32 {
 
 pub fn hit(x: f32, y: f32, scroll: f32, count: usize) -> Option<QuicklinksHit> {
     let y = y + scroll;
-    let mut row = 24.0;
+    let mut row = ds::form_origin();
     if y >= row && y < row + ROW_H {
         return Some(QuicklinksHit::Enable);
     }
@@ -92,8 +97,11 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
+    let (section, _, _) =
+        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
     let origin = -scroll;
-    let mut y = 24.0 + origin;
+    let mut y = ds::form_origin() + origin;
     paint_toggle_row(
         target,
         formats,
@@ -339,12 +347,15 @@ mod tests {
     #[test]
     fn quicklinks_settings_exposes_feature_switch() {
         assert_eq!(ENABLE_TITLE, "Quicklinks");
-        assert_eq!(hit(20.0, 30.0, 0.0, 0), Some(QuicklinksHit::Enable));
         assert_eq!(
-            hit(20.0, 24.0 + ROW_H + theme::spacing::XL + 4.0, 0.0, 0),
+            hit(20.0, ds::form_origin() + 4.0, 0.0, 0),
+            Some(QuicklinksHit::Enable)
+        );
+        assert_eq!(
+            hit(20.0, ds::form_origin() + ROW_H + theme::spacing::XL + 4.0, 0.0, 0),
             Some(QuicklinksHit::ShowInLauncher)
         );
-        let y = 24.0 + ROW_H * 2.0 + theme::spacing::XL * 2.0 + 4.0;
+        let y = ds::form_origin() + ROW_H * 2.0 + theme::spacing::XL * 2.0 + 4.0;
         assert_eq!(hit(theme::spacing::XL + 4.0, y, 0.0, 0), Some(QuicklinksHit::Create));
         assert_eq!(
             hit(theme::spacing::XL + BTN_W + 12.0, y, 0.0, 0),

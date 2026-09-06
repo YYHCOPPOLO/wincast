@@ -22,6 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_POPUP, WS_TABSTOP, WS_VISIBLE,
 };
 
+use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
 use crate::platform::screens::dip_scalar_to_px;
 
@@ -29,6 +30,10 @@ const ROW_H: f32 = 52.0;
 const ITEM_H: f32 = 36.0;
 const TOGGLE_W: f32 = 40.0;
 const TOGGLE_H: f32 = 22.0;
+
+pub fn section_header() -> &'static str {
+    "File Search"
+}
 
 pub const ENABLE_TITLE: &str = "Enable File Search";
 pub const ENABLE_SUBTITLE: &str =
@@ -55,7 +60,7 @@ struct Layout {
 }
 
 fn layout(scope_len: usize, ignore_len: usize) -> Layout {
-    let mut y = 24.0;
+    let mut y = ds::form_origin();
     let enable = y;
     y += ROW_H + theme::spacing::XL;
     y += 22.0;
@@ -128,6 +133,9 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
+    let (section, _, _) =
+        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    ds::paint_grouped_section(target, formats.header, formats.caption, &section, 0)?;
     let origin = -scroll;
     let l = layout(scopes.len(), ignores.len());
     paint_toggle(
@@ -537,7 +545,10 @@ mod tests {
 
     #[test]
     fn enable_is_first_row() {
-        assert_eq!(hit(20.0, 30.0, 0.0, 0, 0), Some(FileSearchHit::Enable));
+        assert_eq!(
+            hit(20.0, ds::form_origin() + 4.0, 0.0, 0, 0),
+            Some(FileSearchHit::Enable)
+        );
         assert_eq!(
             hit(20.0, layout(0, 0).add_folder + 2.0, 0.0, 0, 0),
             Some(FileSearchHit::AddFolder)
