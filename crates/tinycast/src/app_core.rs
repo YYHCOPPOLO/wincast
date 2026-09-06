@@ -1574,18 +1574,12 @@ impl AppCore {
     }
 
     pub fn search_placeholder(&self) -> String {
-        if self.palette.mode == PaletteMode::QuicklinkArguments {
-            if let Some(session) = &self.argument_session {
-                return session.current_name().to_string();
-            }
-        }
-        if self.palette.mode == PaletteMode::Ai {
-            return crate::features::ai::ui::screen::chat_placeholder().to_string();
-        }
-        if self.palette.mode == PaletteMode::AiHistory {
-            return crate::features::ai::ui::screen::history_placeholder().to_string();
-        }
-        crate::palette::edit::PLACEHOLDER_LAUNCHER.to_string()
+        let argument_name = if self.palette.mode == PaletteMode::QuicklinkArguments {
+            self.argument_session.as_ref().map(|s| s.current_name())
+        } else {
+            None
+        };
+        placeholder_for(self.palette.mode, argument_name)
     }
 
     pub fn install_app_index(&mut self) {
@@ -4645,9 +4639,24 @@ fn new_item_id() -> String {
     }
 }
 
+pub fn placeholder_for(mode: PaletteMode, argument_name: Option<&str>) -> String {
+    if mode == PaletteMode::QuicklinkArguments {
+        return argument_name.unwrap_or("Enter a value…").to_string();
+    }
+    mode.placeholder().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn launcher_search_placeholder_is_long_form() {
+        assert_eq!(
+            placeholder_for(PaletteMode::Launcher, None),
+            "Search for apps and commands…"
+        );
+    }
 
     #[test]
     fn toggle_palette_flips_visible_and_prepares_launcher() {

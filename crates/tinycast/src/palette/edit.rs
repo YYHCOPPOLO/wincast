@@ -1,4 +1,3 @@
-use tinycast_pure::theme;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -27,7 +26,6 @@ use crate::app_core::AppCore;
 use crate::platform::screens::dip_scalar_to_px;
 
 pub const SEARCH_FONT_DIP: f32 = 20.0;
-pub const PLACEHOLDER_LAUNCHER: &str = "Search";
 
 const EDIT_ID: usize = 100;
 const SUBCLASS_ID: usize = 1;
@@ -38,17 +36,17 @@ pub struct SearchEdit {
     dpi: u32,
 }
 
-/// Search field in DIP: 20 inset, 44-tall header band.
+/// Search field in DIP, after the header icon slot.
 pub fn search_field_dip() -> (f32, f32, f32, f32) {
     search_field_dip_with_trailing(0.0)
 }
 
 pub fn search_field_dip_with_trailing(trailing: f32) -> (f32, f32, f32, f32) {
-    let x = theme::spacing::XXL;
-    let y = theme::size::HEADER_PADDING;
-    let w = (theme::size::PANEL_WIDTH - theme::spacing::XXL * 2.0 - trailing).max(60.0);
-    let h = theme::size::HEADER_HEIGHT;
-    (x, y, w, h)
+    let r = tinycast_pure::layout::palette_chrome::search_field_rect(
+        tinycast_pure::theme::size::PANEL_WIDTH,
+        trailing,
+    );
+    (r.x, r.y, r.w, r.h)
 }
 
 impl SearchEdit {
@@ -301,5 +299,23 @@ unsafe extern "system" fn edit_subclass(
             DefSubclassProc(hwnd, msg, wparam, lparam)
         }
         _ => DefSubclassProc(hwnd, msg, wparam, lparam),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_field_matches_chrome_layout() {
+        let (x, y, w, h) = search_field_dip_with_trailing(0.0);
+        let r = tinycast_pure::layout::palette_chrome::search_field_rect(
+            tinycast_pure::theme::size::PANEL_WIDTH,
+            0.0,
+        );
+        assert!((x - r.x).abs() < 0.01);
+        assert!((y - r.y).abs() < 0.01);
+        assert!((h - r.h).abs() < 0.01);
+        let _ = w;
     }
 }

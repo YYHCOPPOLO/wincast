@@ -383,7 +383,12 @@ fn paint_scene(
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
         if params.placeholder {
-            let _ = paint_placeholder(target, text_format, params.placeholder_text);
+            let _ = paint_placeholder(
+                target,
+                text_format,
+                params.placeholder_text,
+                params.appearance,
+            );
         }
         if let Some(hint) = params.tab_hint {
             let trailing = params
@@ -641,6 +646,7 @@ fn paint_placeholder(
     target: &ID2D1RenderTarget,
     text_format: &IDWriteTextFormat,
     label: &str,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let (x, y, w, h) = super::edit::search_field_dip();
     let rect = D2D_RECT_F {
@@ -649,12 +655,11 @@ fn paint_placeholder(
         right: x + w,
         bottom: y + h,
     };
-    let color = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
-    };
+    let color = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_TERTIARY_DARK_ALPHA,
+        theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
+    ));
     let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
     let text: Vec<u16> = label.encode_utf16().collect();
     unsafe {
