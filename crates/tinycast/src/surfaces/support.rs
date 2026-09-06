@@ -1,19 +1,18 @@
 //! Support and About windows. Every `showSupport` route lands here so the reminder anchor moves once.
 
-use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, SetBkMode, SetTextColor, TextOutW, TRANSPARENT,
-};
+use tinycast_pure::palette_placement::DipRect;
+use tinycast_pure::theme;
+use windows::core::w;
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, IsWindow,
-    LoadCursorW, RegisterClassW, SendMessageW, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
-    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, IDC_ARROW, SW_HIDE, SW_SHOW,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_LBUTTONDOWN, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
-    WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, IsWindow, LoadCursorW,
+    RegisterClassW, SendMessageW, SetWindowLongPtrW, ShowWindow, CREATESTRUCTW, CS_HREDRAW,
+    CS_VREDRAW, GWLP_USERDATA, IDC_ARROW, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY,
+    WM_PAINT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
 };
 
 const BS_AUTOCHECKBOX: WINDOW_STYLE = WINDOW_STYLE(0x00000003);
@@ -21,10 +20,17 @@ const BM_GETCHECK: u32 = 0x00F0;
 const BM_SETCHECK: u32 = 0x00F1;
 
 use crate::app_core::AppCore;
+use crate::design_system::host::OverlayPainter;
+use crate::design_system::panel::paint_sheen;
+use crate::design_system::squircle::fill_squircle;
+use crate::design_system::text;
 use crate::features::launcher::ui::coordinator::{execute, LaunchSpec};
+use crate::platform::screens::dip_scalar_to_px;
 
 pub const CHECKOUT: &str =
     "https://buy.polar.sh/polar_cl_NDVFC20DKQpLcNawsh97QzbARBXD3WNn8v35R0mbJmT";
+pub const WIDTH: f32 = 460.0;
+pub const ICON: f32 = 76.0;
 
 const SUPPORT_CLASS: windows::core::PCWSTR = w!("TinycastSupport");
 const ABOUT_CLASS: windows::core::PCWSTR = w!("TinycastAbout");
@@ -43,6 +49,8 @@ struct Inner {
     host: HWND,
     kind: Kind,
     reminders: HWND,
+    painter: Option<OverlayPainter>,
+    support_rect: DipRect,
 }
 
 #[derive(Clone, Copy)]
@@ -104,6 +112,27 @@ fn destroy(hwnd: HWND) {
     }
 }
 
+fn empty_rect() -> DipRect {
+    DipRect {
+        x: 0.0,
+        y: 0.0,
+        w: 0.0,
+        h: 0.0,
+    }
+}
+
+fn contains(rect: DipRect, x: f32, y: f32) -> bool {
+    x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h
+}
+
+fn client_dip(hwnd: HWND, lparam: LPARAM) -> (f32, f32) {
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
+    let dpi = if dpi == 0 { 96.0 } else { dpi as f32 };
+    let x = (lparam.0 as u32 & 0xFFFF) as i16 as f32 * 96.0 / dpi;
+    let y = ((lparam.0 as u32 >> 16) & 0xFFFF) as i16 as f32 * 96.0 / dpi;
+    (x, y)
+}
+
 fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
     unsafe {
         let hinstance = GetModuleHandleW(None)?;
@@ -131,8 +160,8 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
             240,
             180,
-            460,
-            320,
+            WIDTH.round() as i32,
+            360,
             host,
             None,
             hinstance,
@@ -141,11 +170,11 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
         if let Some(inner) = inner_from(hwnd) {
             (*inner).kind = kind;
         }
-        let _ = CreateWindowExW(
+        let support_btn = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
             w!("Support Tinycast"),
-            WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | 1),
+            WINDOW_STYLE(WS_CHILD.0 | 1),
             40,
             200,
             200,
@@ -154,19 +183,24 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
             windows::Win32::UI::WindowsAndMessaging::HMENU(ID_SUPPORT as *mut core::ffi::c_void),
             hinstance,
             None,
-        );
+        )
+        .unwrap_or_default();
+        let _ = ShowWindow(support_btn, SW_HIDE);
         if matches!(kind, Kind::Support) {
+            let dpi = GetDpiForWindow(hwnd);
             let box_hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
                 w!("Remind me later"),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                40,
-                250,
-                280,
-                24,
+                dip_scalar_to_px(theme::spacing::XXL, dpi),
+                dip_scalar_to_px(300.0, dpi),
+                dip_scalar_to_px(280.0, dpi),
+                dip_scalar_to_px(24.0, dpi),
                 hwnd,
-                windows::Win32::UI::WindowsAndMessaging::HMENU(ID_REMINDERS as *mut core::ffi::c_void),
+                windows::Win32::UI::WindowsAndMessaging::HMENU(
+                    ID_REMINDERS as *mut core::ffi::c_void,
+                ),
                 hinstance,
                 None,
             )
@@ -192,7 +226,11 @@ unsafe fn sync_reminders_checkbox(hwnd: HWND) {
     let _ = SendMessageW(
         (*inner).reminders,
         BM_SETCHECK,
-        WPARAM(if on { BST_CHECKED.0 as usize } else { BST_UNCHECKED.0 as usize }),
+        WPARAM(if on {
+            BST_CHECKED.0 as usize
+        } else {
+            BST_UNCHECKED.0 as usize
+        }),
         LPARAM(0),
     );
 }
@@ -223,25 +261,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 host: HWND(cs.lpCreateParams),
                 kind: Kind::Support,
                 reminders: HWND::default(),
+                painter: OverlayPainter::new().ok(),
+                support_rect: empty_rect(),
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
             LRESULT(1)
         }
+        WM_ERASEBKGND => LRESULT(1),
         WM_PAINT => {
-            let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
-            let hdc = BeginPaint(hwnd, &mut ps);
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, windows::Win32::Foundation::COLORREF(0x202020));
-            let mut rc = RECT::default();
-            let _ = GetClientRect(hwnd, &mut rc);
-            let kind = inner_from(hwnd).map(|i| (*i).kind).unwrap_or(Kind::Support);
-            let text = match kind {
-                Kind::Support => "Tinycast stays independent if people who use it chip in.\nSecure checkout on Polar.",
-                Kind::About => "Tinycast for Windows\nA small launcher. Support keeps it independent.",
-            };
-            let wide: Vec<u16> = text.encode_utf16().collect();
-            TextOutW(hdc, 40, 40, &wide);
-            let _ = EndPaint(hwnd, &ps);
+            paint(hwnd);
             LRESULT(0)
         }
         WM_COMMAND => {
@@ -251,8 +279,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             if id == ID_REMINDERS {
                 if let Some(inner) = inner_from(hwnd) {
-                    let checked = SendMessageW((*inner).reminders, BM_GETCHECK, WPARAM(0), LPARAM(0)).0
-                        == BST_CHECKED.0 as isize;
+                    let checked =
+                        SendMessageW((*inner).reminders, BM_GETCHECK, WPARAM(0), LPARAM(0)).0
+                            == BST_CHECKED.0 as isize;
                     if let Some(core) = core_from_host((*inner).host) {
                         (*core).set_support_reminders(checked);
                     }
@@ -260,7 +289,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
-        WM_LBUTTONDOWN => LRESULT(0),
+        WM_LBUTTONDOWN => {
+            let (x, y) = client_dip(hwnd, lparam);
+            if let Some(inner) = inner_from(hwnd) {
+                if contains((*inner).support_rect, x, y) {
+                    let _ = execute(&LaunchSpec::Uri(CHECKOUT.into()));
+                }
+            }
+            LRESULT(0)
+        }
         WM_CLOSE => {
             let _ = ShowWindow(hwnd, SW_HIDE);
             LRESULT(0)
@@ -278,6 +315,121 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
 }
 
+fn paint(hwnd: HWND) {
+    unsafe {
+        let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
+        let hdc = windows::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut ps);
+        if hdc.is_invalid() {
+            return;
+        }
+        let Some(inner) = inner_from(hwnd) else {
+            let _ = windows::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
+            return;
+        };
+        let kind = (*inner).kind;
+        let mut support_rect = empty_rect();
+        if let Some(painter) = (*inner).painter.as_mut() {
+            let _ = painter.paint(hwnd, |target, fonts| {
+                let size = target.GetSize();
+                fill_squircle(
+                    target,
+                    DipRect {
+                        x: 0.0,
+                        y: 0.0,
+                        w: size.width,
+                        h: size.height,
+                    },
+                    theme::radius::PANEL,
+                    theme::colors::scrim_rgba(0),
+                )?;
+                paint_sheen(target, size.width, size.height, 0)?;
+                let pad = theme::spacing::XXL;
+                let icon = ICON;
+                let icon_rect = DipRect {
+                    x: (size.width - icon) / 2.0,
+                    y: theme::spacing::MD,
+                    w: icon,
+                    h: icon,
+                };
+                fill_squircle(target, icon_rect, 18.0, text::BRAND)?;
+                crate::design_system::symbols::paint_fluent_in(
+                    target,
+                    &fonts.dwrite,
+                    "heart",
+                    DipRect {
+                        x: icon_rect.x + 22.0,
+                        y: icon_rect.y + 22.0,
+                        w: 32.0,
+                        h: 32.0,
+                    },
+                    (1.0, 1.0, 1.0, 1.0),
+                )?;
+                let (title, subtitle) = match kind {
+                    Kind::Support => ("Support Tinycast", "Built with love."),
+                    Kind::About => (
+                        "Tinycast for Windows",
+                        "A small launcher. Support keeps it independent.",
+                    ),
+                };
+                text::draw(
+                    target,
+                    &fonts.headline_center,
+                    title,
+                    DipRect {
+                        x: pad,
+                        y: icon_rect.y + icon + theme::spacing::XL,
+                        w: size.width - pad * 2.0,
+                        h: 28.0,
+                    },
+                    text::primary_ink(0),
+                )?;
+                text::draw(
+                    target,
+                    &fonts.wrap_callout,
+                    subtitle,
+                    DipRect {
+                        x: pad,
+                        y: icon_rect.y + icon + 44.0,
+                        w: size.width - pad * 2.0,
+                        h: 40.0,
+                    },
+                    text::secondary_ink(0),
+                )?;
+                let btn_h = 46.0;
+                support_rect = DipRect {
+                    x: pad,
+                    y: icon_rect.y + icon + 96.0,
+                    w: size.width - pad * 2.0,
+                    h: btn_h,
+                };
+                fill_squircle(target, support_rect, 12.0, text::BRAND)?;
+                text::draw(
+                    target,
+                    &fonts.bar,
+                    "Support Tinycast",
+                    support_rect,
+                    (1.0, 1.0, 1.0, 1.0),
+                )?;
+                text::draw(
+                    target,
+                    &fonts.section,
+                    "Secure checkout on Polar.",
+                    DipRect {
+                        x: pad,
+                        y: support_rect.y + btn_h + theme::spacing::MD,
+                        w: size.width - pad * 2.0,
+                        h: 18.0,
+                    },
+                    text::tertiary_ink(0),
+                )?;
+                Ok(())
+            });
+            (*inner).support_rect = support_rect;
+        }
+        let _ = windows::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::CHECKOUT;
@@ -285,5 +437,19 @@ mod tests {
     #[test]
     fn checkout_is_the_one_polar_link() {
         assert!(CHECKOUT.contains("polar.sh"));
+    }
+
+    #[test]
+    fn support_width_is_460() {
+        assert_eq!(crate::surfaces::support::WIDTH, 460.0);
+        assert_eq!(crate::surfaces::support::ICON, 76.0);
+    }
+
+    #[test]
+    fn support_has_no_textout() {
+        let src = include_str!("support.rs");
+        let impl_src = src.split("mod tests").next().unwrap_or(src);
+        let marker = ["Text", "OutW"].concat();
+        assert!(!impl_src.contains(&marker));
     }
 }
