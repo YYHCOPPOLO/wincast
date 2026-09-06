@@ -33,6 +33,25 @@ pub fn x_to_detail_local(x: f32) -> Option<f32> {
     }
 }
 
+pub fn recorder_well() -> DipRect {
+    DipRect {
+        x: 0.0,
+        y: 0.0,
+        w: theme::size::SHORTCUT_RECORDER,
+        h: 24.0,
+    }
+}
+
+pub fn recorder_callout_above(well: DipRect) -> DipRect {
+    let (w, h) = theme::size::SHORTCUT_POPOVER;
+    DipRect {
+        x: well.x + (well.w - w) / 2.0,
+        y: well.y - theme::spacing::SM - h,
+        w,
+        h,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -45,6 +64,18 @@ mod tests {
         assert_eq!(detail.x, 215.0);
         assert!(!columns_overlap(side, detail));
         assert_eq!(side.x + side.w, detail.x);
+    }
+
+    #[test]
+    fn shortcut_popover_is_132_wide() {
+        assert_eq!(crate::theme::size::SHORTCUT_POPOVER.0, 132.0);
+        assert_eq!(crate::theme::size::SHORTCUT_RECORDER, 120.0);
+    }
+
+    #[test]
+    fn recorder_well_is_120() {
+        let r = recorder_well();
+        assert_eq!(r.w, 120.0);
     }
 
     #[test]

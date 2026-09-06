@@ -4,6 +4,16 @@ use tinycast_pure::double_tap::DoubleTapDetector;
 use tinycast_pure::hotkey::{
     capture_keydown, CaptureOutcome, DoubleTapModifier, HotKeyBinding, Modifiers,
 };
+use tinycast_pure::layout::settings::{recorder_callout_above, recorder_well};
+use tinycast_pure::palette_placement::DipRect;
+use tinycast_pure::theme;
+use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
+use windows::Win32::Graphics::Direct2D::{
+    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
+};
+use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
+
+use crate::features::launcher::settings::items::Formats;
 
 pub struct Recorder {
     pub action: Option<String>,
@@ -56,6 +66,192 @@ impl Recorder {
         }
         CaptureOutcome::Ignore
     }
+}
+
+pub fn well_in_row(row: DipRect) -> DipRect {
+    let well = recorder_well();
+    DipRect {
+        x: row.x + row.w - crate::design_system::settings::CARD_PAD - well.w,
+        y: row.y + (row.h - well.h) / 2.0,
+        w: well.w,
+        h: well.h,
+    }
+}
+
+pub fn paint_callout(
+    target: &ID2D1RenderTarget,
+    formats: &Formats<'_>,
+    well: DipRect,
+    modifiers: Modifiers,
+    conflict: Option<&str>,
+) -> windows::core::Result<()> {
+    let mut pop = recorder_callout_above(well);
+    if pop.y < 0.0 {
+        pop.y = well.y + well.h + theme::spacing::SM;
+    }
+    let fill = unsafe {
+        target.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 0.16,
+                g: 0.16,
+                b: 0.16,
+                a: 0.96,
+            },
+            None,
+        )?
+    };
+    let stroke = unsafe {
+        target.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: theme::colors::CARD_STROKE_ALPHA,
+            },
+            None,
+        )?
+    };
+    let rounded = D2D1_ROUNDED_RECT {
+        rect: D2D_RECT_F {
+            left: pop.x,
+            top: pop.y,
+            right: pop.x + pop.w,
+            bottom: pop.y + pop.h - theme::size::CALLOUT_CARET_HEIGHT,
+        },
+        radiusX: theme::radius::MENU_PANEL,
+        radiusY: theme::radius::MENU_PANEL,
+    };
+    unsafe {
+        target.FillRoundedRectangle(&rounded, &fill);
+        target.DrawRoundedRectangle(&rounded, &stroke, theme::size::HAIRLINE, None);
+    }
+    let (label, tint) = if let Some(owner) = conflict {
+        (owner, D2D1_COLOR_F { r: 1.0, g: 0.55, b: 0.2, a: 1.0 })
+    } else if modifiers.ctrl || modifiers.alt || modifiers.shift || modifiers.win {
+        ("Add a key", D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: 0.6 })
+    } else {
+        ("Type a shortcut", D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: 0.6 })
+    };
+    let brush = unsafe { target.CreateSolidColorBrush(&tint, None)? };
+    let wide: Vec<u16> = label.encode_utf16().collect();
+    let line_y = pop.y + theme::spacing::SM + theme::size::HERO_KEY_CAP + theme::spacing::SM;
+    unsafe {
+        target.DrawText(
+            &wide,
+            formats.caption,
+            &D2D_RECT_F {
+                left: pop.x + theme::spacing::MD,
+                top: line_y,
+                right: pop.x + pop.w - theme::spacing::MD,
+                bottom: line_y + theme::size::SHORTCUT_POPOVER_LINE,
+            },
+            &brush,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
+    let mut cap_x = pop.x + theme::spacing::MD;
+    let cap_y = pop.y + theme::spacing::SM;
+    let shown = if conflict.is_some() {
+        Vec::new()
+    } else if modifiers.ctrl || modifiers.alt || modifiers.shift || modifiers.win {
+        let mut v = Vec::new();
+        if modifiers.ctrl {
+            v.push("Ctrl");
+        }
+        if modifiers.alt {
+            v.push("Alt");
+        }
+        if modifiers.shift {
+            v.push("Shift");
+        }
+        if modifiers.win {
+            v.push("Win");
+        }
+        v
+    } else {
+        vec!["⌥", "A"]
+    };
+    let cap_brush = unsafe {
+        target.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.12,
+            },
+            None,
+        )?
+    };
+    let text_brush = unsafe {
+        target.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.85,
+            },
+            None,
+        )?
+    };
+    for cap in shown {
+        let cap_w = theme::size::HERO_KEY_CAP + 8.0;
+        let cap_h = theme::size::HERO_KEY_CAP;
+        let rr = D2D1_ROUNDED_RECT {
+            rect: D2D_RECT_F {
+                left: cap_x,
+                top: cap_y,
+                right: cap_x + cap_w,
+                bottom: cap_y + cap_h,
+            },
+            radiusX: theme::radius::KEY_CAP,
+            radiusY: theme::radius::KEY_CAP,
+        };
+        unsafe {
+            target.FillRoundedRectangle(&rr, &cap_brush);
+        }
+        let wide: Vec<u16> = cap.encode_utf16().collect();
+        unsafe {
+            target.DrawText(
+                &wide,
+                formats.body,
+                &rr.rect,
+                &text_brush,
+                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
+        cap_x += cap_w + theme::spacing::SM;
+    }
+    let esc_w = 28.0;
+    let esc_h = theme::size::COMPACT_KEY_CAP;
+    let esc_x = pop.x + pop.w - theme::spacing::MD - esc_w;
+    let esc_y = pop.y + pop.h - theme::size::CALLOUT_CARET_HEIGHT - theme::spacing::SM - esc_h;
+    let esc_r = D2D1_ROUNDED_RECT {
+        rect: D2D_RECT_F {
+            left: esc_x,
+            top: esc_y,
+            right: esc_x + esc_w,
+            bottom: esc_y + esc_h,
+        },
+        radiusX: theme::radius::KEY_CAP,
+        radiusY: theme::radius::KEY_CAP,
+    };
+    unsafe {
+        target.FillRoundedRectangle(&esc_r, &cap_brush);
+    }
+    let esc: Vec<u16> = "esc".encode_utf16().collect();
+    unsafe {
+        target.DrawText(
+            &esc,
+            formats.caption,
+            &esc_r.rect,
+            &text_brush,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
+    Ok(())
 }
 
 fn double_tap_mod(vk: u16) -> Option<DoubleTapModifier> {

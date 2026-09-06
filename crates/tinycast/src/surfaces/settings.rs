@@ -689,8 +689,79 @@ unsafe fn paint_detail(
             pane_content_height(inner, width),
             (*inner).scroll,
             appearance,
-        )
+        )?;
+        paint_recorder_callout(target, formats, inner, detail_w)
     })
+}
+
+unsafe fn paint_recorder_callout(
+    target: &ID2D1RenderTarget,
+    formats: &Formats<'_>,
+    inner: *mut SettingsInner,
+    detail_w: f32,
+) -> windows::core::Result<()> {
+    if !(*inner).recorder.is_recording() {
+        return Ok(());
+    }
+    let Some(well) = recording_well_rect(inner, detail_w, (*inner).scroll) else {
+        return Ok(());
+    };
+    crate::features::hotkeys::ui::recorder::paint_callout(
+        target,
+        formats,
+        well,
+        current_modifiers(),
+        None,
+    )
+}
+
+unsafe fn recording_well_rect(
+    inner: *mut SettingsInner,
+    detail_w: f32,
+    scroll: f32,
+) -> Option<tinycast_pure::palette_placement::DipRect> {
+    let action = (*inner).recorder.action.as_deref()?;
+    let tab = selected_tab(inner);
+    if tab == SettingsTab::General && action == "hotkey.togglePalette" {
+        let hits = crate::features::settings::panes::general::layout_general(scroll);
+        let row = hits
+            .iter()
+            .find(|(h, _)| *h == crate::features::settings::panes::general::GeneralHit::PaletteRecorder)?
+            .1;
+        return Some(crate::features::hotkeys::ui::recorder::well_in_row(row));
+    }
+    let section = LauncherItemsSection::for_tab(tab)?;
+    let core = core_from_host((*inner).host)?;
+    let entries = (*core).settings_entries(section.kind);
+    let filtered = crate::features::launcher::settings::items::filter_entries(
+        &entries,
+        section.kind,
+        &(*inner).filter_query,
+    );
+    let layout = layout_launcher_items(
+        &section,
+        filtered.len(),
+        |i| filtered.get(i).and_then(|e| hotkey_action_key(e)).is_some(),
+        detail_w,
+        filtered.is_empty(),
+    );
+    for (i, item) in layout.items.iter().enumerate() {
+        let Some(rec) = item.recorder else {
+            continue;
+        };
+        let Some(key) = filtered.get(i).and_then(|e| hotkey_action_key(e)) else {
+            continue;
+        };
+        if key == action {
+            return Some(tinycast_pure::palette_placement::DipRect {
+                x: rec.x,
+                y: rec.y - scroll,
+                w: rec.w,
+                h: rec.h,
+            });
+        }
+    }
+    None
 }
 
 unsafe fn paint_detail_panes(
