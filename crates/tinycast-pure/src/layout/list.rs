@@ -80,6 +80,18 @@ pub fn calc_error_icon_rect(inner: DipRect) -> DipRect {
     }
 }
 
+pub fn empty_results_center(panel_w: f32, panel_h: f32) -> DipRect {
+    let top = content_top();
+    let bottom = (panel_h - theme::size::BOTTOM_BAR_HEIGHT).max(top);
+    let h = theme::typography::HEADER_ICON * 2.0 + theme::spacing::MD + theme::typography::ROW_TITLE;
+    DipRect {
+        x: 0.0,
+        y: top + ((bottom - top - h) / 2.0).max(0.0),
+        w: panel_w,
+        h,
+    }
+}
+
 pub fn chat_pad_x() -> f32 {
     theme::spacing::XXL
 }
@@ -181,6 +193,13 @@ mod tests {
         assert_eq!(list.w, 290.0);
         assert_eq!(preview.x, 290.0);
         assert!((preview.w - 460.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn empty_results_is_centered() {
+        let r = empty_results_center(750.0, 475.0);
+        assert!((r.x + r.w / 2.0 - 375.0).abs() < 1.0);
+        assert!(r.y > 64.0 && r.y < 400.0);
     }
 
     #[test]

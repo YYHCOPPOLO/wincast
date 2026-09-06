@@ -389,10 +389,49 @@ impl AppCore {
     }
 
     pub fn empty_results_text(&self) -> Option<&'static str> {
-        if self.palette.mode == PaletteMode::Clipboard {
-            return Some(clip_screen::empty_message(self.clipboard_filter));
+        let q = self.palette.query.trim();
+        match self.palette.mode {
+            PaletteMode::Ai | PaletteMode::QuicklinkArguments | PaletteMode::ExtensionCommand => {
+                None
+            }
+            PaletteMode::Clipboard => Some(clip_screen::empty_message(self.clipboard_filter)),
+            PaletteMode::Launcher => Some("No apps found"),
+            PaletteMode::CalculatorHistory => Some(if q.is_empty() {
+                "No calculations yet"
+            } else {
+                "No matching calculations"
+            }),
+            PaletteMode::Emoji => Some(if q.is_empty() {
+                "Loading emoji…"
+            } else {
+                "No emoji found"
+            }),
+            PaletteMode::FileSearch => Some(if q.is_empty() {
+                "Type to search files and folders"
+            } else {
+                "No files found"
+            }),
+            PaletteMode::Schedule => Some(if q.is_empty() {
+                "Nothing scheduled today or tomorrow"
+            } else {
+                "No matching meetings"
+            }),
+            PaletteMode::Uninstall => Some(if q.is_empty() {
+                "Nothing left to remove"
+            } else {
+                "No matching files"
+            }),
+            PaletteMode::Quicklinks => Some(if self.quicklinks.links().is_empty() {
+                "No quicklinks yet"
+            } else {
+                "No matching quicklinks"
+            }),
+            PaletteMode::AiHistory => Some(if q.is_empty() {
+                "No chats yet"
+            } else {
+                "No matching chats"
+            }),
         }
-        None
     }
 
     pub fn ai_chat_messages(&self) -> Option<&[tinycast_pure::ai::ChatMessage]> {
@@ -4762,6 +4801,12 @@ mod tests {
             c.empty_results_text(),
             Some("Clipboard history is empty")
         );
+    }
+
+    #[test]
+    fn launcher_empty_results_is_no_apps_found() {
+        let c = AppCore::new();
+        assert_eq!(c.empty_results_text(), Some("No apps found"));
     }
 
     #[test]

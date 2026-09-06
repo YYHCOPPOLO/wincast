@@ -7,7 +7,7 @@ use tinycast_pure::launcher_results::{
     list_items, LauncherListItem, LauncherSection, LauncherSectionKind,
 };
 use tinycast_pure::theme;
-use windows::core::{Interface, PCWSTR};
+use windows::core::{w, Interface, PCWSTR};
 use windows::Win32::Foundation::{HWND, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_PREMULTIPLIED;
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -20,8 +20,10 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    IDWriteFactory, IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_METRICS,
-    DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+    IDWriteFactory, IDWriteTextFormat, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+    DWRITE_FONT_WEIGHT_REGULAR, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_METRICS, DWRITE_TRIMMING,
+    DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
@@ -501,11 +503,18 @@ pub fn paint(
     cache: &mut IconCache,
     dpi: f32,
     appearance: u8,
+    empty_results: Option<&str>,
 ) -> windows::core::Result<()> {
     let origin = list_top();
     let clip_top = tinycast_pure::layout::list::paint_clip_top();
     let bottom = list_bottom(panel_h);
-    if bottom - origin < ROW_HEIGHT || items.is_empty() {
+    if bottom - origin < ROW_HEIGHT {
+        return Ok(());
+    }
+    if items.is_empty() {
+        if let Some(text) = empty_results {
+            paint_empty_results(target, dwrite, text, panel_w, panel_h, appearance)?;
+        }
         return Ok(());
     }
     let clip = D2D_RECT_F {
@@ -618,6 +627,81 @@ pub fn paint(
         visible,
         appearance,
     )?;
+    Ok(())
+}
+
+fn paint_empty_results(
+    target: &ID2D1RenderTarget,
+    dwrite: &IDWriteFactory,
+    text: &str,
+    panel_w: f32,
+    panel_h: f32,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    let block = tinycast_pure::layout::list::empty_results_center(panel_w, panel_h);
+    let glyph_size = 32.0;
+    let glyph = tinycast_pure::palette_placement::DipRect {
+        x: (panel_w - glyph_size) / 2.0,
+        y: block.y,
+        w: glyph_size,
+        h: glyph_size,
+    };
+    let tertiary = theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_TERTIARY_DARK_ALPHA,
+        theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
+    );
+    crate::design_system::symbols::paint_fluent_in(
+        target,
+        dwrite,
+        "magnifyingglass",
+        glyph,
+        tertiary,
+    )?;
+    let format = unsafe {
+        dwrite.CreateTextFormat(
+            w!("Segoe UI"),
+            None,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            theme::typography::ROW_TITLE,
+            w!("en-US"),
+        )?
+    };
+    unsafe {
+        format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+        format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+        format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+    }
+    let secondary = theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+    );
+    let brush = unsafe {
+        target.CreateSolidColorBrush(
+            &crate::design_system::appearance::color(secondary),
+            None,
+        )?
+    };
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    let text_top = glyph.y + glyph.h + theme::spacing::MD;
+    unsafe {
+        target.DrawText(
+            &wide,
+            &format,
+            &D2D_RECT_F {
+                left: 0.0,
+                top: text_top,
+                right: panel_w,
+                bottom: text_top + theme::typography::ROW_TITLE + theme::spacing::SM,
+            },
+            &brush,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
     Ok(())
 }
 

@@ -433,6 +433,7 @@ fn paint_layers(
                 params.cache,
                 dpi,
                 params.appearance,
+                params.empty_results,
             );
             if split {
                 if let Some(preview) = params.clipboard_preview {
@@ -446,15 +447,6 @@ fn paint_layers(
                         params.appearance,
                     );
                 }
-            } else if let Some(text) = params.empty_results {
-                let _ = paint_empty_results(
-                    target,
-                    dwrite,
-                    text,
-                    size.width,
-                    size.height,
-                    params.appearance,
-                );
             }
         }
         let _ = crate::design_system::symbols::paint_header_glyph(
@@ -560,49 +552,6 @@ fn paint_clipboard_preview(
             &fonts.title,
             &rect,
             &text_brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    Ok(())
-}
-
-fn paint_empty_results(
-    target: &ID2D1RenderTarget,
-    dwrite: &IDWriteFactory,
-    text: &str,
-    panel_w: f32,
-    panel_h: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let top = tinycast_pure::layout::list::content_top();
-    let bottom = (panel_h - theme::size::BOTTOM_BAR_HEIGHT).max(top);
-    let format = make_text_format(
-        dwrite,
-        w!("Segoe UI"),
-        theme::typography::ROW_TITLE,
-        DWRITE_FONT_WEIGHT_REGULAR,
-        false,
-        true,
-    )?;
-    let ink = crate::design_system::appearance::color(theme::colors::ramp_rgba(
-        appearance,
-        theme::colors::TEXT_SECONDARY_ALPHA,
-        theme::colors::TEXT_SECONDARY_ALPHA,
-    ));
-    let brush = unsafe { target.CreateSolidColorBrush(&ink, None)? };
-    let wide: Vec<u16> = text.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &wide,
-            &format,
-            &D2D_RECT_F {
-                left: 0.0,
-                top,
-                right: panel_w,
-                bottom,
-            },
-            &brush,
             D2D1_DRAW_TEXT_OPTIONS_NONE,
             DWRITE_MEASURING_MODE_NATURAL,
         );
