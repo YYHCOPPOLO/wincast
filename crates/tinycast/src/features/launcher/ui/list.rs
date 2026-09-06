@@ -50,6 +50,15 @@ fn fade_bottom() -> f32 {
 pub(crate) fn fade_top_for_test() -> f32 {
     fade_top()
 }
+
+fn fade_visible(panel_h: f32) -> f32 {
+    tinycast_pure::layout::list::view_height(panel_h)
+}
+
+#[cfg(test)]
+pub(crate) fn fade_visible_for_test(panel_h: f32) -> f32 {
+    fade_visible(panel_h)
+}
 const ICON_CACHE_MAX: usize = 8 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -598,7 +607,7 @@ pub fn paint(
         target.PopAxisAlignedClip();
     }
     let content_h = content_height(&slots_of(items));
-    let visible = (bottom - origin).max(0.0);
+    let visible = fade_visible(panel_h);
     paint_fade(
         target,
         panel_w,
@@ -1149,6 +1158,25 @@ mod tests {
     #[test]
     fn list_fade_uses_dissolve_bands() {
         assert!((crate::features::launcher::ui::list::fade_top_for_test() - 86.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn fade_visible_is_between_bars() {
+        assert!(
+            (crate::features::launcher::ui::list::fade_visible_for_test(475.0) - 359.0).abs()
+                < 0.01
+        );
+    }
+
+    #[test]
+    fn ensure_visible_keeps_selection_above_footer() {
+        let view = tinycast_pure::layout::list::view_height(theme::size::PANEL_HEIGHT);
+        assert!((view - 359.0).abs() < 0.01);
+        let row_top = 380.0;
+        assert_eq!(
+            ensure_visible(0.0, row_top, ROW_HEIGHT, view),
+            row_top + ROW_HEIGHT - view
+        );
     }
 
     #[test]

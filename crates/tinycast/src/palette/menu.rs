@@ -1,5 +1,3 @@
-use std::sync::Mutex;
-
 use tinycast_pure::palette_menu::MenuItem;
 use tinycast_pure::palette_menu::{
     action_group_rects_measured, menu_button_rect, menu_frame, menu_header_rect, menu_line_rects,
@@ -12,22 +10,35 @@ use windows::Win32::Graphics::Direct2D::{
     ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    IDWriteFactory, IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_METRICS,
+    DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
+    DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_METRICS,
 };
 
 use crate::design_system::Fonts;
 use crate::features::launcher::ui::list::ListFonts;
 
-static LAST_ACTION_GROUP: Mutex<Option<ActionGroupRects>> = Mutex::new(None);
-
-pub fn last_action_group_rects() -> Option<ActionGroupRects> {
-    LAST_ACTION_GROUP.lock().ok().and_then(|g| *g)
+pub fn action_group_rects_for_fonts(
+    fonts: &Fonts,
+    panel_w: f32,
+    panel_h: f32,
+    primary_label: &str,
+) -> Option<ActionGroupRects> {
+    let action_caps: Vec<&str> = ACTIONS_SHORTCUT.split('+').collect();
+    let primary_w = bar_button_width(fonts, primary_label, &["↵"]);
+    let actions_w = bar_button_width(fonts, "Actions", &action_caps);
+    action_group_rects_measured(panel_w, panel_h, primary_w, actions_w)
 }
 
-fn store_action_group(group: Option<ActionGroupRects>) {
-    if let Ok(mut slot) = LAST_ACTION_GROUP.lock() {
-        *slot = group;
-    }
+/// Same DirectWrite metrics as `paint_footer`, for hit testing without a paint-time cache.
+pub fn action_group_rects_for_label(
+    panel_w: f32,
+    panel_h: f32,
+    primary_label: &str,
+) -> Option<ActionGroupRects> {
+    let dwrite: IDWriteFactory =
+        unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()? };
+    let fonts = Fonts::new(&dwrite).ok()?;
+    action_group_rects_for_fonts(&fonts, panel_w, panel_h, primary_label)
 }
 
 pub struct FooterPaint<'a> {
@@ -52,7 +63,6 @@ pub fn paint_footer(
     footer: &FooterPaint<'_>,
 ) -> windows::core::Result<()> {
     if height < theme::size::COMPACT_HEIGHT + theme::size::BOTTOM_BAR_HEIGHT {
-        store_action_group(None);
         return Ok(());
     }
     let appearance = 0u8;
@@ -86,18 +96,15 @@ pub fn paint_footer(
     fill_round(target, bot, bot.h / 2.0, ink)?;
 
     if !footer.show_action_group {
-        store_action_group(None);
         return Ok(());
     }
     let ds = Fonts::new(dwrite)?;
     let action_caps: Vec<&str> = ACTIONS_SHORTCUT.split('+').collect();
-    let primary_w = bar_button_width(&ds, footer.primary_label, &["↵"]);
-    let actions_w = bar_button_width(&ds, "Actions", &action_caps);
-    let Some(group) = action_group_rects_measured(width, height, primary_w, actions_w) else {
-        store_action_group(None);
+    let Some(group) =
+        action_group_rects_for_fonts(&ds, width, height, footer.primary_label)
+    else {
         return Ok(());
     };
-    store_action_group(Some(group));
     crate::design_system::fill_squircle(
         target,
         group.capsule,
@@ -496,6 +503,22 @@ mod tests {
         assert!(
             longest < 200,
             "hairline would make most of y={y} opaque, longest={longest} w={w}"
+        );
+    }
+
+    #[test]
+    fn action_group_hits_match_measured_paint_rects() {
+        let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).expect("dwrite") };
+        let fonts = Fonts::new(&dwrite).expect("fonts");
+        let painted =
+            action_group_rects_for_fonts(&fonts, 750.0, 475.0, "Open Application").unwrap();
+        let hit = action_group_rects_for_label(750.0, 475.0, "Open Application").unwrap();
+        assert_eq!(painted, hit);
+        let fallback = tinycast_pure::palette_menu::action_group_rects(750.0, 475.0).unwrap();
+        assert!(
+            (painted.primary.w - fallback.primary.w).abs() > 0.5
+                || (painted.actions.w - fallback.actions.w).abs() > 0.5,
+            "measured footer must not use the abolished 176/126 fallback"
         );
     }
 }

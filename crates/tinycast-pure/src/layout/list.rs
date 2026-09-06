@@ -30,6 +30,11 @@ pub fn paint_clip_top() -> f32 {
     0.0
 }
 
+/// Inset-excluded list viewport (between floating header and footer).
+pub fn view_height(panel_h: f32) -> f32 {
+    (panel_h - content_top() - theme::size::BOTTOM_BAR_HEIGHT).max(0.0)
+}
+
 pub fn edge_dissolve_top_band() -> f32 {
     theme::size::HEADER_HEIGHT + theme::size::HEADER_PADDING + 32.0
 }
@@ -72,5 +77,16 @@ mod tests {
         assert_eq!(edge_dissolve_bottom_band(), 52.0 + 28.0);
         assert_eq!(paint_clip_top(), 0.0);
         assert_eq!(content_top(), theme::size::COMPACT_HEIGHT);
+    }
+
+    #[test]
+    fn view_height_is_between_bars() {
+        assert!((view_height(475.0) - 359.0).abs() < 0.01);
+        assert_eq!(
+            view_height(theme::size::PANEL_HEIGHT),
+            theme::size::PANEL_HEIGHT
+                - theme::size::COMPACT_HEIGHT
+                - theme::size::BOTTOM_BAR_HEIGHT
+        );
     }
 }

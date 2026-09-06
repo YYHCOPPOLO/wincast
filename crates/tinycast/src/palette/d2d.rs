@@ -369,6 +369,20 @@ fn paint_scene(
             a: 0.0,
         };
         target.Clear(Some(&clear));
+        paint_layers(target, dwrite, text_format, list_fonts, params, dpi)?;
+        target.EndDraw(None, None)
+    }
+}
+
+fn paint_layers(
+    target: &ID2D1RenderTarget,
+    dwrite: &IDWriteFactory,
+    text_format: &IDWriteTextFormat,
+    list_fonts: &ListFonts,
+    params: PaintParams<'_>,
+    dpi: f32,
+) -> windows::core::Result<()> {
+    unsafe {
         let size = target.GetSize();
         let radius = theme::radius::PANEL;
         let rounded = D2D1_ROUNDED_RECT {
@@ -384,6 +398,33 @@ fn paint_scene(
         let color = scrim_color();
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
+        let list_w = if params.clipboard_preview.is_some() {
+            theme::size::CLIPBOARD_LIST_WIDTH.min(size.width)
+        } else {
+            size.width
+        };
+        let _ = list::paint(
+            target,
+            dwrite,
+            list_fonts,
+            params.items,
+            params.scroll,
+            list_w,
+            size.height,
+            params.cache,
+            dpi,
+            params.appearance,
+        );
+        if let Some(preview) = params.clipboard_preview {
+            let _ = paint_clipboard_preview(
+                target,
+                list_fonts,
+                preview,
+                list_w,
+                size.width,
+                size.height,
+            );
+        }
         let _ = crate::design_system::symbols::paint_header_glyph(
             target,
             dwrite,
@@ -418,33 +459,6 @@ fn paint_scene(
         if let Some(filter) = &params.clipboard_filter {
             let _ = paint_filter_button(target, list_fonts, filter);
         }
-        let list_w = if params.clipboard_preview.is_some() {
-            theme::size::CLIPBOARD_LIST_WIDTH.min(size.width)
-        } else {
-            size.width
-        };
-        let _ = list::paint(
-            target,
-            dwrite,
-            list_fonts,
-            params.items,
-            params.scroll,
-            list_w,
-            size.height,
-            params.cache,
-            dpi,
-            params.appearance,
-        );
-        if let Some(preview) = params.clipboard_preview {
-            let _ = paint_clipboard_preview(
-                target,
-                list_fonts,
-                preview,
-                list_w,
-                size.width,
-                size.height,
-            );
-        }
         let _ = menu::paint_footer(
             target,
             dwrite,
@@ -456,7 +470,7 @@ fn paint_scene(
         if let Some(open) = &params.menu {
             let _ = menu::paint_menu(target, dwrite, list_fonts, size.width, size.height, open);
         }
-        target.EndDraw(None, None)
+        Ok(())
     }
 }
 
@@ -719,5 +733,91 @@ mod tests {
         assert_eq!(c.b, 0.0);
         assert_eq!(c.a, theme::colors::PANEL_SCRIM_DARK_ALPHA);
         assert_eq!(LAYERED_SOURCE_CONSTANT_ALPHA, 255);
+    }
+
+    #[test]
+    fn header_glyph_stays_opaque_over_dissolve() {
+        let (w, _h, bits) = crate::design_system::test_render::with_offscreen(750, 475, |target| {
+            let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
+            let text_format = make_text_format(
+                &dwrite,
+                w!("Segoe UI"),
+                crate::palette::edit::SEARCH_FONT_DIP,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                false,
+                false,
+            )?;
+            let body = make_text_format(
+                &dwrite,
+                w!("Segoe UI"),
+                13.0,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                false,
+                false,
+            )?;
+            let list_fonts = ListFonts {
+                title: body.clone(),
+                trailing: body.clone(),
+                header: body.clone(),
+                chip: body.clone(),
+                keycap: body.clone(),
+                calc_result: body.clone(),
+                calc_badge: body.clone(),
+                emoji: body,
+            };
+            let items: Vec<PaintItem> = (0..20)
+                .map(|i| PaintItem::Row {
+                    title: format!("Row {i}"),
+                    alias: None,
+                    trailing: String::new(),
+                    keycap: None,
+                    icon_source: None,
+                    selected: i == 0,
+                })
+                .collect();
+            let mut cache = IconCache::new();
+            paint_layers(
+                target,
+                &dwrite,
+                &text_format,
+                &list_fonts,
+                PaintParams {
+                    placeholder: false,
+                    placeholder_text: "",
+                    header_symbol: "magnifyingglass",
+                    items: &items,
+                    scroll: 0.0,
+                    cache: &mut cache,
+                    appearance: 0,
+                    footer: FooterPaint {
+                        show_action_group: false,
+                        primary_label: "",
+                        primary_destructive: false,
+                    },
+                    menu: None,
+                    clipboard_preview: None,
+                    tab_hint: None,
+                    clipboard_filter: None,
+                    compact_favorite_icons: &[],
+                },
+                96.0,
+            )
+        })
+        .expect("header over dissolve");
+        let slot = tinycast_pure::layout::palette_chrome::header_icon_rect();
+        let x0 = slot.x.round() as usize;
+        let y0 = slot.y.round() as usize;
+        let x1 = (slot.x + slot.w).round() as usize;
+        let y1 = (slot.y + slot.h).round() as usize;
+        let mut max_r = 0u8;
+        for y in y0..y1.min(_h) {
+            for x in x0..x1.min(w) {
+                max_r = max_r.max(bits[(y * w + x) * 4 + 2]);
+            }
+        }
+        assert!(
+            max_r > 80,
+            "header glyph must float above dissolve, max_r={max_r}"
+        );
     }
 }

@@ -11,9 +11,9 @@ use tinycast_pure::launcher_results::{
     is_category_listing, ordered_results, selectable_rows, LauncherSection,
 };
 use tinycast_pure::palette_menu::{
-    action_group_rects, actions_for, can_open_actions, clamp_menu_selection, menu_button_rect,
-    menu_frame, menu_row_at, point_in, ActionContext, MenuItem, OpenMenu, ID_COPY_PATH, ID_FAVORITE,
-    ID_MOVE_DOWN, ID_MOVE_UP, ID_OPEN, ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
+    actions_for, can_open_actions, clamp_menu_selection, menu_button_rect, menu_frame, menu_row_at,
+    point_in, ActionContext, MenuItem, OpenMenu, ID_COPY_PATH, ID_FAVORITE, ID_MOVE_DOWN,
+    ID_MOVE_UP, ID_OPEN, ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
 };
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
@@ -2872,9 +2872,11 @@ impl AppCore {
             return;
         }
         if self.footer_action_group_visible() {
-            if let Some(group) = crate::palette::menu::last_action_group_rects()
-                .or_else(|| action_group_rects(panel_w, panel_h))
-            {
+            if let Some(group) = crate::palette::menu::action_group_rects_for_label(
+                panel_w,
+                panel_h,
+                self.primary_label(),
+            ) {
                 if point_in(group.actions, x, y) {
                     self.toggle_actions();
                     return;
@@ -4234,7 +4236,7 @@ impl AppCore {
         let Some((top, h)) = row_y(&slots, self.palette.selection) else {
             return;
         };
-        let view_h = list_bottom(theme::size::PANEL_HEIGHT) - list_top();
+        let view_h = tinycast_pure::layout::list::view_height(theme::size::PANEL_HEIGHT);
         self.list_scroll = clamp_scroll(
             ensure_visible(self.list_scroll, top, h, view_h),
             content_height(&slots),
@@ -4245,7 +4247,7 @@ impl AppCore {
     fn clamp_scroll(&mut self) {
         let items = self.launcher_paint_items();
         let slots = slots_of(&items);
-        let view_h = list_bottom(theme::size::PANEL_HEIGHT) - list_top();
+        let view_h = tinycast_pure::layout::list::view_height(theme::size::PANEL_HEIGHT);
         self.list_scroll = clamp_scroll(self.list_scroll, content_height(&slots), view_h);
     }
 
