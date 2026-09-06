@@ -388,6 +388,13 @@ impl AppCore {
         Some(clip_screen::preview_text(rows.get(self.palette.selection)))
     }
 
+    pub fn empty_results_text(&self) -> Option<&'static str> {
+        if self.palette.mode == PaletteMode::Clipboard {
+            return Some(clip_screen::empty_message(self.clipboard_filter));
+        }
+        None
+    }
+
     pub fn install_rates(&mut self) {
         self.currency_rates.install();
         self.invalidate_palette();
@@ -4728,6 +4735,17 @@ mod tests {
     #[test]
     fn ai_live_placeholder_is_ask_anything() {
         assert_eq!(placeholder_for(PaletteMode::Ai, None), "Ask anything…");
+    }
+
+    #[test]
+    fn clipboard_empty_results_uses_filter_message() {
+        let mut c = AppCore::new();
+        c.perform_hotkey("hotkey.toggleClipboard");
+        assert_eq!(c.palette.mode, PaletteMode::Clipboard);
+        assert_eq!(
+            c.empty_results_text(),
+            Some("Clipboard history is empty")
+        );
     }
 
     #[test]

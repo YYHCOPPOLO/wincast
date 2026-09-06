@@ -381,6 +381,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
             tab_hint: None,
             clipboard_filter: None,
             compact_favorite_icons: &[],
+            empty_results: None,
         };
         inner.renderer.paint(hwnd, params, inner.present_alpha);
         return;
@@ -395,6 +396,11 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     let preview = (*core).clipboard_preview();
     let tab_hint = (*core).tab_hint();
     let filter = (*core).clipboard_filter_paint();
+    let empty_results = if items.is_empty() {
+        (*core).empty_results_text()
+    } else {
+        None
+    };
     layout_edit(hwnd, inner, (*core).search_trailing_width());
     let header_symbol = if (*core).palette.mode == PaletteMode::Launcher {
         "magnifyingglass"
@@ -416,6 +422,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         tab_hint,
         clipboard_filter: filter,
         compact_favorite_icons: &compact_favorite_icons,
+        empty_results,
     };
     inner.renderer.paint(hwnd, params, inner.present_alpha);
 }

@@ -55,6 +55,7 @@ pub struct PaintParams<'a> {
     pub tab_hint: Option<&'a str>,
     pub clipboard_filter: Option<FilterButtonPaint>,
     pub compact_favorite_icons: &'a [Option<String>],
+    pub empty_results: Option<&'a str>,
 }
 
 pub struct FilterButtonPaint {
@@ -398,8 +399,9 @@ fn paint_layers(
         let color = scrim_color();
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
-        let list_w = if params.clipboard_preview.is_some() {
-            theme::size::CLIPBOARD_LIST_WIDTH.min(size.width)
+        let split = params.clipboard_preview.is_some() && !params.items.is_empty();
+        let list_w = if split {
+            tinycast_pure::layout::list::clipboard_columns(size.width).0.w
         } else {
             size.width
         };
@@ -415,14 +417,26 @@ fn paint_layers(
             dpi,
             params.appearance,
         );
-        if let Some(preview) = params.clipboard_preview {
-            let _ = paint_clipboard_preview(
+        if split {
+            if let Some(preview) = params.clipboard_preview {
+                let _ = paint_clipboard_preview(
+                    target,
+                    list_fonts,
+                    preview,
+                    list_w,
+                    size.width,
+                    size.height,
+                    params.appearance,
+                );
+            }
+        } else if let Some(text) = params.empty_results {
+            let _ = paint_empty_results(
                 target,
-                list_fonts,
-                preview,
-                list_w,
+                dwrite,
+                text,
                 size.width,
                 size.height,
+                params.appearance,
             );
         }
         let _ = crate::design_system::symbols::paint_header_glyph(
@@ -481,20 +495,16 @@ fn paint_clipboard_preview(
     list_w: f32,
     panel_w: f32,
     panel_h: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let top = theme::size::COMPACT_HEIGHT;
     let bottom = (panel_h - theme::size::BOTTOM_BAR_HEIGHT).max(top);
-    let line = unsafe {
-        target.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 0.18,
-            },
-            None,
-        )?
-    };
+    let sep = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::SEPARATOR_DARK_ALPHA,
+        theme::colors::SEPARATOR_LIGHT_ALPHA,
+    ));
+    let line = unsafe { target.CreateSolidColorBrush(&sep, None)? };
     unsafe {
         target.DrawLine(
             windows::Win32::Graphics::Direct2D::Common::D2D_POINT_2F { x: list_w, y: top },
@@ -507,17 +517,12 @@ fn paint_clipboard_preview(
             None,
         );
     }
-    let text_brush = unsafe {
-        target.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 0.86,
-            },
-            None,
-        )?
-    };
+    let ink = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+    ));
+    let text_brush = unsafe { target.CreateSolidColorBrush(&ink, None)? };
     let pad = theme::spacing::XL;
     let rect = D2D_RECT_F {
         left: list_w + pad,
@@ -537,6 +542,49 @@ fn paint_clipboard_preview(
             &fonts.title,
             &rect,
             &text_brush,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
+    Ok(())
+}
+
+fn paint_empty_results(
+    target: &ID2D1RenderTarget,
+    dwrite: &IDWriteFactory,
+    text: &str,
+    panel_w: f32,
+    panel_h: f32,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    let top = tinycast_pure::layout::list::content_top();
+    let bottom = (panel_h - theme::size::BOTTOM_BAR_HEIGHT).max(top);
+    let format = make_text_format(
+        dwrite,
+        w!("Segoe UI"),
+        theme::typography::ROW_TITLE,
+        DWRITE_FONT_WEIGHT_REGULAR,
+        false,
+        true,
+    )?;
+    let ink = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+    ));
+    let brush = unsafe { target.CreateSolidColorBrush(&ink, None)? };
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    unsafe {
+        target.DrawText(
+            &wide,
+            &format,
+            &D2D_RECT_F {
+                left: 0.0,
+                top,
+                right: panel_w,
+                bottom,
+            },
+            &brush,
             D2D1_DRAW_TEXT_OPTIONS_NONE,
             DWRITE_MEASURING_MODE_NATURAL,
         );
@@ -799,6 +847,7 @@ mod tests {
                     tab_hint: None,
                     clipboard_filter: None,
                     compact_favorite_icons: &[],
+                    empty_results: None,
                 },
                 96.0,
             )

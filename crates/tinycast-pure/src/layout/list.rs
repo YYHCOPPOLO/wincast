@@ -51,6 +51,24 @@ pub fn section_header_height(is_first: bool) -> f32 {
     }
 }
 
+pub fn clipboard_columns(panel_w: f32) -> (DipRect, DipRect) {
+    let w = theme::size::CLIPBOARD_LIST_WIDTH.min(panel_w);
+    (
+        DipRect {
+            x: 0.0,
+            y: 0.0,
+            w,
+            h: 0.0,
+        },
+        DipRect {
+            x: w,
+            y: 0.0,
+            w: (panel_w - w).max(0.0),
+            h: 0.0,
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,5 +106,13 @@ mod tests {
                 - theme::size::COMPACT_HEIGHT
                 - theme::size::BOTTOM_BAR_HEIGHT
         );
+    }
+
+    #[test]
+    fn clipboard_list_column_is_290() {
+        let (list, preview) = clipboard_columns(750.0);
+        assert_eq!(list.w, 290.0);
+        assert_eq!(preview.x, 290.0);
+        assert!((preview.w - 460.0).abs() < 0.01);
     }
 }

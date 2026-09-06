@@ -32,6 +32,16 @@ pub fn filter_title(filter: ClipboardFilter) -> &'static str {
     }
 }
 
+pub fn empty_message(filter: ClipboardFilter) -> &'static str {
+    match filter {
+        ClipboardFilter::All => "Clipboard history is empty",
+        ClipboardFilter::Text => "No text in clipboard history",
+        ClipboardFilter::Images => "No images in clipboard history",
+        ClipboardFilter::Links => "No links in clipboard history",
+        ClipboardFilter::Emails => "No email addresses in clipboard history",
+    }
+}
+
 pub fn paint_items(rows: &[ClipboardItem], selection: usize) -> Vec<PaintItem> {
     rows.iter()
         .enumerate()
@@ -99,6 +109,18 @@ mod tests {
         assert_eq!(
             filter_trailing_width(),
             theme::spacing::MD + FILTER_BUTTON_WIDTH
+        );
+    }
+
+    #[test]
+    fn empty_message_names_the_filter() {
+        assert_eq!(
+            empty_message(ClipboardFilter::All),
+            "Clipboard history is empty"
+        );
+        assert_eq!(
+            empty_message(ClipboardFilter::Images),
+            "No images in clipboard history"
         );
     }
 }
