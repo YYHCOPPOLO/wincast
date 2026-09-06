@@ -3,6 +3,7 @@ pub mod chat;
 pub mod dialog;
 pub mod fonts;
 pub mod host;
+pub mod hud;
 pub mod keycap;
 pub mod panel;
 pub mod row;
