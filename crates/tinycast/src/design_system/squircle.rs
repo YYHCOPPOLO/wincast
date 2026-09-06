@@ -20,12 +20,13 @@ fn cubic(p1: D2D_POINT_2F, p2: D2D_POINT_2F, p3: D2D_POINT_2F) -> D2D1_BEZIER_SE
     }
 }
 
-pub fn fill_squircle(
+use windows::Win32::Graphics::Direct2D::ID2D1PathGeometry;
+
+fn squircle_path(
     target: &ID2D1RenderTarget,
     rect: DipRect,
     radius: f32,
-    rgba: (f32, f32, f32, f32),
-) -> windows::core::Result<()> {
+) -> windows::core::Result<ID2D1PathGeometry> {
     let factory: ID2D1Factory = unsafe { target.GetFactory()? };
     let geometry = unsafe { factory.CreatePathGeometry()? };
     let sink = unsafe { geometry.Open()? };
@@ -71,10 +72,34 @@ pub fn fill_squircle(
         sink.Close()?;
         target.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     }
+    Ok(geometry)
+}
 
+pub fn fill_squircle(
+    target: &ID2D1RenderTarget,
+    rect: DipRect,
+    radius: f32,
+    rgba: (f32, f32, f32, f32),
+) -> windows::core::Result<()> {
+    let geometry = squircle_path(target, rect, radius)?;
     let brush = unsafe { target.CreateSolidColorBrush(&appearance::color(rgba), None)? };
     unsafe {
         target.FillGeometry(&geometry, &brush, None);
+    }
+    Ok(())
+}
+
+pub fn stroke_squircle(
+    target: &ID2D1RenderTarget,
+    rect: DipRect,
+    radius: f32,
+    rgba: (f32, f32, f32, f32),
+    width: f32,
+) -> windows::core::Result<()> {
+    let geometry = squircle_path(target, rect, radius)?;
+    let brush = unsafe { target.CreateSolidColorBrush(&appearance::color(rgba), None)? };
+    unsafe {
+        target.DrawGeometry(&geometry, &brush, width, None);
     }
     Ok(())
 }

@@ -1,8 +1,14 @@
 pub mod appearance;
+pub mod fonts;
+pub mod keycap;
 pub mod panel;
+pub mod row;
 pub mod squircle;
 
+pub use fonts::Fonts;
+pub use keycap::paint_keycap;
 pub use panel::paint_panel_scrim;
+pub use row::paint_row_fill;
 pub use squircle::fill_squircle;
 
 #[cfg(test)]
