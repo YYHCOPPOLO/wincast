@@ -19,7 +19,7 @@ use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
 use tinycast_pure::palette_row_index::{clamp_selection, selectable_count};
 use tinycast_pure::palette_state::{escape_outcome, EscapeOutcome, PaletteState};
-use tinycast_pure::palette_tab::{tab_from, TabHop};
+use tinycast_pure::palette_tab::{tab_from, tab_opens_ai_chat, TabHop};
 use tinycast_pure::settings_tab::SettingsTab;
 use tinycast_pure::theme;
 use tinycast_pure::visibility::VisibilityStore;
@@ -344,22 +344,13 @@ impl AppCore {
     }
 
     pub fn tab_hint(&self) -> Option<&'static str> {
-        match tab_from(
+        tab_opens_ai_chat(
             self.palette.mode,
             self.settings.ai_enabled,
+            self.expanded,
             self.palette.mode == PaletteMode::QuicklinkArguments,
-        ) {
-            TabHop::Clipboard => Some("Clipboard"),
-            TabHop::Launcher => Some("Launcher"),
-            TabHop::Ai => {
-                if self.settings.ai_enabled {
-                    Some("AI Chat")
-                } else {
-                    None
-                }
-            }
-            TabHop::StayForArguments => None,
-        }
+        )
+        .then_some("AI Chat")
     }
 
     pub fn clipboard_preview(&self) -> Option<String> {
@@ -4815,8 +4806,9 @@ mod tests {
         c.handle_key(0x09);
         assert_eq!(c.palette.mode, PaletteMode::Launcher);
         assert_eq!(c.palette.query, "hello");
-        assert_eq!(c.tab_hint(), Some("Clipboard"));
-        assert_ne!(c.tab_hint(), Some("AI Chat"));
+        assert_eq!(c.tab_hint(), None);
+        c.settings.ai_enabled = true;
+        assert_eq!(c.tab_hint(), Some("AI Chat"));
     }
 
     #[test]

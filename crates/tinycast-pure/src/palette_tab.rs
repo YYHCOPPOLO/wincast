@@ -8,6 +8,15 @@ pub enum TabHop {
     StayForArguments,
 }
 
+pub fn tab_opens_ai_chat(
+    mode: PaletteMode,
+    ai_enabled: bool,
+    expanded: bool,
+    row_has_arguments: bool,
+) -> bool {
+    expanded && tab_from(mode, ai_enabled, row_has_arguments) == TabHop::Ai
+}
+
 pub fn tab_from(mode: PaletteMode, ai_enabled: bool, row_has_arguments: bool) -> TabHop {
     match mode {
         PaletteMode::ExtensionCommand => TabHop::Launcher,
@@ -63,6 +72,13 @@ mod tests {
             tab_from(PaletteMode::Launcher, false, true),
             TabHop::StayForArguments
         );
+    }
+
+    #[test]
+    fn compact_never_advertises_tab() {
+        assert!(!tab_opens_ai_chat(PaletteMode::Launcher, true, false, false));
+        assert!(tab_opens_ai_chat(PaletteMode::Launcher, true, true, false));
+        assert!(!tab_opens_ai_chat(PaletteMode::Launcher, false, true, false));
     }
 
     #[test]

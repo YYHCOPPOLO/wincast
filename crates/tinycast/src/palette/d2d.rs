@@ -403,7 +403,7 @@ fn paint_scene(
                 .as_ref()
                 .map(|_| crate::features::clipboard::ui::screen::filter_trailing_width())
                 .unwrap_or(0.0);
-            let _ = paint_tab_hint(target, list_fonts, hint, trailing);
+            let _ = paint_tab_hint(target, dwrite, list_fonts, hint, trailing, params.appearance);
         }
         if let Some(filter) = &params.clipboard_filter {
             let _ = paint_filter_button(target, list_fonts, filter);
@@ -580,55 +580,32 @@ fn paint_filter_button(
 
 fn paint_tab_hint(
     target: &ID2D1RenderTarget,
+    dwrite: &IDWriteFactory,
     fonts: &ListFonts,
     hint: &str,
     trailing: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    if hint == "AI Chat" {
-        // Caller must pass None while AI is off; keep this guard anyway.
-    }
     let (x, y, w, h) = super::edit::search_field_dip_with_trailing(trailing);
     let right = x + w;
-    let cap = "Tab";
-    let cap_w = 36.0;
-    let cap_h = theme::size::KEY_CAP;
+    let ds = crate::design_system::Fonts::new(dwrite)?;
+    let cap_w = crate::design_system::paint_keycap(
+        target,
+        &ds,
+        "⇥",
+        right,
+        y,
+        h,
+        true,
+        appearance,
+    )?;
     let cap_x = right - cap_w;
-    let cap_y = y + (h - cap_h) / 2.0;
-    let chrome = unsafe {
-        target.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 0.50,
-            },
-            None,
-        )?
-    };
-    let rounded = D2D1_ROUNDED_RECT {
-        rect: D2D_RECT_F {
-            left: cap_x,
-            top: cap_y,
-            right: cap_x + cap_w,
-            bottom: cap_y + cap_h,
-        },
-        radiusX: theme::radius::KEY_CAP,
-        radiusY: theme::radius::KEY_CAP,
-    };
-    unsafe {
-        target.FillRoundedRectangle(&rounded, &chrome);
-    }
-    let wide: Vec<u16> = cap.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &wide,
-            &fonts.keycap,
-            &rounded.rect,
-            &chrome,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
+    let ink = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+    ));
+    let brush = unsafe { target.CreateSolidColorBrush(&ink, None)? };
     let label: Vec<u16> = hint.encode_utf16().collect();
     let label_rect = D2D_RECT_F {
         left: (cap_x - 90.0).max(x),
@@ -641,7 +618,7 @@ fn paint_tab_hint(
             &label,
             &fonts.header,
             &label_rect,
-            &chrome,
+            &brush,
             D2D1_DRAW_TEXT_OPTIONS_NONE,
             DWRITE_MEASURING_MODE_NATURAL,
         );
