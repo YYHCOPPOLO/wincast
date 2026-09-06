@@ -11,6 +11,16 @@ pub fn paint_panel_scrim(
     height: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
+    paint_scrim(target, width, height, theme::radius::PANEL, appearance)
+}
+
+pub fn paint_scrim(
+    target: &ID2D1RenderTarget,
+    width: f32,
+    height: f32,
+    radius: f32,
+    appearance: u8,
+) -> windows::core::Result<()> {
     unsafe {
         let clear = D2D1_COLOR_F {
             r: 0.0,
@@ -29,7 +39,7 @@ pub fn paint_panel_scrim(
             w: width,
             h: height,
         },
-        theme::radius::PANEL,
+        radius,
         rgba,
     )
 }

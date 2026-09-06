@@ -2,34 +2,32 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use tinycast_pure::dialog::{DialogRole, DialogTone};
+use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::core::w;
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, SetBkMode, SetTextColor,
-    TextOutW, HGDIOBJ, TRANSPARENT,
-};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetWindowLongPtrW, IsWindow, LoadCursorW, PeekMessageW, RegisterClassW,
-    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage,
-    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOP, IDC_ARROW, MSG, PM_REMOVE, SWP_NOACTIVATE,
-    SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN,
-    WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_EX_DLGMODALFRAME, WS_EX_TOOLWINDOW, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
+    GetWindowLongPtrW, IsWindow, LoadCursorW, PeekMessageW, RegisterClassW, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST,
+    IDC_ARROW, MSG, PM_REMOVE, SW_SHOW, SWP_NOACTIVATE, WM_ACTIVATE, WM_CLOSE, WM_DESTROY,
+    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT,
+    WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
+use crate::design_system::dialog::{self as ds, DialogContent, DialogHits};
+use crate::design_system::host::OverlayPainter;
 use crate::platform::screens::dip_scalar_to_px;
 
 const CLASS: windows::core::PCWSTR = w!("TinycastDialog");
-const ID_CONTINUE: usize = 1;
-const ID_CANCEL: usize = 2;
 
 static DIALOG_UP: AtomicBool = AtomicBool::new(false);
 static LAST_VOLUME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-static VOLUME_ACCEPTED: AtomicBool = AtomicBool::new(false);
+static LAST_RESULT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmPrompt {
@@ -63,7 +61,6 @@ pub fn pick_volume(current: f32) -> Option<f32> {
     if !begin() {
         return None;
     }
-    VOLUME_ACCEPTED.store(false, Ordering::SeqCst);
     LAST_VOLUME.store(current.to_bits(), Ordering::SeqCst);
     let prompt = ConfirmPrompt {
         title: "Set Volume".into(),
@@ -100,40 +97,7 @@ fn run(prompt: &ConfirmPrompt, has_cancel: bool) -> bool {
         Ok(h) => h,
         Err(_) => return false,
     };
-    unsafe {
-        let _ = ShowWindow(hwnd, SW_SHOW);
-        let _ = SetForegroundWindow(hwnd);
-        let _ = SetFocus(hwnd);
-        let mut msg = MSG::default();
-        while IsWindow(hwnd).as_bool() {
-            let ok = GetMessageW(&mut msg, HWND::default(), 0, 0);
-            if !ok.as_bool() {
-                break;
-            }
-            if msg.message == WM_KEYDOWN {
-                let vk = msg.wParam.0 as u16;
-                if vk == 0x1B {
-                    set_result(hwnd, false);
-                    let _ = DestroyWindow(hwnd);
-                    continue;
-                }
-                if vk == 0x0D {
-                    set_result(hwnd, true);
-                    let _ = DestroyWindow(hwnd);
-                    continue;
-                }
-            }
-            let _ = TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-        while PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
-            if msg.message == WM_PAINT || msg.message == 0x0012 {
-                let _ = TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            }
-        }
-        take_result()
-    }
+    pump(hwnd)
 }
 
 fn run_volume(prompt: &ConfirmPrompt, current: f32) -> bool {
@@ -141,10 +105,15 @@ fn run_volume(prompt: &ConfirmPrompt, current: f32) -> bool {
         Ok(h) => h,
         Err(_) => return false,
     };
+    pump(hwnd)
+}
+
+fn pump(hwnd: HWND) -> bool {
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
         let _ = SetFocus(hwnd);
+        arm(hwnd);
         let mut msg = MSG::default();
         while IsWindow(hwnd).as_bool() {
             let ok = GetMessageW(&mut msg, HWND::default(), 0, 0);
@@ -168,12 +137,12 @@ fn run_volume(prompt: &ConfirmPrompt, current: f32) -> bool {
                     continue;
                 }
             }
-            let _ = TranslateMessage(&msg);
+            let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
         while PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
             if msg.message == WM_PAINT || msg.message == 0x0012 {
-                let _ = TranslateMessage(&msg);
+                let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
         }
@@ -185,9 +154,14 @@ struct Inner {
     prompt: ConfirmPrompt,
     has_cancel: bool,
     result: bool,
-    continue_rect: RECT,
-    cancel_rect: RECT,
+    chosen: bool,
+    armed: bool,
+    continue_rect: DipRect,
+    cancel_rect: Option<DipRect>,
+    volume_rect: Option<DipRect>,
     volume: Option<f32>,
+    dragging: bool,
+    painter: OverlayPainter,
 }
 
 fn create_window(
@@ -212,24 +186,37 @@ fn create_window(
                 return Err(last.into());
             }
         }
+        let painter = OverlayPainter::new()?;
+        let content = content_of(prompt, has_cancel, volume);
+        let height = ds::measure_height(painter.fonts(), &content);
         let inner = Box::new(Inner {
             prompt: prompt.clone(),
             has_cancel,
             result: false,
-            continue_rect: RECT::default(),
-            cancel_rect: RECT::default(),
+            chosen: false,
+            armed: false,
+            continue_rect: DipRect {
+                x: 0.0,
+                y: 0.0,
+                w: 0.0,
+                h: 0.0,
+            },
+            cancel_rect: None,
+            volume_rect: None,
             volume,
+            dragging: false,
+            painter,
         });
         let ptr = Box::into_raw(inner);
         let hwnd = match CreateWindowExW(
-            WS_EX_TOOLWINDOW | WS_EX_DLGMODALFRAME,
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED,
             CLASS,
             w!("Tinycast"),
-            WS_POPUP | WINDOW_STYLE(0x00C00000), // WS_CAPTION
+            WS_POPUP,
             0,
             0,
             420,
-            200,
+            height.round() as i32,
             HWND::default(),
             None,
             hinstance,
@@ -241,15 +228,47 @@ fn create_window(
                 return Err(err);
             }
         };
-        position(hwnd);
+        (*ptr).painter.prefer_layered(hwnd);
+        position(hwnd, height);
+        paint_d2d(hwnd);
         Ok(hwnd)
     }
 }
 
-fn position(hwnd: HWND) {
+fn content_of<'a>(
+    prompt: &'a ConfirmPrompt,
+    has_cancel: bool,
+    volume: Option<f32>,
+) -> DialogContent<'a> {
+    DialogContent {
+        title: &prompt.title,
+        message: &prompt.message,
+        accept: &prompt.accept,
+        cancel: if has_cancel && !prompt.cancel.is_empty() {
+            Some(prompt.cancel.as_str())
+        } else {
+            None
+        },
+        volume,
+        appearance: 0,
+        tone: DialogTone::Neutral,
+        symbol: if volume.is_some() {
+            "speaker.wave.2"
+        } else {
+            "info.circle"
+        },
+        accept_role: if prompt.accept == "Uninstall" {
+            DialogRole::Destructive
+        } else {
+            DialogRole::Standard
+        },
+    }
+}
+
+fn position(hwnd: HWND, height_dip: f32) {
     let dpi = unsafe { GetDpiForWindow(hwnd) };
     let w = dip_scalar_to_px(theme::size::DIALOG_WIDTH, dpi);
-    let h = dip_scalar_to_px(200.0, dpi);
+    let h = dip_scalar_to_px(height_dip, dpi);
     let screens = crate::platform::screens::screens_px();
     let screen = screens
         .iter()
@@ -263,7 +282,7 @@ fn position(hwnd: HWND) {
         (100, 100)
     };
     unsafe {
-        let _ = SetWindowPos(hwnd, HWND_TOP, x, y, w, h, SWP_NOACTIVATE);
+        let _ = SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
     }
 }
 
@@ -277,46 +296,108 @@ fn nudge_volume(hwnd: HWND, up: bool) {
             let next = tinycast_pure::volume::volume_step(level, up);
             (*ptr).volume = Some(next);
             LAST_VOLUME.store(next.to_bits(), Ordering::SeqCst);
-            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, windows::Win32::Foundation::FALSE);
+            paint_d2d(hwnd);
         }
+    }
+}
+
+fn set_volume_from_x(hwnd: HWND, x_dip: f32) {
+    unsafe {
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+        if ptr.is_null() {
+            return;
+        }
+        let Some(rect) = (*ptr).volume_rect else {
+            return;
+        };
+        let next = ds::volume_level_at(rect, x_dip);
+        (*ptr).volume = Some(next);
+        LAST_VOLUME.store(next.to_bits(), Ordering::SeqCst);
+        paint_d2d(hwnd);
     }
 }
 
 fn set_result(hwnd: HWND, value: bool) {
     unsafe {
         let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if !ptr.is_null() {
-            (*ptr).result = value;
-            LAST_RESULT.store(if value { 1 } else { 0 }, Ordering::SeqCst);
-            if let Some(level) = (*ptr).volume {
-                LAST_VOLUME.store(level.to_bits(), Ordering::SeqCst);
-            }
+        if ptr.is_null() || (*ptr).chosen {
+            return;
+        }
+        (*ptr).chosen = true;
+        (*ptr).result = value;
+        LAST_RESULT.store(if value { 1 } else { 0 }, Ordering::SeqCst);
+        if let Some(level) = (*ptr).volume {
+            LAST_VOLUME.store(level.to_bits(), Ordering::SeqCst);
         }
     }
 }
-
-static LAST_RESULT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 fn take_result() -> bool {
     LAST_RESULT.swap(0, Ordering::SeqCst) == 1
 }
 
+fn arm(hwnd: HWND) {
+    unsafe {
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+        if !ptr.is_null() {
+            (*ptr).armed = true;
+        }
+    }
+}
+
+fn client_dip(hwnd: HWND, lparam: LPARAM) -> (f32, f32) {
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
+    let dpi = if dpi == 0 { 96.0 } else { dpi as f32 };
+    let x = (lparam.0 as u32 & 0xFFFF) as i16 as f32 * 96.0 / dpi;
+    let y = ((lparam.0 as u32 >> 16) & 0xFFFF) as i16 as f32 * 96.0 / dpi;
+    (x, y)
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         0x0081 => {
-            // WM_NCCREATE
             let cs = lparam.0 as *const windows::Win32::UI::WindowsAndMessaging::CREATESTRUCTW;
             if !cs.is_null() {
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, (*cs).lpCreateParams as isize);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
+        WM_ERASEBKGND => LRESULT(1),
         WM_PAINT => {
-            paint(hwnd);
+            let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
+            let hdc = windows::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut ps);
+            if !hdc.is_invalid() {
+                paint_d2d(hwnd);
+                let _ = windows::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
+            }
             LRESULT(0)
         }
         WM_LBUTTONDOWN => {
             hit(hwnd, lparam);
+            LRESULT(0)
+        }
+        WM_MOUSEMOVE => {
+            unsafe_drag(hwnd, lparam);
+            LRESULT(0)
+        }
+        WM_LBUTTONUP => {
+            unsafe {
+                let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+                if !ptr.is_null() && (*ptr).dragging {
+                    (*ptr).dragging = false;
+                    let _ = ReleaseCapture();
+                }
+            }
+            LRESULT(0)
+        }
+        WM_ACTIVATE => {
+            if (wparam.0 as u16) == 0 {
+                let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+                if !ptr.is_null() && (*ptr).armed && !(*ptr).chosen {
+                    set_result(hwnd, false);
+                    let _ = DestroyWindow(hwnd);
+                }
+            }
             LRESULT(0)
         }
         WM_KEYDOWN => {
@@ -351,124 +432,69 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
 }
 
-fn paint(hwnd: HWND) {
+fn unsafe_drag(hwnd: HWND, lparam: LPARAM) {
     unsafe {
-        let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
-        let hdc = BeginPaint(hwnd, &mut ps);
-        if hdc.is_invalid() {
-            return;
-        }
-        let mut rc = RECT::default();
-        let _ = GetClientRect(hwnd, &mut rc);
-        let bg = CreateSolidBrush(COLORREF(0x00222222));
-        let _ = FillRect(hdc, &rc, bg);
-        let _ = DeleteObject(HGDIOBJ(bg.0));
         let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if ptr.is_null() {
-            let _ = EndPaint(hwnd, &ps);
+        if ptr.is_null() || !(*ptr).dragging {
             return;
         }
-        let inner = &mut *ptr;
-        let dpi = GetDpiForWindow(hwnd);
-        let pad = dip_scalar_to_px(theme::spacing::XXL, dpi);
-        let btn_h = dip_scalar_to_px(28.0, dpi);
-        let btn_w = dip_scalar_to_px(120.0, dpi);
-        let cancel_w = dip_scalar_to_px(80.0, dpi);
-        let btn_y = rc.bottom - pad - btn_h;
-        inner.continue_rect = RECT {
-            left: rc.right - pad - btn_w,
-            top: btn_y,
-            right: rc.right - pad,
-            bottom: btn_y + btn_h,
-        };
-        if inner.has_cancel {
-            inner.cancel_rect = RECT {
-                left: inner.continue_rect.left - dip_scalar_to_px(theme::spacing::SM, dpi) - cancel_w,
-                top: btn_y,
-                right: inner.continue_rect.left - dip_scalar_to_px(theme::spacing::SM, dpi),
-                bottom: btn_y + btn_h,
-            };
-        }
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, COLORREF(0x00FFFFFF));
-        let mut title: Vec<u16> = inner.prompt.title.encode_utf16().collect();
-        title.push(0);
-        let _ = TextOutW(hdc, pad, pad, &title);
-        SetTextColor(hdc, COLORREF(0x00CCCCCC));
-        let mut msg: Vec<u16> = inner.prompt.message.encode_utf16().collect();
-        msg.push(0);
-        let _ = TextOutW(hdc, pad, pad + dip_scalar_to_px(28.0, dpi), &msg);
-        if let Some(level) = inner.volume {
-            SetTextColor(hdc, COLORREF(0x00FFFFFF));
-            let readout = tinycast_pure::volume::percentage(level);
-            let mut vol: Vec<u16> = readout.encode_utf16().collect();
-            vol.push(0);
-            let _ = TextOutW(hdc, pad, pad + dip_scalar_to_px(56.0, dpi), &vol);
-        }
-        fill_button(hdc, inner.continue_rect, true);
-        SetTextColor(hdc, COLORREF(0x00FFFFFF));
-        let mut acc: Vec<u16> = inner.prompt.accept.encode_utf16().collect();
-        acc.push(0);
-        let _ = TextOutW(
-            hdc,
-            inner.continue_rect.left + 12,
-            inner.continue_rect.top + 6,
-            &acc,
-        );
-        if inner.has_cancel && !inner.prompt.cancel.is_empty() {
-            fill_button(hdc, inner.cancel_rect, false);
-            let mut can: Vec<u16> = inner.prompt.cancel.encode_utf16().collect();
-            can.push(0);
-            let _ = TextOutW(
-                hdc,
-                inner.cancel_rect.left + 12,
-                inner.cancel_rect.top + 6,
-                &can,
-            );
-        }
-        let _ = EndPaint(hwnd, &ps);
-        let _ = ID_CONTINUE;
-        let _ = ID_CANCEL;
-        let _ = SW_HIDE;
-        let _ = WINDOW_EX_STYLE::default();
+        let (x, _) = client_dip(hwnd, lparam);
+        set_volume_from_x(hwnd, x);
     }
 }
 
-unsafe fn fill_button(hdc: windows::Win32::Graphics::Gdi::HDC, rect: RECT, accent: bool) {
-    let color = if accent {
-        COLORREF(0x00E08A32)
-    } else {
-        COLORREF(0x00444444)
-    };
-    let br = CreateSolidBrush(color);
-    let _ = FillRect(hdc, &rect, br);
-    let _ = DeleteObject(HGDIOBJ(br.0));
+fn paint_d2d(hwnd: HWND) {
+    unsafe {
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+        if ptr.is_null() {
+            return;
+        }
+        let inner = &mut *ptr;
+        let prompt = inner.prompt.clone();
+        let has_cancel = inner.has_cancel;
+        let volume = inner.volume;
+        let content = content_of(&prompt, has_cancel, volume);
+        let mut hits: Option<DialogHits> = None;
+        let _ = inner.painter.paint(hwnd, |target, fonts| {
+            hits = Some(ds::paint(target, fonts, &content)?);
+            Ok(())
+        });
+        if let Some(h) = hits {
+            inner.continue_rect = h.accept;
+            inner.cancel_rect = h.cancel;
+            inner.volume_rect = h.volume;
+        }
+    }
 }
 
 fn hit(hwnd: HWND, lparam: LPARAM) {
-    let x = (lparam.0 as u32 & 0xFFFF) as i16 as i32;
-    let y = ((lparam.0 as u32 >> 16) & 0xFFFF) as i16 as i32;
+    let (x, y) = client_dip(hwnd, lparam);
     unsafe {
         let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
         if ptr.is_null() {
             return;
         }
         let inner = &*ptr;
-        if pt_in(inner.continue_rect, x, y) {
+        if ds::contains(inner.continue_rect, x, y) {
             set_result(hwnd, true);
             let _ = DestroyWindow(hwnd);
             return;
         }
-        if inner.has_cancel && pt_in(inner.cancel_rect, x, y) {
-            set_result(hwnd, false);
-            let _ = DestroyWindow(hwnd);
-            return;
+        if let Some(cancel) = inner.cancel_rect {
+            if ds::contains(cancel, x, y) {
+                set_result(hwnd, false);
+                let _ = DestroyWindow(hwnd);
+                return;
+            }
+        }
+        if let Some(volume) = inner.volume_rect {
+            if ds::contains(volume, x, y) {
+                (*ptr).dragging = true;
+                let _ = SetCapture(hwnd);
+                set_volume_from_x(hwnd, x);
+            }
         }
     }
-}
-
-fn pt_in(r: RECT, x: i32, y: i32) -> bool {
-    x >= r.left && x < r.right && y >= r.top && y < r.bottom
 }
 
 #[cfg(test)]
@@ -484,5 +510,22 @@ mod tests {
         assert!(!is_up());
         assert!(begin());
         end();
+    }
+
+    #[test]
+    fn dialog_width_is_420() {
+        assert_eq!(tinycast_pure::layout::dialog::frame().0, 420.0);
+        assert!(tinycast_pure::layout::dialog::cancel_is_leading());
+    }
+
+    #[test]
+    fn dialog_paint_is_not_gdi_marker() {
+        let src = include_str!("dialog.rs");
+        let impl_src = src.split("mod tests").next().unwrap_or(src);
+        let marker = ["Text", "OutW"].concat();
+        assert!(
+            !impl_src.contains(&marker),
+            "dialog must not paint with GDI {marker}"
+        );
     }
 }

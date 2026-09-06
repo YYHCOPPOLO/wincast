@@ -41,6 +41,16 @@ pub fn fluent_for_sf(sf: &str) -> Option<&'static str> {
         "lock.shield" => "\u{EA18}",
         "arrow.up.arrow.down.circle" => "\u{E895}",
         "info.circle" => "\u{E946}",
+        "info.circle.fill" => "\u{EA1F}",
+        "speaker.wave.2" => "\u{E767}",
+        "speaker.slash.fill" => "\u{E74F}",
+        "checkmark.circle.fill" => "\u{E73E}",
+        "exclamationmark.circle.fill" => "\u{EA39}",
+        "plus" => "\u{E710}",
+        "folder" => "\u{E8B7}",
+        "rectangle.stack" => "\u{E8B1}",
+        "heart" => "\u{EB51}",
+        "checkmark" => "\u{E73E}",
         _ => return None,
     })
 }

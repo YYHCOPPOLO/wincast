@@ -1,12 +1,15 @@
 pub mod appearance;
 pub mod chat;
+pub mod dialog;
 pub mod fonts;
+pub mod host;
 pub mod keycap;
 pub mod panel;
 pub mod row;
 pub mod settings;
 pub mod squircle;
 pub mod symbols;
+pub mod text;
 
 pub use fonts::Fonts;
 pub use keycap::paint_keycap;
