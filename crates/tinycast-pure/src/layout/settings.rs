@@ -24,6 +24,15 @@ pub fn columns_overlap(a: DipRect, b: DipRect) -> bool {
     a.x < b.x + b.w && b.x < a.x + a.w
 }
 
+pub fn x_to_detail_local(x: f32) -> Option<f32> {
+    let side = crate::theme::size::SETTINGS_SIDEBAR;
+    if x < side {
+        None
+    } else {
+        Some(x - side)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -36,5 +45,15 @@ mod tests {
         assert_eq!(detail.x, 215.0);
         assert!(!columns_overlap(side, detail));
         assert_eq!(side.x + side.w, detail.x);
+    }
+
+    #[test]
+    fn detail_hit_is_local_to_sidebar() {
+        let detail = crate::layout::settings::detail_rect(860.0, 700.0);
+        assert_eq!(detail.x, 215.0);
+        let local = x_to_detail_local(100.0);
+        assert!(local.is_none());
+        assert_eq!(x_to_detail_local(215.0), Some(0.0));
+        assert_eq!(x_to_detail_local(315.0), Some(100.0));
     }
 }

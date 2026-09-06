@@ -5,6 +5,7 @@ use windows::core::w;
 use windows::Win32::Foundation::{
     COLORREF, D2DERR_RECREATE_TARGET, FALSE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
+use windows::Foundation::Numerics::Matrix3x2;
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F,
     D2D_SIZE_U,
@@ -538,6 +539,42 @@ fn paint_scene(
     }
 }
 
+fn identity_transform() -> Matrix3x2 {
+    Matrix3x2 {
+        M11: 1.0,
+        M12: 0.0,
+        M21: 0.0,
+        M22: 1.0,
+        M31: 0.0,
+        M32: 0.0,
+    }
+}
+
+fn detail_origin_transform() -> Matrix3x2 {
+    Matrix3x2 {
+        M11: 1.0,
+        M12: 0.0,
+        M21: 0.0,
+        M22: 1.0,
+        M31: theme::size::SETTINGS_SIDEBAR,
+        M32: 0.0,
+    }
+}
+
+fn with_detail_origin<R>(
+    target: &ID2D1RenderTarget,
+    f: impl FnOnce() -> windows::core::Result<R>,
+) -> windows::core::Result<R> {
+    unsafe {
+        target.SetTransform(&detail_origin_transform());
+    }
+    let result = f();
+    unsafe {
+        target.SetTransform(&identity_transform());
+    }
+    result
+}
+
 unsafe fn paint_detail(
     hwnd: HWND,
     target: &ID2D1RenderTarget,
@@ -557,16 +594,37 @@ unsafe fn paint_detail(
     if (*inner).confirming_reset || (*inner).confirming_clear || (*inner).confirming_snippets {
         hide_edits(inner);
         if let Some(core) = core {
+            with_detail_origin(target, || {
+                if (*inner).confirming_snippets {
+                    crate::features::snippets::settings::pane::paint(
+                        target,
+                        formats,
+                        core.settings.snippets_enabled,
+                        core.settings.snippets_show_in_launcher,
+                        detail_w,
+                        (*inner).scroll,
+                    )
+                } else if (*inner).confirming_clear {
+                    crate::features::clipboard::settings::pane::paint(
+                        target,
+                        formats,
+                        core.settings.clipboard_retention_days,
+                        &core.settings.clipboard_disabled_apps,
+                        detail_w,
+                        (*inner).scroll,
+                    )
+                } else {
+                    paint_search_section(
+                        target,
+                        formats,
+                        &layout_search_section(detail_w),
+                        core.ranking_is_empty(),
+                        (*inner).scroll,
+                    )
+                }
+            })?;
             let layout = layout_confirm(width, height);
             if (*inner).confirming_snippets {
-                crate::features::snippets::settings::pane::paint(
-                    target,
-                    formats,
-                    core.settings.snippets_enabled,
-                    core.settings.snippets_show_in_launcher,
-                    detail_w,
-                    (*inner).scroll,
-                )?;
                 paint_confirm_copy(
                     target,
                     formats,
@@ -575,14 +633,6 @@ unsafe fn paint_detail(
                     crate::features::snippets::settings::pane::enable_copy(),
                 )?;
             } else if (*inner).confirming_clear {
-                crate::features::clipboard::settings::pane::paint(
-                    target,
-                    formats,
-                    core.settings.clipboard_retention_days,
-                    &core.settings.clipboard_disabled_apps,
-                    detail_w,
-                    (*inner).scroll,
-                )?;
                 paint_confirm_copy(
                     target,
                     formats,
@@ -596,18 +646,28 @@ unsafe fn paint_detail(
                     },
                 )?;
             } else {
-                paint_search_section(
-                    target,
-                    formats,
-                    &layout_search_section(detail_w),
-                    core.ranking_is_empty(),
-                    (*inner).scroll,
-                )?;
                 paint_confirm(target, formats, &layout, (width, height))?;
             }
         }
         return Ok(());
     }
+    with_detail_origin(target, || {
+        paint_detail_panes(
+            hwnd, target, formats, selected, inner, core, sidebar_w, detail_w,
+        )
+    })
+}
+
+unsafe fn paint_detail_panes(
+    hwnd: HWND,
+    target: &ID2D1RenderTarget,
+    formats: &Formats<'_>,
+    selected: SettingsTab,
+    inner: *mut SettingsInner,
+    core: Option<&AppCore>,
+    sidebar_w: f32,
+    detail_w: f32,
+) -> windows::core::Result<()> {
     if selected == SettingsTab::About {
         hide_edits(inner);
         crate::features::settings::panes::about::paint(
@@ -788,7 +848,7 @@ unsafe fn paint_detail(
                 &core.visibility,
                 &core.hotkeys,
                 (*inner).recorder.action.as_deref(),
-                sidebar_w,
+                0.0,
                 detail_w,
                 (*inner).scroll,
             )?;
@@ -1641,20 +1701,6 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
     let dpi = GetDpiForWindow(hwnd);
     let x = px_to_dip(px, dpi);
     let y = px_to_dip(py, dpi);
-    if let Some(tab) = tab_at(x, y) {
-        if let Some(inner) = inner_from(hwnd) {
-            if (*inner).recorder.is_recording() {
-                (*inner).recorder.cancel();
-                if let Some(core) = core_from_host((*inner).host) {
-                    (*core).resume_global_hotkeys();
-                }
-            }
-            if let Some(core) = core_from_host((*inner).host) {
-                (*core).select_settings_tab(tab);
-            }
-        }
-        return;
-    }
     let Some(inner) = inner_from(hwnd) else {
         return;
     };
@@ -1686,13 +1732,22 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         let _ = InvalidateRect(hwnd, None, FALSE);
         return;
     }
-    let sidebar_w = theme::size::SETTINGS_SIDEBAR;
-    if x < sidebar_w {
+    let Some(detail_x) = tinycast_pure::layout::settings::x_to_detail_local(x) else {
+        if let Some(tab) = tab_at(x, y) {
+            if (*inner).recorder.is_recording() {
+                (*inner).recorder.cancel();
+                if let Some(core) = core_from_host((*inner).host) {
+                    (*core).resume_global_hotkeys();
+                }
+            }
+            if let Some(core) = core_from_host((*inner).host) {
+                (*core).select_settings_tab(tab);
+            }
+        }
         return;
-    }
-    let detail_x = x - sidebar_w;
+    };
     let detail_y = y + (*inner).scroll;
-    let detail_w = (width - sidebar_w).max(0.0);
+    let detail_w = (width - theme::size::SETTINGS_SIDEBAR).max(0.0);
     let tab = selected_tab(inner);
     if tab == SettingsTab::WindowManagement {
         let Some(core) = core_from_host((*inner).host) else {
