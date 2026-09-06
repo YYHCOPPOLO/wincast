@@ -822,6 +822,25 @@ fn paint_row(
     Ok(())
 }
 
+pub fn paint_icon_at(
+    target: &ID2D1RenderTarget,
+    cache: &mut IconCache,
+    source: Option<&str>,
+    x: f32,
+    y: f32,
+    size: f32,
+    dpi: f32,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    if let Some(source) = source {
+        if let Some(pixels) = cache.get_or_load(source, dpi.round() as u32, appearance) {
+            let _ = draw_icon(target, pixels, x, y, size);
+            return Ok(());
+        }
+    }
+    paint_icon_placeholder(target, x, y, size)
+}
+
 fn paint_icon_placeholder(
     target: &ID2D1RenderTarget,
     x: f32,

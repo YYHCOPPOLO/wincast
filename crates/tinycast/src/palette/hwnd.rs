@@ -380,6 +380,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
             clipboard_preview: None,
             tab_hint: None,
             clipboard_filter: None,
+            compact_favorite_icons: &[],
         };
         inner.renderer.paint(hwnd, params, inner.present_alpha);
         return;
@@ -400,6 +401,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     } else {
         "chevron.left"
     };
+    let compact_favorite_icons = (*core).compact_favorite_icon_sources();
     let params = PaintParams {
         placeholder,
         placeholder_text: placeholder_owned.as_str(),
@@ -413,6 +415,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         clipboard_preview: preview.as_deref(),
         tab_hint,
         clipboard_filter: filter,
+        compact_favorite_icons: &compact_favorite_icons,
     };
     inner.renderer.paint(hwnd, params, inner.present_alpha);
 }

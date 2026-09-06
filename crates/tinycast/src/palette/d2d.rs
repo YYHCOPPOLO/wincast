@@ -54,6 +54,7 @@ pub struct PaintParams<'a> {
     pub clipboard_preview: Option<&'a str>,
     pub tab_hint: Option<&'a str>,
     pub clipboard_filter: Option<FilterButtonPaint>,
+    pub compact_favorite_icons: &'a [Option<String>],
 }
 
 pub struct FilterButtonPaint {
@@ -389,6 +390,15 @@ fn paint_scene(
             params.header_symbol,
             params.appearance,
         );
+        if !params.compact_favorite_icons.is_empty() {
+            let _ = paint_compact_favorites(
+                target,
+                params.compact_favorite_icons,
+                params.cache,
+                dpi,
+                params.appearance,
+            );
+        }
         if params.placeholder {
             let _ = paint_placeholder(
                 target,
@@ -622,6 +632,32 @@ fn paint_tab_hint(
             D2D1_DRAW_TEXT_OPTIONS_NONE,
             DWRITE_MEASURING_MODE_NATURAL,
         );
+    }
+    Ok(())
+}
+
+fn paint_compact_favorites(
+    target: &ID2D1RenderTarget,
+    icons: &[Option<String>],
+    cache: &mut IconCache,
+    dpi: f32,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    let trailing = tinycast_pure::layout::palette_chrome::compact_favorites_trailing(icons.len());
+    let (x, _y, w, _h) = super::edit::search_field_dip_with_trailing(trailing);
+    let search_right = x + w;
+    for (index, source) in icons.iter().enumerate() {
+        let rect = tinycast_pure::layout::palette_chrome::compact_favorite_slot(index, search_right);
+        list::paint_icon_at(
+            target,
+            cache,
+            source.as_deref(),
+            rect.x,
+            rect.y,
+            rect.w,
+            dpi,
+            appearance,
+        )?;
     }
     Ok(())
 }

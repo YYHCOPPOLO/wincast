@@ -25,6 +25,25 @@ pub fn tab_hint_visible(expanded: bool, tab_opens_ai: bool) -> bool {
     expanded && tab_opens_ai
 }
 
+pub fn compact_favorite_slot(index: usize, search_right: f32) -> DipRect {
+    let size = theme::size::ROW_ICON;
+    DipRect {
+        x: search_right + theme::spacing::MD + index as f32 * (size + theme::spacing::SM),
+        y: theme::size::HEADER_PADDING + (theme::size::HEADER_HEIGHT - size) / 2.0,
+        w: size,
+        h: size,
+    }
+}
+
+pub fn compact_favorites_trailing(count: usize) -> f32 {
+    let n = count.min(5) as f32;
+    if n <= 0.0 {
+        0.0
+    } else {
+        theme::spacing::MD + n * (theme::size::ROW_ICON + theme::spacing::SM)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,6 +63,15 @@ mod tests {
         assert!((r.x - (theme::spacing::MD * 2.0 + 22.0 + theme::spacing::MD)).abs() < 0.01);
         assert_eq!(r.y, theme::size::HEADER_PADDING);
         assert_eq!(r.h, theme::size::HEADER_HEIGHT);
+    }
+
+    #[test]
+    fn compact_favorite_slot_is_row_icon() {
+        let r = compact_favorite_slot(0, 400.0);
+        assert_eq!(r.w, 24.0);
+        assert_eq!(r.h, 24.0);
+        let r1 = compact_favorite_slot(1, 400.0);
+        assert!((r1.x - r.x - 24.0 - theme::spacing::SM).abs() < 0.01);
     }
 
     #[test]

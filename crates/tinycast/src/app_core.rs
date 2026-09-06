@@ -44,8 +44,8 @@ use crate::features::launcher::settings::items::{
     commands_catalog, commit_alias_text, hotkey_action_key,
 };
 use crate::features::launcher::ui::coordinator::{
-    copy_path_text, copy_text, execute, launch_spec, record_if_needed, reveal_path, show_in_folder,
-    LaunchSpec,
+    copy_path_text, copy_text, execute, icon_source, launch_spec, record_if_needed, reveal_path,
+    show_in_folder, LaunchSpec,
 };
 use crate::features::launcher::ui::list::{
     clamp_scroll, content_height, ensure_visible, list_bottom, list_top, paint_items, row_y,
@@ -321,8 +321,33 @@ impl AppCore {
         } else if self.palette.mode == PaletteMode::Ai {
             crate::features::ai::ui::screen::model_trailing_width()
         } else {
-            0.0
+            tinycast_pure::layout::palette_chrome::compact_favorites_trailing(
+                self.compact_favorite_entries().len(),
+            )
         }
+    }
+
+    fn compact_favorite_entries(&self) -> Vec<AppEntry> {
+        if self.expanded
+            || !self.settings.show_favorites_in_compact
+            || self.palette.mode != PaletteMode::Launcher
+        {
+            return Vec::new();
+        }
+        let catalog = self.catalog();
+        self.favorites
+            .ids
+            .iter()
+            .filter_map(|id| catalog.iter().find(|e| e.id == *id).cloned())
+            .take(5)
+            .collect()
+    }
+
+    pub fn compact_favorite_icon_sources(&self) -> Vec<Option<String>> {
+        self.compact_favorite_entries()
+            .iter()
+            .map(icon_source)
+            .collect()
     }
 
     pub fn clipboard_filter_paint(&self) -> Option<crate::palette::d2d::FilterButtonPaint> {
@@ -2839,6 +2864,9 @@ impl AppCore {
                 return;
             }
         }
+        if self.hit_compact_favorite(x, y, panel_w) {
+            return;
+        }
         if point_in(menu_button_rect(panel_h), x, y) {
             self.toggle_app_menu();
             return;
@@ -2860,6 +2888,25 @@ impl AppCore {
         if self.select_at(x, y) && double {
             self.activate_selected();
         }
+    }
+
+    fn hit_compact_favorite(&mut self, x: f32, y: f32, panel_w: f32) -> bool {
+        let entries = self.compact_favorite_entries();
+        if entries.is_empty() {
+            return false;
+        }
+        let trailing = self.search_trailing_width();
+        let search = tinycast_pure::layout::palette_chrome::search_field_rect(panel_w, trailing);
+        let search_right = search.x + search.w;
+        for (i, entry) in entries.iter().enumerate() {
+            let rect = tinycast_pure::layout::palette_chrome::compact_favorite_slot(i, search_right);
+            if point_in(rect, x, y) {
+                let entry = entry.clone();
+                self.activate_entry(&entry);
+                return true;
+            }
+        }
+        false
     }
 
     pub fn pointer_move(&mut self, x: f32, y: f32, panel_w: f32, panel_h: f32) {
@@ -4642,6 +4689,31 @@ pub fn placeholder_for(mode: PaletteMode, argument_name: Option<&str>) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_favorite_click_launches() {
+        let mut c = AppCore::new();
+        c.toggle_palette();
+        assert!(!c.expanded);
+        c.settings.show_favorites_in_compact = true;
+        c.entries.push(AppEntry {
+            id: "command:noop-fav".into(),
+            kind: AppKind::Command,
+            name: "Fav".into(),
+            fields: tinycast_pure::search_relevance::SearchFields {
+                display_name: "Fav".into(),
+                ..Default::default()
+            },
+            hotkey: None,
+        });
+        c.favorites.ids.push("command:noop-fav".into());
+        assert_eq!(c.compact_favorite_icon_sources().len(), 1);
+        let trailing = c.search_trailing_width();
+        let search = tinycast_pure::layout::palette_chrome::search_field_rect(750.0, trailing);
+        let slot = tinycast_pure::layout::palette_chrome::compact_favorite_slot(0, search.x + search.w);
+        c.pointer_down(slot.x + 2.0, slot.y + 2.0, 750.0, 64.0, false);
+        assert_eq!(c.compact_favorite_icon_sources().len(), 1);
+    }
 
     #[test]
     fn launcher_search_placeholder_is_long_form() {
