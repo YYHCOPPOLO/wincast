@@ -939,6 +939,7 @@ unsafe fn paint_detail_panes(
                     show_in_menu_bar: core.settings.show_in_menu_bar,
                     pop_to_root: core.settings.pop_to_root_timeout,
                     auto_switch: core.settings.auto_switch_input_source,
+                    chrome: settings_appearance(inner),
                 },
                 detail_w,
                 (*inner).scroll,
@@ -2094,7 +2095,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             return;
         };
         use crate::features::settings::panes::general::{GeneralHit, GeneralToggle};
-        match crate::features::settings::panes::general::hit(detail_x, detail_y, (*inner).scroll) {
+        match crate::features::settings::panes::general::hit(detail_x, y, (*inner).scroll) {
             Some(GeneralHit::PaletteRecorder) => {
                 (*core).pause_global_hotkeys();
                 (*inner).recorder.begin("hotkey.togglePalette".into());

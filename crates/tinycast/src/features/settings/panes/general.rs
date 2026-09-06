@@ -1,18 +1,17 @@
 //! Settings → General: shortcuts, search, Hyper, appearance, launch.
 
+use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
+    ID2D1RenderTarget, D2D1_ROUNDED_RECT,
 };
-use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
+use crate::design_system::settings::{
+    self as ds, GroupedSection, RowTrailing, CARD_PAD, ROW_H,
+};
 use crate::features::hotkeys::service::hyper::HyperKey;
 use crate::features::launcher::settings::items::Formats;
-
-const ROW_H: f32 = 52.0;
-const TOGGLE_W: f32 = 40.0;
-const TOGGLE_H: f32 = 22.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GeneralToggle {
@@ -55,36 +54,114 @@ pub struct GeneralState<'a> {
     pub show_in_menu_bar: bool,
     pub pop_to_root: i64,
     pub auto_switch: bool,
+    pub chrome: u8,
+}
+
+pub fn general_sections() -> [&'static str; 5] {
+    [
+        "Global Shortcuts",
+        "Search",
+        "Hyper Key",
+        "Appearance",
+        "General",
+    ]
+}
+
+fn section_specs() -> [(&'static str, Option<&'static str>, &'static [GeneralHit]); 5] {
+    [
+        (
+            "Global Shortcuts",
+            Some("Summon the fuzzy app launcher."),
+            &[GeneralHit::PaletteRecorder],
+        ),
+        (
+            "Search",
+            Some("Tinycast privately learns which results you choose for each query. Reset all learned choices to restore the default order."),
+            &[GeneralHit::ResetRanking],
+        ),
+        (
+            "Hyper Key",
+            None,
+            &[GeneralHit::HyperKey, GeneralHit::HyperShift],
+        ),
+        (
+            "Appearance",
+            None,
+            &[
+                GeneralHit::Appearance,
+                GeneralHit::Compact,
+                GeneralHit::FavoritesInCompact,
+                GeneralHit::FollowCursor,
+                GeneralHit::Draggable,
+            ],
+        ),
+        (
+            "General",
+            None,
+            &[
+                GeneralHit::LaunchAtLogin,
+                GeneralHit::ShowInMenuBar,
+                GeneralHit::PopToRoot,
+                GeneralHit::AutoSwitchInput,
+            ],
+        ),
+    ]
+}
+
+fn grouped_at(y: f32, width: f32, header: &'static str, footer: Option<&'static str>, rows: usize) -> GroupedSection {
+    GroupedSection {
+        header: Some(header),
+        footer,
+        y,
+        width,
+        body_h: CARD_PAD * 2.0 + ROW_H * rows as f32,
+    }
+}
+
+fn row_rect(card: DipRect, index: usize) -> DipRect {
+    DipRect {
+        x: card.x,
+        y: card.y + CARD_PAD + index as f32 * ROW_H,
+        w: card.w,
+        h: ROW_H,
+    }
+}
+
+pub fn layout_general(scroll: f32) -> Vec<(GeneralHit, DipRect)> {
+    layout_general_sized(
+        theme::size::SETTINGS_WINDOW.0 - theme::size::SETTINGS_SIDEBAR,
+        scroll,
+    )
+}
+
+fn layout_general_sized(width: f32, scroll: f32) -> Vec<(GeneralHit, DipRect)> {
+    let mut y = ds::CARD_INSET;
+    let mut hits = Vec::new();
+    for (header, footer, rows) in section_specs() {
+        let section = grouped_at(y, width, header, footer, rows.len());
+        let card = section.card_rect();
+        for (i, hit) in rows.iter().copied().enumerate() {
+            let mut rect = row_rect(card, i);
+            rect.y -= scroll;
+            hits.push((hit, rect));
+        }
+        y = section.next_y();
+    }
+    hits
 }
 
 pub fn content_height() -> f32 {
-    24.0 + ROW_H * 13.0 + theme::spacing::XL * 4.0
-}
-
-fn row_y(index: usize) -> f32 {
-    24.0 + index as f32 * (ROW_H + theme::spacing::SM)
+    let width = theme::size::SETTINGS_WINDOW.0 - theme::size::SETTINGS_SIDEBAR;
+    let mut y = ds::CARD_INSET;
+    for (header, footer, rows) in section_specs() {
+        y = grouped_at(y, width, header, footer, rows.len()).next_y();
+    }
+    y + ds::CARD_INSET
 }
 
 pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<GeneralHit> {
-    let y = y + scroll;
-    let hits = [
-        GeneralHit::PaletteRecorder,
-        GeneralHit::ResetRanking,
-        GeneralHit::HyperKey,
-        GeneralHit::HyperShift,
-        GeneralHit::Appearance,
-        GeneralHit::Compact,
-        GeneralHit::FavoritesInCompact,
-        GeneralHit::FollowCursor,
-        GeneralHit::Draggable,
-        GeneralHit::LaunchAtLogin,
-        GeneralHit::ShowInMenuBar,
-        GeneralHit::PopToRoot,
-        GeneralHit::AutoSwitchInput,
-    ];
-    for (i, hit) in hits.into_iter().enumerate() {
-        let top = row_y(i);
-        if y >= top && y < top + ROW_H {
+    for (hit, rect) in layout_general(scroll) {
+        if y >= rect.y && y < rect.y + rect.h {
             return Some(hit);
         }
     }
@@ -130,157 +207,173 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
-    let origin = -scroll;
     let ranking_sub = if state.ranking_empty {
         "No learned ranking yet."
     } else {
         "Clear privately learned result order."
     };
     let pop_sub = format!("{} s idle timeout (0 = never).", state.pop_to_root);
-    let rows = [
-        (
-            "Global Shortcuts",
-            "Toggle palette recorder — click to rebind.",
-            true,
-        ),
-        ("Reset learned ranking", ranking_sub, !state.ranking_empty),
-        ("Hyper Key", hyper_subtitle(state.hyper), state.hyper != "none"),
-        (
-            "Include Shift",
-            "Hyper chord is Ctrl+Alt+Win+Shift. Disabled until a Hyper key is set.",
-            state.hyper_shift && hyper_includes_shift_enabled(state.hyper),
-        ),
-        ("Appearance", state.appearance, true),
-        (
-            "Compact mode",
-            "Start the palette as a compact bar.",
-            state.compact,
-        ),
-        (
-            "Show favorites in compact",
-            "Keep Ctrl+1…0 slots in compact mode.",
-            state.favorites_in_compact,
-        ),
-        (
-            "Follow the cursor",
-            "Open the palette on the cursor’s screen.",
-            state.follow_cursor,
-        ),
-        (
-            "Drag to reposition",
-            "Drag the palette to a new anchor.",
-            state.draggable,
-        ),
-        (
-            "Launch at login",
-            "Start Tinycast with Windows.",
-            state.launch_at_login,
-        ),
-        (
-            "Show in menu bar",
-            "Hide the tray icon without quitting. Hotkeys keep working.",
-            state.show_in_menu_bar,
-        ),
-        ("Pop to Root", pop_sub.as_str(), state.pop_to_root > 0),
-        (
-            "Auto-switch input source",
-            "Switch IME when the palette opens.",
-            state.auto_switch,
-        ),
-    ];
-    for (i, (title, sub, on)) in rows.iter().enumerate() {
-        paint_row(target, formats, title, sub, *on, row_y(i) + origin, width)?;
+    let hyper_on = hyper_includes_shift_enabled(state.hyper);
+    let hyper_title = HyperKey::from_raw(state.hyper).title();
+    let mut y = ds::CARD_INSET - scroll;
+    for (header, footer, rows) in section_specs() {
+        let section = grouped_at(y, width, header, footer, rows.len());
+        ds::paint_grouped_section(
+            target,
+            formats.header,
+            formats.caption,
+            &section,
+            state.chrome,
+        )?;
+        let card = section.card_rect();
+        for (i, hit) in rows.iter().copied().enumerate() {
+            let rect = row_rect(card, i);
+            let pad_x = rect.x + CARD_PAD;
+            let (title, sub, enabled, trailing) = match hit {
+                GeneralHit::PaletteRecorder => (
+                    "App Launcher",
+                    "Toggle palette recorder — click to rebind.",
+                    true,
+                    RowTrailing::None,
+                ),
+                GeneralHit::ResetRanking => (
+                    "Learned ranking",
+                    ranking_sub,
+                    !state.ranking_empty,
+                    RowTrailing::Label("Reset…"),
+                ),
+                GeneralHit::HyperKey => (
+                    "Hyper Key",
+                    hyper_subtitle(state.hyper),
+                    true,
+                    RowTrailing::Label(hyper_title),
+                ),
+                GeneralHit::HyperShift => (
+                    "Include Shift",
+                    "Hyper Key will remap with Shift in the chord.",
+                    hyper_on,
+                    RowTrailing::Toggle(state.hyper_shift && hyper_on),
+                ),
+                GeneralHit::Appearance => (
+                    "Theme",
+                    "Match the system, or pin Light or Dark.",
+                    true,
+                    RowTrailing::Label(state.appearance),
+                ),
+                GeneralHit::Compact => (
+                    "Compact mode",
+                    "Open the launcher as a slim search bar.",
+                    true,
+                    RowTrailing::Toggle(state.compact),
+                ),
+                GeneralHit::FavoritesInCompact => (
+                    "Show favorites in compact mode",
+                    "Pin favorite app icons to the compact bar.",
+                    state.compact,
+                    RowTrailing::Toggle(state.favorites_in_compact),
+                ),
+                GeneralHit::FollowCursor => (
+                    "Follow the cursor",
+                    "Open the launcher on the pointer’s display.",
+                    true,
+                    RowTrailing::Toggle(state.follow_cursor),
+                ),
+                GeneralHit::Draggable => (
+                    "Drag to reposition",
+                    "Grab the strip above search to move the launcher.",
+                    true,
+                    RowTrailing::Toggle(state.draggable),
+                ),
+                GeneralHit::LaunchAtLogin => (
+                    "Launch at login",
+                    "Start Tinycast automatically when you log in.",
+                    true,
+                    RowTrailing::Toggle(state.launch_at_login),
+                ),
+                GeneralHit::ShowInMenuBar => (
+                    "Show in menu bar",
+                    "Keep the Tinycast icon in the menu bar. Shortcuts still work when hidden.",
+                    true,
+                    RowTrailing::Toggle(state.show_in_menu_bar),
+                ),
+                GeneralHit::PopToRoot => (
+                    "Pop to Root",
+                    pop_sub.as_str(),
+                    true,
+                    RowTrailing::Label(""),
+                ),
+                GeneralHit::AutoSwitchInput => (
+                    "Auto-switch input source",
+                    "Switch IME when the palette opens.",
+                    true,
+                    RowTrailing::Toggle(state.auto_switch),
+                ),
+            };
+            let trailing = match hit {
+                GeneralHit::PopToRoot => RowTrailing::Label(pop_sub.as_str()),
+                _ => trailing,
+            };
+            ds::paint_settings_row(
+                target,
+                formats.body,
+                formats.caption,
+                title,
+                sub,
+                rect.y,
+                width,
+                pad_x,
+                enabled,
+                state.chrome,
+                trailing,
+            )?;
+            if hit == GeneralHit::PaletteRecorder {
+                paint_recorder_well(target, rect)?;
+            }
+        }
+        y = section.next_y();
     }
     Ok(())
 }
 
-fn paint_row(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    title: &str,
-    subtitle: &str,
-    on: bool,
-    y: f32,
-    width: f32,
-) -> windows::core::Result<()> {
-    let pad = theme::spacing::XL;
-    let text_w = width - pad * 3.0 - TOGGLE_W;
-    let white = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
+fn paint_recorder_well(target: &ID2D1RenderTarget, row: DipRect) -> windows::core::Result<()> {
+    let w = theme::size::SHORTCUT_RECORDER;
+    let h = 24.0;
+    let rect = D2D_RECT_F {
+        left: row.x + row.w - CARD_PAD - w,
+        top: row.y + (row.h - h) / 2.0,
+        right: row.x + row.w - CARD_PAD,
+        bottom: row.y + (row.h - h) / 2.0 + h,
     };
-    let muted = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.55,
+    let fill = unsafe {
+        target.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.06,
+            },
+            None,
+        )?
     };
-    let brush = unsafe { target.CreateSolidColorBrush(&white, None)? };
-    let title_wide: Vec<u16> = title.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &title_wide,
-            formats.body,
-            &D2D_RECT_F {
-                left: pad,
-                top: y + 8.0,
-                right: pad + text_w,
-                bottom: y + 28.0,
+    let stroke = unsafe {
+        target.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: theme::colors::CARD_STROKE_ALPHA,
             },
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&muted, None)? };
-    let sub_wide: Vec<u16> = subtitle.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &sub_wide,
-            formats.caption,
-            &D2D_RECT_F {
-                left: pad,
-                top: y + 28.0,
-                right: pad + text_w,
-                bottom: y + ROW_H - 4.0,
-            },
-            &muted_brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    let fill = if on {
-        D2D1_COLOR_F {
-            r: 0.2,
-            g: 0.55,
-            b: 1.0,
-            a: 1.0,
-        }
-    } else {
-        D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 0.18,
-        }
+            None,
+        )?
     };
-    let toggle_brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
+    let rounded = D2D1_ROUNDED_RECT {
+        rect,
+        radiusX: theme::radius::MENU,
+        radiusY: theme::radius::MENU,
+    };
     unsafe {
-        target.FillRoundedRectangle(
-            &D2D1_ROUNDED_RECT {
-                rect: D2D_RECT_F {
-                    left: width - pad - TOGGLE_W,
-                    top: y + (ROW_H - TOGGLE_H) / 2.0,
-                    right: width - pad,
-                    bottom: y + (ROW_H - TOGGLE_H) / 2.0 + TOGGLE_H,
-                },
-                radiusX: TOGGLE_H / 2.0,
-                radiusY: TOGGLE_H / 2.0,
-            },
-            &toggle_brush,
-        );
+        target.FillRoundedRectangle(&rounded, &fill);
+        target.DrawRoundedRectangle(&rounded, &stroke, theme::size::HAIRLINE, None);
     }
     Ok(())
 }
@@ -290,10 +383,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn general_hits_hyper_and_menu_bar() {
-        assert_eq!(hit(10.0, row_y(2) + 4.0, 0.0), Some(GeneralHit::HyperKey));
+    fn general_section_order() {
         assert_eq!(
-            hit(10.0, row_y(10) + 4.0, 0.0),
+            general_sections(),
+            [
+                "Global Shortcuts",
+                "Search",
+                "Hyper Key",
+                "Appearance",
+                "General"
+            ]
+        );
+    }
+
+    #[test]
+    fn general_hits_hyper_and_menu_bar() {
+        let hits = layout_general(0.0);
+        let hyper = hits
+            .iter()
+            .find(|(h, _)| *h == GeneralHit::HyperKey)
+            .unwrap();
+        let menu = hits
+            .iter()
+            .find(|(h, _)| *h == GeneralHit::ShowInMenuBar)
+            .unwrap();
+        assert_eq!(hit(10.0, hyper.1.y + 4.0, 0.0), Some(GeneralHit::HyperKey));
+        assert_eq!(
+            hit(10.0, menu.1.y + 4.0, 0.0),
             Some(GeneralHit::ShowInMenuBar)
         );
         assert_eq!(cycle_hyper("none"), "capsLock");
