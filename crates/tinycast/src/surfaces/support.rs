@@ -23,7 +23,7 @@ const BM_SETCHECK: u32 = 0x00F1;
 use crate::app_core::AppCore;
 use crate::design_system::host::OverlayPainter;
 use crate::design_system::panel::paint_sheen;
-use crate::design_system::squircle::fill_squircle;
+use crate::design_system::squircle::{fill_squircle, stroke_squircle};
 use crate::design_system::text;
 use crate::features::launcher::ui::coordinator::{execute, LaunchSpec};
 use crate::platform::screens::dip_scalar_to_px;
@@ -62,9 +62,10 @@ struct Inner {
     reminders: HWND,
     painter: Option<OverlayPainter>,
     support_rect: DipRect,
+    remind_rect: DipRect,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Support,
     About,
@@ -152,6 +153,61 @@ fn support_chrome(width: f32, height: f32) -> SupportChrome {
             h: remind_h,
         },
     }
+}
+
+fn paint_remind_row(
+    target: &windows::Win32::Graphics::Direct2D::ID2D1RenderTarget,
+    fonts: &crate::design_system::Fonts,
+    row: DipRect,
+    on: bool,
+) -> windows::core::Result<()> {
+    let box_s = theme::size::CHECKBOX;
+    let box_rect = DipRect {
+        x: row.x,
+        y: row.y + (row.h - box_s) / 2.0,
+        w: box_s,
+        h: box_s,
+    };
+    let fill = if on {
+        text::BRAND
+    } else {
+        text::control_surface(0)
+    };
+    fill_squircle(target, box_rect, theme::radius::RECORDER_KEY_CAP, fill)?;
+    stroke_squircle(
+        target,
+        box_rect,
+        theme::radius::RECORDER_KEY_CAP,
+        theme::colors::ramp_rgba(0, theme::colors::BORDER_DARK_ALPHA, theme::colors::BORDER_LIGHT_ALPHA),
+        theme::size::HAIRLINE,
+    )?;
+    if on {
+        crate::design_system::symbols::paint_fluent_in(
+            target,
+            &fonts.dwrite,
+            "checkmark",
+            DipRect {
+                x: box_rect.x + 1.0,
+                y: box_rect.y + 1.0,
+                w: box_s - 2.0,
+                h: box_s - 2.0,
+            },
+            (1.0, 1.0, 1.0, 1.0),
+        )?;
+    }
+    text::draw(
+        target,
+        &fonts.row_title,
+        tinycast_pure::i18n::support_remind_later(tinycast_pure::i18n::UiLang::default()),
+        DipRect {
+            x: box_rect.x + box_s + theme::spacing::MD,
+            y: row.y,
+            w: (row.w - box_s - theme::spacing::MD).max(8.0),
+            h: row.h,
+        },
+        text::primary_ink(0),
+    )?;
+    Ok(())
 }
 
 fn empty_rect() -> DipRect {
@@ -283,6 +339,7 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
                 None,
             )
             .unwrap_or_default();
+            let _ = ShowWindow(box_hwnd, SW_HIDE);
             if let Some(inner) = inner_from(hwnd) {
                 (*inner).reminders = box_hwnd;
             }
@@ -342,6 +399,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 reminders: HWND::default(),
                 painter: OverlayPainter::new().ok(),
                 support_rect: empty_rect(),
+                remind_rect: empty_rect(),
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
             LRESULT(1)
@@ -391,6 +449,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 if contains((*inner).support_rect, x, y) {
                     let _ = execute(&LaunchSpec::Uri(CHECKOUT.into()));
                 }
+                if (*inner).kind == Kind::Support && contains((*inner).remind_rect, x, y) {
+                    if let Some(core) = core_from_host((*inner).host) {
+                        let next = !(*core).settings.support_reminders;
+                        (*core).set_support_reminders(next);
+                    }
+                    sync_reminders_checkbox(hwnd);
+                    let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, false);
+                }
             }
             LRESULT(0)
         }
@@ -424,6 +490,10 @@ fn paint(hwnd: HWND) {
         };
         let kind = (*inner).kind;
         let mut support_rect = empty_rect();
+        let mut remind_rect = empty_rect();
+        let reminders_on = core_from_host((*inner).host)
+            .map(|c| (*c).settings.support_reminders)
+            .unwrap_or(true);
         if let Some(painter) = (*inner).painter.as_mut() {
             let _ = painter.paint(hwnd, |target, fonts| {
                 let size = target.GetSize();
@@ -461,11 +531,15 @@ fn paint(hwnd: HWND) {
                     },
                     (1.0, 1.0, 1.0, 1.0),
                 )?;
+                let lang = tinycast_pure::i18n::UiLang::default();
                 let (title, subtitle) = match kind {
-                    Kind::Support => ("Support Tinycast", "Built with love."),
+                    Kind::Support => (
+                        tinycast_pure::i18n::support_title(lang),
+                        tinycast_pure::i18n::support_built_with_love(lang),
+                    ),
                     Kind::About => (
-                        "Tinycast for Windows",
-                        "A small launcher. Support keeps it independent.",
+                        tinycast_pure::i18n::about_product(lang),
+                        tinycast_pure::i18n::support_keeps_independent(lang),
                     ),
                 };
                 text::draw(
@@ -498,14 +572,14 @@ fn paint(hwnd: HWND) {
                 text::draw(
                     target,
                     &fonts.bar,
-                    "Support Tinycast",
+                    tinycast_pure::i18n::support_title(tinycast_pure::i18n::UiLang::default()),
                     support_rect,
                     (1.0, 1.0, 1.0, 1.0),
                 )?;
                 text::draw(
                     target,
                     &fonts.section,
-                    "Secure checkout on Polar.",
+                    tinycast_pure::i18n::support_checkout(tinycast_pure::i18n::UiLang::default()),
                     DipRect {
                         x: pad,
                         y: support_rect.y + btn_h + theme::spacing::MD,
@@ -514,9 +588,14 @@ fn paint(hwnd: HWND) {
                     },
                     text::tertiary_ink(0),
                 )?;
+                if matches!(kind, Kind::Support) {
+                    remind_rect = chrome.remind;
+                    paint_remind_row(target, fonts, remind_rect, reminders_on)?;
+                }
                 Ok(())
             });
             (*inner).support_rect = support_rect;
+            (*inner).remind_rect = remind_rect;
         }
         let _ = windows::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
     }

@@ -16,6 +16,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetAncestor, GetClientRect,
     GetForegroundWindow, GetWindowLongPtrW, HideCaret, IsWindow, IsWindowVisible, KillTimer,
@@ -39,7 +40,9 @@ use crate::platform::screens::dip_scalar_to_px;
 const CLASS: windows::core::PCWSTR = w!("TinycastPalette");
 const ANIM_TIMER_ID: usize = 1;
 const RESIGN_TIMER_ID: usize = 2;
+const CARET_TIMER_ID: usize = 3;
 const ANIM_TICK_MS: u32 = 16;
+const CARET_MS: u32 = 530;
 const ENTER_SCALE: f32 = 0.94;
 
 pub struct PaletteWindow {
@@ -164,6 +167,7 @@ impl PaletteWindow {
             let _ = SetForegroundWindow(self.hwnd);
             self.layout_search();
             self.focus_search();
+            let _ = SetTimer(self.hwnd, CARET_TIMER_ID, CARET_MS, None);
             if SetTimer(self.hwnd, ANIM_TIMER_ID, ANIM_TICK_MS, None) == 0 {
                 finish_anim(self.hwnd, inner);
             }
@@ -212,6 +216,15 @@ impl PaletteWindow {
         unsafe {
             let _ = InvalidateRect(self.hwnd, None, FALSE);
         }
+    }
+
+    pub fn set_locale(&self, locale: &str) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                (*inner).renderer.set_locale(locale);
+            }
+        }
+        self.invalidate();
     }
 
     fn layout_search(&self) {
@@ -366,6 +379,10 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         let params = PaintParams {
             placeholder: false,
             placeholder_text: "",
+            search_text: "",
+            caret_visible: false,
+            caret_utf16: 0,
+            search_trailing: 0.0,
             header_symbol: "magnifyingglass",
             items: &[],
             scroll: 0.0,
@@ -416,9 +433,35 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         "chevron.left"
     };
     let compact_favorite_icons = (*core).compact_favorite_icon_sources();
+    let search_trailing = (*core).search_trailing_width();
+    let composition = inner
+        .edit
+        .as_ref()
+        .map(|edit| super::edit::composition_text(edit.hwnd))
+        .unwrap_or_default();
+    let search_owned = super::edit::search_display(&(*core).palette.query, &composition);
+    let caret_utf16 = if composition.is_empty() {
+        inner
+            .edit
+            .as_ref()
+            .map(|edit| super::edit::caret_utf16(edit.hwnd))
+            .unwrap_or(search_owned.encode_utf16().count())
+    } else {
+        search_owned.encode_utf16().count()
+    };
+    let focused = inner
+        .edit
+        .as_ref()
+        .map(|edit| unsafe { GetFocus() } == edit.hwnd)
+        .unwrap_or(false);
+    let caret_visible = focused && !(*core).menu_is_open() && caret_blink_on();
     let params = PaintParams {
         placeholder,
         placeholder_text: placeholder_owned.as_str(),
+        search_text: search_owned.as_str(),
+        caret_visible,
+        caret_utf16,
+        search_trailing,
         header_symbol,
         items: &items,
         scroll,
@@ -534,6 +577,7 @@ unsafe fn finish_anim(hwnd: HWND, inner: *mut PaletteInner) {
         }
         PaletteAnimKind::Exit => {
             (*inner).icons.drop_all();
+            let _ = KillTimer(hwnd, CARET_TIMER_ID);
             let _ = ShowWindow(hwnd, SW_HIDE);
         }
     }
@@ -552,6 +596,14 @@ unsafe fn tick_anim(hwnd: HWND) {
     } else {
         apply_anim_frame(hwnd, inner);
     }
+}
+
+fn caret_blink_on() -> bool {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    (ms / u128::from(CARET_MS)) % 2 == 0
 }
 
 fn resign_should_hide(palette_visible: bool, foreground_is_self: bool) -> bool {
@@ -737,6 +789,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             } else if wparam.0 == RESIGN_TIMER_ID {
                 let _ = KillTimer(hwnd, RESIGN_TIMER_ID);
                 let _ = PostMessageW(hwnd, WM_RESIGN_PALETTE, WPARAM(0), LPARAM(0));
+            } else if wparam.0 == CARET_TIMER_ID {
+                let _ = InvalidateRect(hwnd, None, FALSE);
             }
             LRESULT(0)
         }
@@ -747,6 +801,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_DESTROY => {
             let _ = KillTimer(hwnd, ANIM_TIMER_ID);
             let _ = KillTimer(hwnd, RESIGN_TIMER_ID);
+            let _ = KillTimer(hwnd, CARET_TIMER_ID);
             LRESULT(0)
         }
         WM_NCDESTROY => {

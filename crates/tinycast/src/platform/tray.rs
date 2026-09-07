@@ -1,4 +1,5 @@
-use windows::core::w;
+use windows::core::{w, PCWSTR};
+use tinycast_pure::i18n::{chrome, Chrome};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
@@ -148,8 +149,19 @@ unsafe fn show_menu(hwnd: HWND) {
     let Ok(menu) = CreatePopupMenu() else {
         return;
     };
-    let _ = AppendMenuW(menu, MF_STRING, ID_SETTINGS, w!("Settings"));
-    let _ = AppendMenuW(menu, MF_STRING, ID_QUIT, w!("Quit Tinycast"));
+    let lang = core_from(hwnd)
+        .map(|core| (*core).ui_lang())
+        .unwrap_or_default();
+    let settings: Vec<u16> = chrome(Chrome::TraySettings, lang)
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let quit: Vec<u16> = chrome(Chrome::TrayQuit, lang)
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let _ = AppendMenuW(menu, MF_STRING, ID_SETTINGS, PCWSTR(settings.as_ptr()));
+    let _ = AppendMenuW(menu, MF_STRING, ID_QUIT, PCWSTR(quit.as_ptr()));
 
     let mut pt = windows::Win32::Foundation::POINT::default();
     let _ = GetCursorPos(&mut pt);
@@ -342,6 +354,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 mod tests {
     use super::*;
     use windows::Win32::UI::WindowsAndMessaging::HWND_MESSAGE;
+
+    #[test]
+    fn tray_rs_uses_i18n_chrome() {
+        let src = include_str!("tray.rs");
+        assert!(src.contains("chrome") || src.contains("TraySettings"));
+    }
 
     #[test]
     fn host_is_hidden_top_level_so_endsession_arrives() {

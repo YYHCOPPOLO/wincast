@@ -42,19 +42,7 @@ const ID_CONTINUE: usize = 1;
 const ID_RECORD: usize = 2;
 pub const WINDOW: (f32, f32) = (520.0, 400.0);
 
-const STEPS: [&str; 4] = [
-    "Welcome to Tinycast",
-    "Enable Pasting",
-    "Import from Raycast",
-    "You're all set",
-];
-
-const SUBTITLES: [&str; 4] = [
-    "Set a shortcut to summon the launcher from anywhere.",
-    "Let Tinycast paste items back into the app you were using.",
-    "Bring your shortcuts, favorites, and clipboard history along.",
-    "Tinycast is ready. Press your shortcut anytime to start.",
-];
+const STEP_COUNT: usize = 4;
 
 pub struct OnboardingWindow {
     pub hwnd: HWND,
@@ -87,7 +75,7 @@ impl OnboardingWindow {
             let hwnd = CreateWindowExW(
                 overlay_caption_ex(),
                 CLASS,
-                w!("Welcome to Tinycast"),
+                windows::core::PCWSTR::null(),
                 overlay_caption_style(),
                 220,
                 160,
@@ -251,7 +239,7 @@ fn continue_clicked(hwnd: HWND) {
         let Some(inner) = inner_from(hwnd) else {
             return;
         };
-        if (*inner).step + 1 < STEPS.len() {
+        if (*inner).step + 1 < STEP_COUNT {
             (*inner).step += 1;
             let _ = windows::Win32::Graphics::Gdi::InvalidateRect(
                 hwnd,
@@ -291,7 +279,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let record_btn = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
-                w!("Record shortcut"),
+                windows::core::PCWSTR::null(),
                 WINDOW_STYLE(WS_CHILD.0),
                 40,
                 140,
@@ -306,7 +294,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let continue_btn = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
-                w!("Continue"),
+                windows::core::PCWSTR::null(),
                 WINDOW_STYLE(WS_CHILD.0 | 1),
                 220,
                 140,
@@ -441,6 +429,9 @@ fn paint(hwnd: HWND) {
         };
         let step = (*inner).step.min(3);
         let recording = (*inner).recorder.is_recording();
+        let lang = core_from_host((*inner).host)
+            .map(|core| (*core).ui_lang())
+            .unwrap_or_default();
         let mut continue_rect = empty_rect();
         let mut record_rect = empty_rect();
         if let Some(painter) = (*inner).painter.as_mut() {
@@ -488,7 +479,7 @@ fn paint(hwnd: HWND) {
                 text::draw(
                     target,
                     &fonts.headline_center,
-                    STEPS[step],
+                    tinycast_pure::i18n::onboarding_title(step, lang),
                     DipRect {
                         x: pad,
                         y: pad + hero + theme::spacing::MD,
@@ -500,7 +491,7 @@ fn paint(hwnd: HWND) {
                 text::draw(
                     target,
                     &fonts.wrap_callout,
-                    SUBTITLES[step],
+                    tinycast_pure::i18n::onboarding_subtitle(step, lang),
                     DipRect {
                         x: pad,
                         y: pad + hero + 36.0,
@@ -534,10 +525,10 @@ fn paint(hwnd: HWND) {
                     continue_rect.h / 2.0,
                     text::control_surface(0),
                 )?;
-                let label = if step + 1 == STEPS.len() {
-                    "Get Started"
+                let label = if step + 1 == STEP_COUNT {
+                    tinycast_pure::i18n::onboarding_get_started(lang)
                 } else {
-                    "Continue"
+                    tinycast_pure::i18n::onboarding_continue(lang)
                 };
                 text::draw(
                     target,
@@ -548,7 +539,7 @@ fn paint(hwnd: HWND) {
                 )?;
                 let mut dot_x = size.width / 2.0 - 18.0;
                 let dot_y = continue_rect.y - 18.0;
-                for i in 0..STEPS.len() {
+                for i in 0..STEP_COUNT {
                     let on = i == step;
                     fill_squircle(
                         target,
@@ -645,5 +636,15 @@ mod tests {
         let impl_src = src.split("mod tests").next().unwrap_or(src);
         let marker = ["Text", "OutW"].concat();
         assert!(!impl_src.contains(&marker));
+    }
+
+    #[test]
+    fn onboarding_steps_come_from_i18n() {
+        let impl_src = include_str!("onboarding.rs")
+            .split("mod tests")
+            .next()
+            .unwrap();
+        assert!(!impl_src.contains("Welcome to Tinycast"));
+        assert!(impl_src.contains("onboarding_title"));
     }
 }

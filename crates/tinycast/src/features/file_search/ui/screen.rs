@@ -4,14 +4,23 @@ use crate::features::file_search::service::session::State;
 use crate::features::launcher::ui::list::PaintItem;
 
 pub fn empty_message(state: State, query: &str) -> &'static str {
+    empty_message_lang(state, query, tinycast_pure::i18n::UiLang::En)
+}
+
+pub fn empty_message_lang(
+    state: State,
+    query: &str,
+    lang: tinycast_pure::i18n::UiLang,
+) -> &'static str {
     if query.trim().is_empty() {
-        return "Type to search files and folders";
+        return tinycast_pure::i18n::file_search_empty("type", lang);
     }
-    match state {
-        State::Failed => "File search is unavailable",
-        State::Ready => "No files found",
-        State::Searching | State::Idle => "Searching files…",
-    }
+    let key = match state {
+        State::Failed => "unavailable",
+        State::Ready => "none",
+        State::Searching | State::Idle => "searching",
+    };
+    tinycast_pure::i18n::file_search_empty(key, lang)
 }
 
 pub fn paint_items(

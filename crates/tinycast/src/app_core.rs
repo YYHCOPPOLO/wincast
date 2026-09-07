@@ -362,7 +362,7 @@ impl AppCore {
             return None;
         }
         Some(crate::palette::d2d::FilterButtonPaint {
-            title: clip_screen::filter_title(self.clipboard_filter).to_string(),
+            title: clip_screen::filter_title_lang(self.clipboard_filter, self.ui_lang()).to_string(),
             open: self.menu == OpenMenu::ClipboardFilter,
             rect: clip_screen::filter_button_rect(theme::size::PANEL_WIDTH),
         })
@@ -390,45 +390,52 @@ impl AppCore {
 
     pub fn empty_results_text(&self) -> Option<&'static str> {
         let q = self.palette.query.trim();
+        let lang = self.ui_lang();
         match self.palette.mode {
             PaletteMode::Ai | PaletteMode::QuicklinkArguments | PaletteMode::ExtensionCommand => {
                 None
             }
-            PaletteMode::Clipboard => Some(clip_screen::empty_message(self.clipboard_filter)),
-            PaletteMode::Launcher => Some("No apps found"),
+            PaletteMode::Clipboard => Some(clip_screen::empty_message_lang(
+                self.clipboard_filter,
+                lang,
+            )),
+            PaletteMode::Launcher => Some(tinycast_pure::i18n::empty_no_apps(lang)),
             PaletteMode::CalculatorHistory => Some(if q.is_empty() {
-                "No calculations yet"
+                tinycast_pure::i18n::empty_no_calculations(lang)
             } else {
-                "No matching calculations"
+                tinycast_pure::i18n::empty_no_matching_calculations(lang)
             }),
             PaletteMode::Emoji => Some(if q.is_empty() {
-                "Loading emoji…"
+                tinycast_pure::i18n::empty_loading_emoji(lang)
             } else {
-                "No emoji found"
+                tinycast_pure::i18n::empty_no_emoji(lang)
             }),
-            PaletteMode::FileSearch => Some(crate::features::file_search::ui::screen::empty_message(
-                self.file_search.state(),
-                q,
-            )),
+            PaletteMode::FileSearch => Some(
+                crate::features::file_search::ui::screen::empty_message_lang(
+                    self.file_search.state(),
+                    q,
+                    lang,
+                ),
+            ),
             PaletteMode::Schedule => Some(if q.is_empty() {
-                "Nothing scheduled today or tomorrow"
+                tinycast_pure::i18n::empty_nothing_scheduled(lang)
             } else {
-                "No matching meetings"
+                tinycast_pure::i18n::empty_no_meetings(lang)
             }),
             PaletteMode::Uninstall => Some(if q.is_empty() {
-                "Nothing left to remove"
+                tinycast_pure::i18n::empty_nothing_left(lang)
             } else {
-                "No matching files"
+                tinycast_pure::i18n::empty_no_matching_files(lang)
             }),
             PaletteMode::Quicklinks => Some(if self.quicklinks.links().is_empty() {
-                "No quicklinks yet"
+                tinycast_pure::i18n::empty_no_quicklinks(lang)
             } else {
-                "No matching quicklinks"
+                tinycast_pure::i18n::empty_no_matching_quicklinks(lang)
             }),
             PaletteMode::AiHistory => Some(if q.is_empty() {
-                "No chats yet"
+                tinycast_pure::i18n::empty_no_chats(lang)
             } else {
-                "No matching chats"
+                tinycast_pure::i18n::empty_no_matching_chats(lang)
             }),
         }
     }
@@ -864,10 +871,14 @@ impl AppCore {
         ) {
             if self.settings.auto_join_confirms && !self.settings.camera_preview {
                 let ok = crate::surfaces::dialog::confirm(&crate::surfaces::dialog::ConfirmPrompt {
-                    title: format!("Join {}?", event.title),
-                    message: "This meeting is starting now.".into(),
-                    accept: "Join".into(),
-                    cancel: "Cancel".into(),
+                    title: tinycast_pure::i18n::join_now_title(event.title.as_str(), self.ui_lang()),
+                    message: tinycast_pure::i18n::join_now_message(self.ui_lang()).into(),
+                    accept: tinycast_pure::i18n::join_now_accept(self.ui_lang()).into(),
+                    cancel: tinycast_pure::i18n::chrome(
+                        tinycast_pure::i18n::Chrome::Cancel,
+                        self.ui_lang(),
+                    )
+                    .into(),
                 });
                 self.calendar.mark_joined(&event.id);
                 if !ok {
@@ -1656,7 +1667,7 @@ impl AppCore {
         } else {
             None
         };
-        placeholder_for(self.palette.mode, argument_name)
+        placeholder_for(self.palette.mode, argument_name, self.ui_lang())
     }
 
     pub fn install_app_index(&mut self) {
@@ -1787,7 +1798,7 @@ impl AppCore {
         let meeting = self.meeting_card();
         let lead = if card.is_some() || meeting.is_some() { 1 } else { 0 };
         let row_sel = self.palette.selection.checked_sub(lead).unwrap_or(usize::MAX);
-        let mut items = paint_items(&self.sections(), row_sel, &self.favorites);
+        let mut items = paint_items(&self.sections(), row_sel, &self.favorites, self.ui_lang());
         if let Some(result) = card {
             items.insert(0, card::paint_item(&result, self.palette.selection == 0));
         } else if let Some(event) = meeting {
@@ -2713,6 +2724,13 @@ impl AppCore {
         let next = self.ui_lang().cycle();
         self.settings.ui_language = next.as_str().to_string();
         let _ = self.settings.save();
+        let locale = next.dwrite_locale();
+        if let Some(window) = &self.palette_window {
+            window.set_locale(locale);
+        }
+        if let Some(window) = &self.settings_window {
+            window.set_locale(locale);
+        }
         self.invalidate_palette();
         self.invalidate_settings();
     }
@@ -4018,39 +4036,44 @@ impl AppCore {
     }
 
     fn primary_label(&self) -> &'static str {
+        let lang = self.ui_lang();
         if let Some(result) = self.calc_result() {
             if self.palette.selection == 0 {
                 return if card::is_actionable(&result) {
-                    "Copy Answer"
+                    tinycast_pure::i18n::footer_copy_answer(lang)
                 } else {
-                    "Open"
+                    tinycast_pure::i18n::footer_open(lang)
                 };
             }
         }
         if self.palette.mode == PaletteMode::CalculatorHistory {
-            return "Copy Answer";
+            return tinycast_pure::i18n::footer_copy_answer(lang);
         }
         if self.palette.mode == PaletteMode::Clipboard {
-            return "Paste";
+            return tinycast_pure::i18n::footer_paste(lang);
         }
         if self.palette.mode == PaletteMode::FileSearch {
-            return "Open";
+            return tinycast_pure::i18n::footer_open(lang);
         }
         if self.palette.mode == PaletteMode::Uninstall {
-            return crate::features::uninstall::ui::coordinator::primary_label();
+            return tinycast_pure::i18n::uninstall_label(lang);
         }
         if self.palette.mode == PaletteMode::QuicklinkArguments {
-            return "Continue";
+            return tinycast_pure::i18n::footer_continue(lang);
         }
         if self.palette.mode == PaletteMode::Ai {
-            return if self.ai.is_streaming() { "Stop" } else { "Send" };
+            return if self.ai.is_streaming() {
+                tinycast_pure::i18n::footer_stop(lang)
+            } else {
+                tinycast_pure::i18n::footer_send(lang)
+            };
         }
         if self.palette.mode == PaletteMode::AiHistory {
-            return "Open";
+            return tinycast_pure::i18n::footer_open(lang);
         }
         self.selected_entry()
-            .map(|e| e.kind.open_verb())
-            .unwrap_or("Open")
+            .map(|e| tinycast_pure::i18n::open_verb(e.kind, lang))
+            .unwrap_or(tinycast_pure::i18n::footer_open(lang))
     }
 
     fn hop_tab(&mut self) {
@@ -4223,7 +4246,8 @@ impl AppCore {
             self.close_menu();
             return;
         }
-        self.menu_header = clip_screen::filter_title(self.clipboard_filter).to_string();
+        self.menu_header =
+            clip_screen::filter_title_lang(self.clipboard_filter, self.ui_lang()).to_string();
         self.menu_items = vec![
             tinycast_pure::palette_menu::MenuItem {
                 id: "clip-filter-all",
@@ -4778,11 +4802,19 @@ fn new_item_id() -> String {
     }
 }
 
-pub fn placeholder_for(mode: PaletteMode, argument_name: Option<&str>) -> String {
-    if mode == PaletteMode::QuicklinkArguments {
-        return argument_name.unwrap_or("Enter a value…").to_string();
+pub fn placeholder_for(
+    mode: PaletteMode,
+    argument_name: Option<&str>,
+    lang: tinycast_pure::i18n::UiLang,
+) -> String {
+    if let Some(name) = argument_name {
+        return if lang == tinycast_pure::i18n::UiLang::ZhHans {
+            format!("输入{name}…")
+        } else {
+            format!("Enter {name}…")
+        };
     }
-    mode.placeholder().to_string()
+    tinycast_pure::i18n::palette_placeholder(mode, lang).to_string()
 }
 
 #[cfg(test)]
@@ -4817,19 +4849,35 @@ mod tests {
     #[test]
     fn launcher_search_placeholder_is_long_form() {
         assert_eq!(
-            placeholder_for(PaletteMode::Launcher, None),
+            placeholder_for(PaletteMode::Launcher, None, tinycast_pure::i18n::UiLang::En),
             "Search for apps and commands…"
         );
     }
 
     #[test]
     fn ai_live_placeholder_is_ask_anything() {
-        assert_eq!(placeholder_for(PaletteMode::Ai, None), "Ask anything…");
+        assert_eq!(
+            placeholder_for(PaletteMode::Ai, None, tinycast_pure::i18n::UiLang::En),
+            "Ask anything…"
+        );
+    }
+
+    #[test]
+    fn placeholder_for_respects_lang() {
+        assert_eq!(
+            placeholder_for(
+                PaletteMode::Launcher,
+                None,
+                tinycast_pure::i18n::UiLang::ZhHans
+            ),
+            "搜索应用和命令…"
+        );
     }
 
     #[test]
     fn clipboard_empty_results_uses_filter_message() {
         let mut c = AppCore::new();
+        c.settings.ui_language = "en".into();
         c.perform_hotkey("hotkey.toggleClipboard");
         assert_eq!(c.palette.mode, PaletteMode::Clipboard);
         assert_eq!(
@@ -4840,13 +4888,15 @@ mod tests {
 
     #[test]
     fn launcher_empty_results_is_no_apps_found() {
-        let c = AppCore::new();
+        let mut c = AppCore::new();
+        c.settings.ui_language = "en".into();
         assert_eq!(c.empty_results_text(), Some("No apps found"));
     }
 
     #[test]
     fn file_search_empty_states_use_empty_results() {
         let mut c = AppCore::new();
+        c.settings.ui_language = "en".into();
         c.settings.file_search_enabled = true;
         c.perform_hotkey("hotkey.searchFiles");
         assert_eq!(c.palette.mode, PaletteMode::FileSearch);

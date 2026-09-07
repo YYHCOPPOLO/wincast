@@ -441,8 +441,20 @@ fn paint(hwnd: HWND) {
                 };
                 fill_squircle(target, replace, btn_h / 2.0, text::control_surface(0))?;
                 fill_squircle(target, copy, btn_h / 2.0, text::control_surface(0))?;
-                text::draw(target, &fonts.bar, "Replace", replace, text::primary_ink(0))?;
-                text::draw(target, &fonts.bar, "Copy", copy, text::secondary_ink(0))?;
+                text::draw(
+                    target,
+                    &fonts.bar,
+                    tinycast_pure::i18n::qa_replace(tinycast_pure::i18n::UiLang::default()),
+                    replace,
+                    text::primary_ink(0),
+                )?;
+                text::draw(
+                    target,
+                    &fonts.bar,
+                    tinycast_pure::i18n::qa_copy(tinycast_pure::i18n::UiLang::default()),
+                    copy,
+                    text::secondary_ink(0),
+                )?;
                 Ok(())
             });
         }

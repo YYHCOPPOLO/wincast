@@ -12,7 +12,11 @@ pub fn confirm(name: &str, count: usize) -> bool {
             "Tinycast will move {count} item(s) for “{name}” to the Recycle Bin. Nothing is permanently deleted."
         ),
         accept: CONFIRM_ACTION.into(),
-        cancel: "Cancel".into(),
+        cancel: tinycast_pure::i18n::chrome(
+            tinycast_pure::i18n::Chrome::Cancel,
+            tinycast_pure::i18n::UiLang::default(),
+        )
+        .into(),
     })
 }
 

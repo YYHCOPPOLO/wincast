@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use tinycast_pure::app_entry::AppEntry;
 use tinycast_pure::favorites::FavoritesStore;
+use tinycast_pure::i18n::{favorites_title, kind_label, kind_section_title, results_title, UiLang};
 use tinycast_pure::hotkey::{DoubleTapModifier, HotKeyBinding};
 use tinycast_pure::launcher_results::{
     list_items, LauncherListItem, LauncherSection, LauncherSectionKind,
@@ -301,22 +302,32 @@ pub fn paint_items(
     sections: &[LauncherSection],
     selection: usize,
     _favorites: &FavoritesStore,
+    lang: UiLang,
 ) -> Vec<PaintItem> {
     let mut out = Vec::new();
     let mut sel = 0usize;
     for item in list_items(sections) {
         match item {
             LauncherListItem::Header(kind) => {
-                out.push(PaintItem::Header {
-                    title: kind.title().to_string(),
-                });
+                let title = match kind {
+                    tinycast_pure::launcher_results::LauncherSectionKind::Favorites => {
+                        favorites_title(lang).to_string()
+                    }
+                    tinycast_pure::launcher_results::LauncherSectionKind::Results => {
+                        results_title(lang).to_string()
+                    }
+                    tinycast_pure::launcher_results::LauncherSectionKind::Kind(k) => {
+                        kind_section_title(k, lang).to_string()
+                    }
+                };
+                out.push(PaintItem::Header { title });
             }
             LauncherListItem::Row(entry) => {
                 let fav_slot = favorite_slot_for(sections, entry, sel);
                 out.push(PaintItem::Row {
                     title: entry.name.clone(),
                     alias: entry.fields.user_alias.clone(),
-                    trailing: entry.kind.kind_label().to_string(),
+                    trailing: kind_label(entry.kind, lang).to_string(),
                     keycap: keycap_label(entry, fav_slot),
                     icon_source: icon_source(entry),
                     selected: sel == selection,
@@ -1350,7 +1361,7 @@ mod tests {
         let vis = VisibilityStore::default();
         let fav = FavoritesStore::default();
         let sections = ordered_results(&entries, "a", 0, &rank, &vis, &fav, false);
-        let items = paint_items(&sections, 0, &fav);
+        let items = paint_items(&sections, 0, &fav, UiLang::En);
         assert!(matches!(items[0], PaintItem::Row { selected: true, .. }));
         if let PaintItem::Row {
             title, trailing, ..
@@ -1373,7 +1384,7 @@ mod tests {
         let mut fav = FavoritesStore::default();
         fav.toggle("app:a".into());
         let sections = ordered_results(&entries, "", 0, &rank, &vis, &fav, true);
-        let items = paint_items(&sections, 0, &fav);
+        let items = paint_items(&sections, 0, &fav, UiLang::En);
         let row = items
             .iter()
             .find_map(|i| match i {

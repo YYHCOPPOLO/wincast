@@ -63,10 +63,15 @@ pub fn pick_volume(current: f32) -> Option<f32> {
     }
     LAST_VOLUME.store(current.to_bits(), Ordering::SeqCst);
     let prompt = ConfirmPrompt {
-        title: "Set Volume".into(),
-        message: "Choose the output volume. Use Left and Right to adjust.".into(),
-        accept: "Set Volume".into(),
-        cancel: "Cancel".into(),
+        title: tinycast_pure::i18n::dialog_set_volume(tinycast_pure::i18n::UiLang::default()).into(),
+        message: tinycast_pure::i18n::dialog_set_volume_message(tinycast_pure::i18n::UiLang::default())
+            .into(),
+        accept: tinycast_pure::i18n::dialog_set_volume(tinycast_pure::i18n::UiLang::default()).into(),
+        cancel: tinycast_pure::i18n::chrome(
+            tinycast_pure::i18n::Chrome::Cancel,
+            tinycast_pure::i18n::UiLang::default(),
+        )
+        .into(),
     };
     let accepted = run_volume(&prompt, current);
     end();
@@ -82,7 +87,8 @@ pub fn alert(title: &str, message: &str) {
     let prompt = ConfirmPrompt {
         title: title.to_string(),
         message: message.to_string(),
-        accept: "Continue".into(),
+        accept: tinycast_pure::i18n::onboarding_continue(tinycast_pure::i18n::UiLang::default())
+            .into(),
         cancel: String::new(),
     };
     if !begin() {

@@ -1,6 +1,6 @@
 //! Check for Updates: empty feed is a HUD, never a crash.
 
-use tinycast_pure::update::{readiness, UpdateActivity, EMPTY_FEED_HUD};
+use tinycast_pure::update::{readiness, UpdateActivity};
 
 use crate::features::updates::service::feed::{check_now, command_visible, FeedOutcome};
 
@@ -12,13 +12,19 @@ pub fn check_for_updates(activity: UpdateActivity) -> UpdateUi {
         return UpdateUi::Deferred;
     }
     match check_now() {
-        FeedOutcome::Empty => UpdateUi::Hud(EMPTY_FEED_HUD),
-        FeedOutcome::Current => UpdateUi::Hud("You're up to date."),
+        FeedOutcome::Empty => UpdateUi::Hud(tinycast_pure::i18n::update_none_configured(
+            tinycast_pure::i18n::UiLang::default(),
+        )),
+        FeedOutcome::Current => {
+            UpdateUi::Hud(tinycast_pure::i18n::update_up_to_date(tinycast_pure::i18n::UiLang::default()))
+        }
         FeedOutcome::Available { version, notes, .. } => UpdateUi::Offer {
             version: version.to_string(),
             notes,
         },
-        FeedOutcome::Failed(_) => UpdateUi::Hud("The update check failed."),
+        FeedOutcome::Failed(_) => {
+            UpdateUi::Hud(tinycast_pure::i18n::update_check_failed(tinycast_pure::i18n::UiLang::default()))
+        }
     }
 }
 
@@ -37,7 +43,12 @@ mod tests {
     #[test]
     fn empty_feed_is_hud() {
         let ui = check_for_updates(UpdateActivity::default());
-        assert_eq!(ui, UpdateUi::Hud("No updates configured."));
+        assert_eq!(
+            ui,
+            UpdateUi::Hud(tinycast_pure::i18n::update_none_configured(
+                tinycast_pure::i18n::UiLang::default()
+            ))
+        );
     }
 
     #[test]

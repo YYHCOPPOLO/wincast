@@ -23,23 +23,39 @@ pub fn filter_button_rect(panel_w: f32) -> DipRect {
 }
 
 pub fn filter_title(filter: ClipboardFilter) -> &'static str {
-    match filter {
-        ClipboardFilter::All => "All Types",
-        ClipboardFilter::Text => "Text Only",
-        ClipboardFilter::Images => "Images Only",
-        ClipboardFilter::Links => "Links Only",
-        ClipboardFilter::Emails => "Emails Only",
-    }
+    filter_title_lang(filter, tinycast_pure::i18n::UiLang::En)
+}
+
+pub fn filter_title_lang(
+    filter: ClipboardFilter,
+    lang: tinycast_pure::i18n::UiLang,
+) -> &'static str {
+    let key = match filter {
+        ClipboardFilter::All => "all",
+        ClipboardFilter::Text => "text",
+        ClipboardFilter::Images => "images",
+        ClipboardFilter::Links => "links",
+        ClipboardFilter::Emails => "emails",
+    };
+    tinycast_pure::i18n::clipboard_filter_title(key, lang)
 }
 
 pub fn empty_message(filter: ClipboardFilter) -> &'static str {
-    match filter {
-        ClipboardFilter::All => "Clipboard history is empty",
-        ClipboardFilter::Text => "No text in clipboard history",
-        ClipboardFilter::Images => "No images in clipboard history",
-        ClipboardFilter::Links => "No links in clipboard history",
-        ClipboardFilter::Emails => "No email addresses in clipboard history",
-    }
+    empty_message_lang(filter, tinycast_pure::i18n::UiLang::En)
+}
+
+pub fn empty_message_lang(
+    filter: ClipboardFilter,
+    lang: tinycast_pure::i18n::UiLang,
+) -> &'static str {
+    let key = match filter {
+        ClipboardFilter::All => "all",
+        ClipboardFilter::Text => "text",
+        ClipboardFilter::Images => "images",
+        ClipboardFilter::Links => "links",
+        ClipboardFilter::Emails => "emails",
+    };
+    tinycast_pure::i18n::clipboard_empty(key, lang)
 }
 
 pub fn paint_items(rows: &[ClipboardItem], selection: usize) -> Vec<PaintItem> {

@@ -277,6 +277,15 @@ impl SettingsWindow {
         }
     }
 
+    pub fn set_locale(&self, locale: &str) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                (*inner).renderer.set_locale(locale);
+            }
+        }
+        self.invalidate();
+    }
+
     pub fn on_tab_changed(&self) {
         unsafe {
             if let Some(inner) = inner_from(self.hwnd) {
@@ -369,6 +378,83 @@ impl Renderer {
             caption_format,
             hwnd_target: None,
         })
+    }
+
+    fn set_locale(&mut self, locale: &str) {
+        let loc: Vec<u16> = locale.encode_utf16().chain(std::iter::once(0)).collect();
+        let locale_w = PCWSTR(loc.as_ptr());
+        if let Ok(header) = unsafe {
+            self.dwrite.CreateTextFormat(
+                w!("Microsoft YaHei UI"),
+                None,
+                DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                HEADER_FONT_DIP,
+                locale_w,
+            )
+        } {
+            let _ = unsafe {
+                header.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+                header.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                header.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            };
+            self.header_format = header;
+        }
+        if let Ok(tab) = unsafe {
+            self.dwrite.CreateTextFormat(
+                w!("Microsoft YaHei UI"),
+                None,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                TAB_FONT_DIP,
+                locale_w,
+            )
+        } {
+            let _ = unsafe {
+                tab.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+                tab.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                tab.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            };
+            self.tab_format = tab;
+        }
+        if let Ok(body) = unsafe {
+            self.dwrite.CreateTextFormat(
+                w!("Microsoft YaHei UI"),
+                None,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                TAB_FONT_DIP,
+                locale_w,
+            )
+        } {
+            let _ = unsafe {
+                body.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+                body.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                body.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            };
+            self.body_format = body;
+        }
+        if let Ok(caption) = unsafe {
+            self.dwrite.CreateTextFormat(
+                w!("Microsoft YaHei UI"),
+                None,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                HEADER_FONT_DIP,
+                locale_w,
+            )
+        } {
+            let _ = unsafe {
+                caption.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+                caption.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+                caption.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            };
+            self.caption_format = caption;
+        }
     }
 
     fn discard_target(&mut self) {

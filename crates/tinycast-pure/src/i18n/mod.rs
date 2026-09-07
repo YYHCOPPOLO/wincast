@@ -1,10 +1,12 @@
 mod catalog;
 mod copy;
 mod panes;
+mod surfaces;
 
 pub use catalog::*;
 pub use copy::*;
 pub use panes::*;
+pub use surfaces::*;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum UiLang {

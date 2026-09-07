@@ -111,7 +111,7 @@ impl NotesWindow {
             let hwnd = CreateWindowExW(
                 notes_ex(),
                 CLASS,
-                w!("Notes"),
+                windows::core::PCWSTR::null(),
                 notes_style(),
                 120,
                 120,
@@ -330,7 +330,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let cue = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("STATIC"),
-                w!("Start writing…"),
+                windows::core::PCWSTR::null(),
                 WS_CHILD,
                 0,
                 0,
@@ -346,7 +346,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let create_btn = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
-                w!("Create"),
+                windows::core::PCWSTR::null(),
                 WS_CHILD | WS_TABSTOP,
                 8,
                 6,
@@ -361,7 +361,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let browse_btn = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
-                w!("Browse"),
+                windows::core::PCWSTR::null(),
                 WS_CHILD | WS_TABSTOP,
                 88,
                 6,
@@ -376,7 +376,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let folder_btn = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
-                w!("Folder"),
+                windows::core::PCWSTR::null(),
                 WS_CHILD | WS_TABSTOP,
                 168,
                 6,
@@ -958,7 +958,7 @@ fn window_title(hwnd: HWND) -> String {
         if n > 0 {
             String::from_utf16_lossy(&buf[..n as usize])
         } else {
-            "Notes".into()
+            tinycast_pure::i18n::notes_window_title(tinycast_pure::i18n::UiLang::default()).into()
         }
     }
 }

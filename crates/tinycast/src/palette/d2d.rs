@@ -40,6 +40,7 @@ pub struct Renderer {
     list_fonts: ListFonts,
     hwnd_target: Option<ID2D1HwndRenderTarget>,
     layered: bool,
+    locale: String,
 }
 
 pub struct PaintParams<'a> {
@@ -82,8 +83,9 @@ impl Renderer {
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             false,
+            "zh-CN",
         )?;
-        let list_fonts = list_fonts(&dwrite)?;
+        let list_fonts = list_fonts(&dwrite, "zh-CN")?;
         Ok(Self {
             factory,
             dwrite,
@@ -91,7 +93,29 @@ impl Renderer {
             list_fonts,
             hwnd_target: None,
             layered: false,
+            locale: "zh-CN".into(),
         })
+    }
+
+    pub fn set_locale(&mut self, locale: &str) {
+        if self.locale == locale {
+            return;
+        }
+        if let Ok(fmt) = make_text_format(
+            &self.dwrite,
+            w!("Microsoft YaHei UI"),
+            super::edit::SEARCH_FONT_DIP,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            false,
+            false,
+            locale,
+        ) {
+            self.text_format = fmt;
+        }
+        if let Ok(fonts) = list_fonts(&self.dwrite, locale) {
+            self.list_fonts = fonts;
+        }
+        self.locale = locale.to_string();
     }
 
     pub fn set_layered(&mut self, hwnd: HWND, layered: bool) {
@@ -298,7 +322,7 @@ fn create_hwnd_target(
     unsafe { factory.CreateHwndRenderTarget(&target_properties(dpi), &hwnd_props) }
 }
 
-fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
+fn list_fonts(dwrite: &IDWriteFactory, locale: &str) -> windows::core::Result<ListFonts> {
     Ok(ListFonts {
         title: make_text_format(
             dwrite,
@@ -307,6 +331,7 @@ fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             false,
+            locale,
         )?,
         trailing: make_text_format(
             dwrite,
@@ -315,6 +340,7 @@ fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
             DWRITE_FONT_WEIGHT_REGULAR,
             true,
             false,
+            locale,
         )?,
         header: make_text_format(
             dwrite,
@@ -323,6 +349,7 @@ fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
             DWRITE_FONT_WEIGHT_MEDIUM,
             false,
             false,
+            locale,
         )?,
         chip: make_text_format(
             dwrite,
@@ -331,6 +358,7 @@ fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             true,
+            locale,
         )?,
         keycap: make_text_format(
             dwrite,
@@ -339,6 +367,7 @@ fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             true,
+            locale,
         )?,
         calc_result: make_text_format(
             dwrite,
@@ -347,6 +376,7 @@ fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
             DWRITE_FONT_WEIGHT_SEMI_BOLD,
             false,
             true,
+            locale,
         )?,
         calc_badge: make_text_format(
             dwrite,
@@ -355,6 +385,7 @@ fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             true,
+            locale,
         )?,
         emoji: make_text_format(
             dwrite,
@@ -363,6 +394,7 @@ fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             true,
+            locale,
         )?,
     })
 }
@@ -374,7 +406,9 @@ fn make_text_format(
     weight: windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT,
     trailing: bool,
     center: bool,
+    locale: &str,
 ) -> windows::core::Result<IDWriteTextFormat> {
+    let loc: Vec<u16> = locale.encode_utf16().chain(std::iter::once(0)).collect();
     let format = unsafe {
         dwrite.CreateTextFormat(
             family,
@@ -383,7 +417,7 @@ fn make_text_format(
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
             size,
-            w!("zh-CN"),
+            windows::core::PCWSTR(loc.as_ptr()),
         )?
     };
     unsafe {
@@ -852,7 +886,7 @@ mod tests {
     fn list_type_uses_theme_tokens() {
         let dwrite: IDWriteFactory =
             unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).unwrap() };
-        let fonts = list_fonts(&dwrite).unwrap();
+        let fonts = list_fonts(&dwrite, "zh-CN").unwrap();
         unsafe {
             assert_eq!(fonts.title.GetFontSize(), theme::typography::ROW_TITLE);
             assert_eq!(fonts.trailing.GetFontSize(), theme::typography::ROW_TRAILING);
@@ -872,6 +906,7 @@ mod tests {
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
                 false,
+                "zh-CN",
             )?;
             let body = make_text_format(
                 &dwrite,
@@ -880,6 +915,7 @@ mod tests {
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
                 false,
+                "zh-CN",
             )?;
             let list_fonts = ListFonts {
                 title: body.clone(),
@@ -964,6 +1000,7 @@ mod tests {
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
                 false,
+                "zh-CN",
             )?;
             let body = make_text_format(
                 &dwrite,
@@ -972,6 +1009,7 @@ mod tests {
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
                 false,
+                "zh-CN",
             )?;
             let list_fonts = ListFonts {
                 title: body.clone(),
