@@ -205,18 +205,24 @@ impl CommandID {
         }
     }
 
-    pub fn as_entry(self) -> AppEntry {
-        let name = self.name().to_string();
+    pub fn as_entry_for(self, lang: crate::i18n::UiLang) -> AppEntry {
+        let display = crate::i18n::command_title(self, lang).to_string();
+        let other = crate::i18n::command_title(self, lang.other()).to_string();
         AppEntry {
             id: self.raw().to_string(),
             kind: AppKind::Command,
-            name: name.clone(),
+            name: display.clone(),
             fields: SearchFields {
-                display_name: name,
+                display_name: display,
+                alternate_names: vec![other],
                 ..Default::default()
             },
             hotkey: None,
         }
+    }
+
+    pub fn as_entry(self) -> AppEntry {
+        self.as_entry_for(crate::i18n::UiLang::En)
     }
 }
 

@@ -162,12 +162,119 @@ pub fn results_title(lang: UiLang) -> &'static str {
     }
 }
 
+pub fn window_command_title(
+    id: crate::window_command::WindowCommandId,
+    lang: UiLang,
+) -> &'static str {
+    use crate::window_command::WindowCommandId;
+    match lang {
+        UiLang::En => id.name(),
+        UiLang::ZhHans => match id {
+            WindowCommandId::LeftHalf => "左半屏",
+            WindowCommandId::RightHalf => "右半屏",
+            WindowCommandId::TopHalf => "上半屏",
+            WindowCommandId::BottomHalf => "下半屏",
+            WindowCommandId::TopLeftQuarter => "左上四分之一",
+            WindowCommandId::TopRightQuarter => "右上四分之一",
+            WindowCommandId::BottomLeftQuarter => "左下四分之一",
+            WindowCommandId::BottomRightQuarter => "右下四分之一",
+            WindowCommandId::FirstThreeFourths => "前四分之三",
+            WindowCommandId::LastThreeFourths => "后四分之三",
+            WindowCommandId::FirstThird => "左三分之一",
+            WindowCommandId::CenterThird => "中三分之一",
+            WindowCommandId::LastThird => "右三分之一",
+            WindowCommandId::FirstTwoThirds => "左三分之二",
+            WindowCommandId::LastTwoThirds => "右三分之二",
+            WindowCommandId::Maximize => "最大化",
+            WindowCommandId::AlmostMaximize => "接近最大化",
+            WindowCommandId::ReasonableSize => "合适大小",
+            WindowCommandId::MaximizeHeight => "高度最大化",
+            WindowCommandId::MaximizeWidth => "宽度最大化",
+            WindowCommandId::Center => "居中",
+            WindowCommandId::CenterHalf => "居中半屏",
+            WindowCommandId::MakeLarger => "放大",
+            WindowCommandId::MakeSmaller => "缩小",
+            WindowCommandId::Restore => "还原窗口",
+            WindowCommandId::MoveLeft => "向左移动",
+            WindowCommandId::MoveRight => "向右移动",
+            WindowCommandId::MoveUp => "向上移动",
+            WindowCommandId::MoveDown => "向下移动",
+            WindowCommandId::NextDisplay => "移到下一块显示器",
+            WindowCommandId::PreviousDisplay => "移到上一块显示器",
+            WindowCommandId::ToggleFullscreen => "切换全屏",
+            WindowCommandId::PreviousSpace => "上一个虚拟桌面",
+            WindowCommandId::NextSpace => "下一个虚拟桌面",
+        },
+    }
+}
+
+pub fn window_group_title(g: crate::window_command::WindowGroup, lang: UiLang) -> &'static str {
+    use crate::window_command::WindowGroup;
+    match lang {
+        UiLang::En => g.title(),
+        UiLang::ZhHans => match g {
+            WindowGroup::Halves => "对半",
+            WindowGroup::Quarters => "四分",
+            WindowGroup::Fourths => "四分之三",
+            WindowGroup::Thirds => "三分",
+            WindowGroup::Sizing => "尺寸",
+            WindowGroup::Moving => "移动",
+            WindowGroup::Fullscreen => "全屏",
+            WindowGroup::Spaces => "虚拟桌面",
+        },
+    }
+}
+
+pub fn system_action_title(
+    id: crate::system_action::SystemActionId,
+    lang: UiLang,
+) -> &'static str {
+    use crate::system_action::SystemActionId;
+    match lang {
+        UiLang::En => id.name(),
+        UiLang::ZhHans => match id {
+            SystemActionId::LockScreen => "锁定屏幕",
+            SystemActionId::Sleep => "睡眠",
+            SystemActionId::SleepDisplays => "关闭显示器",
+            SystemActionId::Restart => "重启",
+            SystemActionId::ShutDown => "关机",
+            SystemActionId::LogOut => "注销",
+            SystemActionId::ShowScreenSaver => "显示屏幕保护程序",
+            SystemActionId::PlayPause => "播放 / 暂停",
+            SystemActionId::NextTrack => "下一首",
+            SystemActionId::PreviousTrack => "上一首",
+            SystemActionId::ToggleMute => "切换静音",
+            SystemActionId::VolumeUp => "提高音量",
+            SystemActionId::VolumeDown => "降低音量",
+            SystemActionId::SetVolume => "设置音量…",
+            SystemActionId::Volume0 => "音量设为 0%",
+            SystemActionId::Volume25 => "音量设为 25%",
+            SystemActionId::Volume50 => "音量设为 50%",
+            SystemActionId::Volume75 => "音量设为 75%",
+            SystemActionId::Volume100 => "音量设为 100%",
+            SystemActionId::ShowDesktop => "显示桌面",
+            SystemActionId::ToggleAppearance => "切换系统外观",
+            SystemActionId::ToggleStageManager => "切换 Stage Manager",
+            SystemActionId::OpenTrash => "打开回收站",
+            SystemActionId::EmptyTrash => "清空回收站",
+            SystemActionId::EjectAllDisks => "弹出所有磁盘",
+            SystemActionId::ToggleHiddenFiles => "切换隐藏文件",
+            SystemActionId::HideOtherApps => "隐藏其他应用",
+            SystemActionId::UnhideAllApps => "显示所有隐藏应用",
+            SystemActionId::QuitAllApps => "退出所有应用",
+            SystemActionId::DismissNotifications => "清除通知",
+            SystemActionId::ToggleBluetooth => "开关蓝牙",
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::command_id::CommandID;
     use crate::i18n::{
         command_title, kind_section_title, open_verb, palette_placeholder,
-        settings_section_title, settings_tab_title, UiLang,
+        settings_section_title, settings_tab_title, system_action_title,
+        window_command_title, UiLang,
     };
 
     #[test]
@@ -262,5 +369,45 @@ mod tests {
             open_verb(AppKind::Application, UiLang::En),
             "Open Application"
         );
+    }
+
+    #[test]
+    fn settings_command_matches_english_query_in_zh() {
+        use crate::search_relevance::score;
+        let entry = CommandID::Settings.as_entry_for(UiLang::ZhHans);
+        assert_eq!(entry.name, "设置");
+        assert!(score("设置", &entry.fields).is_some());
+        assert!(score("settings", &entry.fields).is_some());
+        assert!(score("Settings", &entry.fields).is_some());
+    }
+
+    #[test]
+    fn as_entry_stays_english_oracle() {
+        let entry = CommandID::Settings.as_entry();
+        assert_eq!(entry.name, "Settings");
+    }
+
+    #[test]
+    fn every_window_command_has_zh() {
+        use crate::window_command::WindowCommandId;
+        for id in WindowCommandId::ALL {
+            let en = window_command_title(*id, UiLang::En);
+            let zh = window_command_title(*id, UiLang::ZhHans);
+            assert_eq!(en, id.name());
+            assert!(!zh.is_empty());
+            assert_ne!(zh, en, "{}", id.raw());
+        }
+    }
+
+    #[test]
+    fn every_system_action_has_zh() {
+        use crate::system_action::SystemActionId;
+        for id in SystemActionId::ALL {
+            let en = system_action_title(*id, UiLang::En);
+            let zh = system_action_title(*id, UiLang::ZhHans);
+            assert_eq!(en, id.name());
+            assert!(!zh.is_empty());
+            assert_ne!(zh, en, "{}", id.raw());
+        }
     }
 }

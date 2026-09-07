@@ -1861,13 +1861,17 @@ impl AppCore {
         self.settings.feature_flags()
     }
 
+    pub fn ui_lang(&self) -> tinycast_pure::i18n::UiLang {
+        tinycast_pure::i18n::UiLang::parse(&self.settings.ui_language)
+    }
+
     pub fn settings_entries(&self, kind: AppKind) -> Vec<AppEntry> {
         let mut entries = match kind {
             AppKind::Command => commands_catalog(),
             AppKind::SystemAction => tinycast_pure::system_action::SystemActionId::all()
                 .iter()
                 .copied()
-                .map(tinycast_pure::system_action::SystemActionId::as_entry)
+                .map(|id| id.as_entry_for(self.ui_lang()))
                 .collect(),
             _ => self
                 .entries
@@ -2093,9 +2097,6 @@ impl AppCore {
     }
 
     pub fn set_composing(&mut self, composing: bool) {
-        if self.palette.is_composing == composing {
-            return;
-        }
         self.palette.is_composing = composing;
         self.invalidate_palette();
     }
@@ -2765,7 +2766,7 @@ impl AppCore {
         }
     }
 
-    fn invalidate_palette(&self) {
+    pub(crate) fn invalidate_palette(&self) {
         if let Some(window) = &self.palette_window {
             window.invalidate();
         }
@@ -2816,6 +2817,7 @@ impl AppCore {
 
     fn catalog(&self) -> Vec<AppEntry> {
         let flags = self.feature_flags();
+        let lang = self.ui_lang();
         let mut entries = self.entries.clone();
         if self.settings.quicklinks_enabled && self.settings.quicklinks_show_in_launcher {
             entries.extend(
@@ -2841,7 +2843,7 @@ impl AppCore {
             tinycast_pure::system_action::SystemActionId::all()
                 .iter()
                 .copied()
-                .map(tinycast_pure::system_action::SystemActionId::as_entry),
+                .map(|id| id.as_entry_for(lang)),
         );
         if self.settings.window_management_enabled
             && self.settings.window_management_show_in_launcher
@@ -2850,7 +2852,7 @@ impl AppCore {
                 tinycast_pure::window_command::WindowCommandId::all()
                     .iter()
                     .copied()
-                    .map(tinycast_pure::window_command::WindowCommandId::as_entry),
+                    .map(|id| id.as_entry_for(lang)),
             );
         }
         entries.extend(
@@ -2862,7 +2864,7 @@ impl AppCore {
                     *id != CommandID::CheckForUpdates
                         || crate::features::updates::service::feed::command_visible()
                 })
-                .map(CommandID::as_entry),
+                .map(|id| id.as_entry_for(lang)),
         );
         entries.extend(tinycast_pure::extensions::launcher_entries(
             self.settings.extensions_enabled,
@@ -5240,6 +5242,7 @@ mod tests {
         c.visibility = tinycast_pure::visibility::VisibilityStore::default();
         c.favorites = tinycast_pure::favorites::FavoritesStore::default();
         c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.settings.ui_language = "en".into();
         c.toggle_palette();
         let items = c.launcher_paint_items();
         assert!(items.iter().any(|item| matches!(
@@ -5333,6 +5336,7 @@ mod tests {
         c.favorites = tinycast_pure::favorites::FavoritesStore::default();
         c.aliases = tinycast_pure::alias::AliasStore::default();
         c.settings = AppSettings::default();
+        c.settings.ui_language = "en".into();
         c.toggle_palette();
         let items = c.launcher_paint_items();
         assert!(!items.iter().any(|item| matches!(
@@ -5446,6 +5450,7 @@ mod tests {
         c.visibility = tinycast_pure::visibility::VisibilityStore::default();
         c.favorites = tinycast_pure::favorites::FavoritesStore::default();
         c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.settings.ui_language = "en".into();
         c.toggle_palette();
         c.expand_select_first();
         let items = c.launcher_paint_items();
@@ -5472,6 +5477,7 @@ mod tests {
     fn window_commands_hidden_until_enabled() {
         let mut c = AppCore::new();
         c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.settings.ui_language = "en".into();
         c.toggle_palette();
         c.expand_select_first();
         let hidden = c.launcher_paint_items();
