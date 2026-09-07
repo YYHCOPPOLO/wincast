@@ -52,8 +52,19 @@ pub enum PanelHit {
 }
 
 pub fn hit(x: i32, y: i32, width: i32, height: i32) -> PanelHit {
-    if y >= height - BAR_H && y < height && x >= 0 && x < width {
-        if x < width / 2 {
+    hit_dip(x as f32, y as f32, width as f32, height as f32)
+}
+
+pub fn hit_from_px(x: i32, y: i32, width: i32, height: i32, dpi: u32) -> PanelHit {
+    let dpi = if dpi == 0 { 96.0 } else { dpi as f32 };
+    let to_dip = |v: i32| v as f32 * 96.0 / dpi;
+    hit_dip(to_dip(x), to_dip(y), to_dip(width), to_dip(height))
+}
+
+pub fn hit_dip(x: f32, y: f32, width: f32, height: f32) -> PanelHit {
+    let footer = BAR_H as f32;
+    if y >= height - footer && y < height && x >= 0.0 && x < width {
+        if x < width / 2.0 {
             PanelHit::Replace
         } else {
             PanelHit::Copy
@@ -298,10 +309,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_LBUTTONDOWN => {
             let mut rc = RECT::default();
             let _ = GetClientRect(hwnd, &mut rc);
-            let x = (lparam.0 as i32) & 0xffff;
-            let y = ((lparam.0 as u32) >> 16) as i32;
+            let dpi = GetDpiForWindow(hwnd);
+            let x = (lparam.0 as u32 & 0xFFFF) as i16 as i32;
+            let y = ((lparam.0 as u32 >> 16) & 0xFFFF) as i16 as i32;
             let owner = GetAncestor(hwnd, GA_ROOTOWNER);
-            match hit(x, y, rc.right, rc.bottom) {
+            match hit_from_px(x, y, rc.right, rc.bottom, dpi) {
                 PanelHit::Replace => {
                     let _ = PostMessageW(
                         owner,
@@ -454,6 +466,21 @@ mod tests {
         assert_eq!(hit(400, 270, 520, 280), PanelHit::Copy);
         assert_eq!(hit(10, 40, 520, 280), PanelHit::Dismiss);
         assert_ne!(hit(10, 40, 520, 280), PanelHit::Replace);
+    }
+
+    #[test]
+    fn high_dpi_footer_click_is_replace() {
+        let dpi = 144u32;
+        let w_px = dip_scalar_to_px(520.0, dpi);
+        let h_px = dip_scalar_to_px(280.0, dpi);
+        let y_px = h_px - dip_scalar_to_px(30.0, dpi);
+        let x_px = dip_scalar_to_px(10.0, dpi);
+        assert_eq!(hit_from_px(x_px, y_px, w_px, h_px, dpi), PanelHit::Replace);
+        let y_body = h_px - dip_scalar_to_px(80.0, dpi);
+        assert_eq!(
+            hit_from_px(x_px, y_body, w_px, h_px, dpi),
+            PanelHit::Dismiss
+        );
     }
 
     #[test]
