@@ -17,14 +17,14 @@ impl AppKind {
     /// Exact section title or singular label (`Snippets` / `Snippet`). Prefixes do not match.
     pub fn named_by(query: &str) -> Option<AppKind> {
         match query {
-            "Applications" | "Application" => Some(AppKind::Application),
-            "System Settings" | "System Setting" => Some(AppKind::SystemSettings),
-            "Quicklinks" | "Quicklink" => Some(AppKind::Quicklink),
-            "Snippets" | "Snippet" => Some(AppKind::Snippet),
-            "System Actions" | "System Action" => Some(AppKind::SystemAction),
-            "Window Management" | "Window Command" => Some(AppKind::WindowCommand),
-            "Custom Commands" | "Custom Command" => Some(AppKind::CustomCommand),
-            "Commands" | "Command" => Some(AppKind::Command),
+            "Applications" | "Application" | "应用" => Some(AppKind::Application),
+            "System Settings" | "System Setting" | "系统设置" => Some(AppKind::SystemSettings),
+            "Quicklinks" | "Quicklink" | "快捷链接" => Some(AppKind::Quicklink),
+            "Snippets" | "Snippet" | "片段" => Some(AppKind::Snippet),
+            "System Actions" | "System Action" | "系统操作" => Some(AppKind::SystemAction),
+            "Window Management" | "Window Command" | "窗口管理" => Some(AppKind::WindowCommand),
+            "Custom Commands" | "Custom Command" | "自定义命令" => Some(AppKind::CustomCommand),
+            "Commands" | "Command" | "命令" => Some(AppKind::Command),
             _ => None,
         }
     }

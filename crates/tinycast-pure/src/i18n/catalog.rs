@@ -1,5 +1,8 @@
+use crate::app_entry::AppKind;
 use crate::command_id::CommandID;
 use crate::i18n::UiLang;
+use crate::palette_mode::PaletteMode;
+use crate::settings_tab::{SettingsSection, SettingsTab};
 
 pub fn command_title(id: CommandID, lang: UiLang) -> &'static str {
     match lang {
@@ -38,10 +41,134 @@ pub fn command_title(id: CommandID, lang: UiLang) -> &'static str {
     }
 }
 
+pub fn settings_tab_title(tab: SettingsTab, lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => tab.title(),
+        UiLang::ZhHans => match tab {
+            SettingsTab::General => "通用",
+            SettingsTab::Permissions => "权限",
+            SettingsTab::Applications => "应用",
+            SettingsTab::SystemSettings => "系统设置",
+            SettingsTab::SystemActions => "系统操作",
+            SettingsTab::Commands => "命令",
+            SettingsTab::Quicklinks => "快捷链接",
+            SettingsTab::Ai => "AI",
+            SettingsTab::QuickActions => "快捷操作",
+            SettingsTab::FileSearch => "文件搜索",
+            SettingsTab::Notes => "笔记",
+            SettingsTab::Snippets => "片段",
+            SettingsTab::WindowManagement => "窗口管理",
+            SettingsTab::Clipboard => "剪贴板",
+            SettingsTab::Emoji => "表情与符号",
+            SettingsTab::Calendar => "日历",
+            SettingsTab::Extensions => "扩展",
+            SettingsTab::Backup => "备份",
+            SettingsTab::About => "关于",
+        },
+    }
+}
+
+pub fn settings_section_title(section: SettingsSection, lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => section.title(),
+        UiLang::ZhHans => match section {
+            SettingsSection::General => "通用",
+            SettingsSection::Launcher => "启动器",
+            SettingsSection::Features => "功能",
+            SettingsSection::Advanced => "高级",
+        },
+    }
+}
+
+pub fn palette_placeholder(mode: PaletteMode, lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => mode.placeholder(),
+        UiLang::ZhHans => match mode {
+            PaletteMode::Launcher => "搜索应用和命令…",
+            PaletteMode::Clipboard => "输入以筛选条目…",
+            PaletteMode::Ai => "问我任何问题…",
+            PaletteMode::AiHistory => "搜索对话…",
+            PaletteMode::CalculatorHistory => "计算、换算单位，或搜索历史计算…",
+            PaletteMode::Emoji => "搜索表情与符号…",
+            PaletteMode::FileSearch => "搜索文件和文件夹…",
+            PaletteMode::Schedule => "搜索今天和明天…",
+            PaletteMode::Uninstall => "按名称筛选文件和文件夹…",
+            PaletteMode::Quicklinks => "搜索快捷链接…",
+            PaletteMode::QuicklinkArguments => "输入值…",
+            PaletteMode::ExtensionCommand => "搜索…",
+        },
+    }
+}
+
+pub fn kind_section_title(kind: AppKind, lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => kind.section_title(),
+        UiLang::ZhHans => match kind {
+            AppKind::Application => "应用",
+            AppKind::SystemSettings => "系统设置",
+            AppKind::Quicklink => "快捷链接",
+            AppKind::Snippet => "片段",
+            AppKind::SystemAction => "系统操作",
+            AppKind::WindowCommand => "窗口管理",
+            AppKind::CustomCommand => "自定义命令",
+            AppKind::Command => "命令",
+        },
+    }
+}
+
+pub fn kind_label(kind: AppKind, lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => kind.kind_label(),
+        UiLang::ZhHans => match kind {
+            AppKind::Application => "应用",
+            AppKind::SystemSettings => "系统设置",
+            AppKind::Quicklink => "快捷链接",
+            AppKind::Snippet => "片段",
+            AppKind::SystemAction => "系统操作",
+            AppKind::WindowCommand => "窗口管理",
+            AppKind::CustomCommand => "自定义命令",
+            AppKind::Command => "命令",
+        },
+    }
+}
+
+pub fn open_verb(kind: AppKind, lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => kind.open_verb(),
+        UiLang::ZhHans => match kind {
+            AppKind::Application => "打开应用",
+            AppKind::SystemSettings => "打开系统设置",
+            AppKind::Quicklink => "打开快捷链接",
+            AppKind::Snippet => "粘贴片段",
+            AppKind::SystemAction => "运行系统操作",
+            AppKind::WindowCommand => "移动窗口",
+            AppKind::CustomCommand => "运行自定义命令",
+            AppKind::Command => "运行命令",
+        },
+    }
+}
+
+pub fn favorites_title(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Favorites",
+        UiLang::ZhHans => "收藏",
+    }
+}
+
+pub fn results_title(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Results",
+        UiLang::ZhHans => "结果",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::command_id::CommandID;
-    use crate::i18n::{command_title, UiLang};
+    use crate::i18n::{
+        command_title, kind_section_title, open_verb, palette_placeholder,
+        settings_section_title, settings_tab_title, UiLang,
+    };
 
     #[test]
     fn ui_lang_parse_defaults_to_zh_hans() {
@@ -83,5 +210,57 @@ mod tests {
             assert!(!zh.is_empty());
             assert_ne!(zh, en, "{}", id.raw());
         }
+    }
+
+    #[test]
+    fn settings_tabs_match_spec_11_1() {
+        use crate::settings_tab::{SettingsSection, SettingsTab};
+        assert_eq!(SettingsTab::General.title(), "General");
+        assert_eq!(settings_tab_title(SettingsTab::General, UiLang::ZhHans), "通用");
+        assert_eq!(
+            settings_tab_title(SettingsTab::WindowManagement, UiLang::ZhHans),
+            "窗口管理"
+        );
+        assert_eq!(settings_tab_title(SettingsTab::Ai, UiLang::ZhHans), "AI");
+        assert_eq!(settings_tab_title(SettingsTab::Ai, UiLang::En), "AI");
+        assert_eq!(
+            settings_section_title(SettingsSection::Features, UiLang::ZhHans),
+            "功能"
+        );
+    }
+
+    #[test]
+    fn placeholders_match_spec_11_3() {
+        use crate::palette_mode::PaletteMode;
+        assert_eq!(
+            PaletteMode::Launcher.placeholder(),
+            "Search for apps and commands…"
+        );
+        assert_eq!(
+            palette_placeholder(PaletteMode::Launcher, UiLang::ZhHans),
+            "搜索应用和命令…"
+        );
+        assert_eq!(
+            palette_placeholder(PaletteMode::Ai, UiLang::ZhHans),
+            "问我任何问题…"
+        );
+    }
+
+    #[test]
+    fn named_by_accepts_chinese_and_english() {
+        use crate::app_entry::AppKind;
+        assert_eq!(AppKind::named_by("Commands"), Some(AppKind::Command));
+        assert_eq!(AppKind::named_by("命令"), Some(AppKind::Command));
+        assert_eq!(AppKind::named_by("片段"), Some(AppKind::Snippet));
+        assert_eq!(
+            AppKind::named_by("窗口管理"),
+            Some(AppKind::WindowCommand)
+        );
+        assert_eq!(kind_section_title(AppKind::Command, UiLang::ZhHans), "命令");
+        assert_eq!(open_verb(AppKind::Application, UiLang::ZhHans), "打开应用");
+        assert_eq!(
+            open_verb(AppKind::Application, UiLang::En),
+            "Open Application"
+        );
     }
 }
