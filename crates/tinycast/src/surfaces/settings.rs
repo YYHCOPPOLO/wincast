@@ -1,4 +1,8 @@
 use tinycast_pure::hotkey::{CaptureOutcome, Modifiers};
+use tinycast_pure::i18n::{
+    clipboard_confirm_action, clipboard_confirm_message, clipboard_confirm_title,
+    settings_section_title, settings_tab_title, UiLang,
+};
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
 use tinycast_pure::theme;
@@ -277,7 +281,7 @@ impl SettingsWindow {
         unsafe {
             if let Some(inner) = inner_from(self.hwnd) {
                 reset_pane_state(inner, true);
-                set_caption(self.hwnd, selected_tab(inner));
+                set_caption(self.hwnd, selected_tab(inner), ui_lang(inner));
             }
         }
         self.invalidate();
@@ -478,7 +482,8 @@ fn paint_scene(
 ) -> windows::core::Result<()> {
     unsafe {
         target.BeginDraw();
-        set_caption(hwnd, selected);
+        let lang = ui_lang(inner);
+        set_caption(hwnd, selected, lang);
         let size = target.GetSize();
         let appearance = settings_appearance(inner);
         crate::design_system::settings::paint_window_background(
@@ -513,7 +518,7 @@ fn paint_scene(
                         header_format,
                         &header_brush,
                         header_rect(&row),
-                        section.title(),
+                        settings_section_title(section, lang),
                     )?;
                 }
                 RowKind::Tab(tab) => {
@@ -544,7 +549,13 @@ fn paint_scene(
                         },
                         ink,
                     );
-                    draw_label(target, tab_format, &tab_brush, tab_rect(&row), tab.title())?;
+                    draw_label(
+                        target,
+                        tab_format,
+                        &tab_brush,
+                        tab_rect(&row),
+                        settings_tab_title(tab, lang),
+                    )?;
                 }
             }
         }
@@ -552,6 +563,7 @@ fn paint_scene(
             header: header_format,
             body: body_format,
             caption: caption_format,
+            lang,
         };
         paint_detail(
             hwnd,
@@ -660,7 +672,7 @@ unsafe fn paint_detail(
                     formats,
                     &layout,
                     (width, height),
-                    crate::features::snippets::settings::pane::enable_copy(),
+                    crate::features::snippets::settings::pane::enable_copy_lang(core.ui_lang()),
                 )?;
             } else if (*inner).confirming_clear {
                 paint_confirm_copy(
@@ -669,10 +681,13 @@ unsafe fn paint_detail(
                     &layout,
                     (width, height),
                     ConfirmCopy {
-                        title: crate::features::clipboard::settings::pane::CLEAR_CONFIRM_TITLE,
-                        message: crate::features::clipboard::settings::pane::CLEAR_CONFIRM_MESSAGE,
-                        accept: crate::features::clipboard::settings::pane::CLEAR_CONFIRM_ACTION,
-                        cancel: crate::features::launcher::settings::items::RESET_CONFIRM_CANCEL,
+                        title: clipboard_confirm_title(core.ui_lang()),
+                        message: clipboard_confirm_message(core.ui_lang()),
+                        accept: clipboard_confirm_action(core.ui_lang()),
+                        cancel: tinycast_pure::i18n::chrome(
+                            tinycast_pure::i18n::Chrome::Cancel,
+                            core.ui_lang(),
+                        ),
                     },
                 )?;
             } else {
@@ -739,7 +754,7 @@ unsafe fn recording_well_rect(
             .1;
         return Some(crate::features::hotkeys::ui::recorder::well_in_row(row));
     }
-    let section = LauncherItemsSection::for_tab(tab)?;
+    let section = LauncherItemsSection::for_lang(tab, ui_lang(inner))?;
     let core = core_from_host((*inner).host)?;
     let entries = (*core).settings_entries(section.kind);
     let filtered = crate::features::launcher::settings::items::filter_entries(
@@ -1066,7 +1081,15 @@ unsafe fn paint_detail_panes(
         )?;
         return Ok(());
     }
-    let Some(section) = LauncherItemsSection::for_tab(selected) else {
+    if selected != SettingsTab::Applications
+        && selected != SettingsTab::SystemSettings
+        && selected != SettingsTab::Commands
+        && selected != SettingsTab::SystemActions
+    {
+        hide_edits(inner);
+        return Ok(());
+    }
+    let Some(section) = LauncherItemsSection::for_lang(selected, ui_lang(inner)) else {
         hide_edits(inner);
         return Ok(());
     };
@@ -1249,7 +1272,7 @@ unsafe fn commit_alias(inner: *mut SettingsInner) {
         return;
     };
     let tab = (*core).settings_tab;
-    let Some(section) = LauncherItemsSection::for_tab(tab) else {
+    let Some(section) = LauncherItemsSection::for_lang(tab, ui_lang(inner)) else {
         return;
     };
     let entries = (*core).settings_entries(section.kind);
@@ -1264,8 +1287,14 @@ unsafe fn commit_alias(inner: *mut SettingsInner) {
     }
 }
 
-fn set_caption(hwnd: HWND, tab: SettingsTab) {
-    let mut wide: Vec<u16> = tab.title().encode_utf16().collect();
+unsafe fn ui_lang(inner: *mut SettingsInner) -> UiLang {
+    core_from_host((*inner).host)
+        .map(|core| (*core).ui_lang())
+        .unwrap_or_default()
+}
+
+fn set_caption(hwnd: HWND, tab: SettingsTab, lang: UiLang) {
+    let mut wide: Vec<u16> = settings_tab_title(tab, lang).encode_utf16().collect();
     wide.push(0);
     unsafe {
         let _ = SetWindowTextW(hwnd, PCWSTR(wide.as_ptr()));
@@ -1734,7 +1763,7 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     } else {
         0.0
     };
-    let Some(section) = LauncherItemsSection::for_tab(tab) else {
+    let Some(section) = LauncherItemsSection::for_lang(tab, ui_lang(inner)) else {
         return 0.0;
     };
     let Some(core) = core_from_host((*inner).host) else {
@@ -2384,7 +2413,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             }
         }
     }
-    let Some(section) = LauncherItemsSection::for_tab(tab) else {
+    let Some(section) = LauncherItemsSection::for_lang(tab, ui_lang(inner)) else {
         return;
     };
     let Some(core) = core_from_host((*inner).host) else {
@@ -2725,6 +2754,26 @@ mod tests {
     #[test]
     fn settings_close_hides_does_not_quit() {
         assert_eq!(close_action(), CloseAction::Hide);
+    }
+
+    #[test]
+    fn settings_caption_uses_tab_i18n() {
+        use tinycast_pure::i18n::{settings_tab_title, UiLang};
+        assert_eq!(
+            settings_tab_title(SettingsTab::Applications, UiLang::ZhHans),
+            "应用"
+        );
+    }
+
+    #[test]
+    fn settings_sidebar_paint_calls_i18n_tab_title() {
+        let src = include_str!("settings.rs");
+        assert!(src.contains("settings_tab_title(tab, lang)"));
+        assert!(src.contains("settings_section_title(section, lang)"));
+        assert!(src.contains("SettingsTab::Applications"));
+        assert!(src.contains("SettingsTab::Ai"));
+        assert!(src.contains("SettingsTab::Notes"));
+        assert!(src.contains("SettingsTab::Clipboard"));
     }
 
     #[test]

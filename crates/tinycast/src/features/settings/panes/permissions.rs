@@ -71,11 +71,17 @@ pub fn paint(
     let pad = theme::spacing::XL;
     let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-    for (i, row) in ROWS.iter().enumerate() {
+    for (i, _) in ROWS.iter().enumerate() {
         let y = 24.0 + i as f32 * ROW_H + origin;
-        let title: Vec<u16> = row.title.encode_utf16().collect();
-        let sub: Vec<u16> = row.subtitle.encode_utf16().collect();
-        let open: Vec<u16> = "Open Settings".encode_utf16().collect();
+        let title: Vec<u16> = tinycast_pure::i18n::permission_title(i, formats.lang)
+            .encode_utf16()
+            .collect();
+        let sub: Vec<u16> = tinycast_pure::i18n::permission_subtitle(i, formats.lang)
+            .encode_utf16()
+            .collect();
+        let open: Vec<u16> = tinycast_pure::i18n::open_settings_action(formats.lang)
+            .encode_utf16()
+            .collect();
         unsafe {
             target.DrawText(
                 &title,

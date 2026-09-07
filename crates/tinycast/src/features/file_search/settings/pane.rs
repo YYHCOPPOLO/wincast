@@ -134,16 +134,24 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, _, _) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    let lang = formats.lang;
+    let (section, _, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::FileSearch,
+            lang,
+        ),
+        false,
+    );
     ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let origin = -scroll;
     let l = layout(scopes.len(), ignores.len());
     paint_toggle(
         target,
         formats,
-        ENABLE_TITLE,
-        ENABLE_SUBTITLE,
+        tinycast_pure::i18n::file_search_enable_title(lang),
+        tinycast_pure::i18n::file_search_enable_subtitle(lang),
         enabled,
         l.enable + origin,
         width,
@@ -152,20 +160,36 @@ pub fn paint(
     header(
         target,
         formats,
-        "Folders",
+        tinycast_pure::i18n::file_search_folders(lang),
         24.0,
         ds::switch_section_next_y(false) + origin,
         width,
         appearance,
     )?;
     for (i, scope) in scopes.iter().enumerate() {
-        paint_item(target, formats, scope, "Remove", l.scopes[i] + origin, width, appearance)?;
+        paint_item(
+            target,
+            formats,
+            scope,
+            tinycast_pure::i18n::remove_label(lang),
+            l.scopes[i] + origin,
+            width,
+            appearance,
+        )?;
     }
-    paint_item(target, formats, ADD_FOLDER, "", l.add_folder + origin, width, appearance)?;
+    paint_item(
+        target,
+        formats,
+        tinycast_pure::i18n::file_search_add_folder(lang),
+        "",
+        l.add_folder + origin,
+        width,
+        appearance,
+    )?;
     header(
         target,
         formats,
-        "Ignore patterns",
+        tinycast_pure::i18n::file_search_ignore(lang),
         24.0,
         l.add_folder + ITEM_H + theme::spacing::SM + origin,
         width,
@@ -176,13 +200,21 @@ pub fn paint(
             target,
             formats,
             pattern,
-            "Remove",
+            tinycast_pure::i18n::remove_label(lang),
             l.ignores[i] + origin,
             width,
             appearance,
         )?;
     }
-    paint_item(target, formats, ADD_IGNORE, "", l.add_ignore + origin, width, appearance)?;
+    paint_item(
+        target,
+        formats,
+        tinycast_pure::i18n::file_search_add_ignore(lang),
+        "",
+        l.add_ignore + origin,
+        width,
+        appearance,
+    )?;
     Ok(())
 }
 

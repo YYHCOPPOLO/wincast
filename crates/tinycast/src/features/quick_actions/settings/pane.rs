@@ -58,8 +58,15 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, _, _) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    let (section, _, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::QuickActions,
+            formats.lang,
+        ),
+        false,
+    );
     let mut section = section;
     section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 2.0;
     ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
@@ -67,8 +74,8 @@ pub fn paint(
     paint_toggle(
         target,
         formats,
-        "Enable Quick Actions",
-        "Act on the selected text in the previous app. Off by default.",
+        tinycast_pure::i18n::qa_enable_title(formats.lang),
+        tinycast_pure::i18n::qa_enable_subtitle(formats.lang),
         enabled,
         y0,
         width,
@@ -77,8 +84,8 @@ pub fn paint(
     paint_row(
         target,
         formats,
-        "Translate into",
-        if language.is_empty() { "English" } else { language },
+        tinycast_pure::i18n::qa_translate_into(formats.lang),
+        tinycast_pure::i18n::qa_language_name(language, formats.lang),
         y0 + ROW_H,
         width,
         appearance,

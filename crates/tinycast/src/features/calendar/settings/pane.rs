@@ -82,16 +82,23 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, _, _) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    let (section, _, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::Calendar,
+            formats.lang,
+        ),
+        false,
+    );
     let mut section = section;
     section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 4.0;
     ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     paint_toggle(
         target,
         formats,
-        "Enable Calendar",
-        "Read this PC’s calendar. Off by default.",
+        tinycast_pure::i18n::calendar_enable_title(formats.lang),
+        tinycast_pure::i18n::calendar_enable_subtitle(formats.lang),
         enabled,
         row_y(0) - scroll,
         width,
@@ -100,8 +107,8 @@ pub fn paint(
     paint_toggle(
         target,
         formats,
-        "Auto-join meetings",
-        "Open the join link when a meeting starts. Once per meeting per launch.",
+        tinycast_pure::i18n::calendar_auto_join(formats.lang),
+        tinycast_pure::i18n::calendar_auto_join_sub(formats.lang),
         auto_join,
         row_y(1) - scroll,
         width,
@@ -110,8 +117,8 @@ pub fn paint(
     paint_toggle(
         target,
         formats,
-        "Camera preview",
-        "Optional preview before joining. Deny is not fatal.",
+        tinycast_pure::i18n::calendar_camera(formats.lang),
+        tinycast_pure::i18n::calendar_camera_sub(formats.lang),
         camera,
         row_y(2) - scroll,
         width,
@@ -120,8 +127,8 @@ pub fn paint(
     paint_row(
         target,
         formats,
-        "Join window",
-        join_window_title(join_minutes),
+        tinycast_pure::i18n::calendar_join_window(formats.lang),
+        tinycast_pure::i18n::calendar_join_minutes(join_minutes, formats.lang),
         row_y(3) - scroll,
         width,
         appearance,

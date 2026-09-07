@@ -45,8 +45,16 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, enable, _) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    let lang = formats.lang;
+    let (section, enable, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::Emoji,
+            lang,
+        ),
+        false,
+    );
     ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let y = enable.y;
     let pad = theme::spacing::XL;
@@ -54,7 +62,7 @@ pub fn paint(
     draw(
         target,
         formats.body,
-        SKIN_TONE_TITLE,
+        tinycast_pure::i18n::emoji_skin_tone_title(lang),
         pad,
         y + 8.0,
         width - pad,
@@ -65,7 +73,7 @@ pub fn paint(
     draw(
         target,
         formats.caption,
-        SKIN_TONE_SUBTITLE,
+        tinycast_pure::i18n::emoji_skin_tone_subtitle(lang),
         pad,
         y + 28.0,
         width - 140.0,
@@ -76,7 +84,7 @@ pub fn paint(
     draw(
         target,
         formats.body,
-        tone.label(),
+        tinycast_pure::i18n::emoji_skin_tone_label(tone.as_raw(), lang),
         width - 120.0,
         y + 14.0,
         width - pad,

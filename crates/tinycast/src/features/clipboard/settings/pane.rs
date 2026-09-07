@@ -93,10 +93,14 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
+    let lang = formats.lang;
     let (section, _, _) = ds::feature_switch_section(
         detail_w,
         ds::CARD_INSET - scroll,
-        section_header(),
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::Clipboard,
+            lang,
+        ),
         false,
     );
     ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
@@ -109,7 +113,7 @@ pub fn paint(
         inset,
         rows.retention + origin - 24.0,
         detail_w,
-        "History",
+        tinycast_pure::i18n::clipboard_history(lang),
         appearance,
     )?;
     draw_row(
@@ -118,8 +122,8 @@ pub fn paint(
         inset,
         rows.retention + origin,
         detail_w,
-        "Keep history for",
-        retention_title(retention_days),
+        tinycast_pure::i18n::clipboard_keep_for(lang),
+        tinycast_pure::i18n::clipboard_retention(retention_days, lang),
         appearance,
     )?;
     draw_header(
@@ -128,7 +132,7 @@ pub fn paint(
         inset,
         rows.retention + ROW_H + theme::spacing::XL + origin,
         detail_w,
-        "Disabled Applications",
+        tinycast_pure::i18n::clipboard_disabled_apps(lang),
         appearance,
     )?;
     draw_caption(
@@ -137,7 +141,7 @@ pub fn paint(
         inset,
         rows.retention + ROW_H + theme::spacing::XL + 24.0 + origin,
         detail_w,
-        "Copies from these apps are not recorded.",
+        tinycast_pure::i18n::clipboard_disabled_caption(lang),
         appearance,
     )?;
     for (i, name) in disabled.iter().enumerate() {
@@ -148,7 +152,7 @@ pub fn paint(
             rows.apps[i] + origin,
             detail_w,
             name,
-            "Remove",
+            tinycast_pure::i18n::remove_label(lang),
             appearance,
         )?;
     }
@@ -158,8 +162,8 @@ pub fn paint(
         inset,
         rows.add_app + origin,
         detail_w,
-        ADD_APPLICATION_TITLE,
-        "Add",
+        tinycast_pure::i18n::clipboard_add_application(lang),
+        tinycast_pure::i18n::clipboard_add(lang),
         appearance,
     )?;
     draw_header(
@@ -168,7 +172,7 @@ pub fn paint(
         inset,
         rows.add_app + ROW_H + theme::spacing::XL + origin,
         detail_w,
-        "Clear",
+        tinycast_pure::i18n::clipboard_clear_section(lang),
         appearance,
     )?;
     draw_row(
@@ -177,8 +181,8 @@ pub fn paint(
         inset,
         rows.clear + origin,
         detail_w,
-        CLEAR_HISTORY_TITLE,
-        "Clear…",
+        tinycast_pure::i18n::clipboard_clear_history(lang),
+        tinycast_pure::i18n::clipboard_clear_ellipsis(lang),
         appearance,
     )?;
     Ok(())

@@ -33,7 +33,9 @@ pub fn paint(
 ) -> windows::core::Result<()> {
     let y = 24.0 - scroll;
     let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
-    let t: Vec<u16> = "Tinycast for Windows".encode_utf16().collect();
+    let t: Vec<u16> = tinycast_pure::i18n::about_product(formats.lang)
+        .encode_utf16()
+        .collect();
     unsafe {
         target.DrawText(
             &t,
@@ -49,7 +51,9 @@ pub fn paint(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let s: Vec<u16> = "Support Tinycast…".encode_utf16().collect();
+    let s: Vec<u16> = tinycast_pure::i18n::about_support(formats.lang)
+        .encode_utf16()
+        .collect();
     unsafe {
         target.DrawText(
             &s,

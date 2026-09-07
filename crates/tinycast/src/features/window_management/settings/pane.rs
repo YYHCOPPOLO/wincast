@@ -102,12 +102,16 @@ struct CatalogLayout {
 }
 
 fn catalog_layout() -> CatalogLayout {
+    catalog_layout_lang(tinycast_pure::i18n::UiLang::En)
+}
+
+fn catalog_layout_lang(lang: tinycast_pure::i18n::UiLang) -> CatalogLayout {
     let mut y = toggles_bottom() + theme::spacing::XL;
     let mut headers = Vec::new();
     let mut commands = Vec::new();
     let all = WindowCommandId::all();
     for (group, cmds) in group_blocks() {
-        headers.push((y, group.title()));
+        headers.push((y, tinycast_pure::i18n::window_group_title(group, lang)));
         y += HEADER_H;
         for id in cmds {
             let index = all.iter().position(|c| *c == id).unwrap_or(0);
@@ -190,10 +194,14 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
+    let lang = formats.lang;
     let mut section = ds::feature_switch_section(
         width,
         ds::CARD_INSET - scroll,
-        section_header(),
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::WindowManagement,
+            lang,
+        ),
         true,
     )
     .0;
@@ -203,8 +211,8 @@ pub fn paint(
     paint_row(
         target,
         formats,
-        ENABLE_TITLE,
-        ENABLE_SUBTITLE,
+        tinycast_pure::i18n::window_enable_title(lang),
+        tinycast_pure::i18n::window_enable_subtitle(lang),
         enabled,
         toggle_row_y(0) + origin,
         origin_x,
@@ -214,8 +222,8 @@ pub fn paint(
     paint_row(
         target,
         formats,
-        SHOW_IN_LAUNCHER,
-        "Hide the Window Management section without disabling shortcuts.",
+        tinycast_pure::i18n::show_in_launcher(lang),
+        tinycast_pure::i18n::window_show_subtitle(lang),
         show_in_launcher,
         toggle_row_y(1) + origin,
         origin_x,
@@ -225,26 +233,27 @@ pub fn paint(
     paint_row(
         target,
         formats,
-        CYCLE_TITLE,
-        "Repeated Left/Right/Top/Bottom Half cycles ½ → ⅓ → ⅔.",
+        tinycast_pure::i18n::window_cycle_title(lang),
+        tinycast_pure::i18n::window_cycle_subtitle(lang),
         cycle,
         toggle_row_y(2) + origin,
         origin_x,
         width,
         appearance,
     )?;
+    let gap_sub = tinycast_pure::i18n::window_gap_subtitle(gap, lang);
     paint_row(
         target,
         formats,
-        GAP_TITLE,
-        &format!("{gap} pt between tiles and screen edges."),
+        tinycast_pure::i18n::window_gap_title(lang),
+        &gap_sub,
         gap > 0,
         toggle_row_y(3) + origin,
         origin_x,
         width,
         appearance,
     )?;
-    let layout = catalog_layout();
+    let layout = catalog_layout_lang(lang);
     for (top, title) in layout.headers {
         paint_header(
             target,
@@ -259,16 +268,19 @@ pub fn paint(
     for (index, top) in layout.commands {
         let id = WindowCommandId::all()[index];
         let key = format!("hotkey.windowCommand.{}", id.raw());
-        let label = hotkeys.get(&key).map(|b| b.label()).unwrap_or_else(|| "Record".into());
+        let label = hotkeys
+            .get(&key)
+            .map(|b| b.label())
+            .unwrap_or_else(|| tinycast_pure::i18n::record_label(lang).into());
         let rec_label = if recording == Some(key.as_str()) {
-            "Recording…".into()
+            tinycast_pure::i18n::recording_label(lang).into()
         } else {
             label
         };
         paint_command(
             target,
             formats,
-            id.name(),
+            tinycast_pure::i18n::window_command_title(id, lang),
             &rec_label,
             visibility.is_item_visible(&id.entry_id()),
             hotkeys.get(&key).is_some(),

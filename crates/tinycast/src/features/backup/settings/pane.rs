@@ -44,12 +44,26 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    row(target, formats, "Export Settings…", row_y(0) - scroll, width, appearance)?;
-    row(target, formats, "Import Settings…", row_y(1) - scroll, width, appearance)?;
     row(
         target,
         formats,
-        "Import from Raycast…",
+        tinycast_pure::i18n::backup_export(formats.lang),
+        row_y(0) - scroll,
+        width,
+        appearance,
+    )?;
+    row(
+        target,
+        formats,
+        tinycast_pure::i18n::backup_import(formats.lang),
+        row_y(1) - scroll,
+        width,
+        appearance,
+    )?;
+    row(
+        target,
+        formats,
+        tinycast_pure::i18n::backup_raycast(formats.lang),
         row_y(2) - scroll,
         width,
         appearance,

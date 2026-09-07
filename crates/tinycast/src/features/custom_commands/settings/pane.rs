@@ -76,16 +76,24 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, _, _) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
+    let lang = formats.lang;
+    let (section, _, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::Commands,
+            lang,
+        ),
+        true,
+    );
     ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let origin = -scroll;
     let mut y = ds::form_origin() + origin;
     paint_toggle_row(
         target,
         formats,
-        ENABLE_TITLE,
-        ENABLE_SUBTITLE,
+        tinycast_pure::i18n::custom_commands_enable_title(lang),
+        tinycast_pure::i18n::custom_commands_enable_subtitle(lang),
         enabled,
         y,
         width,
@@ -95,15 +103,22 @@ pub fn paint(
     paint_toggle_row(
         target,
         formats,
-        SHOW_IN_LAUNCHER,
-        "Hide the Custom Commands section without turning shortcuts off.",
+        tinycast_pure::i18n::show_in_launcher(lang),
+        tinycast_pure::i18n::custom_commands_show_subtitle(lang),
         show_in_launcher,
         y,
         width,
         appearance,
     )?;
     y = ds::switch_section_next_y(true) + origin;
-    paint_button(target, formats, NEW_LABEL, y, width, appearance)?;
+    paint_button(
+        target,
+        formats,
+        tinycast_pure::i18n::custom_commands_new(lang),
+        y,
+        width,
+        appearance,
+    )?;
     y += ITEM_H + theme::spacing::SM;
     for cmd in commands {
         paint_item(target, formats, &cmd.name, &cmd.command, y, width, appearance)?;

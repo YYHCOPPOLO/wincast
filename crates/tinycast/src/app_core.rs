@@ -41,7 +41,7 @@ use crate::features::clipboard::service::store::{ClipboardFilter, ClipboardStore
 use crate::features::clipboard::ui::screen as clip_screen;
 use crate::features::launcher::service::app_index::AppIndex;
 use crate::features::launcher::settings::items::{
-    commands_catalog, commit_alias_text, hotkey_action_key,
+    commands_catalog_for, commit_alias_text, hotkey_action_key,
 };
 use crate::features::launcher::ui::coordinator::{
     copy_path_text, copy_text, execute, icon_source, launch_spec, record_if_needed, reveal_path,
@@ -1867,7 +1867,7 @@ impl AppCore {
 
     pub fn settings_entries(&self, kind: AppKind) -> Vec<AppEntry> {
         let mut entries = match kind {
-            AppKind::Command => commands_catalog(),
+            AppKind::Command => commands_catalog_for(self.ui_lang()),
             AppKind::SystemAction => tinycast_pure::system_action::SystemActionId::all()
                 .iter()
                 .copied()

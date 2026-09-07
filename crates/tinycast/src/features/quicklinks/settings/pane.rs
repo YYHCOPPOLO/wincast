@@ -97,16 +97,24 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, _, _) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
+    let lang = formats.lang;
+    let (section, _, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::Quicklinks,
+            lang,
+        ),
+        true,
+    );
     ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     let origin = -scroll;
     let mut y = ds::form_origin() + origin;
     paint_toggle_row(
         target,
         formats,
-        ENABLE_TITLE,
-        ENABLE_SUBTITLE,
+        tinycast_pure::i18n::quicklinks_enable_title(lang),
+        tinycast_pure::i18n::quicklinks_enable_subtitle(lang),
         enabled,
         y,
         width,
@@ -116,8 +124,8 @@ pub fn paint(
     paint_toggle_row(
         target,
         formats,
-        SHOW_IN_LAUNCHER,
-        "Hide the Quicklinks section without turning shortcuts off.",
+        tinycast_pure::i18n::show_in_launcher(lang),
+        tinycast_pure::i18n::quicklinks_show_subtitle(lang),
         show_in_launcher,
         y,
         width,
@@ -125,9 +133,30 @@ pub fn paint(
     )?;
     y = ds::switch_section_next_y(true) + origin;
     let pad = theme::spacing::XL;
-    paint_btn(target, formats, CREATE_LABEL, pad, y, appearance)?;
-    paint_btn(target, formats, IMPORT_LABEL, pad + BTN_W + 8.0, y, appearance)?;
-    paint_btn(target, formats, EXPORT_LABEL, pad + BTN_W * 2.0 + 16.0, y, appearance)?;
+    paint_btn(
+        target,
+        formats,
+        tinycast_pure::i18n::quicklinks_create(lang),
+        pad,
+        y,
+        appearance,
+    )?;
+    paint_btn(
+        target,
+        formats,
+        tinycast_pure::i18n::quicklinks_import(lang),
+        pad + BTN_W + 8.0,
+        y,
+        appearance,
+    )?;
+    paint_btn(
+        target,
+        formats,
+        tinycast_pure::i18n::quicklinks_export(lang),
+        pad + BTN_W * 2.0 + 16.0,
+        y,
+        appearance,
+    )?;
     y += ITEM_H + theme::spacing::SM;
     for link in links {
         draw_text(

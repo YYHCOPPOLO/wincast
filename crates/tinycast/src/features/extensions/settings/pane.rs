@@ -61,14 +61,22 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, _, _) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
+    let lang = formats.lang;
+    let (section, _, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::Extensions,
+            lang,
+        ),
+        true,
+    );
     ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     paint_toggle(
         target,
         formats,
-        ENABLE_TITLE,
-        ENABLE_SUBTITLE,
+        tinycast_pure::i18n::extensions_enable_title(lang),
+        tinycast_pure::i18n::extensions_enable_subtitle(lang),
         enabled,
         false,
         row_y(0) - scroll,
@@ -78,8 +86,8 @@ pub fn paint(
     paint_toggle(
         target,
         formats,
-        SHOW_IN_LAUNCHER,
-        LAUNCHER_SUBTITLE,
+        tinycast_pure::i18n::show_in_launcher(lang),
+        tinycast_pure::i18n::extensions_show_subtitle(lang),
         show_in_launcher,
         !enabled,
         row_y(1) - scroll,
@@ -88,7 +96,9 @@ pub fn paint(
     )?;
     let notice_y = ds::switch_section_next_y(true) - scroll;
     let brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-    let wide: Vec<u16> = RUNTIME_NOTICE.encode_utf16().collect();
+    let wide: Vec<u16> = tinycast_pure::i18n::extensions_runtime_notice(lang)
+        .encode_utf16()
+        .collect();
     let pad = theme::spacing::XL;
     unsafe {
         target.DrawText(

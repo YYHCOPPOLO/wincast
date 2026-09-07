@@ -308,6 +308,138 @@ pub fn general_hyper_caps_subtitle(lang: UiLang) -> &'static str {
     }
 }
 
+pub fn launcher_enable_subtitle(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => {
+            "Off hides them all and stops their shortcuts. Uncheck one below to hide just that one."
+        }
+        UiLang::ZhHans => "关闭后全部隐藏并停止其快捷键。取消勾选某一项只隐藏那一项。",
+    }
+}
+
+pub fn launcher_search_header(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Search",
+        UiLang::ZhHans => "搜索",
+    }
+}
+
+pub fn launcher_learned_ranking_title(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Learned ranking",
+        UiLang::ZhHans => "学习排序",
+    }
+}
+
+pub fn launcher_reset_button(lang: UiLang) -> &'static str {
+    general_reset_label(lang)
+}
+
+pub fn launcher_reset_footer(lang: UiLang) -> &'static str {
+    general_section_footer(GeneralSection::Search, lang).unwrap_or("")
+}
+
+pub fn launcher_reset_confirm_title(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Reset learned launcher ranking?",
+        UiLang::ZhHans => "重置已学习的启动器排序？",
+    }
+}
+
+pub fn launcher_reset_confirm_message(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Tinycast will relearn your preferred results as you use the launcher.",
+        UiLang::ZhHans => "你继续使用启动器时，Tinycast 会重新学习偏好结果。",
+    }
+}
+
+pub fn show_in_launcher(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Show in launcher",
+        UiLang::ZhHans => "在启动器中显示",
+    }
+}
+
+pub fn enable_named(name: &str, lang: UiLang) -> String {
+    match lang {
+        UiLang::En => format!("Enable {name}"),
+        UiLang::ZhHans => format!("启用{name}"),
+    }
+}
+
+pub fn add_alias_placeholder(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Add Alias",
+        UiLang::ZhHans => "添加别名",
+    }
+}
+
+pub fn record_label(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Record",
+        UiLang::ZhHans => "录制",
+    }
+}
+
+pub fn listening_label(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Listening…",
+        UiLang::ZhHans => "正在聆听…",
+    }
+}
+
+pub fn recording_label(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Recording…",
+        UiLang::ZhHans => "正在录制…",
+    }
+}
+
+pub fn empty_list_copy(query: &str, lang: UiLang) -> String {
+    if query.is_empty() {
+        match lang {
+            UiLang::En => "Nothing here yet.".into(),
+            UiLang::ZhHans => "这里还没有内容。".into(),
+        }
+    } else {
+        match lang {
+            UiLang::En => format!("No matches for “{query}”."),
+            UiLang::ZhHans => format!("没有与“{query}”匹配的结果。"),
+        }
+    }
+}
+
+pub fn launcher_search_prompt(kind: AppKind, lang: UiLang) -> &'static str {
+    match (kind, lang) {
+        (AppKind::Application, UiLang::En) => "Search applications…",
+        (AppKind::Application, UiLang::ZhHans) => "搜索应用…",
+        (AppKind::SystemSettings, UiLang::En) => "Search System Settings…",
+        (AppKind::SystemSettings, UiLang::ZhHans) => "搜索系统设置…",
+        (AppKind::Command, UiLang::En) => "Search commands…",
+        (AppKind::Command, UiLang::ZhHans) => "搜索命令…",
+        (AppKind::SystemAction, UiLang::En) => "Search system actions…",
+        (AppKind::SystemAction, UiLang::ZhHans) => "搜索系统操作…",
+        _ => match lang {
+            UiLang::En => "Search…",
+            UiLang::ZhHans => "搜索…",
+        },
+    }
+}
+
+pub fn remove_label(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Remove",
+        UiLang::ZhHans => "移除",
+    }
+}
+
+pub fn open_settings_action(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Open Settings",
+        UiLang::ZhHans => "打开设置",
+    }
+}
+
 pub fn actions_for_lang(ctx: ActionContext, lang: UiLang) -> Vec<MenuItem> {
     fn item(id: &'static str, label: &'static str, shortcut: Option<&'static str>) -> MenuItem {
         MenuItem {
@@ -409,6 +541,14 @@ mod tests {
         assert_eq!(
             general_row_title(GeneralRow::ShowInMenuBar, UiLang::ZhHans),
             "在托盘显示图标"
+        );
+    }
+
+    #[test]
+    fn launcher_item_copy_zh() {
+        assert_ne!(
+            launcher_enable_subtitle(UiLang::ZhHans),
+            launcher_enable_subtitle(UiLang::En)
         );
     }
 }

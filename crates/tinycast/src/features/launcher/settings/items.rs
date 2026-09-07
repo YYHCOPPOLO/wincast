@@ -2,6 +2,13 @@ use tinycast_pure::alias::AliasStore;
 use tinycast_pure::app_entry::{AppEntry, AppKind};
 use tinycast_pure::command_id::CommandID;
 use tinycast_pure::hotkey_store::HotKeyStore;
+use tinycast_pure::i18n::{
+    add_alias_placeholder, empty_list_copy, enable_named, kind_section_title,
+    launcher_enable_subtitle, launcher_learned_ranking_title, launcher_reset_button,
+    launcher_reset_confirm_message, launcher_reset_confirm_title, launcher_reset_footer,
+    launcher_search_header, launcher_search_prompt, listening_label, record_label,
+    reset_ranking_action, settings_tab_title, UiLang,
+};
 use tinycast_pure::search_relevance::{score, SearchFields};
 use tinycast_pure::settings_tab::SettingsTab;
 use tinycast_pure::theme;
@@ -58,11 +65,15 @@ pub struct ConfirmCopy {
 
 impl ConfirmCopy {
     pub fn reset_ranking() -> Self {
+        Self::reset_ranking_lang(UiLang::En)
+    }
+
+    pub fn reset_ranking_lang(lang: UiLang) -> Self {
         Self {
-            title: RESET_CONFIRM_TITLE,
-            message: RESET_CONFIRM_MESSAGE,
-            accept: RESET_CONFIRM_ACTION,
-            cancel: RESET_CONFIRM_CANCEL,
+            title: launcher_reset_confirm_title(lang),
+            message: launcher_reset_confirm_message(lang),
+            accept: reset_ranking_action(lang),
+            cancel: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang),
         }
     }
 }
@@ -119,25 +130,42 @@ impl LauncherItemsSection {
     }
 
     pub fn for_tab(tab: SettingsTab) -> Option<Self> {
-        match tab {
-            SettingsTab::Applications => Some(Self::applications()),
-            SettingsTab::SystemSettings => Some(Self::system_settings()),
-            SettingsTab::Commands => Some(Self::commands()),
-            SettingsTab::SystemActions => Some(Self::system_actions()),
-            _ => None,
-        }
+        Self::for_lang(tab, UiLang::En)
+    }
+
+    pub fn for_lang(tab: SettingsTab, lang: UiLang) -> Option<Self> {
+        let kind = match tab {
+            SettingsTab::Applications => AppKind::Application,
+            SettingsTab::SystemSettings => AppKind::SystemSettings,
+            SettingsTab::Commands => AppKind::Command,
+            SettingsTab::SystemActions => AppKind::SystemAction,
+            _ => return None,
+        };
+        Some(Self {
+            kind,
+            header: settings_tab_title(tab, lang),
+            search_prompt: launcher_search_prompt(kind, lang),
+        })
     }
 
     pub fn enable_title(self) -> String {
-        format!("Enable {}", self.header)
+        self.enable_title_lang(UiLang::En)
+    }
+
+    pub fn enable_title_lang(self, lang: UiLang) -> String {
+        enable_named(kind_section_title(self.kind, lang), lang)
     }
 }
 
 pub fn commands_catalog() -> Vec<AppEntry> {
+    commands_catalog_for(UiLang::En)
+}
+
+pub fn commands_catalog_for(lang: UiLang) -> Vec<AppEntry> {
     let mut entries: Vec<AppEntry> = CommandID::settings_pane_ids()
         .iter()
         .copied()
-        .map(CommandID::as_entry)
+        .map(|id| id.as_entry_for(lang))
         .collect();
     entries.sort_by(|a, b| {
         a.name
@@ -165,11 +193,7 @@ pub fn filter_entries<'a>(
 }
 
 pub fn empty_list_label(query: &str) -> String {
-    if query.is_empty() {
-        "Nothing here yet.".into()
-    } else {
-        format!("No matches for “{query}”.")
-    }
+    empty_list_copy(query, UiLang::En)
 }
 
 pub fn hotkey_action_key(entry: &AppEntry) -> Option<String> {
@@ -716,6 +740,7 @@ pub struct Formats<'a> {
     pub header: &'a IDWriteTextFormat,
     pub body: &'a IDWriteTextFormat,
     pub caption: &'a IDWriteTextFormat,
+    pub lang: UiLang,
 }
 
 pub fn paint_launcher_items(
@@ -765,7 +790,7 @@ pub fn paint_launcher_items(
             },
             scroll,
         ),
-        &section.enable_title(),
+        &section.enable_title_lang(formats.lang),
     )?;
     draw_label(
         target,
@@ -780,7 +805,7 @@ pub fn paint_launcher_items(
             },
             scroll,
         ),
-        ENABLE_SUBTITLE,
+        launcher_enable_subtitle(formats.lang),
     )?;
     paint_toggle(target, shifted(layout.toggle, scroll), kind_on, appearance)?;
     fill_card(
@@ -804,7 +829,7 @@ pub fn paint_launcher_items(
             formats.caption,
             &caption_brush,
             shifted(empty, scroll),
-            &empty_list_label(query),
+            &empty_list_copy(query, formats.lang),
         )?;
     }
     for (i, item) in layout.items.iter().enumerate() {
@@ -851,7 +876,11 @@ pub fn paint_launcher_items(
                 target,
                 formats.caption,
                 shifted(item.alias, scroll),
-                if alias.is_empty() { "Add Alias" } else { alias },
+                if alias.is_empty() {
+                    add_alias_placeholder(formats.lang)
+                } else {
+                    alias
+                },
                 alias.is_empty(),
                 false,
                 appearance,
@@ -864,11 +893,11 @@ pub fn paint_launcher_items(
                 .is_some_and(|k| recording.is_some_and(|r| r == k));
             let bound = key.as_deref().and_then(|k| hotkeys.get(k));
             let (label, placeholder) = if listening {
-                ("Listening…".to_string(), true)
+                (listening_label(formats.lang).to_string(), true)
             } else if let Some(binding) = bound {
                 (binding.label(), false)
             } else {
-                ("Record".into(), true)
+                (record_label(formats.lang).into(), true)
             };
             paint_well(
                 target,
@@ -922,7 +951,7 @@ pub fn paint_search_section(
         formats.header,
         &header_brush,
         shifted(layout.header, scroll),
-        SEARCH_HEADER,
+        launcher_search_header(formats.lang),
     )?;
     fill_card(target, &card_brush, shifted(layout.row, scroll), appearance)?;
     draw_label(
@@ -938,13 +967,13 @@ pub fn paint_search_section(
             },
             scroll,
         ),
-        LEARNED_RANKING_TITLE,
+        launcher_learned_ranking_title(formats.lang),
     )?;
     paint_button(
         target,
         formats.caption,
         shifted(layout.reset, scroll),
-        RESET_RANKING_BUTTON,
+        launcher_reset_button(formats.lang),
         true,
         !ranking_empty,
         appearance,
@@ -954,7 +983,7 @@ pub fn paint_search_section(
         formats.caption,
         &caption_brush,
         shifted(layout.footer, scroll),
-        RESET_RANKING_FOOTER,
+        launcher_reset_footer(formats.lang),
     )?;
     Ok(())
 }
@@ -970,7 +999,7 @@ pub fn paint_confirm(
         formats,
         layout,
         window,
-        ConfirmCopy::reset_ranking(),
+        ConfirmCopy::reset_ranking_lang(formats.lang),
     )
 }
 

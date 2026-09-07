@@ -160,10 +160,14 @@ pub fn apply_draft(
 }
 
 pub fn key_status(saved: bool) -> &'static str {
+    key_status_lang(saved, tinycast_pure::i18n::UiLang::En)
+}
+
+fn key_status_lang(saved: bool, lang: tinycast_pure::i18n::UiLang) -> &'static str {
     if saved {
-        "Saved on this PC"
+        tinycast_pure::i18n::ai_saved_on_pc(lang)
     } else {
-        "Not set"
+        tinycast_pure::i18n::ai_not_set(lang)
     }
 }
 
@@ -206,6 +210,14 @@ pub fn cycle_retention(days: i64) -> i64 {
 }
 
 pub fn default_model_title(selection: Option<&ModelSelection>, connections: &[AiConnection]) -> String {
+    default_model_title_lang(selection, connections, tinycast_pure::i18n::UiLang::En)
+}
+
+fn default_model_title_lang(
+    selection: Option<&ModelSelection>,
+    connections: &[AiConnection],
+    lang: tinycast_pure::i18n::UiLang,
+) -> String {
     match selection {
         Some(ModelSelection::Api { connection, model }) => {
             let name = connections
@@ -216,7 +228,7 @@ pub fn default_model_title(selection: Option<&ModelSelection>, connections: &[Ai
             format!("{name} · {model}")
         }
         Some(ModelSelection::ChatGpt { model, .. }) => format!("ChatGPT · {model}"),
-        None => "None".into(),
+        None => tinycast_pure::i18n::ai_none(lang).into(),
     }
 }
 
@@ -265,12 +277,16 @@ pub fn cycle_provider(kind: ProviderKind) -> ProviderKind {
 }
 
 pub fn codex_title(phase: CodexPhase) -> &'static str {
+    codex_title_lang(phase, tinycast_pure::i18n::UiLang::En)
+}
+
+fn codex_title_lang(phase: CodexPhase, lang: tinycast_pure::i18n::UiLang) -> &'static str {
     match phase {
-        CodexPhase::Unavailable => "Install Codex CLI…",
-        _ if !can_offer_chatgpt() => "Not available yet",
-        CodexPhase::Connected => "Disconnect ChatGPT",
-        CodexPhase::Failed => "Try Again",
-        CodexPhase::Idle => "Connect",
+        CodexPhase::Unavailable => tinycast_pure::i18n::ai_install_codex(lang),
+        _ if !can_offer_chatgpt() => tinycast_pure::i18n::ai_not_available(lang),
+        CodexPhase::Connected => tinycast_pure::i18n::ai_disconnect_chatgpt(lang),
+        CodexPhase::Failed => tinycast_pure::i18n::ai_try_again(lang),
+        CodexPhase::Idle => tinycast_pure::i18n::ai_connect(lang),
     }
 }
 
@@ -291,14 +307,22 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, _, _) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    let lang = formats.lang;
+    let (section, _, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::Ai,
+            lang,
+        ),
+        false,
+    );
     ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
     paint_toggle(
         target,
         formats,
-        "Enable AI",
-        "Chat with the model you choose; nothing is loaded or sent until it is on.",
+        tinycast_pure::i18n::ai_enable_title(lang),
+        tinycast_pure::i18n::ai_enable_subtitle(lang),
         enabled,
         row_y(0) - scroll,
         width,
@@ -307,8 +331,8 @@ pub fn paint(
     paint_toggle(
         target,
         formats,
-        "Web search",
-        "Let OpenRouter models search the web.",
+        tinycast_pure::i18n::ai_web_search_title(lang),
+        tinycast_pure::i18n::ai_web_search_subtitle(lang),
         web_search,
         row_y(1) - scroll,
         width,
@@ -317,8 +341,8 @@ pub fn paint(
     paint_toggle(
         target,
         formats,
-        "System prompt",
-        "Send Tinycast’s preamble and your extra instructions.",
+        tinycast_pure::i18n::ai_system_prompt_title(lang),
+        tinycast_pure::i18n::ai_system_prompt_subtitle(lang),
         system_prompt,
         row_y(2) - scroll,
         width,
@@ -327,8 +351,8 @@ pub fn paint(
     paint_row(
         target,
         formats,
-        "Opens to",
-        opens_to_title(opens_to),
+        tinycast_pure::i18n::ai_opens_to_title(lang),
+        tinycast_pure::i18n::ai_opens_to_value(opens_to != 0, lang),
         row_y(3) - scroll,
         width,
         appearance,
@@ -336,17 +360,17 @@ pub fn paint(
     paint_row(
         target,
         formats,
-        "Keep conversations",
-        retention_title(retention),
+        tinycast_pure::i18n::ai_keep_conversations(lang),
+        tinycast_pure::i18n::ai_retention_value(retention, lang),
         row_y(4) - scroll,
         width,
         appearance,
     )?;
-    let model = default_model_title(default_model, connections);
+    let model = default_model_title_lang(default_model, connections, lang);
     paint_row(
         target,
         formats,
-        "Default model",
+        tinycast_pure::i18n::ai_default_model(lang),
         &model,
         row_y(5) - scroll,
         width,
@@ -355,8 +379,8 @@ pub fn paint(
     paint_row(
         target,
         formats,
-        "ChatGPT subscription",
-        codex_title(codex),
+        tinycast_pure::i18n::ai_chatgpt_subscription(lang),
+        codex_title_lang(codex, lang),
         row_y(6) - scroll,
         width,
         appearance,
@@ -364,8 +388,8 @@ pub fn paint(
     paint_row(
         target,
         formats,
-        "Add API connection",
-        "OpenAI, Anthropic, Gemini, OpenRouter, or compatible.",
+        tinycast_pure::i18n::ai_add_connection(lang),
+        tinycast_pure::i18n::ai_add_connection_sub(lang),
         row_y(7) - scroll,
         width,
         appearance,
@@ -386,7 +410,7 @@ pub fn paint(
             paint_row(
                 target,
                 formats,
-                "Provider",
+                tinycast_pure::i18n::ai_provider(lang),
                 conn.provider.title(),
                 editor_top,
                 width,
@@ -395,7 +419,7 @@ pub fn paint(
             paint_row(
                 target,
                 formats,
-                "Base URL",
+                tinycast_pure::i18n::ai_base_url(lang),
                 "",
                 editor_top + EDITOR_ROW_H,
                 width,
@@ -404,7 +428,7 @@ pub fn paint(
             paint_row(
                 target,
                 formats,
-                "Model id",
+                tinycast_pure::i18n::ai_model_id(lang),
                 "",
                 editor_top + EDITOR_ROW_H * 2.0,
                 width,
@@ -413,8 +437,8 @@ pub fn paint(
             paint_row(
                 target,
                 formats,
-                "API key",
-                key_status(key_saved),
+                tinycast_pure::i18n::ai_api_key(lang),
+                key_status_lang(key_saved, lang),
                 editor_top + EDITOR_ROW_H * 3.0,
                 width,
                 appearance,

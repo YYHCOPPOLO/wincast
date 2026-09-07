@@ -42,8 +42,15 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, enable, _) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), false);
+    let (section, enable, _) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::Notes,
+            formats.lang,
+        ),
+        false,
+    );
     ds::paint_grouped_section(
         target,
         formats.header,
@@ -55,8 +62,8 @@ pub fn paint(
         target,
         formats.body,
         formats.caption,
-        ENABLE_TITLE,
-        ENABLE_SUBTITLE,
+        tinycast_pure::i18n::notes_enable_title(formats.lang),
+        tinycast_pure::i18n::notes_enable_subtitle(formats.lang),
         enable.y,
         width,
         enable.x + ds::CARD_PAD,

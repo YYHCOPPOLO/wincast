@@ -25,11 +25,15 @@ pub fn section_header() -> &'static str {
 }
 
 pub fn enable_copy() -> ConfirmCopy {
+    enable_copy_lang(tinycast_pure::i18n::UiLang::En)
+}
+
+pub fn enable_copy_lang(lang: tinycast_pure::i18n::UiLang) -> ConfirmCopy {
     ConfirmCopy {
-        title: ENABLE_CONFIRM_TITLE,
-        message: ENABLE_CONFIRM_MESSAGE,
-        accept: ENABLE_CONFIRM_ACTION,
-        cancel: crate::features::launcher::settings::items::RESET_CONFIRM_CANCEL,
+        title: tinycast_pure::i18n::snippets_confirm_title(lang),
+        message: tinycast_pure::i18n::snippets_confirm_message(lang),
+        accept: tinycast_pure::i18n::snippets_confirm_action(lang),
+        cancel: tinycast_pure::i18n::cancel_label(lang),
     }
 }
 
@@ -62,8 +66,15 @@ pub fn paint(
     scroll: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let (section, enable, show) =
-        ds::feature_switch_section(width, ds::CARD_INSET - scroll, section_header(), true);
+    let (section, enable, show) = ds::feature_switch_section(
+        width,
+        ds::CARD_INSET - scroll,
+        tinycast_pure::i18n::pane_section_title(
+            tinycast_pure::settings_tab::SettingsTab::Snippets,
+            formats.lang,
+        ),
+        true,
+    );
     ds::paint_grouped_section(
         target,
         formats.header,
@@ -75,8 +86,8 @@ pub fn paint(
         target,
         formats.body,
         formats.caption,
-        ENABLE_TITLE,
-        ENABLE_SUBTITLE,
+        tinycast_pure::i18n::snippets_enable_title(formats.lang),
+        tinycast_pure::i18n::snippets_enable_subtitle(formats.lang),
         enable.y,
         width,
         enable.x + ds::CARD_PAD,
@@ -89,8 +100,8 @@ pub fn paint(
             target,
             formats.body,
             formats.caption,
-            SHOW_IN_LAUNCHER,
-            "Hide the Snippets section without turning keyword expansion off.",
+            tinycast_pure::i18n::show_in_launcher(formats.lang),
+            tinycast_pure::i18n::snippets_show_subtitle(formats.lang),
             show.y,
             width,
             show.x + ds::CARD_PAD,
