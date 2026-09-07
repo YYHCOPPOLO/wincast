@@ -644,7 +644,8 @@ mod tests {
             .split("mod tests")
             .next()
             .unwrap();
-        assert!(!impl_src.contains("Welcome to Tinycast"));
+        let welcome = ["Welcome to ", "Tinycast"].concat();
+        assert!(!impl_src.contains(&welcome));
         assert!(impl_src.contains("onboarding_title"));
     }
 }
