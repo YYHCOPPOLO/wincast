@@ -10,10 +10,11 @@ use tinycast_pure::launcher_ranking::LauncherRankingStore;
 use tinycast_pure::launcher_results::{
     is_category_listing, ordered_results, selectable_rows, LauncherSection,
 };
+use tinycast_pure::i18n::{actions_for_lang, chrome, command_title, Chrome};
 use tinycast_pure::palette_menu::{
-    actions_for, can_open_actions, clamp_menu_selection, menu_button_rect, menu_frame, menu_row_at,
-    point_in, ActionContext, MenuItem, OpenMenu, ID_COPY_PATH, ID_FAVORITE, ID_MOVE_DOWN,
-    ID_MOVE_UP, ID_OPEN, ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
+    can_open_actions, clamp_menu_selection, menu_button_rect, menu_frame, menu_row_at, point_in,
+    ActionContext, MenuItem, OpenMenu, ID_COPY_PATH, ID_FAVORITE, ID_MOVE_DOWN, ID_MOVE_UP, ID_OPEN,
+    ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
 };
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
@@ -375,7 +376,7 @@ impl AppCore {
             self.expanded,
             self.palette.mode == PaletteMode::QuicklinkArguments,
         )
-        .then_some("AI Chat")
+        .then_some(command_title(CommandID::AiChat, self.ui_lang()))
     }
 
     pub fn clipboard_preview(&self) -> Option<String> {
@@ -385,7 +386,10 @@ impl AppCore {
         let rows = self
             .clipboard
             .search(&self.palette.query, self.clipboard_filter);
-        Some(clip_screen::preview_text(rows.get(self.palette.selection)))
+        Some(clip_screen::preview_text_lang(
+            rows.get(self.palette.selection),
+            self.ui_lang(),
+        ))
     }
 
     pub fn empty_results_text(&self) -> Option<&'static str> {
@@ -568,7 +572,7 @@ impl AppCore {
         }
         self.hide_palette();
         if let Err(err) = self.notes.show_last() {
-            crate::surfaces::dialog::alert("Notes", &err.to_string());
+            self.show_alert("Notes", &err.to_string());
             return;
         }
         self.ensure_notes_window();
@@ -586,7 +590,7 @@ impl AppCore {
         }
         self.hide_palette();
         if let Err(err) = self.notes.create() {
-            crate::surfaces::dialog::alert("Notes", &err.to_string());
+            self.show_alert("Notes", &err.to_string());
             return;
         }
         self.ensure_notes_window();
@@ -662,7 +666,7 @@ impl AppCore {
             return;
         };
         if let Err(err) = self.notes.select(&id) {
-            crate::surfaces::dialog::alert("Notes", &err.to_string());
+            self.show_alert("Notes", &err.to_string());
             return;
         }
         self.sync_notes_window();
@@ -693,11 +697,11 @@ impl AppCore {
             return;
         }
         if enabled {
-            if !crate::features::calendar::ui::coordinator::consent() {
+            if !crate::features::calendar::ui::coordinator::consent(self.ui_lang()) {
                 return;
             }
             if self.calendar.request_and_refresh().is_err() {
-                crate::surfaces::dialog::alert(
+                self.show_alert(
                     "Calendar",
                     "Calendar access was denied. Meetings will stay empty.",
                 );
@@ -807,7 +811,7 @@ impl AppCore {
             return;
         }
         self.hide_palette();
-        crate::features::calendar::ui::coordinator::create_event(self.host);
+        crate::features::calendar::ui::coordinator::create_event(self.host, self.ui_lang());
     }
 
     fn open_schedule(&mut self) {
@@ -842,6 +846,7 @@ impl AppCore {
         if !crate::features::calendar::ui::coordinator::camera_preview_optional(
             self.settings.camera_preview,
             &event.title,
+            self.ui_lang(),
         ) {
             return;
         }
@@ -1051,7 +1056,7 @@ impl AppCore {
                 "Settings exported",
                 tinycast_pure::dialog::DialogTone::Success,
             ),
-            Err(err) => crate::surfaces::dialog::alert("Export failed", &err.to_string()),
+            Err(err) => self.show_alert("Export failed", &err.to_string()),
         }
     }
 
@@ -1065,14 +1070,14 @@ impl AppCore {
                     let summary =
                         crate::features::backup::service::actions::apply_import(&mut self.settings, json);
                     self.apply_imported_settings();
-                    crate::surfaces::dialog::alert(
+                    self.show_alert(
                         "Import complete",
                         &format!("Applied {} setting(s).", summary.settings_fields),
                     );
                 }
-                Err(err) => crate::surfaces::dialog::alert("Import failed", &err.to_string()),
+                Err(err) => self.show_alert("Import failed", &err.to_string()),
             },
-            Err(err) => crate::surfaces::dialog::alert("Import failed", &err.to_string()),
+            Err(err) => self.show_alert("Import failed", &err.to_string()),
         }
     }
 
@@ -1081,11 +1086,11 @@ impl AppCore {
             return;
         };
         let Ok(bytes) = std::fs::read(&path) else {
-            crate::surfaces::dialog::alert("Import failed", "Could not read the file.");
+            self.show_alert("Import failed", "Could not read the file.");
             return;
         };
         if crate::features::backup::service::raycast::detect(&bytes).is_none() {
-            crate::surfaces::dialog::alert(
+            self.show_alert(
                 "Import failed",
                 crate::features::backup::service::raycast::RaycastError::BadFormat.message(),
             );
@@ -1099,6 +1104,7 @@ impl AppCore {
                 value_label: "Passphrase",
                 show_confirm: false,
             },
+            self.ui_lang(),
         )
         .map(|d| d.command)
         .unwrap_or_default();
@@ -1111,9 +1117,9 @@ impl AppCore {
                     was_snippets,
                 );
                 self.apply_imported_settings();
-                crate::surfaces::dialog::alert("Import complete", "Raycast settings were imported.");
+                self.show_alert("Import complete", "Raycast settings were imported.");
             }
-            Err(err) => crate::surfaces::dialog::alert("Import failed", err.message()),
+            Err(err) => self.show_alert("Import failed", err.message()),
         }
     }
 
@@ -1171,7 +1177,7 @@ impl AppCore {
             crate::features::uninstall::service::scanner::running_id(),
             &peers,
         ) else {
-            crate::surfaces::dialog::alert(
+            self.show_alert(
                 "Can’t Uninstall",
                 "Tinycast won’t uninstall itself.",
             );
@@ -1216,7 +1222,11 @@ impl AppCore {
             return;
         }
         let count = self.uninstall_selection.ids().count();
-        if !crate::features::uninstall::ui::coordinator::confirm(&self.uninstall_name, count) {
+        if !crate::features::uninstall::ui::coordinator::confirm(
+            &self.uninstall_name,
+            count,
+            self.ui_lang(),
+        ) {
             return;
         }
         let order = tinycast_pure::uninstall::plan::recycle_order(
@@ -1238,7 +1248,7 @@ impl AppCore {
                 );
             }
             Err(err) => {
-                crate::surfaces::dialog::alert("Uninstall incomplete", &err);
+                self.show_alert("Uninstall incomplete", &err);
             }
         }
     }
@@ -1409,14 +1419,15 @@ impl AppCore {
 
     pub fn new_custom_command(&mut self, owner: HWND) {
         if !self.custom_commands.is_available() {
-            crate::surfaces::dialog::alert(
+            self.show_alert(
                 "Library unavailable",
                 crate::features::custom_commands::service::store::STORAGE_UNAVAILABLE,
             );
             return;
         }
         self.pause_global_hotkeys();
-        let drafted = crate::features::custom_commands::ui::editor::edit(owner, None);
+        let drafted =
+            crate::features::custom_commands::ui::editor::edit_lang(owner, None, self.ui_lang());
         self.resume_global_hotkeys();
         let Some(draft) = drafted else {
             return;
@@ -1428,7 +1439,7 @@ impl AppCore {
             confirm: draft.confirm,
         };
         if let Err(err) = self.custom_commands.upsert(command) {
-            crate::surfaces::dialog::alert("Could not save command", &err);
+            self.show_alert("Could not save command", &err);
         }
         self.invalidate_palette();
         self.invalidate_settings();
@@ -1436,7 +1447,7 @@ impl AppCore {
 
     pub fn edit_custom_command_at(&mut self, owner: HWND, index: usize) {
         if !self.custom_commands.is_available() {
-            crate::surfaces::dialog::alert(
+            self.show_alert(
                 "Library unavailable",
                 crate::features::custom_commands::service::store::STORAGE_UNAVAILABLE,
             );
@@ -1451,8 +1462,11 @@ impl AppCore {
             confirm: existing.confirm,
         };
         self.pause_global_hotkeys();
-        let drafted =
-            crate::features::custom_commands::ui::editor::edit(owner, Some(&initial));
+        let drafted = crate::features::custom_commands::ui::editor::edit_lang(
+            owner,
+            Some(&initial),
+            self.ui_lang(),
+        );
         self.resume_global_hotkeys();
         let Some(draft) = drafted else {
             return;
@@ -1462,7 +1476,7 @@ impl AppCore {
         updated.command = draft.command;
         updated.confirm = draft.confirm;
         if let Err(err) = self.custom_commands.upsert(updated) {
-            crate::surfaces::dialog::alert("Could not save command", &err);
+            self.show_alert("Could not save command", &err);
         }
         self.invalidate_palette();
         self.invalidate_settings();
@@ -1470,7 +1484,7 @@ impl AppCore {
 
     pub fn edit_quicklink(&mut self, owner: HWND, index: Option<usize>) {
         if !self.quicklinks.is_available() {
-            crate::surfaces::dialog::alert(
+            self.show_alert(
                 "Library unavailable",
                 crate::features::quicklinks::service::store::STORAGE_UNAVAILABLE,
             );
@@ -1486,7 +1500,11 @@ impl AppCore {
         });
         let existing = index.and_then(|i| self.quicklinks.links().get(i).cloned());
         self.pause_global_hotkeys();
-        let drafted = crate::features::quicklinks::ui::editor::edit(owner, initial.as_ref());
+        let drafted = crate::features::quicklinks::ui::editor::edit(
+            owner,
+            initial.as_ref(),
+            self.ui_lang(),
+        );
         self.resume_global_hotkeys();
         let Some(draft) = drafted else {
             return;
@@ -1502,7 +1520,7 @@ impl AppCore {
         link.name = draft.name;
         link.destination = draft.destination;
         if let Err(err) = self.quicklinks.upsert(link) {
-            crate::surfaces::dialog::alert("Could not save quicklink", &err);
+            self.show_alert("Could not save quicklink", &err);
         }
         self.invalidate_palette();
         self.invalidate_settings();
@@ -1515,7 +1533,7 @@ impl AppCore {
 
     pub fn import_quicklinks(&mut self, owner: HWND) {
         if !self.quicklinks.is_available() {
-            crate::surfaces::dialog::alert(
+            self.show_alert(
                 "Library unavailable",
                 crate::features::quicklinks::service::store::STORAGE_UNAVAILABLE,
             );
@@ -1530,15 +1548,15 @@ impl AppCore {
                     self.invalidate_palette();
                     self.invalidate_settings();
                 }
-                Err(err) => crate::surfaces::dialog::alert("Import failed", &err),
+                Err(err) => self.show_alert("Import failed", &err),
             },
-            Err(err) => crate::surfaces::dialog::alert("Import failed", &err.to_string()),
+            Err(err) => self.show_alert("Import failed", &err.to_string()),
         }
     }
 
     pub fn export_quicklinks(&mut self, owner: HWND) {
         if !self.quicklinks.is_available() {
-            crate::surfaces::dialog::alert(
+            self.show_alert(
                 "Library unavailable",
                 crate::features::quicklinks::service::store::STORAGE_UNAVAILABLE,
             );
@@ -1550,10 +1568,10 @@ impl AppCore {
         match self.quicklinks.export_bytes() {
             Ok(bytes) => {
                 if let Err(err) = std::fs::write(&path, bytes) {
-                    crate::surfaces::dialog::alert("Export failed", &err.to_string());
+                    self.show_alert("Export failed", &err.to_string());
                 }
             }
-            Err(err) => crate::surfaces::dialog::alert("Export failed", &err),
+            Err(err) => self.show_alert("Export failed", &err),
         }
     }
 
@@ -1638,7 +1656,7 @@ impl AppCore {
 
     pub fn on_custom_command_failed(&mut self) {
         if let Some(err) = crate::features::custom_commands::service::runner::take_pending_error() {
-            crate::surfaces::dialog::alert("Command failed", &err);
+            self.show_alert(tinycast_pure::i18n::command_failed(self.ui_lang()), &err);
         }
     }
 
@@ -1734,7 +1752,7 @@ impl AppCore {
             let rows = self
                 .clipboard
                 .search(&self.palette.query, self.clipboard_filter);
-            return clip_screen::paint_items(&rows, self.palette.selection);
+            return clip_screen::paint_items(&rows, self.palette.selection, self.ui_lang());
         }
         if self.palette.mode == PaletteMode::FileSearch {
             return crate::features::file_search::ui::screen::paint_items(
@@ -1836,6 +1854,7 @@ impl AppCore {
         FooterPaint {
             show_action_group: self.footer_action_group_visible(),
             primary_label: self.primary_label(),
+            actions_label: chrome(Chrome::Actions, self.ui_lang()),
             primary_destructive: self.palette.mode == PaletteMode::Uninstall,
         }
     }
@@ -1874,6 +1893,10 @@ impl AppCore {
 
     pub fn ui_lang(&self) -> tinycast_pure::i18n::UiLang {
         tinycast_pure::i18n::UiLang::parse(&self.settings.ui_language)
+    }
+
+    fn show_alert(&self, title: &str, message: &str) {
+        crate::surfaces::dialog::alert(title, message, self.ui_lang());
     }
 
     pub fn settings_entries(&self, kind: AppKind) -> Vec<AppEntry> {
@@ -2553,20 +2576,21 @@ impl AppCore {
         if self.palette_visible {
             self.hide_palette();
         }
+        let lang = self.ui_lang();
         if sys::is_stage_manager(id) {
             self.show_message_hud_tone(
-                sys::STAGE_MANAGER_UNAVAILABLE,
+                tinycast_pure::i18n::stage_manager_unavailable(lang),
                 tinycast_pure::dialog::DialogTone::Neutral,
             );
             return;
         }
-        match sys::plan(id) {
+        match sys::plan_for(id, lang) {
             sys::RunPlan::Confirm {
                 title,
                 message,
                 accept,
             } => {
-                if !sys::gated_run(sys::confirm(&title, &message, &accept)) {
+                if !sys::gated_run(sys::confirm_lang(&title, &message, &accept, lang)) {
                     return;
                 }
                 self.apply_system_action(id, previous);
@@ -2574,7 +2598,7 @@ impl AppCore {
             sys::RunPlan::PickVolume => {
                 let current = crate::features::system_actions::service::runner::current_volume()
                     .unwrap_or(0.5);
-                let Some(level) = crate::surfaces::dialog::pick_volume(current) else {
+                let Some(level) = crate::surfaces::dialog::pick_volume(current, lang) else {
                     return;
                 };
                 if let Err(failure) =
@@ -2612,7 +2636,7 @@ impl AppCore {
         id: tinycast_pure::system_action::SystemActionId,
         failure: crate::features::system_actions::service::runner::Failure,
     ) {
-        crate::surfaces::dialog::alert(
+        self.show_alert(
             &format!("“{}” Failed", id.name()),
             &failure.message,
         );
@@ -2730,6 +2754,24 @@ impl AppCore {
         }
         if let Some(window) = &self.settings_window {
             window.set_locale(locale);
+        }
+        if let Some(window) = &self.support_surface {
+            window.set_locale(locale);
+        }
+        if let Some(window) = &self.about_surface {
+            window.set_locale(locale);
+        }
+        if let Some(window) = &self.notes_window {
+            window.set_locale(locale);
+        }
+        if let Some(window) = &self.onboarding_window {
+            window.set_locale(locale);
+        }
+        if let Some(hud) = &self.hud {
+            hud.set_locale(locale);
+        }
+        if let Some(panel) = &self.qa_panel {
+            panel.set_locale(locale);
         }
         self.invalidate_palette();
         self.invalidate_settings();
@@ -2971,6 +3013,7 @@ impl AppCore {
                 panel_w,
                 panel_h,
                 self.primary_label(),
+                chrome(Chrome::Actions, self.ui_lang()),
             ) {
                 if point_in(group.actions, x, y) {
                     self.toggle_actions();
@@ -3031,21 +3074,22 @@ impl AppCore {
             self.close_menu();
             return;
         }
+        let lang = self.ui_lang();
         self.menu_header = "Tinycast".into();
         self.menu_items = vec![
             MenuItem {
                 id: "about",
-                label: "About Tinycast".into(),
+                label: command_title(CommandID::About, lang).into(),
                 shortcut: None,
             },
             MenuItem {
                 id: "support",
-                label: "Support Tinycast".into(),
+                label: command_title(CommandID::Support, lang).into(),
                 shortcut: None,
             },
             MenuItem {
                 id: "settings",
-                label: "Settings".into(),
+                label: command_title(CommandID::Settings, lang).into(),
                 shortcut: None,
             },
         ];
@@ -3062,21 +3106,22 @@ impl AppCore {
             let Some(hit) = self.file_search.results().get(self.palette.selection) else {
                 return;
             };
+            let lang = self.ui_lang();
             self.menu_header = hit.name.clone();
             self.menu_items = vec![
                 MenuItem {
                     id: ID_OPEN,
-                    label: "Open".into(),
+                    label: chrome(Chrome::Open, lang).into(),
                     shortcut: Some("↵"),
                 },
                 MenuItem {
                     id: ID_SHOW_IN_FOLDER,
-                    label: "Show in Folder".into(),
+                    label: chrome(Chrome::ShowInFolder, lang).into(),
                     shortcut: Some("Ctrl+↵"),
                 },
                 MenuItem {
                     id: ID_COPY_PATH,
-                    label: "Copy Path".into(),
+                    label: chrome(Chrome::CopyPath, lang).into(),
                     shortcut: Some("Ctrl+Alt+C"),
                 },
             ];
@@ -3091,7 +3136,7 @@ impl AppCore {
         let Some(entry) = self.selected_entry() else {
             return;
         };
-        let items = actions_for(self.action_context(&entry));
+        let items = actions_for_lang(self.action_context(&entry), self.ui_lang());
         if items.is_empty() {
             return;
         }
@@ -3438,7 +3483,7 @@ impl AppCore {
         };
         self.hide_palette();
         if crate::features::file_search::ui::coordinator::open(&hit).is_err() {
-            crate::surfaces::dialog::alert(
+            self.show_alert(
                 &format!("Couldn’t Open {}", hit.name),
                 "The file could not be opened.",
             );
@@ -3491,7 +3536,7 @@ impl AppCore {
             dialog_open: crate::surfaces::dialog::is_up(),
             palette_visible: self.palette_visible,
         };
-        match crate::surfaces::updates::check_for_updates(activity) {
+        match crate::surfaces::updates::check_for_updates(activity, self.ui_lang()) {
             crate::surfaces::updates::UpdateUi::Hidden | crate::surfaces::updates::UpdateUi::Deferred => {}
             crate::surfaces::updates::UpdateUi::Hud(message) => {
                 if self.hud.is_none() && !self.host.is_invalid() {
@@ -3903,8 +3948,8 @@ impl AppCore {
     }
 
     fn open_ai_actions(&mut self) {
-        self.menu_header = "AI Chat".into();
-        self.menu_items = self.ai.actions();
+        self.menu_header = command_title(CommandID::AiChat, self.ui_lang()).into();
+        self.menu_items = self.ai.actions_for_lang(self.ui_lang());
         self.menu_selection = 0;
         self.menu = OpenMenu::Actions;
         if let Some(window) = &self.palette_window {
@@ -4487,7 +4532,7 @@ impl AppCore {
         self.hide_palette();
         match custom_coordinator::request_run(&command) {
             custom_coordinator::RunRequest::Confirm => {
-                if !custom_coordinator::confirm(&command) {
+                if !custom_coordinator::confirm_lang(&command, self.ui_lang()) {
                     return;
                 }
             }
@@ -5091,7 +5136,10 @@ mod tests {
         assert_eq!(c.palette.query, "hello");
         assert_eq!(c.tab_hint(), None);
         c.settings.ai_enabled = true;
+        c.settings.ui_language = "en".into();
         assert_eq!(c.tab_hint(), Some("AI Chat"));
+        c.settings.ui_language = "zh-Hans".into();
+        assert_eq!(c.tab_hint(), Some("AI 对话"));
     }
 
     #[test]

@@ -39,6 +39,7 @@ pub struct ResultPanel {
 }
 
 struct Inner {
+    host: HWND,
     title: String,
     body: String,
     painter: OverlayPainter,
@@ -95,6 +96,7 @@ impl ResultPanel {
             }
             let painter = OverlayPainter::new()?;
             let inner = Box::new(Inner {
+                host,
                 title: String::new(),
                 body: String::new(),
                 painter,
@@ -159,6 +161,15 @@ impl ResultPanel {
     pub fn hwnd(&self) -> HWND {
         self.hwnd
     }
+
+    pub fn set_locale(&self, locale: &str) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                (*inner).painter.set_locale(locale);
+            }
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(self.hwnd, None, false);
+        }
+    }
 }
 
 fn header_height() -> f32 {
@@ -172,7 +183,11 @@ fn footer_height() -> f32 {
 fn panel_height(fonts: &Fonts, body: &str) -> f32 {
     let pad = theme::spacing::XXL;
     let text_w = (PANEL_WIDTH_DIP - pad * 2.0).max(40.0);
-    let shown = if body.is_empty() { "Working…" } else { body };
+    let shown = if body.is_empty() {
+        tinycast_pure::i18n::qa_working(tinycast_pure::i18n::UiLang::ZhHans)
+    } else {
+        body
+    };
     let body_h = fonts
         .measure(
             &fonts.wrap_body,
@@ -285,6 +300,15 @@ unsafe extern "system" fn key_hook(code: i32, wparam: WPARAM, lparam: LPARAM) ->
     CallNextHookEx(HHOOK::default(), code, wparam, lparam)
 }
 
+unsafe fn lang_of(inner: *mut Inner) -> tinycast_pure::i18n::UiLang {
+    let ptr = GetWindowLongPtrW((*inner).host, GWLP_USERDATA) as *mut crate::app_core::AppCore;
+    if ptr.is_null() {
+        tinycast_pure::i18n::UiLang::ZhHans
+    } else {
+        (*ptr).ui_lang()
+    }
+}
+
 unsafe fn inner_from(hwnd: HWND) -> Option<*mut Inner> {
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
     if ptr.is_null() {
@@ -372,6 +396,8 @@ fn paint(hwnd: HWND) {
         if let Some(inner) = inner_from(hwnd) {
             let title = (*inner).title.clone();
             let body = (*inner).body.clone();
+            let lang = lang_of(inner);
+            (*inner).painter.set_locale(lang.dwrite_locale());
             let _ = (*inner).painter.paint(hwnd, |target, fonts| {
                 let width = PANEL_WIDTH_DIP;
                 let size = target.GetSize();
@@ -407,8 +433,9 @@ fn paint(hwnd: HWND) {
                 let body_top = header_height();
                 let footer = footer_height();
                 let body_h = (height - body_top - footer).min(theme::size::QUICK_ACTION_PANEL_BODY);
+                let working = tinycast_pure::i18n::qa_working(lang);
                 let shown = if body.is_empty() {
-                    "Working…"
+                    working
                 } else {
                     body.as_str()
                 };
@@ -444,14 +471,14 @@ fn paint(hwnd: HWND) {
                 text::draw(
                     target,
                     &fonts.bar,
-                    tinycast_pure::i18n::qa_replace(tinycast_pure::i18n::UiLang::default()),
+                    tinycast_pure::i18n::qa_replace(lang),
                     replace,
                     text::primary_ink(0),
                 )?;
                 text::draw(
                     target,
                     &fonts.bar,
-                    tinycast_pure::i18n::qa_copy(tinycast_pure::i18n::UiLang::default()),
+                    tinycast_pure::i18n::qa_copy(lang),
                     copy,
                     text::secondary_ink(0),
                 )?;

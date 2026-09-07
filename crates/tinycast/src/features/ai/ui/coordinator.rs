@@ -6,6 +6,7 @@ use tinycast_pure::ai::{
     compose_instructions, should_resume, AiConnection, AiEvent, AiRequest, ChatMessage,
     ChatSession, ChatState, ModelSelection, OpenPolicy, Uuid, DEFAULT_TEXT_BUDGET,
 };
+use tinycast_pure::i18n::UiLang;
 use tinycast_pure::palette_menu::MenuItem;
 
 use crate::features::ai::service::factory::ProviderFactory;
@@ -207,34 +208,38 @@ impl AiChatCoordinator {
     }
 
     pub fn actions(&self) -> Vec<MenuItem> {
+        self.actions_for_lang(UiLang::En)
+    }
+
+    pub fn actions_for_lang(&self, lang: UiLang) -> Vec<MenuItem> {
         let mut items = vec![
             MenuItem {
                 id: ID_AI_NEW,
-                label: "New Chat".into(),
+                label: tinycast_pure::i18n::ai_new_chat(lang).into(),
                 shortcut: Some("Ctrl+N"),
             },
             MenuItem {
                 id: ID_AI_HISTORY,
-                label: "Chat History".into(),
+                label: tinycast_pure::i18n::ai_chat_history(lang).into(),
                 shortcut: None,
             },
             MenuItem {
                 id: ID_AI_SETTINGS,
-                label: "AI Settings".into(),
+                label: tinycast_pure::i18n::ai_settings_action(lang).into(),
                 shortcut: None,
             },
         ];
         if self.streaming {
             items.push(MenuItem {
                 id: ID_AI_STOP,
-                label: "Stop Response".into(),
+                label: tinycast_pure::i18n::ai_stop_response(lang).into(),
                 shortcut: Some("↵"),
             });
         }
         if self.last_assistant_text().is_some() {
             items.push(MenuItem {
                 id: ID_AI_COPY,
-                label: "Copy Last Response".into(),
+                label: tinycast_pure::i18n::ai_copy_last_response(lang).into(),
                 shortcut: None,
             });
         }

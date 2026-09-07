@@ -1,3 +1,4 @@
+use tinycast_pure::i18n::{chrome, Chrome, UiLang};
 use tinycast_pure::uninstall::{UninstallCandidate, UninstallSelection};
 
 use crate::surfaces::dialog::{self, ConfirmPrompt};
@@ -5,18 +6,12 @@ use crate::surfaces::dialog::{self, ConfirmPrompt};
 pub const CONFIRM_TITLE: &str = "Move to Recycle Bin?";
 pub const CONFIRM_ACTION: &str = "Uninstall";
 
-pub fn confirm(name: &str, count: usize) -> bool {
+pub fn confirm(name: &str, count: usize, lang: UiLang) -> bool {
     dialog::confirm(&ConfirmPrompt {
-        title: CONFIRM_TITLE.into(),
-        message: format!(
-            "Tinycast will move {count} item(s) for “{name}” to the Recycle Bin. Nothing is permanently deleted."
-        ),
-        accept: CONFIRM_ACTION.into(),
-        cancel: tinycast_pure::i18n::chrome(
-            tinycast_pure::i18n::Chrome::Cancel,
-            tinycast_pure::i18n::UiLang::default(),
-        )
-        .into(),
+        title: tinycast_pure::i18n::uninstall_confirm_title(lang).into(),
+        message: tinycast_pure::i18n::uninstall_confirm_message(name, count, lang),
+        accept: tinycast_pure::i18n::uninstall_label(lang).into(),
+        cancel: chrome(Chrome::Cancel, lang).into(),
     })
 }
 

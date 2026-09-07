@@ -233,7 +233,7 @@ pub fn paint_settings_row(
         title,
         D2D_RECT_F {
             left: pad_x,
-            top: y + 8.0,
+            top: y,
             right: text_right,
             bottom: y + 28.0,
         },
@@ -276,9 +276,9 @@ pub fn paint_settings_row(
                 label,
                 D2D_RECT_F {
                     left: text_right,
-                    top: y + 14.0,
+                    top: y,
                     right: width - pad_x,
-                    bottom: y + 38.0,
+                    bottom: y + ROW_H,
                 },
                 (cr, cg, cb, ca * dim),
             )?;

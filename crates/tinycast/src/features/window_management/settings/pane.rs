@@ -7,7 +7,7 @@ use tinycast_pure::visibility::VisibilityStore;
 use tinycast_pure::window_command::{WindowCommandId, WindowGroup};
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
+    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
@@ -316,7 +316,7 @@ fn paint_header(
                 bottom: y + HEADER_H,
             },
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -348,12 +348,12 @@ fn paint_command(
             formats.body,
             &D2D_RECT_F {
                 left: origin_x + pad,
-                top: y + 8.0,
+                top: y,
                 right: origin_x + rec_left - 8.0,
                 bottom: y + CMD_H - 4.0,
             },
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
         target.DrawText(
@@ -366,7 +366,7 @@ fn paint_command(
                 bottom: y + CMD_H - 6.0,
             },
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
         if bound {
@@ -376,12 +376,12 @@ fn paint_command(
                 formats.body,
                 &D2D_RECT_F {
                     left: origin_x + clear_left,
-                    top: y + 8.0,
+                    top: y,
                     right: origin_x + width - pad,
                     bottom: y + CMD_H - 4.0,
                 },
                 &brush,
-                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
                 DWRITE_MEASURING_MODE_NATURAL,
             );
         }
@@ -404,7 +404,7 @@ fn paint_row(
     let text_w = width - pad * 3.0 - TOGGLE_W;
     let title_rect = D2D_RECT_F {
         left: origin_x + pad,
-        top: y + 8.0,
+        top: y,
         right: origin_x + pad + text_w,
         bottom: y + 28.0,
     };
@@ -422,7 +422,7 @@ fn paint_row(
             formats.body,
             &title_rect,
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -434,7 +434,7 @@ fn paint_row(
             formats.caption,
             &sub_rect,
             &muted_brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }

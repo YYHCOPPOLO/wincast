@@ -1,8 +1,7 @@
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontW, DeleteObject, EndPaint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS,
-    DEFAULT_CHARSET, DEFAULT_PITCH, FW_NORMAL, HFONT, OUT_DEFAULT_PRECIS, PAINTSTRUCT,
+    BeginPaint, DeleteObject, EndPaint, HFONT, PAINTSTRUCT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{EM_GETSEL, EM_REPLACESEL, EM_SETMARGINS};
@@ -136,24 +135,7 @@ impl SearchEdit {
 
     fn apply_font(&mut self, dpi: u32) {
         let px = dip_scalar_to_px(SEARCH_FONT_DIP, dpi);
-        let font = unsafe {
-            CreateFontW(
-                -px,
-                0,
-                0,
-                0,
-                FW_NORMAL.0 as i32,
-                0,
-                0,
-                0,
-                DEFAULT_CHARSET.0 as u32,
-                OUT_DEFAULT_PRECIS.0 as u32,
-                CLIP_DEFAULT_PRECIS.0 as u32,
-                CLEARTYPE_QUALITY.0 as u32,
-                DEFAULT_PITCH.0 as u32,
-                w!("Microsoft YaHei UI"),
-            )
-        };
+        let font = crate::design_system::fonts::create_gdi_ui_font(-px);
         if font.is_invalid() {
             return;
         }
@@ -423,7 +405,9 @@ mod tests {
     #[test]
     fn search_edit_font_is_yahei_ui() {
         let src = include_str!("edit.rs");
+        assert!(src.contains("create_gdi_ui_font"));
+        let fonts = include_str!("../design_system/fonts.rs");
         let family = concat!("Microsoft ", "YaHei", " UI");
-        assert!(src.contains(&format!("w!(\"{family}\")")));
+        assert!(fonts.contains(family));
     }
 }

@@ -106,6 +106,15 @@ impl MessageHud {
         self.present(Kind::Volume { level, muted });
     }
 
+    pub fn set_locale(&self, locale: &str) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                (*inner).painter.set_locale(locale);
+            }
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(self.hwnd, None, false);
+        }
+    }
+
     fn present(&self, kind: Kind) {
         unsafe {
             let Some(inner) = inner_from(self.hwnd) else {

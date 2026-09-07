@@ -76,9 +76,8 @@ impl Renderer {
         let factory: ID2D1Factory =
             unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)? };
         let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
-        let text_format = make_text_format(
+        let text_format = make_ui_format(
             &dwrite,
-            w!("Microsoft YaHei UI"),
             super::edit::SEARCH_FONT_DIP,
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
@@ -101,9 +100,8 @@ impl Renderer {
         if self.locale == locale {
             return;
         }
-        if let Ok(fmt) = make_text_format(
+        if let Ok(fmt) = make_ui_format(
             &self.dwrite,
-            w!("Microsoft YaHei UI"),
             super::edit::SEARCH_FONT_DIP,
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
@@ -324,102 +322,104 @@ fn create_hwnd_target(
 
 fn list_fonts(dwrite: &IDWriteFactory, locale: &str) -> windows::core::Result<ListFonts> {
     Ok(ListFonts {
-        title: make_text_format(
+        title: make_ui_format(
             dwrite,
-            w!("Microsoft YaHei UI"),
             theme::typography::ROW_TITLE,
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             false,
             locale,
         )?,
-        trailing: make_text_format(
+        trailing: make_ui_format(
             dwrite,
-            w!("Microsoft YaHei UI"),
             theme::typography::ROW_TRAILING,
             DWRITE_FONT_WEIGHT_REGULAR,
             true,
             false,
             locale,
         )?,
-        header: make_text_format(
+        header: make_ui_format(
             dwrite,
-            w!("Microsoft YaHei UI"),
             theme::typography::SECTION_HEADER,
             DWRITE_FONT_WEIGHT_MEDIUM,
             false,
             false,
             locale,
         )?,
-        chip: make_text_format(
+        chip: make_ui_format(
             dwrite,
-            w!("Microsoft YaHei UI"),
             theme::typography::CALC_BADGE,
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             true,
             locale,
         )?,
-        keycap: make_text_format(
+        keycap: make_ui_format(
             dwrite,
-            w!("Microsoft YaHei UI"),
             theme::typography::KEY_CAP,
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             true,
             locale,
         )?,
-        calc_result: make_text_format(
+        calc_result: make_ui_format(
             dwrite,
-            w!("Microsoft YaHei UI"),
             theme::typography::CALC_RESULT,
             DWRITE_FONT_WEIGHT_SEMI_BOLD,
             false,
             true,
             locale,
         )?,
-        calc_badge: make_text_format(
+        calc_badge: make_ui_format(
             dwrite,
-            w!("Microsoft YaHei UI"),
             theme::typography::CALC_BADGE,
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             true,
             locale,
         )?,
-        emoji: make_text_format(
-            dwrite,
-            w!("Segoe UI Emoji"),
-            32.0,
-            DWRITE_FONT_WEIGHT_REGULAR,
-            false,
-            true,
-            locale,
-        )?,
+        emoji: make_emoji_format(dwrite, locale)?,
     })
 }
 
-fn make_text_format(
+fn make_ui_format(
     dwrite: &IDWriteFactory,
-    family: windows::core::PCWSTR,
     size: f32,
     weight: windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT,
     trailing: bool,
     center: bool,
     locale: &str,
 ) -> windows::core::Result<IDWriteTextFormat> {
+    let format = crate::design_system::fonts::ui_text_format(dwrite, size, weight, locale)?;
+    apply_format_align(&format, trailing, center)?;
+    Ok(format)
+}
+
+fn make_emoji_format(
+    dwrite: &IDWriteFactory,
+    locale: &str,
+) -> windows::core::Result<IDWriteTextFormat> {
     let loc: Vec<u16> = locale.encode_utf16().chain(std::iter::once(0)).collect();
     let format = unsafe {
         dwrite.CreateTextFormat(
-            family,
+            w!("Segoe UI Emoji"),
             None,
-            weight,
+            DWRITE_FONT_WEIGHT_REGULAR,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            size,
+            32.0,
             windows::core::PCWSTR(loc.as_ptr()),
         )?
     };
+    apply_format_align(&format, false, true)?;
+    Ok(format)
+}
+
+fn apply_format_align(
+    format: &IDWriteTextFormat,
+    trailing: bool,
+    center: bool,
+) -> windows::core::Result<()> {
     unsafe {
         format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
         format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
@@ -429,7 +429,7 @@ fn make_text_format(
             format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
         }
     }
-    Ok(format)
+    Ok(())
 }
 
 fn paint_scene(
@@ -899,18 +899,16 @@ mod tests {
     fn typed_query_paints_in_search_field() {
         let (w, h, bits) = crate::design_system::test_render::with_offscreen(750, 64, |target| {
             let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
-            let text_format = make_text_format(
+            let text_format = make_ui_format(
                 &dwrite,
-                w!("Microsoft YaHei UI"),
                 crate::palette::edit::SEARCH_FONT_DIP,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
                 false,
                 "zh-CN",
             )?;
-            let body = make_text_format(
+            let body = make_ui_format(
                 &dwrite,
-                w!("Microsoft YaHei UI"),
                 theme::typography::ROW_TITLE,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
@@ -948,6 +946,7 @@ mod tests {
                     footer: FooterPaint {
                         show_action_group: false,
                         primary_label: "",
+                        actions_label: "",
                         primary_destructive: false,
                     },
                     menu: None,
@@ -993,18 +992,16 @@ mod tests {
     fn header_glyph_stays_opaque_over_dissolve() {
         let (w, _h, bits) = crate::design_system::test_render::with_offscreen(750, 475, |target| {
             let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
-            let text_format = make_text_format(
+            let text_format = make_ui_format(
                 &dwrite,
-                w!("Microsoft YaHei UI"),
                 crate::palette::edit::SEARCH_FONT_DIP,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
                 false,
                 "zh-CN",
             )?;
-            let body = make_text_format(
+            let body = make_ui_format(
                 &dwrite,
-                w!("Microsoft YaHei UI"),
                 13.0,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
@@ -1052,6 +1049,7 @@ mod tests {
                     footer: FooterPaint {
                         show_action_group: false,
                         primary_label: "",
+                        actions_label: "",
                         primary_destructive: false,
                     },
                     menu: None,

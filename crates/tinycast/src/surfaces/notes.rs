@@ -163,6 +163,28 @@ impl NotesWindow {
         unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindowVisible(self.hwnd).as_bool() }
     }
 
+    pub fn set_locale(&self, locale: &str) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                if let Some(painter) = (*inner).painter.as_mut() {
+                    painter.set_locale(locale);
+                }
+                if let Some(painter) = (*inner).switcher_painter.as_mut() {
+                    painter.set_locale(locale);
+                }
+                let lang = core_from_host((*inner).host)
+                    .map(|c| (*c).ui_lang())
+                    .unwrap_or(tinycast_pure::i18n::UiLang::ZhHans);
+                let mut wide: Vec<u16> = tinycast_pure::i18n::notes_window_title(lang)
+                    .encode_utf16()
+                    .chain(std::iter::once(0))
+                    .collect();
+                let _ = SetWindowTextW(self.hwnd, PCWSTR(wide.as_mut_ptr()));
+            }
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(self.hwnd, None, false);
+        }
+    }
+
     pub fn open_switcher(&self) {
         unsafe {
             open_switcher_of(self.hwnd);
@@ -958,7 +980,10 @@ fn window_title(hwnd: HWND) -> String {
         if n > 0 {
             String::from_utf16_lossy(&buf[..n as usize])
         } else {
-            tinycast_pure::i18n::notes_window_title(tinycast_pure::i18n::UiLang::default()).into()
+            inner_from(hwnd)
+                .and_then(|inner| core_from_host((*inner).host))
+                .map(|core| tinycast_pure::i18n::notes_window_title((*core).ui_lang()).to_string())
+                .unwrap_or_else(|| tinycast_pure::i18n::notes_window_title(tinycast_pure::i18n::UiLang::ZhHans).into())
         }
     }
 }

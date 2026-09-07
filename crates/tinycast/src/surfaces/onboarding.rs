@@ -98,6 +98,17 @@ impl OnboardingWindow {
         }
     }
 
+    pub fn set_locale(&self, locale: &str) {
+        unsafe {
+            if let Some(inner) = inner_from(self.hwnd) {
+                if let Some(painter) = (*inner).painter.as_mut() {
+                    painter.set_locale(locale);
+                }
+            }
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(self.hwnd, None, false);
+        }
+    }
+
     pub fn hide(&self) {
         unsafe {
             let _ = ShowWindow(self.hwnd, SW_HIDE);
@@ -510,7 +521,7 @@ fn paint(hwnd: HWND) {
                         theme::radius::MENU,
                         text::control_surface(0),
                     )?;
-                    let caption = recorder::well_caption(None, recording);
+                    let caption = recorder::well_caption_lang(None, recording, lang);
                     text::draw(
                         target,
                         &fonts.bar,

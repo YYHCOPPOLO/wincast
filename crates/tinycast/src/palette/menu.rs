@@ -22,10 +22,11 @@ pub fn action_group_rects_for_fonts(
     panel_w: f32,
     panel_h: f32,
     primary_label: &str,
+    actions_label: &str,
 ) -> Option<ActionGroupRects> {
     let action_caps: Vec<&str> = ACTIONS_SHORTCUT.split('+').collect();
     let primary_w = bar_button_width(fonts, primary_label, &["↵"]);
-    let actions_w = bar_button_width(fonts, "Actions", &action_caps);
+    let actions_w = bar_button_width(fonts, actions_label, &action_caps);
     action_group_rects_measured(panel_w, panel_h, primary_w, actions_w)
 }
 
@@ -34,16 +35,18 @@ pub fn action_group_rects_for_label(
     panel_w: f32,
     panel_h: f32,
     primary_label: &str,
+    actions_label: &str,
 ) -> Option<ActionGroupRects> {
     let dwrite: IDWriteFactory =
         unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()? };
     let fonts = Fonts::new(&dwrite).ok()?;
-    action_group_rects_for_fonts(&fonts, panel_w, panel_h, primary_label)
+    action_group_rects_for_fonts(&fonts, panel_w, panel_h, primary_label, actions_label)
 }
 
 pub struct FooterPaint<'a> {
     pub show_action_group: bool,
     pub primary_label: &'a str,
+    pub actions_label: &'a str,
     pub primary_destructive: bool,
 }
 
@@ -100,9 +103,13 @@ pub fn paint_footer(
     }
     let ds = Fonts::new(dwrite)?;
     let action_caps: Vec<&str> = ACTIONS_SHORTCUT.split('+').collect();
-    let Some(group) =
-        action_group_rects_for_fonts(&ds, width, height, footer.primary_label)
-    else {
+    let Some(group) = action_group_rects_for_fonts(
+        &ds,
+        width,
+        height,
+        footer.primary_label,
+        footer.actions_label,
+    ) else {
         return Ok(());
     };
     crate::design_system::fill_squircle(
@@ -173,7 +180,7 @@ pub fn paint_footer(
             right: (right - theme::spacing::XS).max(actions.x + pad + 8.0),
             bottom: actions.y + actions.h,
         },
-        "Actions",
+        footer.actions_label,
     )?;
     Ok(())
 }
@@ -446,6 +453,7 @@ mod tests {
                 &FooterPaint {
                     show_action_group: true,
                     primary_label: "Open Application",
+                    actions_label: "Actions",
                     primary_destructive: false,
                 },
             )
@@ -510,9 +518,16 @@ mod tests {
     fn action_group_hits_match_measured_paint_rects() {
         let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).expect("dwrite") };
         let fonts = Fonts::new(&dwrite).expect("fonts");
-        let painted =
-            action_group_rects_for_fonts(&fonts, 750.0, 475.0, "Open Application").unwrap();
-        let hit = action_group_rects_for_label(750.0, 475.0, "Open Application").unwrap();
+        let painted = action_group_rects_for_fonts(
+            &fonts,
+            750.0,
+            475.0,
+            "Open Application",
+            "Actions",
+        )
+        .unwrap();
+        let hit =
+            action_group_rects_for_label(750.0, 475.0, "Open Application", "Actions").unwrap();
         assert_eq!(painted, hit);
         let fallback = tinycast_pure::palette_menu::action_group_rects(750.0, 475.0).unwrap();
         assert!(

@@ -1,6 +1,7 @@
 //! One dispatch funnel for system actions, their confirmation gates, and HUD feedback.
 
 use tinycast_pure::dialog::DialogTone;
+use tinycast_pure::i18n::{chrome, system_action_title, system_confirm, Chrome, UiLang};
 use tinycast_pure::system_action::{Confirmation, SystemActionId};
 use windows::Win32::Foundation::HWND;
 
@@ -27,26 +28,30 @@ pub fn gated_run(confirm_ok: bool) -> bool {
 }
 
 pub fn plan(id: SystemActionId) -> RunPlan {
+    plan_for(id, UiLang::En)
+}
+
+pub fn plan_for(id: SystemActionId, lang: UiLang) -> RunPlan {
     match id.confirmation() {
-        Confirmation::Required { title, message } => RunPlan::Confirm {
-            title: title.to_string(),
-            message: message.to_string(),
-            accept: id.name().to_string(),
-        },
+        Confirmation::Required { .. } => {
+            let (title, message) = system_confirm(id, lang).unwrap_or_else(|| {
+                (id.name(), "")
+            });
+            RunPlan::Confirm {
+                title: title.to_string(),
+                message: message.to_string(),
+                accept: system_action_title(id, lang).to_string(),
+            }
+        }
         Confirmation::Computed if id == SystemActionId::QuitAllApps => {
             let count = runner::quit_all_targets().len();
             if count == 0 {
                 return RunPlan::Execute;
             }
-            let title = if count == 1 {
-                "Quit 1 application?".into()
-            } else {
-                format!("Quit {count} applications?")
-            };
             RunPlan::Confirm {
-                title,
-                message: "Applications with unsaved changes will ask you to save.".into(),
-                accept: "Quit All".into(),
+                title: tinycast_pure::i18n::quit_all_title(count, lang),
+                message: tinycast_pure::i18n::quit_all_message(lang).into(),
+                accept: tinycast_pure::i18n::quit_all_accept(lang).into(),
             }
         }
         Confirmation::Computed => RunPlan::Execute,
@@ -56,20 +61,33 @@ pub fn plan(id: SystemActionId) -> RunPlan {
 }
 
 pub fn confirm_prompt(title: &str, message: &str, accept: &str) -> ConfirmPrompt {
+    confirm_prompt_lang(title, message, accept, UiLang::En)
+}
+
+pub fn confirm_prompt_lang(
+    title: &str,
+    message: &str,
+    accept: &str,
+    lang: UiLang,
+) -> ConfirmPrompt {
     ConfirmPrompt {
         title: title.to_string(),
         message: message.to_string(),
         accept: accept.to_string(),
-        cancel: CANCEL.into(),
+        cancel: chrome(Chrome::Cancel, lang).into(),
     }
 }
 
 /// Palette must already be hidden. Returns false on Cancel, Escape, or a stacked dialog.
 pub fn confirm(title: &str, message: &str, accept: &str) -> bool {
+    confirm_lang(title, message, accept, UiLang::En)
+}
+
+pub fn confirm_lang(title: &str, message: &str, accept: &str, lang: UiLang) -> bool {
     if !dialog::begin() {
         return false;
     }
-    let prompt = confirm_prompt(title, message, accept);
+    let prompt = confirm_prompt_lang(title, message, accept, lang);
     let accepted = dialog::confirm(&prompt);
     dialog::end();
     accepted

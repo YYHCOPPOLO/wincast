@@ -391,6 +391,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
             footer: super::menu::FooterPaint {
                 show_action_group: false,
                 primary_label: "",
+                actions_label: "",
                 primary_destructive: false,
             },
             menu: None,

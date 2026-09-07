@@ -58,12 +58,16 @@ pub fn empty_message_lang(
     tinycast_pure::i18n::clipboard_empty(key, lang)
 }
 
-pub fn paint_items(rows: &[ClipboardItem], selection: usize) -> Vec<PaintItem> {
+pub fn paint_items(
+    rows: &[ClipboardItem],
+    selection: usize,
+    lang: tinycast_pure::i18n::UiLang,
+) -> Vec<PaintItem> {
     rows.iter()
         .enumerate()
         .map(|(i, item)| {
             let title = match item.kind {
-                ClipKind::Image => "[Image]".to_string(),
+                ClipKind::Image => format!("[{}]", tinycast_pure::i18n::clipboard_image(lang)),
                 ClipKind::Text => item
                     .text
                     .as_deref()
@@ -72,7 +76,11 @@ pub fn paint_items(rows: &[ClipboardItem], selection: usize) -> Vec<PaintItem> {
                     .take(80)
                     .collect(),
             };
-            let trailing = if item.is_pinned() { "Pinned" } else { "" };
+            let trailing = if item.is_pinned() {
+                tinycast_pure::i18n::clipboard_pinned(lang)
+            } else {
+                ""
+            };
             PaintItem::Row {
                 title,
                 alias: None,
@@ -86,12 +94,19 @@ pub fn paint_items(rows: &[ClipboardItem], selection: usize) -> Vec<PaintItem> {
 }
 
 pub fn preview_text(item: Option<&ClipboardItem>) -> String {
+    preview_text_lang(item, tinycast_pure::i18n::UiLang::En)
+}
+
+pub fn preview_text_lang(
+    item: Option<&ClipboardItem>,
+    lang: tinycast_pure::i18n::UiLang,
+) -> String {
     match item {
         Some(item) if item.kind == ClipKind::Image => item
             .image_path
             .as_ref()
             .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "Image".into()),
+            .unwrap_or_else(|| tinycast_pure::i18n::clipboard_image(lang).into()),
         Some(item) => item.text.clone().unwrap_or_default(),
         None => String::new(),
     }

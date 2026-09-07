@@ -270,7 +270,7 @@ pub fn paint(
     let language_trail = general_language_trailing(lang);
     let reset_label = general_reset_label(lang);
     let hyper_on = hyper_includes_shift_enabled(state.hyper);
-    let hyper_title = HyperKey::from_raw(state.hyper).title();
+    let hyper_title = tinycast_pure::i18n::hyper_key_title(state.hyper, lang);
     let hyper_sub = hyper_subtitle_lang(state.hyper, lang);
     let mut y = ds::CARD_INSET - scroll;
     for (kind, header, footer, rows) in section_specs(lang) {
@@ -348,9 +348,10 @@ pub fn paint(
             )?;
             if hit == GeneralHit::PaletteRecorder {
                 let listening = state.recording_palette;
-                let caption = crate::features::hotkeys::ui::recorder::well_caption(
+                let caption = crate::features::hotkeys::ui::recorder::well_caption_lang(
                     state.palette_binding,
                     listening,
+                    lang,
                 );
                 paint_recorder_well(
                     target,
@@ -427,7 +428,7 @@ fn paint_recorder_well(
                 bottom: well.y + well.h,
             },
             &brush,
-            windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_NONE,
+            windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_CLIP,
             windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL,
         );
     }

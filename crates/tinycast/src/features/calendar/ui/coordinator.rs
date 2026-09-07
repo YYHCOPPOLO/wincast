@@ -1,3 +1,4 @@
+use tinycast_pure::i18n::{chrome, Chrome, UiLang};
 use tinycast_pure::meeting::{MeetingEvent, MeetingLink, UpcomingWindow};
 use tinycast_pure::palette_mode::PaletteMode;
 
@@ -10,12 +11,12 @@ pub const CONSENT_MESSAGE: &str =
 pub const CONSENT_ACTION: &str = "Continue";
 pub const NOTHING_TO_JOIN: &str = "Nothing to join right now";
 
-pub fn consent() -> bool {
+pub fn consent(lang: UiLang) -> bool {
     dialog::confirm(&ConfirmPrompt {
-        title: CONSENT_TITLE.into(),
-        message: CONSENT_MESSAGE.into(),
-        accept: CONSENT_ACTION.into(),
-        cancel: "Cancel".into(),
+        title: tinycast_pure::i18n::calendar_consent_title(lang).into(),
+        message: tinycast_pure::i18n::calendar_consent_message(lang).into(),
+        accept: tinycast_pure::i18n::onboarding_continue(lang).into(),
+        cancel: chrome(Chrome::Cancel, lang).into(),
     })
 }
 
@@ -42,14 +43,14 @@ pub fn should_show_card(mode: PaletteMode, query: &str, enabled: bool) -> bool {
 }
 
 /// Camera preview HWND is the confirmation. Deny of the camera is not fatal.
-pub fn camera_preview_optional(enabled: bool, title: &str) -> bool {
+pub fn camera_preview_optional(enabled: bool, title: &str, lang: UiLang) -> bool {
     if !enabled {
         return true;
     }
-    super::preview::present(title)
+    super::preview::present(title, lang)
 }
 
-pub fn create_event(owner: windows::Win32::Foundation::HWND) {
+pub fn create_event(owner: windows::Win32::Foundation::HWND, lang: UiLang) {
     use crate::features::custom_commands::ui::editor::{edit_with, CommandDraft, EditorLabels};
     let Some(draft) = edit_with(
         owner,
@@ -63,6 +64,7 @@ pub fn create_event(owner: windows::Win32::Foundation::HWND) {
             value_label: "Duration minutes",
             show_confirm: false,
         },
+        lang,
     ) else {
         return;
     };
@@ -132,6 +134,10 @@ mod tests {
     #[test]
     fn camera_deny_is_not_fatal() {
         assert!(crate::features::calendar::ui::preview::probe_camera_nonfatal());
-        assert!(camera_preview_optional(false, "Standup"));
+        assert!(camera_preview_optional(
+            false,
+            "Standup",
+            tinycast_pure::i18n::UiLang::En
+        ));
     }
 }

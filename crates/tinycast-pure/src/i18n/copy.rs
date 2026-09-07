@@ -551,4 +551,12 @@ mod tests {
             launcher_enable_subtitle(UiLang::En)
         );
     }
+
+    #[test]
+    fn system_confirm_zh_is_not_english() {
+        let zh = system_confirm(SystemActionId::Restart, UiLang::ZhHans).unwrap();
+        let en = system_confirm(SystemActionId::Restart, UiLang::En).unwrap();
+        assert_eq!(en.0, "Restart your PC?");
+        assert_eq!(zh.0, "确定要重启电脑吗？");
+    }
 }

@@ -59,15 +59,24 @@ pub const QUICKLINK_LABELS: EditorLabels = EditorLabels {
 };
 
 pub fn edit(owner: HWND, initial: Option<&CommandDraft>) -> Option<CommandDraft> {
-    edit_with(owner, initial, COMMAND_LABELS)
+    edit_lang(owner, initial, tinycast_pure::i18n::UiLang::En)
+}
+
+pub fn edit_lang(
+    owner: HWND,
+    initial: Option<&CommandDraft>,
+    lang: tinycast_pure::i18n::UiLang,
+) -> Option<CommandDraft> {
+    edit_with(owner, initial, COMMAND_LABELS, lang)
 }
 
 pub fn edit_with(
     owner: HWND,
     initial: Option<&CommandDraft>,
     labels: EditorLabels,
+    lang: tinycast_pure::i18n::UiLang,
 ) -> Option<CommandDraft> {
-    let hwnd = create(owner, initial, labels).ok()?;
+    let hwnd = create(owner, initial, labels, lang).ok()?;
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
@@ -98,6 +107,7 @@ fn create(
     owner: HWND,
     initial: Option<&CommandDraft>,
     labels: EditorLabels,
+    lang: tinycast_pure::i18n::UiLang,
 ) -> windows::core::Result<HWND> {
     unsafe {
         let hinstance = GetModuleHandleW(None)?;
@@ -165,7 +175,7 @@ fn create(
             inner.confirm = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
-                w!("Needs confirmation"),
+                windows::core::PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(0x0003), // BS_AUTOCHECKBOX
                 dip_scalar_to_px(20.0, dpi),
                 dip_scalar_to_px(128.0, dpi),
@@ -176,10 +186,21 @@ fn create(
                 hinstance,
                 None,
             )?;
+            set_text(
+                inner.confirm,
+                tinycast_pure::i18n::editor_needs_confirmation(lang),
+            );
         }
-        let _ = button(hwnd, ID_SAVE, "Save", 250, 190, dpi)?;
-        let _ = button(hwnd, ID_CANCEL, "Cancel", 350, 190, dpi)?;
-        let _ = label(hwnd, "Name", 20, 16, dpi);
+        let _ = button(hwnd, ID_SAVE, tinycast_pure::i18n::editor_save(lang), 250, 190, dpi)?;
+        let _ = button(
+            hwnd,
+            ID_CANCEL,
+            tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang),
+            350,
+            190,
+            dpi,
+        )?;
+        let _ = label(hwnd, tinycast_pure::i18n::editor_name_label(lang), 20, 16, dpi);
         let _ = label(hwnd, labels.value_label, 20, 68, dpi);
         if let Some(init) = initial {
             set_text(inner.name, &init.name);

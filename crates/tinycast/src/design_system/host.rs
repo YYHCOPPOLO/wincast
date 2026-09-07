@@ -29,20 +29,36 @@ pub struct OverlayPainter {
     fonts: Fonts,
     hwnd_target: Option<ID2D1HwndRenderTarget>,
     layered: bool,
+    locale: String,
 }
 
 impl OverlayPainter {
     pub fn new() -> windows::core::Result<Self> {
+        Self::with_locale("zh-CN")
+    }
+
+    pub fn with_locale(locale: &str) -> windows::core::Result<Self> {
         let factory: ID2D1Factory =
             unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)? };
         let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
-        let fonts = Fonts::new(&dwrite)?;
+        let fonts = Fonts::with_locale(&dwrite, locale)?;
         Ok(Self {
             factory,
             fonts,
             hwnd_target: None,
             layered: false,
+            locale: locale.to_string(),
         })
+    }
+
+    pub fn set_locale(&mut self, locale: &str) {
+        if self.locale == locale {
+            return;
+        }
+        if let Ok(fonts) = Fonts::with_locale(&self.fonts.dwrite, locale) {
+            self.fonts = fonts;
+            self.locale = locale.to_string();
+        }
     }
 
     pub fn fonts(&self) -> &Fonts {

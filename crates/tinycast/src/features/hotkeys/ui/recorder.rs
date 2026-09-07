@@ -9,7 +9,7 @@ use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
+    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
@@ -79,12 +79,20 @@ pub fn well_in_row(row: DipRect) -> DipRect {
 }
 
 pub fn well_caption(binding: Option<&str>, listening: bool) -> String {
+    well_caption_lang(binding, listening, tinycast_pure::i18n::UiLang::En)
+}
+
+pub fn well_caption_lang(
+    binding: Option<&str>,
+    listening: bool,
+    lang: tinycast_pure::i18n::UiLang,
+) -> String {
     if listening {
-        "Listening…".into()
+        tinycast_pure::i18n::listening_label(lang).into()
     } else if let Some(text) = binding.filter(|s| !s.is_empty()) {
         text.to_string()
     } else {
-        "Record".into()
+        tinycast_pure::i18n::record_label(lang).into()
     }
 }
 
@@ -156,7 +164,7 @@ pub fn paint_callout(
                 bottom: line_y + theme::size::SHORTCUT_POPOVER_LINE,
             },
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -227,7 +235,7 @@ pub fn paint_callout(
                 formats.body,
                 &rr.rect,
                 &text_brush,
-                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
                 DWRITE_MEASURING_MODE_NATURAL,
             );
         }
@@ -257,7 +265,7 @@ pub fn paint_callout(
             formats.caption,
             &esc_r.rect,
             &text_brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }

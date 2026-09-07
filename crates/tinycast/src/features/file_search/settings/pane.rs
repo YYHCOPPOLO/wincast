@@ -5,7 +5,7 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
+    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
@@ -240,7 +240,7 @@ fn header(
                 bottom: y + 20.0,
             },
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -267,12 +267,12 @@ fn paint_toggle(
             formats.body,
             &D2D_RECT_F {
                 left: pad,
-                top: y + 8.0,
+                top: y,
                 right: pad + text_w,
                 bottom: y + 28.0,
             },
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -289,7 +289,7 @@ fn paint_toggle(
                 bottom: y + ROW_H - 4.0,
             },
             &muted_brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -338,12 +338,12 @@ fn paint_item(
             formats.body,
             &D2D_RECT_F {
                 left: pad,
-                top: y + 8.0,
+                top: y,
                 right: width - pad * 2.0 - 64.0,
                 bottom: y + ITEM_H - 4.0,
             },
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -356,12 +356,12 @@ fn paint_item(
                 formats.caption,
                 &D2D_RECT_F {
                     left: width - pad - 64.0,
-                    top: y + 8.0,
+                    top: y,
                     right: width - pad,
                     bottom: y + ITEM_H - 4.0,
                 },
                 &muted_brush,
-                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
                 DWRITE_MEASURING_MODE_NATURAL,
             );
         }
@@ -381,12 +381,12 @@ pub fn pick_folder(owner: HWND) -> Option<String> {
     }
 }
 
-pub fn ask_pattern(owner: HWND) -> Option<String> {
-    ask_string(owner, "Ignore pattern")
+pub fn ask_pattern(owner: HWND, lang: tinycast_pure::i18n::UiLang) -> Option<String> {
+    ask_string(owner, tinycast_pure::i18n::ignore_pattern_title(lang), lang)
 }
 
-fn ask_string(owner: HWND, title: &str) -> Option<String> {
-    let hwnd = create_prompt(owner, title).ok()?;
+fn ask_string(owner: HWND, title: &str, lang: tinycast_pure::i18n::UiLang) -> Option<String> {
+    let hwnd = create_prompt(owner, title, lang).ok()?;
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
@@ -423,7 +423,11 @@ fn take_prompt() -> Option<String> {
     LAST_PROMPT.lock().ok().and_then(|mut g| g.take())
 }
 
-fn create_prompt(owner: HWND, title: &str) -> windows::core::Result<HWND> {
+fn create_prompt(
+    owner: HWND,
+    title: &str,
+    lang: tinycast_pure::i18n::UiLang,
+) -> windows::core::Result<HWND> {
     unsafe {
         let hinstance = windows::Win32::System::LibraryLoader::GetModuleHandleW(None)?;
         let class = WNDCLASSW {
@@ -467,10 +471,21 @@ fn create_prompt(owner: HWND, title: &str) -> windows::core::Result<HWND> {
             hinstance,
             None,
         )?;
+        let add_wide: Vec<u16> = tinycast_pure::i18n::clipboard_add(lang)
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let cancel_wide: Vec<u16> = tinycast_pure::i18n::chrome(
+            tinycast_pure::i18n::Chrome::Cancel,
+            lang,
+        )
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
         let _ = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
-            w!("Add"),
+            PCWSTR(add_wide.as_ptr()),
             WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | 1),
             w - 160,
             h - 56,
@@ -484,7 +499,7 @@ fn create_prompt(owner: HWND, title: &str) -> windows::core::Result<HWND> {
         let _ = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
-            w!("Cancel"),
+            PCWSTR(cancel_wide.as_ptr()),
             WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
             w - 88,
             h - 56,

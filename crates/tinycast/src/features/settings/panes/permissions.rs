@@ -2,7 +2,7 @@
 
 use tinycast_pure::theme;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
-use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE};
+use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
 use crate::design_system::settings as ds;
@@ -88,12 +88,12 @@ pub fn paint(
                 formats.body,
                 &D2D_RECT_F {
                     left: pad,
-                    top: y + 8.0,
+                    top: y,
                     right: width - pad - 130.0,
                     bottom: y + 28.0,
                 },
                 &brush,
-                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
                 DWRITE_MEASURING_MODE_NATURAL,
             );
             target.DrawText(
@@ -106,7 +106,7 @@ pub fn paint(
                     bottom: y + ROW_H - 4.0,
                 },
                 &muted_brush,
-                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
                 DWRITE_MEASURING_MODE_NATURAL,
             );
             target.DrawText(
@@ -119,7 +119,7 @@ pub fn paint(
                     bottom: y + 40.0,
                 },
                 &brush,
-                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
                 DWRITE_MEASURING_MODE_NATURAL,
             );
         }

@@ -262,6 +262,151 @@ pub fn uninstall_label(lang: UiLang) -> &'static str {
     pick(lang, "Uninstall", "卸载")
 }
 
+pub fn ai_new_chat(lang: UiLang) -> &'static str {
+    pick(lang, "New Chat", "新对话")
+}
+
+pub fn ai_chat_history(lang: UiLang) -> &'static str {
+    pick(lang, "Chat History", "对话历史")
+}
+
+pub fn ai_settings_action(lang: UiLang) -> &'static str {
+    pick(lang, "AI Settings", "AI 设置")
+}
+
+pub fn ai_stop_response(lang: UiLang) -> &'static str {
+    pick(lang, "Stop Response", "停止回复")
+}
+
+pub fn ai_copy_last_response(lang: UiLang) -> &'static str {
+    pick(lang, "Copy Last Response", "复制上次回复")
+}
+
+pub fn qa_working(lang: UiLang) -> &'static str {
+    pick(lang, "Working…", "正在处理…")
+}
+
+pub fn command_failed(lang: UiLang) -> &'static str {
+    pick(lang, "Command failed", "命令失败")
+}
+
+pub fn stage_manager_unavailable(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "Stage Manager is not available on Windows.",
+        "Windows 上不提供 Stage Manager。",
+    )
+}
+
+pub fn quit_all_title(count: usize, lang: UiLang) -> String {
+    match lang {
+        UiLang::En if count == 1 => "Quit 1 application?".into(),
+        UiLang::En => format!("Quit {count} applications?"),
+        UiLang::ZhHans if count == 1 => "退出 1 个应用？".into(),
+        UiLang::ZhHans => format!("退出 {count} 个应用？"),
+    }
+}
+
+pub fn quit_all_message(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "Applications with unsaved changes will ask you to save.",
+        "未保存的应用会提示你保存。",
+    )
+}
+
+pub fn quit_all_accept(lang: UiLang) -> &'static str {
+    pick(lang, "Quit All", "全部退出")
+}
+
+pub fn calendar_consent_title(lang: UiLang) -> &'static str {
+    pick(lang, "Turn on Calendar?", "启用日历？")
+}
+
+pub fn calendar_consent_message(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "Tinycast will read your calendar to show upcoming meetings and join links.",
+        "Tinycast 会读取日历以显示即将开始的会议和加入链接。",
+    )
+}
+
+pub fn camera_preview_title(lang: UiLang) -> &'static str {
+    pick(lang, "Camera preview", "摄像头预览")
+}
+
+pub fn camera_ready(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "Camera is ready. Join or cancel.",
+        "摄像头已就绪。加入或取消。",
+    )
+}
+
+pub fn camera_unavailable(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "Camera unavailable. You can still join.",
+        "摄像头不可用。仍可加入。",
+    )
+}
+
+pub fn uninstall_confirm_title(lang: UiLang) -> &'static str {
+    pick(lang, "Move to Recycle Bin?", "移到回收站？")
+}
+
+pub fn uninstall_confirm_message(name: &str, count: usize, lang: UiLang) -> String {
+    match lang {
+        UiLang::En => format!(
+            "Tinycast will move {count} item(s) for “{name}” to the Recycle Bin. Nothing is permanently deleted."
+        ),
+        UiLang::ZhHans => format!(
+            "Tinycast 会把“{name}”的 {count} 项移到回收站。不会永久删除。"
+        ),
+    }
+}
+
+pub fn clipboard_pinned(lang: UiLang) -> &'static str {
+    pick(lang, "Pinned", "已固定")
+}
+
+pub fn clipboard_image(lang: UiLang) -> &'static str {
+    pick(lang, "Image", "图片")
+}
+
+pub fn hyper_key_title(raw: &str, lang: UiLang) -> &'static str {
+    match (raw, lang) {
+        ("none", UiLang::ZhHans) | ("", UiLang::ZhHans) => "关闭",
+        ("none", _) | ("", _) => "None",
+        ("capsLock", _) => "Caps Lock (⇪)",
+        ("rightControl", UiLang::ZhHans) => "右 Ctrl",
+        ("rightControl", _) => "Right Control",
+        ("rightShift", UiLang::ZhHans) => "右 Shift",
+        ("rightShift", _) => "Right Shift",
+        ("rightOption", UiLang::ZhHans) => "右 Alt",
+        ("rightOption", _) => "Right Alt",
+        ("rightCommand", UiLang::ZhHans) => "右 Win",
+        ("rightCommand", _) => "Right Win",
+        _ => pick(lang, "None", "关闭"),
+    }
+}
+
+pub fn editor_save(lang: UiLang) -> &'static str {
+    pick(lang, "Save", "保存")
+}
+
+pub fn editor_name_label(lang: UiLang) -> &'static str {
+    pick(lang, "Name", "名称")
+}
+
+pub fn editor_needs_confirmation(lang: UiLang) -> &'static str {
+    pick(lang, "Needs confirmation", "需要确认")
+}
+
+pub fn ignore_pattern_title(lang: UiLang) -> &'static str {
+    pick(lang, "Ignore pattern", "忽略规则")
+}
+
 pub fn file_search_empty(kind: &str, lang: UiLang) -> &'static str {
     match (kind, lang) {
         ("type", UiLang::ZhHans) => "输入以搜索文件和文件夹",
@@ -272,5 +417,20 @@ pub fn file_search_empty(kind: &str, lang: UiLang) -> &'static str {
         ("unavailable", _) => "File search is unavailable",
         ("none", _) => "No files found",
         _ => pick(lang, "Searching files…", "正在搜索文件…"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlay_copy_zh_differs_from_en() {
+        assert_eq!(ai_new_chat(UiLang::ZhHans), "新对话");
+        assert_eq!(camera_preview_title(UiLang::ZhHans), "摄像头预览");
+        assert_eq!(uninstall_confirm_title(UiLang::ZhHans), "移到回收站？");
+        assert_eq!(clipboard_pinned(UiLang::ZhHans), "已固定");
+        assert_eq!(hyper_key_title("none", UiLang::ZhHans), "关闭");
+        assert_eq!(quit_all_accept(UiLang::ZhHans), "全部退出");
     }
 }

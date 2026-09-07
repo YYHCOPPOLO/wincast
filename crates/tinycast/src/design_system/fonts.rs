@@ -1,5 +1,9 @@
 use tinycast_pure::theme;
 use windows::core::{w, PCWSTR};
+use windows::Win32::Graphics::Gdi::{
+    CreateFontW, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, FW_NORMAL,
+    HFONT, OUT_DEFAULT_PRECIS,
+};
 use windows::Win32::Graphics::DirectWrite::{
     IDWriteFactory, IDWriteTextFormat, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_FONT_WEIGHT_REGULAR,
@@ -10,6 +14,43 @@ use windows::Win32::Graphics::DirectWrite::{
 
 pub fn ui_font_family() -> &'static str {
     "Microsoft YaHei UI"
+}
+
+pub fn ui_text_format(
+    dwrite: &IDWriteFactory,
+    size: f32,
+    weight: DWRITE_FONT_WEIGHT,
+    locale: &str,
+) -> windows::core::Result<IDWriteTextFormat> {
+    create_ui_format(dwrite, size, weight, locale)
+}
+
+pub fn create_gdi_ui_font(height: i32) -> HFONT {
+    for family in ["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"] {
+        let wide: Vec<u16> = family.encode_utf16().chain(Some(0)).collect();
+        let font = unsafe {
+            CreateFontW(
+                height,
+                0,
+                0,
+                0,
+                FW_NORMAL.0 as i32,
+                0,
+                0,
+                0,
+                DEFAULT_CHARSET.0 as u32,
+                OUT_DEFAULT_PRECIS.0 as u32,
+                CLIP_DEFAULT_PRECIS.0 as u32,
+                CLEARTYPE_QUALITY.0 as u32,
+                DEFAULT_PITCH.0 as u32,
+                PCWSTR(wide.as_ptr()),
+            )
+        };
+        if !font.is_invalid() {
+            return font;
+        }
+    }
+    HFONT::default()
 }
 
 #[allow(dead_code)]

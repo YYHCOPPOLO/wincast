@@ -17,13 +17,10 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, ID2D1SolidColorBrush, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
+    ID2D1RenderTarget, ID2D1SolidColorBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL};
-use windows::Win32::Graphics::Gdi::{
-    CreateFontW, DeleteObject, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
-    DEFAULT_PITCH, FW_NORMAL, HFONT, OUT_DEFAULT_PRECIS,
-};
+use windows::Win32::Graphics::Gdi::{DeleteObject, HFONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{SetWindowTheme, EM_SETMARGINS};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -693,24 +690,7 @@ impl FieldEdit {
 
     fn apply_font(&mut self, dpi: u32) {
         let px = dip_scalar_to_px(FIELD_FONT_DIP, dpi);
-        let font = unsafe {
-            CreateFontW(
-                -px,
-                0,
-                0,
-                0,
-                FW_NORMAL.0 as i32,
-                0,
-                0,
-                0,
-                DEFAULT_CHARSET.0 as u32,
-                OUT_DEFAULT_PRECIS.0 as u32,
-                CLIP_DEFAULT_PRECIS.0 as u32,
-                CLEARTYPE_QUALITY.0 as u32,
-                DEFAULT_PITCH.0 as u32,
-                w!("Microsoft YaHei UI"),
-            )
-        };
+        let font = crate::design_system::fonts::create_gdi_ui_font(-px);
         if font.is_invalid() {
             return;
         }
@@ -1290,7 +1270,7 @@ fn draw_label(
             format,
             &rect.d2d(),
             brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }

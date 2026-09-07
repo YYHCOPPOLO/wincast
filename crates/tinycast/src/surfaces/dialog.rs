@@ -57,21 +57,16 @@ pub fn confirm(prompt: &ConfirmPrompt) -> bool {
 }
 
 /// Set Volume slider: ←/→ walk the 5% grid, Enter accepts, Escape cancels.
-pub fn pick_volume(current: f32) -> Option<f32> {
+pub fn pick_volume(current: f32, lang: tinycast_pure::i18n::UiLang) -> Option<f32> {
     if !begin() {
         return None;
     }
     LAST_VOLUME.store(current.to_bits(), Ordering::SeqCst);
     let prompt = ConfirmPrompt {
-        title: tinycast_pure::i18n::dialog_set_volume(tinycast_pure::i18n::UiLang::default()).into(),
-        message: tinycast_pure::i18n::dialog_set_volume_message(tinycast_pure::i18n::UiLang::default())
-            .into(),
-        accept: tinycast_pure::i18n::dialog_set_volume(tinycast_pure::i18n::UiLang::default()).into(),
-        cancel: tinycast_pure::i18n::chrome(
-            tinycast_pure::i18n::Chrome::Cancel,
-            tinycast_pure::i18n::UiLang::default(),
-        )
-        .into(),
+        title: tinycast_pure::i18n::dialog_set_volume(lang).into(),
+        message: tinycast_pure::i18n::dialog_set_volume_message(lang).into(),
+        accept: tinycast_pure::i18n::dialog_set_volume(lang).into(),
+        cancel: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang).into(),
     };
     let accepted = run_volume(&prompt, current);
     end();
@@ -83,12 +78,11 @@ pub fn pick_volume(current: f32) -> Option<f32> {
 }
 
 /// Single Continue button for failure reports.
-pub fn alert(title: &str, message: &str) {
+pub fn alert(title: &str, message: &str, lang: tinycast_pure::i18n::UiLang) {
     let prompt = ConfirmPrompt {
         title: title.to_string(),
         message: message.to_string(),
-        accept: tinycast_pure::i18n::onboarding_continue(tinycast_pure::i18n::UiLang::default())
-            .into(),
+        accept: tinycast_pure::i18n::onboarding_continue(lang).into(),
         cancel: String::new(),
     };
     if !begin() {

@@ -1,5 +1,6 @@
 //! Camera preview HWND: Join continues, Cancel drops. Camera deny is not fatal.
 
+use tinycast_pure::i18n::{chrome, join_now_accept, join_now_title, Chrome, UiLang};
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::core::w;
@@ -29,6 +30,7 @@ const CLASS: windows::core::PCWSTR = w!("TinycastCameraPreview");
 struct Inner {
     title: String,
     camera_ok: bool,
+    lang: UiLang,
     join: DipRect,
     cancel: DipRect,
     result: bool,
@@ -43,9 +45,9 @@ pub fn probe_camera_nonfatal() -> bool {
 }
 
 /// Modal preview. `true` joins, `false` cancels. Deny of the camera still offers Join.
-pub fn present(title: &str) -> bool {
+pub fn present(title: &str, lang: UiLang) -> bool {
     let camera_ok = windows::Media::Capture::MediaCapture::new().is_ok();
-    let hwnd = match create(title, camera_ok) {
+    let hwnd = match create(title, camera_ok, lang) {
         Ok(h) => h,
         Err(_) => return true,
     };
@@ -148,7 +150,7 @@ fn paint_preview_button(
     text::draw(target, &fonts.bar, label, rect, ink)
 }
 
-fn create(title: &str, camera_ok: bool) -> windows::core::Result<HWND> {
+fn create(title: &str, camera_ok: bool, lang: UiLang) -> windows::core::Result<HWND> {
     unsafe {
         let hinstance = GetModuleHandleW(None)?;
         let wc = WNDCLASSW {
@@ -170,6 +172,7 @@ fn create(title: &str, camera_ok: bool) -> windows::core::Result<HWND> {
         let inner = Box::new(Inner {
             title: title.to_string(),
             camera_ok,
+            lang,
             join: empty_rect(),
             cancel: empty_rect(),
             result: false,
@@ -179,7 +182,7 @@ fn create(title: &str, camera_ok: bool) -> windows::core::Result<HWND> {
         let hwnd = match CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED,
             CLASS,
-            w!("Camera preview"),
+            windows::core::PCWSTR::null(),
             WS_POPUP,
             200,
             160,
@@ -297,12 +300,15 @@ fn paint_d2d(hwnd: HWND) {
             return;
         }
         let inner = &mut *ptr;
-        let title = format!("Join {}?", inner.title);
+        let lang = inner.lang;
+        let title = join_now_title(&inner.title, lang);
         let status = if inner.camera_ok {
-            "Camera is ready. Join or cancel."
+            tinycast_pure::i18n::camera_ready(lang)
         } else {
-            "Camera unavailable. You can still join."
+            tinycast_pure::i18n::camera_unavailable(lang)
         };
+        let join_label = join_now_accept(lang);
+        let cancel_label = chrome(Chrome::Cancel, lang);
         let mut join = empty_rect();
         let mut cancel = empty_rect();
         let _ = inner.painter.paint(hwnd, |target, fonts| {
@@ -334,8 +340,8 @@ fn paint_d2d(hwnd: HWND) {
                 },
                 text::secondary_ink(0),
             )?;
-            let join_w = button_width(fonts, "Join");
-            let cancel_w = button_width(fonts, "Cancel");
+            let join_w = button_width(fonts, join_label);
+            let cancel_w = button_width(fonts, cancel_label);
             let y = height - pad - btn_h;
             join = DipRect {
                 x: width - pad - join_w,
@@ -349,8 +355,8 @@ fn paint_d2d(hwnd: HWND) {
                 w: cancel_w,
                 h: btn_h,
             };
-            paint_preview_button(target, fonts, cancel, "Cancel", true)?;
-            paint_preview_button(target, fonts, join, "Join", false)?;
+            paint_preview_button(target, fonts, cancel, cancel_label, true)?;
+            paint_preview_button(target, fonts, join, join_label, false)?;
             Ok(())
         });
         inner.join = join;

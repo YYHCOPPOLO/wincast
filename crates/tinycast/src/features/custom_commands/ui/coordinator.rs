@@ -1,4 +1,5 @@
 use tinycast_pure::custom_command::CustomCommand;
+use tinycast_pure::i18n::{chrome, Chrome, UiLang};
 use windows::Win32::Foundation::HWND;
 
 use crate::features::custom_commands::service::runner;
@@ -21,20 +22,28 @@ pub fn request_run(command: &CustomCommand) -> RunRequest {
 }
 
 pub fn confirm_prompt(command: &CustomCommand) -> ConfirmPrompt {
+    confirm_prompt_lang(command, UiLang::En)
+}
+
+pub fn confirm_prompt_lang(command: &CustomCommand, lang: UiLang) -> ConfirmPrompt {
     ConfirmPrompt {
         title: command.name.clone(),
         message: command.command.clone(),
-        accept: CONTINUE.into(),
-        cancel: CANCEL.into(),
+        accept: tinycast_pure::i18n::onboarding_continue(lang).into(),
+        cancel: chrome(Chrome::Cancel, lang).into(),
     }
 }
 
 /// Palette must already be hidden. Returns false on Cancel, Escape, or a stacked dialog.
 pub fn confirm(command: &CustomCommand) -> bool {
+    confirm_lang(command, UiLang::En)
+}
+
+pub fn confirm_lang(command: &CustomCommand, lang: UiLang) -> bool {
     if !dialog::begin() {
         return false;
     }
-    let prompt = confirm_prompt(command);
+    let prompt = confirm_prompt_lang(command, lang);
     let accepted = dialog::confirm(&prompt);
     dialog::end();
     accepted

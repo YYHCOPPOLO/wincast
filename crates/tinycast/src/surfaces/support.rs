@@ -85,6 +85,12 @@ impl SupportWindow {
             let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(self.hwnd);
         }
     }
+
+    pub fn set_locale(&self, locale: &str) {
+        unsafe {
+            apply_locale(self.hwnd, locale);
+        }
+    }
 }
 
 impl AboutWindow {
@@ -98,6 +104,12 @@ impl AboutWindow {
         unsafe {
             let _ = ShowWindow(self.hwnd, SW_SHOW);
             let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(self.hwnd);
+        }
+    }
+
+    pub fn set_locale(&self, locale: &str) {
+        unsafe {
+            apply_locale(self.hwnd, locale);
         }
     }
 }
@@ -160,6 +172,7 @@ fn paint_remind_row(
     fonts: &crate::design_system::Fonts,
     row: DipRect,
     on: bool,
+    lang: tinycast_pure::i18n::UiLang,
 ) -> windows::core::Result<()> {
     let box_s = theme::size::CHECKBOX;
     let box_rect = DipRect {
@@ -198,7 +211,7 @@ fn paint_remind_row(
     text::draw(
         target,
         &fonts.row_title,
-        tinycast_pure::i18n::support_remind_later(tinycast_pure::i18n::UiLang::default()),
+        tinycast_pure::i18n::support_remind_later(lang),
         DipRect {
             x: box_rect.x + box_s + theme::spacing::MD,
             y: row.y,
@@ -278,14 +291,10 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
             ..Default::default()
         };
         let _ = RegisterClassW(&wc);
-        let title = match kind {
-            Kind::Support => w!("Support Tinycast"),
-            Kind::About => w!("About Tinycast"),
-        };
         let hwnd = CreateWindowExW(
             overlay_caption_ex(),
             class,
-            title,
+            windows::core::PCWSTR::null(),
             overlay_caption_style(),
             240,
             180,
@@ -308,7 +317,7 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
         let support_btn = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
-            w!("Support Tinycast"),
+            w!(""),
             WINDOW_STYLE(WS_CHILD.0 | 1),
             40,
             200,
@@ -325,7 +334,7 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
             let box_hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
-                w!("Remind me later"),
+                w!(""),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
                 0,
                 0,
@@ -344,6 +353,9 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
                 (*inner).reminders = box_hwnd;
             }
             layout_reminders(hwnd);
+        }
+        if let Some(inner) = inner_from(hwnd) {
+            apply_chrome_titles(hwnd, inner);
         }
         Ok(hwnd)
     }
@@ -377,6 +389,45 @@ unsafe fn inner_from(hwnd: HWND) -> Option<*mut Inner> {
         None
     } else {
         Some(ptr)
+    }
+}
+
+unsafe fn lang_of(inner: *mut Inner) -> tinycast_pure::i18n::UiLang {
+    core_from_host((*inner).host)
+        .map(|c| (*c).ui_lang())
+        .unwrap_or(tinycast_pure::i18n::UiLang::ZhHans)
+}
+
+unsafe fn apply_locale(hwnd: HWND, locale: &str) {
+    if let Some(inner) = inner_from(hwnd) {
+        if let Some(painter) = (*inner).painter.as_mut() {
+            painter.set_locale(locale);
+        }
+        apply_chrome_titles(hwnd, inner);
+    }
+    let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, false);
+}
+
+unsafe fn apply_chrome_titles(hwnd: HWND, inner: *mut Inner) {
+    let lang = lang_of(inner);
+    let title = match (*inner).kind {
+        Kind::Support => tinycast_pure::i18n::support_title(lang),
+        Kind::About => tinycast_pure::i18n::about_window_title(lang),
+    };
+    let mut wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+    let _ = windows::Win32::UI::WindowsAndMessaging::SetWindowTextW(
+        hwnd,
+        windows::core::PCWSTR(wide.as_mut_ptr()),
+    );
+    if !(*inner).reminders.is_invalid() {
+        let mut remind: Vec<u16> = tinycast_pure::i18n::support_remind_later(lang)
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let _ = windows::Win32::UI::WindowsAndMessaging::SetWindowTextW(
+            (*inner).reminders,
+            windows::core::PCWSTR(remind.as_mut_ptr()),
+        );
     }
 }
 
@@ -489,12 +540,14 @@ fn paint(hwnd: HWND) {
             return;
         };
         let kind = (*inner).kind;
+        let lang = lang_of(inner);
         let mut support_rect = empty_rect();
         let mut remind_rect = empty_rect();
         let reminders_on = core_from_host((*inner).host)
             .map(|c| (*c).settings.support_reminders)
             .unwrap_or(true);
         if let Some(painter) = (*inner).painter.as_mut() {
+            painter.set_locale(lang.dwrite_locale());
             let _ = painter.paint(hwnd, |target, fonts| {
                 let size = target.GetSize();
                 fill_squircle(
@@ -531,7 +584,7 @@ fn paint(hwnd: HWND) {
                     },
                     (1.0, 1.0, 1.0, 1.0),
                 )?;
-                let lang = tinycast_pure::i18n::UiLang::default();
+                let lang = lang_of(inner);
                 let (title, subtitle) = match kind {
                     Kind::Support => (
                         tinycast_pure::i18n::support_title(lang),
@@ -572,14 +625,14 @@ fn paint(hwnd: HWND) {
                 text::draw(
                     target,
                     &fonts.bar,
-                    tinycast_pure::i18n::support_title(tinycast_pure::i18n::UiLang::default()),
+                    tinycast_pure::i18n::support_title(lang),
                     support_rect,
                     (1.0, 1.0, 1.0, 1.0),
                 )?;
                 text::draw(
                     target,
                     &fonts.section,
-                    tinycast_pure::i18n::support_checkout(tinycast_pure::i18n::UiLang::default()),
+                    tinycast_pure::i18n::support_checkout(lang),
                     DipRect {
                         x: pad,
                         y: support_rect.y + btn_h + theme::spacing::MD,
@@ -590,7 +643,7 @@ fn paint(hwnd: HWND) {
                 )?;
                 if matches!(kind, Kind::Support) {
                     remind_rect = chrome.remind;
-                    paint_remind_row(target, fonts, remind_rect, reminders_on)?;
+                    paint_remind_row(target, fonts, remind_rect, reminders_on, lang)?;
                 }
                 Ok(())
             });

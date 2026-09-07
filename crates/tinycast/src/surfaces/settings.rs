@@ -24,10 +24,9 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
-    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
-    DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-    DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
-    DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
+    DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TRIMMING,
+    DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
@@ -313,62 +312,34 @@ impl Renderer {
         let factory: ID2D1Factory =
             unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)? };
         let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
-        let header_format = unsafe {
-            dwrite.CreateTextFormat(
-                w!("Microsoft YaHei UI"),
-                None,
-                DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                HEADER_FONT_DIP,
-                w!("zh-CN"),
-            )?
-        };
-        let tab_format = unsafe {
-            dwrite.CreateTextFormat(
-                w!("Microsoft YaHei UI"),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                TAB_FONT_DIP,
-                w!("zh-CN"),
-            )?
-        };
-        let body_format = unsafe {
-            dwrite.CreateTextFormat(
-                w!("Microsoft YaHei UI"),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                TAB_FONT_DIP,
-                w!("zh-CN"),
-            )?
-        };
-        let caption_format = unsafe {
-            dwrite.CreateTextFormat(
-                w!("Microsoft YaHei UI"),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                HEADER_FONT_DIP,
-                w!("zh-CN"),
-            )?
-        };
-        for format in [&header_format, &tab_format, &body_format] {
-            unsafe {
-                format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
-                format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-                format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
-            }
-        }
-        unsafe {
-            caption_format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
-            caption_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
-            caption_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
-        }
+        let header_format = settings_format(
+            &dwrite,
+            HEADER_FONT_DIP,
+            DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            "zh-CN",
+            false,
+        )?;
+        let tab_format = settings_format(
+            &dwrite,
+            TAB_FONT_DIP,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            "zh-CN",
+            false,
+        )?;
+        let body_format = settings_format(
+            &dwrite,
+            TAB_FONT_DIP,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            "zh-CN",
+            false,
+        )?;
+        let caption_format = settings_format(
+            &dwrite,
+            HEADER_FONT_DIP,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            "zh-CN",
+            true,
+        )?;
         Ok(Self {
             factory,
             dwrite,
@@ -381,78 +352,40 @@ impl Renderer {
     }
 
     fn set_locale(&mut self, locale: &str) {
-        let loc: Vec<u16> = locale.encode_utf16().chain(std::iter::once(0)).collect();
-        let locale_w = PCWSTR(loc.as_ptr());
-        if let Ok(header) = unsafe {
-            self.dwrite.CreateTextFormat(
-                w!("Microsoft YaHei UI"),
-                None,
-                DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                HEADER_FONT_DIP,
-                locale_w,
-            )
-        } {
-            let _ = unsafe {
-                header.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-                header.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                header.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-            };
+        if let Ok(header) = settings_format(
+            &self.dwrite,
+            HEADER_FONT_DIP,
+            DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            locale,
+            false,
+        ) {
             self.header_format = header;
         }
-        if let Ok(tab) = unsafe {
-            self.dwrite.CreateTextFormat(
-                w!("Microsoft YaHei UI"),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                TAB_FONT_DIP,
-                locale_w,
-            )
-        } {
-            let _ = unsafe {
-                tab.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-                tab.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                tab.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-            };
+        if let Ok(tab) = settings_format(
+            &self.dwrite,
+            TAB_FONT_DIP,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            locale,
+            false,
+        ) {
             self.tab_format = tab;
         }
-        if let Ok(body) = unsafe {
-            self.dwrite.CreateTextFormat(
-                w!("Microsoft YaHei UI"),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                TAB_FONT_DIP,
-                locale_w,
-            )
-        } {
-            let _ = unsafe {
-                body.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-                body.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                body.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-            };
+        if let Ok(body) = settings_format(
+            &self.dwrite,
+            TAB_FONT_DIP,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            locale,
+            false,
+        ) {
             self.body_format = body;
         }
-        if let Ok(caption) = unsafe {
-            self.dwrite.CreateTextFormat(
-                w!("Microsoft YaHei UI"),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                HEADER_FONT_DIP,
-                locale_w,
-            )
-        } {
-            let _ = unsafe {
-                caption.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-                caption.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-                caption.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-            };
+        if let Ok(caption) = settings_format(
+            &self.dwrite,
+            HEADER_FONT_DIP,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            locale,
+            true,
+        ) {
             self.caption_format = caption;
         }
     }
@@ -601,6 +534,7 @@ fn paint_scene(
                 RowKind::Header(section) => {
                     draw_label(
                         target,
+                        dwrite,
                         header_format,
                         &header_brush,
                         header_rect(&row),
@@ -637,6 +571,7 @@ fn paint_scene(
                     );
                     draw_label(
                         target,
+                        dwrite,
                         tab_format,
                         &tab_brush,
                         tab_rect(&row),
@@ -1387,22 +1322,54 @@ fn set_caption(hwnd: HWND, tab: SettingsTab, lang: UiLang) {
     }
 }
 
+fn settings_format(
+    dwrite: &IDWriteFactory,
+    size: f32,
+    weight: windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT,
+    locale: &str,
+    wrap: bool,
+) -> windows::core::Result<IDWriteTextFormat> {
+    let format = crate::design_system::fonts::ui_text_format(dwrite, size, weight, locale)?;
+    unsafe {
+        if wrap {
+            format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
+            format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
+        } else {
+            format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+            format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+        }
+        format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+    }
+    Ok(format)
+}
+
 fn draw_label(
     target: &ID2D1RenderTarget,
+    dwrite: &IDWriteFactory,
     format: &IDWriteTextFormat,
     brush: &ID2D1SolidColorBrush,
     rect: D2D_RECT_F,
     text: &str,
 ) -> windows::core::Result<()> {
     let utf16: Vec<u16> = text.encode_utf16().collect();
+    let w = (rect.right - rect.left).max(1.0);
+    let h = (rect.bottom - rect.top).max(1.0);
     unsafe {
-        target.DrawText(
-            &utf16,
-            format,
-            &rect,
+        let layout = dwrite.CreateTextLayout(&utf16, format, w, h)?;
+        let trimming = DWRITE_TRIMMING {
+            granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+            delimiter: 0,
+            delimiterCount: 0,
+        };
+        let _ = layout.SetTrimming(&trimming, None);
+        target.DrawTextLayout(
+            D2D_POINT_2F {
+                x: rect.left,
+                y: rect.top,
+            },
+            &layout,
             brush,
             D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
         );
     }
     Ok(())
@@ -2217,7 +2184,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         match crate::features::extensions::settings::pane::hit(detail_x, y, (*inner).scroll) {
             Some(crate::features::extensions::settings::pane::ExtensionsHit::Enable) => {
                 if let Err(msg) = (*core).try_set_extensions_enabled(true) {
-                    crate::surfaces::dialog::alert("Extensions", msg);
+                    crate::surfaces::dialog::alert("Extensions", msg, ui_lang(inner));
                 }
             }
             Some(crate::features::extensions::settings::pane::ExtensionsHit::ShowInLauncher) => {
@@ -2270,7 +2237,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             }
             Some(crate::features::file_search::settings::pane::FileSearchHit::AddIgnore) => {
                 if let Some(pattern) =
-                    crate::features::file_search::settings::pane::ask_pattern(hwnd)
+                    crate::features::file_search::settings::pane::ask_pattern(hwnd, ui_lang(inner))
                 {
                     (*core).add_file_search_ignore(pattern);
                 }
