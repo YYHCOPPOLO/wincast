@@ -63,58 +63,7 @@ pub fn launcher_actions(kind: AppKind) -> Vec<MenuItem> {
 
 /// Snapshot of the Actions menu for the current selection.
 pub fn actions_for(ctx: ActionContext) -> Vec<MenuItem> {
-    let mut items = vec![item(ID_OPEN, ctx.kind.open_verb(), Some("↵"))];
-    items.push(item(
-        ID_FAVORITE,
-        if ctx.is_favorite {
-            "Remove from Favorites"
-        } else {
-            "Add to Favorites"
-        },
-        Some("Ctrl+Shift+F"),
-    ));
-    if ctx.can_move_up {
-        items.push(item(ID_MOVE_UP, "Move Favorite Up", Some("Ctrl+Alt+Up")));
-    }
-    if ctx.can_move_down {
-        items.push(item(
-            ID_MOVE_DOWN,
-            "Move Favorite Down",
-            Some("Ctrl+Alt+Down"),
-        ));
-    }
-    if ctx.has_ranking {
-        items.push(item(ID_RESET_RANKING, "Reset Ranking", None));
-    }
-    if ctx.kind.can_reveal_in_folder() {
-        items.push(item(
-            ID_SHOW_IN_FOLDER,
-            "Show in Folder",
-            Some("Ctrl+Enter"),
-        ));
-    }
-    if can_copy_path(ctx.kind) {
-        items.push(item(ID_COPY_PATH, "Copy Path", Some("Ctrl+Alt+C")));
-    }
-    if ctx.running && ctx.kind == AppKind::Application {
-        items.push(item(ID_QUIT, "Quit Application", Some("Ctrl+Shift+Q")));
-    }
-    if ctx.kind == AppKind::Application {
-        items.push(item(ID_UNINSTALL, "Uninstall Application", None));
-    }
-    items
-}
-
-fn can_copy_path(kind: AppKind) -> bool {
-    matches!(kind, AppKind::Application | AppKind::SystemSettings)
-}
-
-fn item(id: &'static str, label: &'static str, shortcut: Option<&'static str>) -> MenuItem {
-    MenuItem {
-        id,
-        label: label.to_string(),
-        shortcut,
-    }
+    crate::i18n::actions_for_lang(ctx, crate::i18n::UiLang::En)
 }
 
 /// At most one in-window menu.

@@ -1,6 +1,8 @@
 mod catalog;
+mod copy;
 
 pub use catalog::*;
+pub use copy::*;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum UiLang {
