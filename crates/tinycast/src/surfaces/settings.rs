@@ -1047,6 +1047,7 @@ unsafe fn paint_detail_panes(
                     palette_binding: palette_label.as_deref(),
                     recording_palette: (*inner).recorder.action.as_deref()
                         == Some("hotkey.togglePalette"),
+                    lang: core.ui_lang(),
                 },
                 detail_w,
                 (*inner).scroll,
@@ -2248,6 +2249,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                 }
             }
             Some(GeneralHit::Appearance) => (*core).cycle_appearance(),
+            Some(GeneralHit::Language) => (*core).cycle_ui_language(),
             Some(GeneralHit::Compact) => (*core).toggle_setting_bool(GeneralToggle::Compact),
             Some(GeneralHit::FavoritesInCompact) => {
                 (*core).toggle_setting_bool(GeneralToggle::FavoritesInCompact)

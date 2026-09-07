@@ -108,6 +108,206 @@ pub fn system_confirm(id: SystemActionId, lang: UiLang) -> Option<(&'static str,
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GeneralSection {
+    GlobalShortcuts,
+    Search,
+    HyperKey,
+    Appearance,
+    General,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GeneralRow {
+    PaletteRecorder,
+    ResetRanking,
+    HyperKey,
+    HyperShift,
+    Appearance,
+    Language,
+    Compact,
+    FavoritesInCompact,
+    FollowCursor,
+    Draggable,
+    LaunchAtLogin,
+    ShowInMenuBar,
+    PopToRoot,
+    AutoSwitchInput,
+}
+
+pub fn general_section_title(section: GeneralSection, lang: UiLang) -> &'static str {
+    match (section, lang) {
+        (GeneralSection::GlobalShortcuts, UiLang::En) => "Global Shortcuts",
+        (GeneralSection::GlobalShortcuts, UiLang::ZhHans) => "全局快捷键",
+        (GeneralSection::Search, UiLang::En) => "Search",
+        (GeneralSection::Search, UiLang::ZhHans) => "搜索",
+        (GeneralSection::HyperKey, UiLang::En) => "Hyper Key",
+        (GeneralSection::HyperKey, UiLang::ZhHans) => "Hyper 键",
+        (GeneralSection::Appearance, UiLang::En) => "Appearance",
+        (GeneralSection::Appearance, UiLang::ZhHans) => "外观",
+        (GeneralSection::General, UiLang::En) => "General",
+        (GeneralSection::General, UiLang::ZhHans) => "通用",
+    }
+}
+
+pub fn general_section_footer(section: GeneralSection, lang: UiLang) -> Option<&'static str> {
+    match (section, lang) {
+        (GeneralSection::GlobalShortcuts, UiLang::En) => {
+            Some("Summon the fuzzy app launcher.")
+        }
+        (GeneralSection::GlobalShortcuts, UiLang::ZhHans) => {
+            Some("从任意位置呼出模糊搜索启动器。")
+        }
+        (GeneralSection::Search, UiLang::En) => Some(
+            "Tinycast privately learns which results you choose for each query. Reset all learned choices to restore the default order.",
+        ),
+        (GeneralSection::Search, UiLang::ZhHans) => {
+            Some("Tinycast 会私下学习你对每个查询的选择。重置后恢复默认排序。")
+        }
+        _ => None,
+    }
+}
+
+pub fn general_row_title(row: GeneralRow, lang: UiLang) -> &'static str {
+    match (row, lang) {
+        (GeneralRow::PaletteRecorder, UiLang::En) => "App Launcher",
+        (GeneralRow::PaletteRecorder, UiLang::ZhHans) => "应用启动器",
+        (GeneralRow::ResetRanking, UiLang::En) => "Learned ranking",
+        (GeneralRow::ResetRanking, UiLang::ZhHans) => "学习排序",
+        (GeneralRow::HyperKey, UiLang::En) => "Hyper Key",
+        (GeneralRow::HyperKey, UiLang::ZhHans) => "Hyper 键",
+        (GeneralRow::HyperShift, UiLang::En) => "Include Shift",
+        (GeneralRow::HyperShift, UiLang::ZhHans) => "包含 Shift",
+        (GeneralRow::Appearance, UiLang::En) => "Theme",
+        (GeneralRow::Appearance, UiLang::ZhHans) => "主题",
+        (GeneralRow::Language, UiLang::En) => chrome(Chrome::Language, UiLang::En),
+        (GeneralRow::Language, UiLang::ZhHans) => chrome(Chrome::Language, UiLang::ZhHans),
+        (GeneralRow::Compact, UiLang::En) => "Compact mode",
+        (GeneralRow::Compact, UiLang::ZhHans) => "紧凑模式",
+        (GeneralRow::FavoritesInCompact, UiLang::En) => "Show favorites in compact mode",
+        (GeneralRow::FavoritesInCompact, UiLang::ZhHans) => "在紧凑模式显示收藏",
+        (GeneralRow::FollowCursor, UiLang::En) => "Follow the cursor",
+        (GeneralRow::FollowCursor, UiLang::ZhHans) => "跟随指针",
+        (GeneralRow::Draggable, UiLang::En) => "Drag to reposition",
+        (GeneralRow::Draggable, UiLang::ZhHans) => "拖动以重新放置",
+        (GeneralRow::LaunchAtLogin, UiLang::En) => "Launch at login",
+        (GeneralRow::LaunchAtLogin, UiLang::ZhHans) => "登录时启动",
+        (GeneralRow::ShowInMenuBar, UiLang::En) => "Show in menu bar",
+        (GeneralRow::ShowInMenuBar, UiLang::ZhHans) => "在托盘显示图标",
+        (GeneralRow::PopToRoot, UiLang::En) => "Pop to Root",
+        (GeneralRow::PopToRoot, UiLang::ZhHans) => "返回根视图",
+        (GeneralRow::AutoSwitchInput, UiLang::En) => "Auto-switch input source",
+        (GeneralRow::AutoSwitchInput, UiLang::ZhHans) => "自动切换输入法",
+    }
+}
+
+pub fn general_row_subtitle(row: GeneralRow, lang: UiLang) -> Option<&'static str> {
+    match (row, lang) {
+        (GeneralRow::PaletteRecorder, UiLang::En) => {
+            Some("Toggle palette recorder — click to rebind.")
+        }
+        (GeneralRow::PaletteRecorder, UiLang::ZhHans) => Some("点击重新绑定呼出快捷键。"),
+        (GeneralRow::HyperShift, UiLang::En) => {
+            Some("Hyper Key will remap with Shift in the chord.")
+        }
+        (GeneralRow::HyperShift, UiLang::ZhHans) => Some("组合中会包含 Shift。"),
+        (GeneralRow::Appearance, UiLang::En) => {
+            Some("Match the system, or pin Light or Dark.")
+        }
+        (GeneralRow::Appearance, UiLang::ZhHans) => Some("跟随系统，或固定浅色 / 深色。"),
+        (GeneralRow::Compact, UiLang::En) => Some("Open the launcher as a slim search bar."),
+        (GeneralRow::Compact, UiLang::ZhHans) => Some("以纤细搜索条打开启动器。"),
+        (GeneralRow::FavoritesInCompact, UiLang::En) => {
+            Some("Pin favorite app icons to the compact bar.")
+        }
+        (GeneralRow::FavoritesInCompact, UiLang::ZhHans) => Some("把收藏应用图标钉在紧凑条上。"),
+        (GeneralRow::FollowCursor, UiLang::En) => {
+            Some("Open the launcher on the pointer’s display.")
+        }
+        (GeneralRow::FollowCursor, UiLang::ZhHans) => Some("在指针所在显示器打开启动器。"),
+        (GeneralRow::Draggable, UiLang::En) => {
+            Some("Grab the strip above search to move the launcher.")
+        }
+        (GeneralRow::Draggable, UiLang::ZhHans) => Some("拖动搜索框上方的细条移动启动器。"),
+        (GeneralRow::LaunchAtLogin, UiLang::En) => {
+            Some("Start Tinycast automatically when you log in.")
+        }
+        (GeneralRow::LaunchAtLogin, UiLang::ZhHans) => {
+            Some("登录 Windows 后自动启动 Tinycast。")
+        }
+        (GeneralRow::ShowInMenuBar, UiLang::En) => {
+            Some("Keep the Tinycast icon in the menu bar. Shortcuts still work when hidden.")
+        }
+        (GeneralRow::ShowInMenuBar, UiLang::ZhHans) => {
+            Some("在通知区域保留 Tinycast 图标。隐藏后快捷键仍可用。")
+        }
+        (GeneralRow::AutoSwitchInput, UiLang::En) => {
+            Some("Switch IME when the palette opens.")
+        }
+        (GeneralRow::AutoSwitchInput, UiLang::ZhHans) => Some("打开面板时切换输入法。"),
+        _ => None,
+    }
+}
+
+pub fn general_reset_label(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Reset…",
+        UiLang::ZhHans => "重置…",
+    }
+}
+
+pub fn general_ranking_subtitle(empty: bool, lang: UiLang) -> &'static str {
+    match (empty, lang) {
+        (true, UiLang::En) => "No learned ranking yet.",
+        (true, UiLang::ZhHans) => "还没有学习排序。",
+        (false, UiLang::En) => "Clear privately learned result order.",
+        (false, UiLang::ZhHans) => "清除私下学习的结果顺序。",
+    }
+}
+
+pub fn general_appearance_trailing(raw: &str, lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::ZhHans => match raw {
+            "light" => "浅色",
+            "dark" => "深色",
+            _ => "跟随系统",
+        },
+        UiLang::En => match raw {
+            "light" => "light",
+            "dark" => "dark",
+            _ => "system",
+        },
+    }
+}
+
+pub fn general_language_trailing(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::ZhHans => chrome(Chrome::LanguageZh, lang),
+        UiLang::En => chrome(Chrome::LanguageEn, lang),
+    }
+}
+
+pub fn general_pop_to_root_subtitle(seconds: i64, lang: UiLang) -> String {
+    match lang {
+        UiLang::En => format!("{seconds} s idle timeout (0 = never)."),
+        UiLang::ZhHans => format!("空闲 {seconds} 秒后返回（0 = 从不）。"),
+    }
+}
+
+pub fn general_hyper_off(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Off",
+        UiLang::ZhHans => "关闭",
+    }
+}
+
+pub fn general_hyper_caps_subtitle(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "Caps Lock. Takes effect after logoff; cleared on quit.",
+        UiLang::ZhHans => "Caps Lock。注销后生效；退出时清除。",
+    }
+}
+
 pub fn actions_for_lang(ctx: ActionContext, lang: UiLang) -> Vec<MenuItem> {
     fn item(id: &'static str, label: &'static str, shortcut: Option<&'static str>) -> MenuItem {
         MenuItem {
@@ -202,5 +402,13 @@ mod tests {
     fn chrome_cancel_zh() {
         assert_eq!(chrome(Chrome::Cancel, UiLang::ZhHans), "取消");
         assert_eq!(chrome(Chrome::Cancel, UiLang::En), "Cancel");
+    }
+
+    #[test]
+    fn general_show_in_menu_bar_zh() {
+        assert_eq!(
+            general_row_title(GeneralRow::ShowInMenuBar, UiLang::ZhHans),
+            "在托盘显示图标"
+        );
     }
 }

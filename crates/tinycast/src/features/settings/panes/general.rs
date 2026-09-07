@@ -1,5 +1,11 @@
 //! Settings → General: shortcuts, search, Hyper, appearance, launch.
 
+use tinycast_pure::i18n::{
+    general_appearance_trailing, general_hyper_caps_subtitle, general_hyper_off,
+    general_language_trailing, general_pop_to_root_subtitle, general_ranking_subtitle,
+    general_reset_label, general_row_subtitle, general_row_title, general_section_footer,
+    general_section_title, GeneralRow, GeneralSection, UiLang,
+};
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
@@ -31,6 +37,7 @@ pub enum GeneralHit {
     HyperKey,
     HyperShift,
     Appearance,
+    Language,
     Compact,
     FavoritesInCompact,
     FollowCursor,
@@ -57,65 +64,87 @@ pub struct GeneralState<'a> {
     pub chrome: u8,
     pub palette_binding: Option<&'a str>,
     pub recording_palette: bool,
+    pub lang: UiLang,
 }
 
-pub fn general_sections() -> [&'static str; 5] {
+const PALETTE_ROWS: &[GeneralHit] = &[GeneralHit::PaletteRecorder];
+const SEARCH_ROWS: &[GeneralHit] = &[GeneralHit::ResetRanking];
+const HYPER_ROWS: &[GeneralHit] = &[GeneralHit::HyperKey, GeneralHit::HyperShift];
+const APPEARANCE_ROWS: &[GeneralHit] = &[
+    GeneralHit::Appearance,
+    GeneralHit::Language,
+    GeneralHit::Compact,
+    GeneralHit::FavoritesInCompact,
+    GeneralHit::FollowCursor,
+    GeneralHit::Draggable,
+];
+const GENERAL_ROWS: &[GeneralHit] = &[
+    GeneralHit::LaunchAtLogin,
+    GeneralHit::ShowInMenuBar,
+    GeneralHit::PopToRoot,
+    GeneralHit::AutoSwitchInput,
+];
+
+pub fn general_sections(lang: UiLang) -> [&'static str; 5] {
     [
-        "Global Shortcuts",
-        "Search",
-        "Hyper Key",
-        "Appearance",
-        "General",
+        general_section_title(GeneralSection::GlobalShortcuts, lang),
+        general_section_title(GeneralSection::Search, lang),
+        general_section_title(GeneralSection::HyperKey, lang),
+        general_section_title(GeneralSection::Appearance, lang),
+        general_section_title(GeneralSection::General, lang),
     ]
 }
 
-fn section_specs() -> [(&'static str, Option<&'static str>, &'static [GeneralHit]); 5] {
+fn section_specs(
+    lang: UiLang,
+) -> [(GeneralSection, &'static str, Option<&'static str>, &'static [GeneralHit]); 5] {
     [
         (
-            "Global Shortcuts",
-            Some("Summon the fuzzy app launcher."),
-            &[GeneralHit::PaletteRecorder],
+            GeneralSection::GlobalShortcuts,
+            general_section_title(GeneralSection::GlobalShortcuts, lang),
+            general_section_footer(GeneralSection::GlobalShortcuts, lang),
+            PALETTE_ROWS,
         ),
         (
-            "Search",
-            Some("Tinycast privately learns which results you choose for each query. Reset all learned choices to restore the default order."),
-            &[GeneralHit::ResetRanking],
+            GeneralSection::Search,
+            general_section_title(GeneralSection::Search, lang),
+            general_section_footer(GeneralSection::Search, lang),
+            SEARCH_ROWS,
         ),
         (
-            "Hyper Key",
-            None,
-            &[GeneralHit::HyperKey, GeneralHit::HyperShift],
+            GeneralSection::HyperKey,
+            general_section_title(GeneralSection::HyperKey, lang),
+            general_section_footer(GeneralSection::HyperKey, lang),
+            HYPER_ROWS,
         ),
         (
-            "Appearance",
-            None,
-            &[
-                GeneralHit::Appearance,
-                GeneralHit::Compact,
-                GeneralHit::FavoritesInCompact,
-                GeneralHit::FollowCursor,
-                GeneralHit::Draggable,
-            ],
+            GeneralSection::Appearance,
+            general_section_title(GeneralSection::Appearance, lang),
+            general_section_footer(GeneralSection::Appearance, lang),
+            APPEARANCE_ROWS,
         ),
         (
-            "General",
-            None,
-            &[
-                GeneralHit::LaunchAtLogin,
-                GeneralHit::ShowInMenuBar,
-                GeneralHit::PopToRoot,
-                GeneralHit::AutoSwitchInput,
-            ],
+            GeneralSection::General,
+            general_section_title(GeneralSection::General, lang),
+            general_section_footer(GeneralSection::General, lang),
+            GENERAL_ROWS,
         ),
     ]
 }
 
-fn grouped_at(y: f32, width: f32, header: &'static str, footer: Option<&'static str>, rows: usize) -> GroupedSection {
+fn grouped_at(
+    y: f32,
+    width: f32,
+    section: GeneralSection,
+    header: &'static str,
+    footer: Option<&'static str>,
+    rows: usize,
+) -> GroupedSection {
     GroupedSection {
         header: Some(header),
         footer,
         footer_h: match footer {
-            Some(_) if rows == 1 && header == "Search" => ds::footer_block_h(3),
+            Some(_) if section == GeneralSection::Search => ds::footer_block_h(3),
             Some(_) => ds::footer_block_h(1),
             None => 0.0,
         },
@@ -141,8 +170,8 @@ pub fn layout_general(width: f32, scroll: f32) -> Vec<(GeneralHit, DipRect)> {
 fn layout_general_sized(width: f32, scroll: f32) -> Vec<(GeneralHit, DipRect)> {
     let mut y = ds::CARD_INSET;
     let mut hits = Vec::new();
-    for (header, footer, rows) in section_specs() {
-        let section = grouped_at(y, width, header, footer, rows.len());
+    for (kind, header, footer, rows) in section_specs(UiLang::En) {
+        let section = grouped_at(y, width, kind, header, footer, rows.len());
         let card = section.card_rect();
         for (i, hit) in rows.iter().copied().enumerate() {
             let mut rect = row_rect(card, i);
@@ -157,8 +186,8 @@ fn layout_general_sized(width: f32, scroll: f32) -> Vec<(GeneralHit, DipRect)> {
 pub fn content_height() -> f32 {
     let width = theme::size::SETTINGS_WINDOW.0 - theme::size::SETTINGS_SIDEBAR;
     let mut y = ds::CARD_INSET;
-    for (header, footer, rows) in section_specs() {
-        y = grouped_at(y, width, header, footer, rows.len()).next_y();
+    for (kind, header, footer, rows) in section_specs(UiLang::En) {
+        y = grouped_at(y, width, kind, header, footer, rows.len()).next_y();
     }
     y + ds::CARD_INSET
 }
@@ -177,10 +206,33 @@ pub fn hyper_includes_shift_enabled(hyper: &str) -> bool {
 }
 
 pub fn hyper_subtitle(raw: &str) -> &'static str {
+    hyper_subtitle_lang(raw, UiLang::En)
+}
+
+fn hyper_subtitle_lang(raw: &str, lang: UiLang) -> &'static str {
     match HyperKey::from_raw(raw) {
-        HyperKey::CapsLock => "Caps Lock. Takes effect after logoff; cleared on quit.",
-        HyperKey::None => "Off",
+        HyperKey::CapsLock => general_hyper_caps_subtitle(lang),
+        HyperKey::None => general_hyper_off(lang),
         other => other.title(),
+    }
+}
+
+fn copy_row(hit: GeneralHit) -> GeneralRow {
+    match hit {
+        GeneralHit::PaletteRecorder => GeneralRow::PaletteRecorder,
+        GeneralHit::ResetRanking => GeneralRow::ResetRanking,
+        GeneralHit::HyperKey => GeneralRow::HyperKey,
+        GeneralHit::HyperShift => GeneralRow::HyperShift,
+        GeneralHit::Appearance => GeneralRow::Appearance,
+        GeneralHit::Language => GeneralRow::Language,
+        GeneralHit::Compact => GeneralRow::Compact,
+        GeneralHit::FavoritesInCompact => GeneralRow::FavoritesInCompact,
+        GeneralHit::FollowCursor => GeneralRow::FollowCursor,
+        GeneralHit::Draggable => GeneralRow::Draggable,
+        GeneralHit::LaunchAtLogin => GeneralRow::LaunchAtLogin,
+        GeneralHit::ShowInMenuBar => GeneralRow::ShowInMenuBar,
+        GeneralHit::PopToRoot => GeneralRow::PopToRoot,
+        GeneralHit::AutoSwitchInput => GeneralRow::AutoSwitchInput,
     }
 }
 
@@ -211,17 +263,18 @@ pub fn paint(
     width: f32,
     scroll: f32,
 ) -> windows::core::Result<()> {
-    let ranking_sub = if state.ranking_empty {
-        "No learned ranking yet."
-    } else {
-        "Clear privately learned result order."
-    };
-    let pop_sub = format!("{} s idle timeout (0 = never).", state.pop_to_root);
+    let lang = state.lang;
+    let ranking_sub = general_ranking_subtitle(state.ranking_empty, lang);
+    let pop_sub = general_pop_to_root_subtitle(state.pop_to_root, lang);
+    let appearance_trail = general_appearance_trailing(state.appearance, lang);
+    let language_trail = general_language_trailing(lang);
+    let reset_label = general_reset_label(lang);
     let hyper_on = hyper_includes_shift_enabled(state.hyper);
     let hyper_title = HyperKey::from_raw(state.hyper).title();
+    let hyper_sub = hyper_subtitle_lang(state.hyper, lang);
     let mut y = ds::CARD_INSET - scroll;
-    for (header, footer, rows) in section_specs() {
-        let section = grouped_at(y, width, header, footer, rows.len());
+    for (kind, header, footer, rows) in section_specs(lang) {
+        let section = grouped_at(y, width, kind, header, footer, rows.len());
         ds::paint_grouped_section(
             target,
             formats.header,
@@ -233,85 +286,48 @@ pub fn paint(
         for (i, hit) in rows.iter().copied().enumerate() {
             let rect = row_rect(card, i);
             let pad_x = rect.x + CARD_PAD;
-            let (title, sub, enabled, trailing) = match hit {
-                GeneralHit::PaletteRecorder => (
-                    "App Launcher",
-                    "Toggle palette recorder — click to rebind.",
-                    true,
-                    RowTrailing::None,
-                ),
+            let row = copy_row(hit);
+            let title = general_row_title(row, lang);
+            let static_sub = general_row_subtitle(row, lang).unwrap_or("");
+            let (sub, enabled, trailing) = match hit {
+                GeneralHit::PaletteRecorder => (static_sub, true, RowTrailing::None),
                 GeneralHit::ResetRanking => (
-                    "Learned ranking",
                     ranking_sub,
                     !state.ranking_empty,
-                    RowTrailing::Label("Reset…"),
+                    RowTrailing::Label(reset_label),
                 ),
-                GeneralHit::HyperKey => (
-                    "Hyper Key",
-                    hyper_subtitle(state.hyper),
-                    true,
-                    RowTrailing::Label(hyper_title),
-                ),
+                GeneralHit::HyperKey => (hyper_sub, true, RowTrailing::Label(hyper_title)),
                 GeneralHit::HyperShift => (
-                    "Include Shift",
-                    "Hyper Key will remap with Shift in the chord.",
+                    static_sub,
                     hyper_on,
                     RowTrailing::Toggle(state.hyper_shift && hyper_on),
                 ),
-                GeneralHit::Appearance => (
-                    "Theme",
-                    "Match the system, or pin Light or Dark.",
-                    true,
-                    RowTrailing::Label(state.appearance),
-                ),
-                GeneralHit::Compact => (
-                    "Compact mode",
-                    "Open the launcher as a slim search bar.",
-                    true,
-                    RowTrailing::Toggle(state.compact),
-                ),
+                GeneralHit::Appearance => {
+                    (static_sub, true, RowTrailing::Label(appearance_trail))
+                }
+                GeneralHit::Language => (static_sub, true, RowTrailing::Label(language_trail)),
+                GeneralHit::Compact => (static_sub, true, RowTrailing::Toggle(state.compact)),
                 GeneralHit::FavoritesInCompact => (
-                    "Show favorites in compact mode",
-                    "Pin favorite app icons to the compact bar.",
+                    static_sub,
                     state.compact,
                     RowTrailing::Toggle(state.favorites_in_compact),
                 ),
-                GeneralHit::FollowCursor => (
-                    "Follow the cursor",
-                    "Open the launcher on the pointer’s display.",
-                    true,
-                    RowTrailing::Toggle(state.follow_cursor),
-                ),
-                GeneralHit::Draggable => (
-                    "Drag to reposition",
-                    "Grab the strip above search to move the launcher.",
-                    true,
-                    RowTrailing::Toggle(state.draggable),
-                ),
-                GeneralHit::LaunchAtLogin => (
-                    "Launch at login",
-                    "Start Tinycast automatically when you log in.",
-                    true,
-                    RowTrailing::Toggle(state.launch_at_login),
-                ),
-                GeneralHit::ShowInMenuBar => (
-                    "Show in menu bar",
-                    "Keep the Tinycast icon in the menu bar. Shortcuts still work when hidden.",
-                    true,
-                    RowTrailing::Toggle(state.show_in_menu_bar),
-                ),
-                GeneralHit::PopToRoot => (
-                    "Pop to Root",
-                    pop_sub.as_str(),
-                    true,
-                    RowTrailing::Label(""),
-                ),
-                GeneralHit::AutoSwitchInput => (
-                    "Auto-switch input source",
-                    "Switch IME when the palette opens.",
-                    true,
-                    RowTrailing::Toggle(state.auto_switch),
-                ),
+                GeneralHit::FollowCursor => {
+                    (static_sub, true, RowTrailing::Toggle(state.follow_cursor))
+                }
+                GeneralHit::Draggable => {
+                    (static_sub, true, RowTrailing::Toggle(state.draggable))
+                }
+                GeneralHit::LaunchAtLogin => {
+                    (static_sub, true, RowTrailing::Toggle(state.launch_at_login))
+                }
+                GeneralHit::ShowInMenuBar => {
+                    (static_sub, true, RowTrailing::Toggle(state.show_in_menu_bar))
+                }
+                GeneralHit::PopToRoot => (pop_sub.as_str(), true, RowTrailing::Label("")),
+                GeneralHit::AutoSwitchInput => {
+                    (static_sub, true, RowTrailing::Toggle(state.auto_switch))
+                }
             };
             let trailing = match hit {
                 GeneralHit::PopToRoot => RowTrailing::Label(pop_sub.as_str()),
@@ -425,7 +441,7 @@ mod tests {
     #[test]
     fn general_section_order() {
         assert_eq!(
-            general_sections(),
+            general_sections(tinycast_pure::i18n::UiLang::En),
             [
                 "Global Shortcuts",
                 "Search",
@@ -433,6 +449,26 @@ mod tests {
                 "Appearance",
                 "General"
             ]
+        );
+    }
+
+    #[test]
+    fn general_language_row_exists() {
+        let hits: Vec<_> = crate::features::settings::panes::general::layout_general(400.0, 0.0)
+            .into_iter()
+            .map(|(h, _)| h)
+            .collect();
+        assert!(hits.contains(&GeneralHit::Language));
+        let appearance = hits.iter().position(|h| *h == GeneralHit::Appearance).unwrap();
+        let language = hits.iter().position(|h| *h == GeneralHit::Language).unwrap();
+        assert_eq!(language, appearance + 1);
+    }
+
+    #[test]
+    fn cycle_ui_language_flips_zh_and_en() {
+        assert_eq!(
+            tinycast_pure::i18n::UiLang::parse("zh-Hans").cycle().as_str(),
+            "en"
         );
     }
 

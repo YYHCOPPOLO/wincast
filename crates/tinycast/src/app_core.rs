@@ -2709,6 +2709,14 @@ impl AppCore {
         self.invalidate_palette();
     }
 
+    pub fn cycle_ui_language(&mut self) {
+        let next = self.ui_lang().cycle();
+        self.settings.ui_language = next.as_str().to_string();
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+    }
+
     pub fn toggle_setting_bool(&mut self, which: crate::features::settings::panes::general::GeneralToggle) {
         use crate::features::settings::panes::general::GeneralToggle;
         match which {
