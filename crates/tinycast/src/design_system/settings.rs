@@ -17,7 +17,12 @@ pub const ROW_H: f32 = 52.0;
 pub const TOGGLE_W: f32 = 40.0;
 pub const TOGGLE_H: f32 = 22.0;
 pub const HEADER_H: f32 = 22.0;
+#[allow(dead_code)]
 pub const FOOTER_H: f32 = 36.0;
+
+pub fn footer_block_h(lines: u32) -> f32 {
+    (18.0 * lines as f32).max(18.0)
+}
 pub const OVERFLOW_FADE: f32 = 24.0;
 pub const CARD_INSET: f32 = theme::spacing::XXL;
 pub const CARD_PAD: f32 = theme::spacing::XL;
@@ -96,6 +101,7 @@ pub fn paint_window_background(
 pub struct GroupedSection {
     pub header: Option<&'static str>,
     pub footer: Option<&'static str>,
+    pub footer_h: f32,
     pub y: f32,
     pub width: f32,
     pub body_h: f32,
@@ -119,7 +125,7 @@ impl GroupedSection {
     pub fn next_y(&self) -> f32 {
         let card = self.card_rect();
         let footer_h = if self.footer.is_some() {
-            theme::spacing::SM + FOOTER_H
+            theme::spacing::SM + self.footer_h.max(footer_block_h(1))
         } else {
             0.0
         };
@@ -176,7 +182,7 @@ pub fn paint_grouped_section(
                 left: card.x,
                 top: card.y + card.h + theme::spacing::SM,
                 right: card.x + card.w,
-                bottom: card.y + card.h + theme::spacing::SM + FOOTER_H,
+                bottom: card.y + card.h + theme::spacing::SM + section.footer_h.max(footer_block_h(1)),
             },
             (r, g, b, a),
         )?;
@@ -313,6 +319,7 @@ pub fn switch_section_next_y(launcher_row: bool) -> f32 {
     GroupedSection {
         header: Some(""),
         footer: None,
+        footer_h: 0.0,
         y: CARD_INSET,
         width: 420.0,
         body_h: CARD_PAD * 2.0 + ROW_H * rows as f32,
@@ -330,6 +337,7 @@ pub fn feature_switch_section(
     let section = GroupedSection {
         header: Some(header),
         footer: None,
+        footer_h: 0.0,
         y,
         width,
         body_h: CARD_PAD * 2.0 + ROW_H * rows as f32,
@@ -507,6 +515,11 @@ mod tests {
         assert!((show.y - enable.y - ROW_H).abs() < 0.001);
         assert!((show.y - enable.y - (ROW_H + theme::spacing::XL)).abs() > 1.0);
         assert!((enable.y - form_origin()).abs() < 0.001);
+    }
+
+    #[test]
+    fn footer_height_grows_with_wrapped_copy() {
+        assert!(footer_block_h(3) > 36.0);
     }
 
     #[test]

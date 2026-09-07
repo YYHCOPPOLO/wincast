@@ -22,6 +22,7 @@ use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
     DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
     DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
     DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -352,7 +353,7 @@ impl Renderer {
         }
         unsafe {
             caption_format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
-            caption_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            caption_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
             caption_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
         }
         Ok(Self {
@@ -1302,7 +1303,7 @@ fn header_rect(row: &SidebarRow) -> D2D_RECT_F {
 
 fn tab_rect(row: &SidebarRow) -> D2D_RECT_F {
     D2D_RECT_F {
-        left: theme::spacing::XL + theme::size::SETTINGS_ROW_ICON + theme::spacing::MD,
+        left: theme::spacing::XL + theme::size::SETTINGS_ROW_ICON + theme::spacing::LG,
         top: row.y,
         right: theme::size::SETTINGS_SIDEBAR - theme::spacing::MD,
         bottom: row.y + row.height,
@@ -2619,6 +2620,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sidebar_icon_and_label_do_not_overlap() {
+        let icon = DipRect {
+            x: theme::spacing::XL,
+            y: 0.0,
+            w: theme::size::SETTINGS_ROW_ICON,
+            h: 28.0,
+        };
+        let label_left = theme::spacing::XL + theme::size::SETTINGS_ROW_ICON + theme::spacing::LG;
+        assert!(icon.x + icon.w <= label_left);
+    }
 
     #[test]
     fn sidebar_tab_label_clears_the_icon_slot() {

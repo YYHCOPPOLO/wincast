@@ -114,6 +114,11 @@ fn grouped_at(y: f32, width: f32, header: &'static str, footer: Option<&'static 
     GroupedSection {
         header: Some(header),
         footer,
+        footer_h: match footer {
+            Some(_) if rows == 1 && header == "Search" => ds::footer_block_h(3),
+            Some(_) => ds::footer_block_h(1),
+            None => 0.0,
+        },
         y,
         width,
         body_h: CARD_PAD * 2.0 + ROW_H * rows as f32,
