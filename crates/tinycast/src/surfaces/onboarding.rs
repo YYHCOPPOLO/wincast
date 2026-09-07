@@ -16,8 +16,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, IsWindow,
     LoadCursorW, RegisterClassW, SetWindowLongPtrW, ShowWindow, CREATESTRUCTW, CS_HREDRAW,
     CS_VREDRAW, GWLP_USERDATA, GWLP_WNDPROC, IDC_ARROW, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_KEYUP,
-    WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN,
+    WM_KEYUP, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_CAPTION, WS_CHILD,
     WS_OVERLAPPED, WS_SYSMENU,
 };
 
@@ -27,6 +27,15 @@ use crate::design_system::panel::paint_sheen;
 use crate::design_system::squircle::fill_squircle;
 use crate::design_system::text;
 use crate::features::hotkeys::ui::recorder::{self, Recorder};
+use crate::platform::window::{apply_captioned_client_dip, apply_dpi_changed_fixed};
+
+fn overlay_caption_style() -> WINDOW_STYLE {
+    WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU
+}
+
+fn overlay_caption_ex() -> WINDOW_EX_STYLE {
+    WINDOW_EX_STYLE::default()
+}
 
 const CLASS: windows::core::PCWSTR = w!("TinycastOnboarding");
 const ID_CONTINUE: usize = 1;
@@ -76,10 +85,10 @@ impl OnboardingWindow {
             };
             let _ = RegisterClassW(&wc);
             let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE::default(),
+                overlay_caption_ex(),
                 CLASS,
                 w!("Welcome to Tinycast"),
-                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+                overlay_caption_style(),
                 220,
                 160,
                 WINDOW.0.round() as i32,
@@ -89,6 +98,7 @@ impl OnboardingWindow {
                 hinstance,
                 Some(host.0 as *const core::ffi::c_void),
             )?;
+            apply_captioned_client_dip(hwnd, WINDOW, overlay_caption_style(), overlay_caption_ex());
             Ok(Self { hwnd })
         }
     }
@@ -156,6 +166,31 @@ fn current_modifiers() -> Modifiers {
             win: GetKeyState(VK_LWIN.0 as i32) < 0 || GetKeyState(VK_RWIN.0 as i32) < 0,
         }
     }
+}
+
+fn step_rects(width: f32, height: f32, step: usize) -> (DipRect, DipRect) {
+    let pad = theme::spacing::XXL;
+    let btn_h = theme::size::MENU_BUTTON;
+    let continue_rect = DipRect {
+        x: (width - 140.0) / 2.0,
+        y: height - pad - btn_h,
+        w: 140.0,
+        h: btn_h,
+    };
+    let record_rect = if step == 0 {
+        let well_w = theme::size::SHORTCUT_RECORDER;
+        let well_h = 28.0;
+        let dots_y = continue_rect.y - 18.0;
+        DipRect {
+            x: (width - well_w) / 2.0,
+            y: (dots_y - theme::spacing::LG - well_h).max(pad),
+            w: well_w,
+            h: well_h,
+        }
+    } else {
+        empty_rect()
+    };
+    (record_rect, continue_rect)
 }
 
 fn empty_rect() -> DipRect {
@@ -278,7 +313,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 120,
                 32,
                 hwnd,
-                windows::Win32::UI::WindowsAndMessaging::HMENU(ID_CONTINUE as *mut core::ffi::c_void),
+                windows::Win32::UI::WindowsAndMessaging::HMENU(
+                    ID_CONTINUE as *mut core::ffi::c_void,
+                ),
                 hinstance,
                 None,
             )
@@ -307,6 +344,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(1)
         }
         WM_ERASEBKGND => LRESULT(1),
+        WM_DPICHANGED => {
+            apply_dpi_changed_fixed(
+                hwnd,
+                wparam,
+                lparam,
+                WINDOW,
+                overlay_caption_style(),
+                overlay_caption_ex(),
+            );
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, false);
+            LRESULT(0)
+        }
         WM_PAINT => {
             paint(hwnd);
             LRESULT(0)
@@ -338,10 +387,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 .unwrap_or(false)
             {
                 if let Some(inner) = inner_from(hwnd) {
-                    let outcome =
-                        (*inner)
-                            .recorder
-                            .on_keydown(wparam.0 as u16, current_modifiers(), now_ms());
+                    let outcome = (*inner).recorder.on_keydown(
+                        wparam.0 as u16,
+                        current_modifiers(),
+                        now_ms(),
+                    );
                     apply_capture(hwnd, outcome);
                 }
             }
@@ -459,14 +509,10 @@ fn paint(hwnd: HWND) {
                     },
                     text::secondary_ink(0),
                 )?;
+                let (laid_record, laid_continue) = step_rects(size.width, size.height, step);
+                record_rect = laid_record;
+                continue_rect = laid_continue;
                 if step == 0 {
-                    let well_w = theme::size::SHORTCUT_RECORDER;
-                    record_rect = DipRect {
-                        x: (size.width - well_w) / 2.0,
-                        y: 210.0,
-                        w: well_w,
-                        h: 28.0,
-                    };
                     fill_squircle(
                         target,
                         record_rect,
@@ -482,17 +528,10 @@ fn paint(hwnd: HWND) {
                         text::secondary_ink(0),
                     )?;
                 }
-                let btn_h = theme::size::MENU_BUTTON;
-                continue_rect = DipRect {
-                    x: (size.width - 140.0) / 2.0,
-                    y: size.height - pad - btn_h,
-                    w: 140.0,
-                    h: btn_h,
-                };
                 fill_squircle(
                     target,
                     continue_rect,
-                    btn_h / 2.0,
+                    continue_rect.h / 2.0,
                     text::control_surface(0),
                 )?;
                 let label = if step + 1 == STEPS.len() {
@@ -584,6 +623,20 @@ mod tests {
     #[test]
     fn onboarding_size_is_520x400() {
         assert_eq!(crate::surfaces::onboarding::WINDOW, (520.0, 400.0));
+    }
+
+    #[test]
+    fn recorder_well_stays_above_continue_on_short_client() {
+        let (record, cont) = step_rects(WINDOW.0, 235.0, 0);
+        assert!(
+            record.y + record.h + 8.0 <= cont.y,
+            "record {}-{} continue {}",
+            record.y,
+            record.y + record.h,
+            cont.y
+        );
+        let (record_full, cont_full) = step_rects(WINDOW.0, WINDOW.1, 0);
+        assert!(record_full.y + record_full.h + 8.0 <= cont_full.y);
     }
 
     #[test]

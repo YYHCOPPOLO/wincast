@@ -6,21 +6,24 @@ use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    CreateSolidBrush, DeleteObject, SetBkColor, SetTextColor, HBRUSH, HDC,
+};
 
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, LoadLibraryW};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW,
-    GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW, MINMAXINFO, MoveWindow,
-    RegisterClassW, SendMessageW, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
-    ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, GWLP_WNDPROC, IDC_ARROW,
-    LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, SWP_NOZORDER, SW_HIDE, SW_SHOW,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_ERASEBKGND, WM_GETMINMAXINFO,
-    WM_KEYDOWN, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSW,
-    WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_POPUP,
-    WS_SYSMENU,
-    WS_TABSTOP, WS_THICKFRAME, WS_VISIBLE, WS_VSCROLL,
+    CallWindowProcW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect,
+    GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW,
+    MoveWindow, RegisterClassW, SendMessageW, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    SetWindowTextW, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, GWLP_WNDPROC,
+    HWND_TOP, IDC_ARROW, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, MINMAXINFO,
+    SWP_NOACTIVATE, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE,
+    WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO,
+    WM_KEYDOWN, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST, WM_PAINT, WM_SIZE,
+    WM_TIMER, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_TOOLWINDOW,
+    WS_OVERLAPPEDWINDOW, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_THICKFRAME, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::app_core::AppCore;
@@ -29,6 +32,7 @@ use crate::design_system::squircle::fill_squircle;
 use crate::design_system::text;
 use crate::platform::paths;
 use crate::platform::screens::dip_scalar_to_px;
+use crate::platform::window::{apply_captioned_client_dip, captioned_outer_px};
 
 const CLASS: windows::core::PCWSTR = w!("TinycastNotes");
 const SWITCHER_CLASS: windows::core::PCWSTR = w!("TinycastNoteSwitcher");
@@ -38,6 +42,10 @@ const ID_EDIT: usize = 101;
 const ID_CREATE: usize = 102;
 const ID_BROWSE: usize = 103;
 const ID_FOLDER: usize = 104;
+const ID_CUE: usize = 105;
+const SCF_DEFAULT: usize = 0;
+const SCF_ALL: usize = 4;
+const CHARFORMAT_WPARAMS: [usize; 2] = [SCF_DEFAULT, SCF_ALL];
 const ID_SWITCHER_EDIT: usize = 201;
 const ID_SWITCHER_LIST: usize = 202;
 const SAVE_TIMER: usize = 1;
@@ -82,6 +90,9 @@ struct Inner {
     list_prev: Option<windows::Win32::UI::WindowsAndMessaging::WNDPROC>,
     painter: Option<OverlayPainter>,
     switcher_painter: Option<OverlayPainter>,
+    cue: HWND,
+    cue_brush: HBRUSH,
+    cue_prev: Option<windows::Win32::UI::WindowsAndMessaging::WNDPROC>,
     create_rect: DipRect,
     browse_rect: DipRect,
     folder_rect: DipRect,
@@ -95,21 +106,40 @@ impl NotesWindow {
             let hinstance = GetModuleHandleW(None)?;
             register(CLASS, Some(wndproc))?;
             register(SWITCHER_CLASS, Some(switcher_wndproc))?;
-            let frame = load_frame();
+            let (ow, oh) =
+                captioned_outer_px(theme::size::NOTE_WINDOW, 96, notes_style(), notes_ex());
             let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE::default(),
+                notes_ex(),
                 CLASS,
                 w!("Notes"),
-                WS_OVERLAPPEDWINDOW | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WINDOW_STYLE(0x02000000),
-                frame.0,
-                frame.1,
-                frame.2,
-                frame.3,
+                notes_style(),
+                120,
+                120,
+                ow,
+                oh,
                 host,
                 None,
                 hinstance,
                 Some(host.0 as *const core::ffi::c_void),
             )?;
+            if let Some(frame) = load_saved_frame() {
+                let _ = SetWindowPos(
+                    hwnd,
+                    HWND_TOP,
+                    frame.0,
+                    frame.1,
+                    frame.2,
+                    frame.3,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            } else {
+                apply_captioned_client_dip(
+                    hwnd,
+                    theme::size::NOTE_WINDOW,
+                    notes_style(),
+                    notes_ex(),
+                );
+            }
             Ok(Self { hwnd })
         }
     }
@@ -165,6 +195,8 @@ impl NotesWindow {
             if let Some(inner) = inner_from(self.hwnd) {
                 let wide: Vec<u16> = body.encode_utf16().chain(std::iter::once(0)).collect();
                 let _ = SetWindowTextW((*inner).edit, PCWSTR(wide.as_ptr()));
+                style_editor((*inner).edit);
+                sync_cue(self.hwnd);
             }
         }
     }
@@ -188,7 +220,12 @@ impl NotesWindow {
     pub fn fill_switcher(&self, titles: &[String]) {
         unsafe {
             if let Some(inner) = inner_from(self.hwnd) {
-                let _ = SendMessageW((*inner).switcher_list, LB_RESETCONTENT, WPARAM(0), LPARAM(0));
+                let _ = SendMessageW(
+                    (*inner).switcher_list,
+                    LB_RESETCONTENT,
+                    WPARAM(0),
+                    LPARAM(0),
+                );
                 for title in titles {
                     let wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
                     let _ = SendMessageW(
@@ -199,12 +236,8 @@ impl NotesWindow {
                     );
                 }
                 if !titles.is_empty() {
-                    let _ = SendMessageW(
-                        (*inner).switcher_list,
-                        LB_SETCURSEL,
-                        WPARAM(0),
-                        LPARAM(0),
-                    );
+                    let _ =
+                        SendMessageW((*inner).switcher_list, LB_SETCURSEL, WPARAM(0), LPARAM(0));
                 }
             }
         }
@@ -225,9 +258,7 @@ impl Drop for NotesWindow {
 
 fn register(
     class: PCWSTR,
-    proc: Option<
-        unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT,
-    >,
+    proc: Option<unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT>,
 ) -> windows::core::Result<()> {
     unsafe {
         let hinstance = GetModuleHandleW(None)?;
@@ -296,6 +327,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             )
             .unwrap_or_default();
             style_editor(edit);
+            let cue = CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                w!("STATIC"),
+                w!("Start writing…"),
+                WS_CHILD,
+                0,
+                0,
+                100,
+                24,
+                hwnd,
+                windows::Win32::UI::WindowsAndMessaging::HMENU(ID_CUE as *mut core::ffi::c_void),
+                hinstance,
+                None,
+            )
+            .unwrap_or_default();
+            let _ = ShowWindow(cue, SW_HIDE);
             let create_btn = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
@@ -393,6 +440,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 None,
             )
             .unwrap_or_default();
+            let cue_brush = CreateSolidBrush(note_bg_colorref(0));
             let inner = Box::new(Inner {
                 host,
                 edit,
@@ -405,6 +453,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 list_prev: None,
                 painter: OverlayPainter::new().ok(),
                 switcher_painter: OverlayPainter::new().ok(),
+                cue,
+                cue_brush,
+                cue_prev: None,
                 create_rect: empty_rect(),
                 browse_rect: empty_rect(),
                 folder_rect: empty_rect(),
@@ -412,7 +463,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
             if let Some(inner) = inner_from(hwnd) {
-                let prev = SetWindowLongPtrW((*inner).edit, GWLP_WNDPROC, edit_subclass as usize as isize);
+                let prev =
+                    SetWindowLongPtrW((*inner).edit, GWLP_WNDPROC, edit_subclass as usize as isize);
                 (*inner).edit_prev = Some(std::mem::transmute(prev));
                 let prev = SetWindowLongPtrW(
                     (*inner).switcher_edit,
@@ -426,6 +478,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     switcher_list_subclass as usize as isize,
                 );
                 (*inner).list_prev = Some(std::mem::transmute(prev));
+                if !(*inner).cue.is_invalid() {
+                    let prev = SetWindowLongPtrW(
+                        (*inner).cue,
+                        GWLP_WNDPROC,
+                        cue_subclass as usize as isize,
+                    );
+                    (*inner).cue_prev = Some(std::mem::transmute(prev));
+                }
             }
             LRESULT(1)
         }
@@ -433,6 +493,40 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             layout(hwnd);
             let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, false);
             LRESULT(0)
+        }
+        WM_DPICHANGED => {
+            let suggested = lparam.0 as *const RECT;
+            if !suggested.is_null() {
+                let r = *suggested;
+                let _ = SetWindowPos(
+                    hwnd,
+                    HWND_TOP,
+                    r.left,
+                    r.top,
+                    r.right - r.left,
+                    r.bottom - r.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            if let Some(inner) = inner_from(hwnd) {
+                style_editor((*inner).edit);
+            }
+            layout(hwnd);
+            layout_switcher(hwnd);
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, false);
+            LRESULT(0)
+        }
+        WM_CTLCOLORSTATIC => {
+            let child = HWND(lparam.0 as *mut core::ffi::c_void);
+            if let Some(inner) = inner_from(hwnd) {
+                if child == (*inner).cue {
+                    let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
+                    SetTextColor(hdc, note_cue_colorref(0));
+                    SetBkColor(hdc, note_bg_colorref(0));
+                    return LRESULT((*inner).cue_brush.0 as isize);
+                }
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_ERASEBKGND => LRESULT(1),
         WM_PAINT => {
@@ -447,8 +541,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let info = lparam.0 as *mut MINMAXINFO;
             if !info.is_null() {
                 let dpi = GetDpiForWindow(hwnd);
-                (*info).ptMinTrackSize.x = dip_scalar_to_px(320.0, dpi);
-                (*info).ptMinTrackSize.y = dip_scalar_to_px(220.0, dpi);
+                let (ow, oh) = captioned_outer_px((320.0, 220.0), dpi, notes_style(), notes_ex());
+                (*info).ptMinTrackSize.x = ow;
+                (*info).ptMinTrackSize.y = oh;
             }
             LRESULT(0)
         }
@@ -473,11 +568,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
                 ID_EDIT if notify == EN_CHANGE => {
                     let _ = SetTimer(hwnd, SAVE_TIMER, SAVE_MS, None);
+                    sync_cue(hwnd);
                     let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, false);
                 }
                 _ => match switcher_command_action(id, notify) {
                     SwitcherAction::Filter => {
-                        if let Some(core) = inner_from(hwnd).and_then(|i| core_from_host((*i).host)) {
+                        if let Some(core) = inner_from(hwnd).and_then(|i| core_from_host((*i).host))
+                        {
                             (*core).notes_filter_switcher(&switcher_query(hwnd));
                         }
                     }
@@ -510,7 +607,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_NCDESTROY => {
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
             if ptr != 0 {
-                drop(Box::from_raw(ptr as *mut Inner));
+                let inner = Box::from_raw(ptr as *mut Inner);
+                if !inner.cue_brush.is_invalid() {
+                    let _ = DeleteObject(inner.cue_brush);
+                }
+                drop(inner);
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -616,9 +717,115 @@ unsafe extern "system" fn switcher_edit_subclass(
 }
 
 fn parent_of(hwnd: HWND) -> HWND {
-    unsafe {
-        windows::Win32::UI::WindowsAndMessaging::GetParent(hwnd).unwrap_or_default()
+    unsafe { windows::Win32::UI::WindowsAndMessaging::GetParent(hwnd).unwrap_or_default() }
+}
+
+fn notes_style() -> WINDOW_STYLE {
+    WS_OVERLAPPEDWINDOW | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WINDOW_STYLE(0x02000000)
+}
+
+fn notes_ex() -> WINDOW_EX_STYLE {
+    WINDOW_EX_STYLE::default()
+}
+
+fn cue_show_cmd(text_len: i32) -> windows::Win32::UI::WindowsAndMessaging::SHOW_WINDOW_CMD {
+    if text_len == 0 {
+        SW_SHOW
+    } else {
+        SW_HIDE
     }
+}
+
+fn switcher_size_px(dpi: u32) -> (i32, i32) {
+    (
+        dip_scalar_to_px(SWITCHER_WIDTH as f32, dpi),
+        dip_scalar_to_px(SWITCHER_HEIGHT as f32, dpi),
+    )
+}
+
+fn note_bg_rgb(appearance: u8) -> (u8, u8, u8) {
+    if appearance == 0 {
+        (0x1A, 0x1A, 0x1A)
+    } else {
+        (0xF2, 0xF2, 0xF2)
+    }
+}
+
+fn composite_colorref(rgba: (f32, f32, f32, f32), bg: (u8, u8, u8)) -> COLORREF {
+    let (r, g, b, a) = rgba;
+    let comp = |c: f32, bc: u8| ((c * a + (bc as f32 / 255.0) * (1.0 - a)) * 255.0).round() as u32;
+    COLORREF(comp(b, bg.2) << 16 | comp(g, bg.1) << 8 | comp(r, bg.0))
+}
+
+fn note_fg_colorref(appearance: u8) -> COLORREF {
+    composite_colorref(text::note_text(appearance), note_bg_rgb(appearance))
+}
+
+fn note_bg_colorref(appearance: u8) -> COLORREF {
+    let (r, g, b) = note_bg_rgb(appearance);
+    COLORREF((b as u32) << 16 | (g as u32) << 8 | r as u32)
+}
+
+fn note_cue_colorref(appearance: u8) -> COLORREF {
+    composite_colorref(text::tertiary_ink(appearance), note_bg_rgb(appearance))
+}
+
+unsafe fn sync_cue(hwnd: HWND) {
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    if (*inner).cue.is_invalid() {
+        return;
+    }
+    let len = GetWindowTextLengthW((*inner).edit);
+    let _ = ShowWindow((*inner).cue, cue_show_cmd(len));
+}
+
+unsafe extern "system" fn cue_subclass(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if msg == WM_NCHITTEST {
+        return LRESULT(-1);
+    }
+    let parent = parent_of(hwnd);
+    let prev = inner_from(parent).and_then(|i| (*i).cue_prev);
+    if let Some(prev) = prev {
+        CallWindowProcW(prev, hwnd, msg, wparam, lparam)
+    } else {
+        DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+}
+
+unsafe fn layout_switcher(hwnd: HWND) {
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    let dpi = GetDpiForWindow((*inner).switcher);
+    let dpi = if dpi == 0 { GetDpiForWindow(hwnd) } else { dpi };
+    let (w, h) = switcher_size_px(dpi);
+    let pad = dip_scalar_to_px(8.0, dpi);
+    let edit_h = dip_scalar_to_px(24.0, dpi);
+    let gap = dip_scalar_to_px(8.0, dpi);
+    let _ = MoveWindow(
+        (*inner).switcher_edit,
+        pad,
+        pad,
+        (w - pad * 2).max(20),
+        edit_h,
+        true,
+    );
+    let list_y = pad + edit_h + gap;
+    let _ = MoveWindow(
+        (*inner).switcher_list,
+        pad,
+        list_y,
+        (w - pad * 2).max(20),
+        (h - list_y - pad).max(20),
+        true,
+    );
 }
 
 fn empty_rect() -> DipRect {
@@ -646,7 +853,6 @@ fn style_editor(edit: HWND) {
     const EM_SETBKGNDCOLOR: u32 = 0x0443;
     const EM_SETCHARFORMAT: u32 = 0x0444;
     const CFM_COLOR: u32 = 0x4000_0000;
-    const SCF_ALL: usize = 4;
     #[repr(C)]
     struct CharFormat {
         cb_size: u32,
@@ -660,29 +866,27 @@ fn style_editor(edit: HWND) {
         sz_face_name: [u16; 32],
     }
     unsafe {
-        let _ = SendMessageW(
-            edit,
-            EM_SETBKGNDCOLOR,
-            WPARAM(0),
-            LPARAM(0x001A1A1A),
-        );
+        let bg = note_bg_colorref(0);
+        let _ = SendMessageW(edit, EM_SETBKGNDCOLOR, WPARAM(0), LPARAM(bg.0 as isize));
         let mut cf = CharFormat {
             cb_size: std::mem::size_of::<CharFormat>() as u32,
             dw_mask: CFM_COLOR,
             dw_effects: 0,
             y_height: 0,
             y_offset: 0,
-            cr_text_color: COLORREF(0x00E6E6E6),
+            cr_text_color: note_fg_colorref(0),
             b_char_set: 0,
             b_pitch_and_family: 0,
             sz_face_name: [0; 32],
         };
-        let _ = SendMessageW(
-            edit,
-            EM_SETCHARFORMAT,
-            WPARAM(SCF_ALL),
-            LPARAM(&mut cf as *mut CharFormat as isize),
-        );
+        for wparam in CHARFORMAT_WPARAMS {
+            let _ = SendMessageW(
+                edit,
+                EM_SETCHARFORMAT,
+                WPARAM(wparam),
+                LPARAM(&mut cf as *mut CharFormat as isize),
+            );
+        }
     }
 }
 
@@ -707,6 +911,18 @@ unsafe fn layout(hwnd: HWND) {
             edit_h,
             true,
         );
+        if !(*inner).cue.is_invalid() {
+            let cue_h = dip_scalar_to_px(24.0, dpi);
+            let _ = MoveWindow(
+                (*inner).cue,
+                inset,
+                edit_y,
+                (w - inset * 2).max(20),
+                cue_h,
+                true,
+            );
+        }
+        sync_cue(hwnd);
     }
 }
 
@@ -759,7 +975,6 @@ fn paint_notes(hwnd: HWND) {
             return;
         };
         let title = window_title(hwnd);
-        let empty = GetWindowTextLengthW((*inner).edit) == 0;
         let count = GetWindowTextLengthW((*inner).edit) as usize;
         let footer = format!("{count}");
         if let Some(painter) = (*inner).painter.as_mut() {
@@ -856,20 +1071,6 @@ fn paint_notes(hwnd: HWND) {
                     },
                     text::tertiary_ink(0),
                 )?;
-                if empty {
-                    text::draw(
-                        target,
-                        &fonts.wrap_body,
-                        "Start writing…",
-                        DipRect {
-                            x: theme::size::NOTE_EDITOR_INSET,
-                            y: bar_h + theme::size::NOTE_EDITOR_TOP_INSET,
-                            w: (size.width - theme::size::NOTE_EDITOR_INSET * 2.0).max(40.0),
-                            h: 24.0,
-                        },
-                        text::tertiary_ink(0),
-                    )?;
-                }
                 Ok(())
             });
             (*inner).create_rect = create;
@@ -913,7 +1114,10 @@ fn paint_switcher(hwnd: HWND) {
 }
 
 unsafe fn escape(hwnd: HWND) {
-    if inner_from(hwnd).map(|i| (*i).switcher_open).unwrap_or(false) {
+    if inner_from(hwnd)
+        .map(|i| (*i).switcher_open)
+        .unwrap_or(false)
+    {
         close_switcher_of(hwnd);
         return;
     }
@@ -926,19 +1130,14 @@ unsafe fn open_switcher_of(hwnd: HWND) {
     let Some(inner) = inner_from(hwnd) else {
         return;
     };
+    let dpi = GetDpiForWindow(hwnd);
+    let (sw, sh) = switcher_size_px(dpi);
     let mut rc = RECT::default();
     let _ = GetWindowRect(hwnd, &mut rc);
-    let x = rc.left + ((rc.right - rc.left) - SWITCHER_WIDTH) / 2;
-    let y = rc.top + 80;
-    let _ = SetWindowPos(
-        (*inner).switcher,
-        None,
-        x,
-        y,
-        SWITCHER_WIDTH,
-        SWITCHER_HEIGHT,
-        SWP_NOZORDER,
-    );
+    let x = rc.left + ((rc.right - rc.left) - sw) / 2;
+    let y = rc.top + dip_scalar_to_px(theme::size::NOTE_SWITCHER_DROP, dpi);
+    let _ = SetWindowPos((*inner).switcher, None, x, y, sw, sh, SWP_NOZORDER);
+    layout_switcher(hwnd);
     (*inner).switcher_open = true;
     let _ = ShowWindow((*inner).switcher, SW_SHOW);
     let _ = SetFocus((*inner).switcher_edit);
@@ -1002,25 +1201,15 @@ fn placement_path() -> PathBuf {
     paths::roaming_dir().join("notes-window.json")
 }
 
-fn load_frame() -> (i32, i32, i32, i32) {
-    let default = (
-        120,
-        120,
-        theme::size::NOTE_WINDOW.0.round() as i32,
-        theme::size::NOTE_WINDOW.1.round() as i32,
-    );
-    let Ok(bytes) = std::fs::read(placement_path()) else {
-        return default;
-    };
-    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-        return default;
-    };
-    (
-        v["x"].as_i64().unwrap_or(120) as i32,
-        v["y"].as_i64().unwrap_or(120) as i32,
-        v["w"].as_i64().unwrap_or(560) as i32,
-        v["h"].as_i64().unwrap_or(420) as i32,
-    )
+fn load_saved_frame() -> Option<(i32, i32, i32, i32)> {
+    let bytes = std::fs::read(placement_path()).ok()?;
+    let v = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
+    Some((
+        v["x"].as_i64()? as i32,
+        v["y"].as_i64()? as i32,
+        v["w"].as_i64()? as i32,
+        v["h"].as_i64()? as i32,
+    ))
 }
 
 unsafe fn save_frame(hwnd: HWND) {
@@ -1046,6 +1235,40 @@ mod tests {
     #[test]
     fn notes_titlebar_is_52() {
         assert_eq!(tinycast_pure::layout::notes::titlebar_height(), 52.0);
+    }
+
+    #[test]
+    fn cue_hides_when_note_has_text() {
+        assert_eq!(
+            cue_show_cmd(0),
+            windows::Win32::UI::WindowsAndMessaging::SW_SHOW
+        );
+        assert_eq!(
+            cue_show_cmd(4),
+            windows::Win32::UI::WindowsAndMessaging::SW_HIDE
+        );
+        let _ = ID_CUE;
+    }
+
+    #[test]
+    fn charformat_applies_default_and_all() {
+        assert!(CHARFORMAT_WPARAMS.contains(&SCF_DEFAULT));
+        assert!(CHARFORMAT_WPARAMS.contains(&SCF_ALL));
+    }
+
+    #[test]
+    fn note_fg_derives_from_note_text() {
+        let (r, g, b, a) = crate::design_system::text::note_text(0);
+        let bg = 0x1A as f32 / 255.0;
+        let comp = |c: f32| ((c * a + bg * (1.0 - a)) * 255.0).round() as u32;
+        let expected = COLORREF(comp(b) << 16 | comp(g) << 8 | comp(r));
+        assert_eq!(note_fg_colorref(0), expected);
+    }
+
+    #[test]
+    fn switcher_hwnd_converts_dip() {
+        assert_eq!(switcher_size_px(96), (300, 240));
+        assert_eq!(switcher_size_px(144), (450, 360));
     }
 
     #[test]

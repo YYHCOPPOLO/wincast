@@ -69,7 +69,6 @@ pub fn tertiary_ink(appearance: u8) -> (f32, f32, f32, f32) {
     )
 }
 
-#[allow(dead_code)]
 pub fn note_text(appearance: u8) -> (f32, f32, f32, f32) {
     tinycast_pure::theme::colors::ramp_rgba(appearance, 0.90, 0.85)
 }

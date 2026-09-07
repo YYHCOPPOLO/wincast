@@ -3,16 +3,17 @@
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::core::w;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, IsWindow, LoadCursorW,
-    RegisterClassW, SendMessageW, SetWindowLongPtrW, ShowWindow, CREATESTRUCTW, CS_HREDRAW,
-    CS_VREDRAW, GWLP_USERDATA, IDC_ARROW, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY,
-    WM_PAINT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, IsWindow,
+    LoadCursorW, MoveWindow, RegisterClassW, SendMessageW, SetWindowLongPtrW, ShowWindow,
+    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, IDC_ARROW, SW_HIDE, SW_SHOW,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+    WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
 };
 
 const BS_AUTOCHECKBOX: WINDOW_STYLE = WINDOW_STYLE(0x00000003);
@@ -26,10 +27,20 @@ use crate::design_system::squircle::fill_squircle;
 use crate::design_system::text;
 use crate::features::launcher::ui::coordinator::{execute, LaunchSpec};
 use crate::platform::screens::dip_scalar_to_px;
+use crate::platform::window::{apply_captioned_client_dip, apply_dpi_changed_fixed};
+
+fn overlay_caption_style() -> WINDOW_STYLE {
+    WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU
+}
+
+fn overlay_caption_ex() -> WINDOW_EX_STYLE {
+    WINDOW_EX_STYLE::default()
+}
 
 pub const CHECKOUT: &str =
     "https://buy.polar.sh/polar_cl_NDVFC20DKQpLcNawsh97QzbARBXD3WNn8v35R0mbJmT";
 pub const WIDTH: f32 = 460.0;
+pub const HEIGHT: f32 = 360.0;
 pub const ICON: f32 = 76.0;
 
 const SUPPORT_CLASS: windows::core::PCWSTR = w!("TinycastSupport");
@@ -112,6 +123,37 @@ fn destroy(hwnd: HWND) {
     }
 }
 
+struct SupportChrome {
+    support: DipRect,
+    polar_bottom: f32,
+    remind: DipRect,
+}
+
+fn support_chrome(width: f32, height: f32) -> SupportChrome {
+    let pad = theme::spacing::XXL;
+    let icon_y = theme::spacing::MD;
+    let btn_h = 46.0;
+    let support = DipRect {
+        x: pad,
+        y: icon_y + ICON + 96.0,
+        w: (width - pad * 2.0).max(40.0),
+        h: btn_h,
+    };
+    let polar_bottom = support.y + btn_h + theme::spacing::MD + 18.0;
+    let remind_h = 24.0;
+    let y = (polar_bottom + theme::spacing::MD).min((height - pad - remind_h).max(polar_bottom));
+    SupportChrome {
+        support,
+        polar_bottom,
+        remind: DipRect {
+            x: pad,
+            y,
+            w: 280.0,
+            h: remind_h,
+        },
+    }
+}
+
 fn empty_rect() -> DipRect {
     DipRect {
         x: 0.0,
@@ -123,6 +165,37 @@ fn empty_rect() -> DipRect {
 
 fn contains(rect: DipRect, x: f32, y: f32) -> bool {
     x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h
+}
+
+fn client_dip_size(hwnd: HWND) -> (f32, f32) {
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
+    let dpi = if dpi == 0 { 96.0 } else { dpi as f32 };
+    let mut rc = RECT::default();
+    unsafe {
+        let _ = GetClientRect(hwnd, &mut rc);
+    }
+    (rc.right as f32 * 96.0 / dpi, rc.bottom as f32 * 96.0 / dpi)
+}
+
+unsafe fn layout_reminders(hwnd: HWND) {
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    if (*inner).reminders.is_invalid() {
+        return;
+    }
+    let dpi = GetDpiForWindow(hwnd);
+    let (w, h) = client_dip_size(hwnd);
+    let chrome = support_chrome(w, h);
+    let r = chrome.remind;
+    let _ = MoveWindow(
+        (*inner).reminders,
+        dip_scalar_to_px(r.x, dpi),
+        dip_scalar_to_px(r.y, dpi),
+        dip_scalar_to_px(r.w, dpi),
+        dip_scalar_to_px(r.h, dpi),
+        true,
+    );
 }
 
 fn client_dip(hwnd: HWND, lparam: LPARAM) -> (f32, f32) {
@@ -154,14 +227,14 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
             Kind::About => w!("About Tinycast"),
         };
         let hwnd = CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
+            overlay_caption_ex(),
             class,
             title,
-            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+            overlay_caption_style(),
             240,
             180,
             WIDTH.round() as i32,
-            360,
+            HEIGHT.round() as i32,
             host,
             None,
             hinstance,
@@ -170,6 +243,12 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
         if let Some(inner) = inner_from(hwnd) {
             (*inner).kind = kind;
         }
+        apply_captioned_client_dip(
+            hwnd,
+            (WIDTH, HEIGHT),
+            overlay_caption_style(),
+            overlay_caption_ex(),
+        );
         let support_btn = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
@@ -187,16 +266,15 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
         .unwrap_or_default();
         let _ = ShowWindow(support_btn, SW_HIDE);
         if matches!(kind, Kind::Support) {
-            let dpi = GetDpiForWindow(hwnd);
             let box_hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 w!("BUTTON"),
                 w!("Remind me later"),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                dip_scalar_to_px(theme::spacing::XXL, dpi),
-                dip_scalar_to_px(300.0, dpi),
-                dip_scalar_to_px(280.0, dpi),
-                dip_scalar_to_px(24.0, dpi),
+                0,
+                0,
+                80,
+                24,
                 hwnd,
                 windows::Win32::UI::WindowsAndMessaging::HMENU(
                     ID_REMINDERS as *mut core::ffi::c_void,
@@ -208,6 +286,7 @@ fn create(host: HWND, kind: Kind) -> windows::core::Result<HWND> {
             if let Some(inner) = inner_from(hwnd) {
                 (*inner).reminders = box_hwnd;
             }
+            layout_reminders(hwnd);
         }
         Ok(hwnd)
     }
@@ -268,6 +347,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(1)
         }
         WM_ERASEBKGND => LRESULT(1),
+        WM_SIZE => {
+            layout_reminders(hwnd);
+            LRESULT(0)
+        }
+        WM_DPICHANGED => {
+            apply_dpi_changed_fixed(
+                hwnd,
+                wparam,
+                lparam,
+                (WIDTH, HEIGHT),
+                overlay_caption_style(),
+                overlay_caption_ex(),
+            );
+            layout_reminders(hwnd);
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(hwnd, None, false);
+            LRESULT(0)
+        }
         WM_PAINT => {
             paint(hwnd);
             LRESULT(0)
@@ -345,6 +441,7 @@ fn paint(hwnd: HWND) {
                 paint_sheen(target, size.width, size.height, 0)?;
                 let pad = theme::spacing::XXL;
                 let icon = ICON;
+                let chrome = support_chrome(size.width, size.height);
                 let icon_rect = DipRect {
                     x: (size.width - icon) / 2.0,
                     y: theme::spacing::MD,
@@ -395,13 +492,8 @@ fn paint(hwnd: HWND) {
                     },
                     text::secondary_ink(0),
                 )?;
-                let btn_h = 46.0;
-                support_rect = DipRect {
-                    x: pad,
-                    y: icon_rect.y + icon + 96.0,
-                    w: size.width - pad * 2.0,
-                    h: btn_h,
-                };
+                let btn_h = chrome.support.h;
+                support_rect = chrome.support;
                 fill_squircle(target, support_rect, 12.0, text::BRAND)?;
                 text::draw(
                     target,
@@ -432,7 +524,7 @@ fn paint(hwnd: HWND) {
 
 #[cfg(test)]
 mod tests {
-    use super::CHECKOUT;
+    use super::*;
 
     #[test]
     fn checkout_is_the_one_polar_link() {
@@ -442,7 +534,27 @@ mod tests {
     #[test]
     fn support_width_is_460() {
         assert_eq!(crate::surfaces::support::WIDTH, 460.0);
+        assert_eq!(crate::surfaces::support::HEIGHT, 360.0);
         assert_eq!(crate::surfaces::support::ICON, 76.0);
+    }
+
+    #[test]
+    fn reminders_sit_below_polar_and_inside_client() {
+        let chrome = support_chrome(WIDTH, HEIGHT);
+        assert!(
+            chrome.remind.y >= chrome.polar_bottom,
+            "remind y {} polar {}",
+            chrome.remind.y,
+            chrome.polar_bottom
+        );
+        assert!(
+            chrome.remind.y < chrome.polar_bottom + 40.0,
+            "remind y {} should follow polar {}",
+            chrome.remind.y,
+            chrome.polar_bottom
+        );
+        assert!(chrome.remind.y + chrome.remind.h <= HEIGHT - theme::spacing::MD);
+        let _ = chrome.support;
     }
 
     #[test]
