@@ -80,6 +80,7 @@ const MIRRORED: &[AppSettingsKey] = &[
     AppSettingsKey::MenuBarLinkedEventsOnly,
     AppSettingsKey::HideCurrentEvent,
     AppSettingsKey::SupportReminders,
+    AppSettingsKey::UiLanguage,
 ];
 
 const EXCLUDED: &[(AppSettingsKey, &'static str)] = &[
@@ -205,6 +206,10 @@ mod tests {
         assert!(excluded_reason(AppSettingsKey::SnippetsEnabled)
             .unwrap()
             .contains("keystroke"));
+        assert_eq!(
+            coverage_bucket(AppSettingsKey::UiLanguage),
+            Bucket::Mirrored
+        );
     }
 
     #[test]

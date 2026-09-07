@@ -132,6 +132,8 @@ pub struct AppSettings {
     pub pop_to_root_timeout: i64,
     #[serde(default, rename = "autoSwitchInputSource")]
     pub auto_switch_input_source: bool,
+    #[serde(default = "default_ui_language", rename = "uiLanguage")]
+    pub ui_language: String,
 }
 
 impl Default for AppSettings {
@@ -194,6 +196,7 @@ impl Default for AppSettings {
             show_in_menu_bar: true,
             pop_to_root_timeout: 0,
             auto_switch_input_source: false,
+            ui_language: default_ui_language(),
         }
     }
 }
@@ -255,6 +258,10 @@ fn default_ai_new_after() -> i64 {
 
 fn default_file_search_scopes() -> Vec<String> {
     vec!["~".into()]
+}
+
+fn default_ui_language() -> String {
+    "zh-Hans".into()
 }
 
 fn default_search_scopes() -> Vec<String> {
@@ -333,6 +340,23 @@ fn settings_path() -> PathBuf {
 mod tests {
     use super::*;
     use tinycast_pure::app_settings_key::AppSettingsKey;
+
+    #[test]
+    fn ui_language_defaults_to_zh_hans() {
+        assert_eq!(AppSettings::default().ui_language, "zh-Hans");
+        let s: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.ui_language, "zh-Hans");
+        let j = serde_json::to_value(&AppSettings::default()).unwrap();
+        assert_eq!(j["uiLanguage"], "zh-Hans");
+        assert_eq!(j[AppSettingsKey::UiLanguage.as_str()], "zh-Hans");
+    }
+
+    #[test]
+    fn ui_language_import_is_mirrored() {
+        let mut s = AppSettings::default();
+        s.apply_backup(serde_json::json!({"uiLanguage": "en"}));
+        assert_eq!(s.ui_language, "en");
+    }
 
     #[test]
     fn app_settings_serde_names() {

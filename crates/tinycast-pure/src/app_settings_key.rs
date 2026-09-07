@@ -60,6 +60,7 @@ pub enum AppSettingsKey {
     QuickActionPreviews,
     QuickActionLanguage,
     SupportReminders,
+    UiLanguage,
 }
 
 impl AppSettingsKey {
@@ -124,6 +125,7 @@ impl AppSettingsKey {
         AppSettingsKey::QuickActionPreviews,
         AppSettingsKey::QuickActionLanguage,
         AppSettingsKey::SupportReminders,
+        AppSettingsKey::UiLanguage,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -188,6 +190,7 @@ impl AppSettingsKey {
             AppSettingsKey::QuickActionPreviews => "quickActionPreviews",
             AppSettingsKey::QuickActionLanguage => "quickActionLanguage",
             AppSettingsKey::SupportReminders => "supportReminders",
+            AppSettingsKey::UiLanguage => "uiLanguage",
         }
     }
 }
@@ -281,6 +284,7 @@ mod tests {
             "quickActionPreviews",
             "quickActionLanguage",
             "supportReminders",
+            "uiLanguage",
         ];
         let actual: Vec<&str> = AppSettingsKey::ALL.iter().map(|k| k.as_str()).collect();
         assert_eq!(actual, EXPECTED);
