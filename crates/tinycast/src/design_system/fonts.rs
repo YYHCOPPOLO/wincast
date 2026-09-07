@@ -1,5 +1,5 @@
 use tinycast_pure::theme;
-use windows::core::w;
+use windows::core::{w, PCWSTR};
 use windows::Win32::Graphics::DirectWrite::{
     IDWriteFactory, IDWriteTextFormat, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_FONT_WEIGHT_REGULAR,
@@ -7,6 +7,10 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
     DWRITE_TEXT_METRICS, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
 };
+
+pub fn ui_font_family() -> &'static str {
+    "Microsoft YaHei UI"
+}
 
 #[allow(dead_code)]
 pub struct Fonts {
@@ -25,64 +29,78 @@ pub struct Fonts {
 
 impl Fonts {
     pub fn new(dwrite: &IDWriteFactory) -> windows::core::Result<Self> {
+        Self::with_locale(dwrite, "zh-CN")
+    }
+
+    pub fn with_locale(dwrite: &IDWriteFactory, locale: &str) -> windows::core::Result<Self> {
         Ok(Self {
             search: make(
                 dwrite,
                 theme::typography::SEARCH_FIELD,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
+                locale,
             )?,
             row_title: make(
                 dwrite,
                 theme::typography::ROW_TITLE,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
+                locale,
             )?,
             trailing: make(
                 dwrite,
                 theme::typography::ROW_TRAILING,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
+                locale,
             )?,
             section: make(
                 dwrite,
                 theme::typography::SECTION_HEADER,
                 DWRITE_FONT_WEIGHT_MEDIUM,
                 false,
+                locale,
             )?,
             bar: make(
                 dwrite,
                 theme::typography::BAR,
                 DWRITE_FONT_WEIGHT_MEDIUM,
                 false,
+                locale,
             )?,
             keycap: make(
                 dwrite,
                 theme::typography::KEY_CAP,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 true,
+                locale,
             )?,
             headline: make(
                 dwrite,
                 theme::typography::PANEL_TITLE,
                 DWRITE_FONT_WEIGHT_SEMI_BOLD,
                 false,
+                locale,
             )?,
             headline_center: make(
                 dwrite,
                 theme::typography::PANEL_TITLE,
                 DWRITE_FONT_WEIGHT_SEMI_BOLD,
                 true,
+                locale,
             )?,
             wrap_callout: make_wrap(
                 dwrite,
                 theme::typography::ROW_TRAILING,
                 DWRITE_FONT_WEIGHT_REGULAR,
+                locale,
             )?,
             wrap_body: make_wrap(
                 dwrite,
                 theme::typography::ROW_TITLE,
                 DWRITE_FONT_WEIGHT_REGULAR,
+                locale,
             )?,
             dwrite: dwrite.clone(),
         })
@@ -122,18 +140,9 @@ fn make(
     size: f32,
     weight: DWRITE_FONT_WEIGHT,
     center: bool,
+    locale: &str,
 ) -> windows::core::Result<IDWriteTextFormat> {
-    let format = unsafe {
-        dwrite.CreateTextFormat(
-            w!("Segoe UI"),
-            None,
-            weight,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            size,
-            w!("en-US"),
-        )?
-    };
+    let format = create_ui_format(dwrite, size, weight, locale)?;
     unsafe {
         format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
         format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
@@ -150,22 +159,63 @@ fn make_wrap(
     dwrite: &IDWriteFactory,
     size: f32,
     weight: DWRITE_FONT_WEIGHT,
+    locale: &str,
 ) -> windows::core::Result<IDWriteTextFormat> {
-    let format = unsafe {
-        dwrite.CreateTextFormat(
-            w!("Segoe UI"),
-            None,
-            weight,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            size,
-            w!("en-US"),
-        )?
-    };
+    let format = create_ui_format(dwrite, size, weight, locale)?;
     unsafe {
         format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
         format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
         format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
     }
     Ok(format)
+}
+
+fn create_ui_format(
+    dwrite: &IDWriteFactory,
+    size: f32,
+    weight: DWRITE_FONT_WEIGHT,
+    locale: &str,
+) -> windows::core::Result<IDWriteTextFormat> {
+    let locale_w: Vec<u16> = locale.encode_utf16().chain(Some(0)).collect();
+    let locale_p = PCWSTR(locale_w.as_ptr());
+    for family in [w!("Microsoft YaHei UI"), w!("Microsoft YaHei")] {
+        if let Ok(format) = unsafe {
+            dwrite.CreateTextFormat(
+                family,
+                None,
+                weight,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                size,
+                locale_p,
+            )
+        } {
+            return Ok(format);
+        }
+    }
+    let segoe: Vec<u16> = "Segoe UI".encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        dwrite.CreateTextFormat(
+            PCWSTR(segoe.as_ptr()),
+            None,
+            weight,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            size,
+            locale_p,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn fonts_rs_requests_yahei_ui() {
+        let src = include_str!("fonts.rs");
+        let family = concat!("Microsoft ", "YaHei", " UI");
+        assert_eq!(super::ui_font_family(), family);
+        assert!(src.contains(&format!("w!(\"{family}\")")));
+        assert!(!src.contains("w!(\"Noto"));
+        assert!(!src.contains("w!(\"Segoe UI\")"));
+    }
 }

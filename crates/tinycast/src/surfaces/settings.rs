@@ -13,7 +13,7 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1RenderTarget,
-    ID2D1SolidColorBrush, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    ID2D1SolidColorBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_FACTORY_TYPE_SINGLE_THREADED,
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
     D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
     D2D1_ROUNDED_RECT,
@@ -301,46 +301,46 @@ impl Renderer {
         let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
         let header_format = unsafe {
             dwrite.CreateTextFormat(
-                w!("Segoe UI"),
+                w!("Microsoft YaHei UI"),
                 None,
                 DWRITE_FONT_WEIGHT_SEMI_BOLD,
                 DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL,
                 HEADER_FONT_DIP,
-                w!("en-US"),
+                w!("zh-CN"),
             )?
         };
         let tab_format = unsafe {
             dwrite.CreateTextFormat(
-                w!("Segoe UI"),
+                w!("Microsoft YaHei UI"),
                 None,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL,
                 TAB_FONT_DIP,
-                w!("en-US"),
+                w!("zh-CN"),
             )?
         };
         let body_format = unsafe {
             dwrite.CreateTextFormat(
-                w!("Segoe UI"),
+                w!("Microsoft YaHei UI"),
                 None,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL,
                 TAB_FONT_DIP,
-                w!("en-US"),
+                w!("zh-CN"),
             )?
         };
         let caption_format = unsafe {
             dwrite.CreateTextFormat(
-                w!("Segoe UI"),
+                w!("Microsoft YaHei UI"),
                 None,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL,
                 HEADER_FONT_DIP,
-                w!("en-US"),
+                w!("zh-CN"),
             )?
         };
         for format in [&header_format, &tab_format, &body_format] {
@@ -524,7 +524,8 @@ fn paint_scene(
                         };
                         target.FillRoundedRectangle(&pill, &sel_brush);
                     }
-                    let icon = theme::size::SETTINGS_ROW_ICON;
+                    let slot = theme::size::SETTINGS_ROW_ICON;
+                    let icon = 16.0;
                     let ink = theme::colors::ramp_rgba(
                         appearance,
                         theme::colors::TEXT_PRIMARY_ALPHA,
@@ -535,7 +536,7 @@ fn paint_scene(
                         dwrite,
                         tab.system_image(),
                         DipRect {
-                            x: theme::spacing::XL,
+                            x: theme::spacing::XL + (slot - icon) / 2.0,
                             y: row.y + (row.height - icon) / 2.0,
                             w: icon,
                             h: icon,
@@ -1283,7 +1284,7 @@ fn draw_label(
             format,
             &rect,
             brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -1301,7 +1302,7 @@ fn header_rect(row: &SidebarRow) -> D2D_RECT_F {
 
 fn tab_rect(row: &SidebarRow) -> D2D_RECT_F {
     D2D_RECT_F {
-        left: theme::spacing::XL + theme::size::SETTINGS_ROW_ICON,
+        left: theme::spacing::XL + theme::size::SETTINGS_ROW_ICON + theme::spacing::MD,
         top: row.y,
         right: theme::size::SETTINGS_SIDEBAR - theme::spacing::MD,
         bottom: row.y + row.height,
@@ -2618,6 +2619,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sidebar_tab_label_clears_the_icon_slot() {
+        let row = SidebarRow {
+            y: 40.0,
+            height: TAB_ROW_HEIGHT,
+            kind: RowKind::Tab(SettingsTab::General),
+        };
+        let label = tab_rect(&row);
+        let icon_right = theme::spacing::XL + theme::size::SETTINGS_ROW_ICON;
+        assert!(
+            label.left >= icon_right + theme::spacing::MD - 0.01,
+            "label left {} must leave md after icon {}",
+            label.left,
+            icon_right
+        );
+    }
 
     #[test]
     fn click_maps_to_settings_tab() {

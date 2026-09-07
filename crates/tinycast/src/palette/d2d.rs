@@ -8,15 +8,16 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1RenderTarget,
-    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+    D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
     D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
     D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
-    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
-    DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_WORD_WRAPPING_NO_WRAP,
+    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_MEDIUM,
+    DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_MEASURING_MODE_NATURAL,
+    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_TRAILING,
+    DWRITE_TEXT_METRICS, DWRITE_WORD_WRAPPING_NO_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
@@ -44,6 +45,10 @@ pub struct Renderer {
 pub struct PaintParams<'a> {
     pub placeholder: bool,
     pub placeholder_text: &'a str,
+    pub search_text: &'a str,
+    pub caret_visible: bool,
+    pub caret_utf16: usize,
+    pub search_trailing: f32,
     pub header_symbol: &'a str,
     pub items: &'a [PaintItem],
     pub scroll: f32,
@@ -72,43 +77,13 @@ impl Renderer {
         let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
         let text_format = make_text_format(
             &dwrite,
-            w!("Segoe UI"),
+            w!("Microsoft YaHei UI"),
             super::edit::SEARCH_FONT_DIP,
             DWRITE_FONT_WEIGHT_REGULAR,
             false,
             false,
         )?;
-        let list_fonts = ListFonts {
-            title: make_text_format(&dwrite, w!("Segoe UI"), 15.0, DWRITE_FONT_WEIGHT_REGULAR, false, false)?,
-            trailing: make_text_format(&dwrite, w!("Segoe UI"), 12.0, DWRITE_FONT_WEIGHT_REGULAR, true, false)?,
-            header: make_text_format(&dwrite, w!("Segoe UI"), 11.0, DWRITE_FONT_WEIGHT_SEMI_BOLD, false, false)?,
-            chip: make_text_format(&dwrite, w!("Segoe UI"), 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
-            keycap: make_text_format(&dwrite, w!("Segoe UI"), 11.0, DWRITE_FONT_WEIGHT_REGULAR, false, true)?,
-            calc_result: make_text_format(
-                &dwrite,
-                w!("Segoe UI"),
-                theme::typography::CALC_RESULT,
-                DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                false,
-                true,
-            )?,
-            calc_badge: make_text_format(
-                &dwrite,
-                w!("Segoe UI"),
-                theme::typography::CALC_BADGE,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                false,
-                true,
-            )?,
-            emoji: make_text_format(
-                &dwrite,
-                w!("Segoe UI Emoji"),
-                32.0,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                false,
-                true,
-            )?,
-        };
+        let list_fonts = list_fonts(&dwrite)?;
         Ok(Self {
             factory,
             dwrite,
@@ -323,6 +298,75 @@ fn create_hwnd_target(
     unsafe { factory.CreateHwndRenderTarget(&target_properties(dpi), &hwnd_props) }
 }
 
+fn list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
+    Ok(ListFonts {
+        title: make_text_format(
+            dwrite,
+            w!("Microsoft YaHei UI"),
+            theme::typography::ROW_TITLE,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            false,
+            false,
+        )?,
+        trailing: make_text_format(
+            dwrite,
+            w!("Microsoft YaHei UI"),
+            theme::typography::ROW_TRAILING,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            true,
+            false,
+        )?,
+        header: make_text_format(
+            dwrite,
+            w!("Microsoft YaHei UI"),
+            theme::typography::SECTION_HEADER,
+            DWRITE_FONT_WEIGHT_MEDIUM,
+            false,
+            false,
+        )?,
+        chip: make_text_format(
+            dwrite,
+            w!("Microsoft YaHei UI"),
+            theme::typography::CALC_BADGE,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            false,
+            true,
+        )?,
+        keycap: make_text_format(
+            dwrite,
+            w!("Microsoft YaHei UI"),
+            theme::typography::KEY_CAP,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            false,
+            true,
+        )?,
+        calc_result: make_text_format(
+            dwrite,
+            w!("Microsoft YaHei UI"),
+            theme::typography::CALC_RESULT,
+            DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            false,
+            true,
+        )?,
+        calc_badge: make_text_format(
+            dwrite,
+            w!("Microsoft YaHei UI"),
+            theme::typography::CALC_BADGE,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            false,
+            true,
+        )?,
+        emoji: make_text_format(
+            dwrite,
+            w!("Segoe UI Emoji"),
+            32.0,
+            DWRITE_FONT_WEIGHT_REGULAR,
+            false,
+            true,
+        )?,
+    })
+}
+
 fn make_text_format(
     dwrite: &IDWriteFactory,
     family: windows::core::PCWSTR,
@@ -339,7 +383,7 @@ fn make_text_format(
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
             size,
-            w!("en-US"),
+            w!("zh-CN"),
         )?
     };
     unsafe {
@@ -400,7 +444,7 @@ fn paint_layers(
         let color = scrim_color();
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
-        if let Some(chat) = params.chat {
+        if let Some(chat) = &params.chat {
             let ds = crate::design_system::Fonts::new(dwrite)?;
             let chat = crate::design_system::chat::ChatPaint {
                 messages: chat.messages,
@@ -464,14 +508,7 @@ fn paint_layers(
                 params.appearance,
             );
         }
-        if params.placeholder {
-            let _ = paint_placeholder(
-                target,
-                text_format,
-                params.placeholder_text,
-                params.appearance,
-            );
-        }
+        let _ = paint_search_field(target, dwrite, text_format, &params);
         if let Some(hint) = params.tab_hint {
             let trailing = params
                 .clipboard_filter
@@ -552,7 +589,7 @@ fn paint_clipboard_preview(
             &fonts.title,
             &rect,
             &text_brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -610,7 +647,7 @@ fn paint_filter_button(
                 bottom: rect.y + rect.h,
             },
             &text_brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -658,7 +695,7 @@ fn paint_tab_hint(
             &fonts.header,
             &label_rect,
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
@@ -691,37 +728,108 @@ fn paint_compact_favorites(
     Ok(())
 }
 
-fn paint_placeholder(
+fn paint_search_field(
     target: &ID2D1RenderTarget,
+    dwrite: &IDWriteFactory,
     text_format: &IDWriteTextFormat,
-    label: &str,
-    appearance: u8,
+    params: &PaintParams<'_>,
 ) -> windows::core::Result<()> {
-    let (x, y, w, h) = super::edit::search_field_dip();
+    let (x, y, w, h) = super::edit::search_field_dip_with_trailing(params.search_trailing);
     let rect = D2D_RECT_F {
         left: x,
         top: y,
         right: x + w,
         bottom: y + h,
     };
-    let color = crate::design_system::appearance::color(theme::colors::ramp_rgba(
-        appearance,
-        theme::colors::TEXT_TERTIARY_DARK_ALPHA,
-        theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
-    ));
-    let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
-    let text: Vec<u16> = label.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &text,
-            text_format,
-            &rect,
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
+    if params.placeholder && params.search_text.is_empty() {
+        let color = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+            params.appearance,
+            theme::colors::TEXT_TERTIARY_DARK_ALPHA,
+            theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
+        ));
+        let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
+        let text: Vec<u16> = params.placeholder_text.encode_utf16().collect();
+        unsafe {
+            target.DrawText(
+                &text,
+                text_format,
+                &rect,
+                &brush,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
+    } else if !params.search_text.is_empty() {
+        let color = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+            params.appearance,
+            theme::colors::TEXT_PRIMARY_ALPHA,
+            theme::colors::TEXT_PRIMARY_ALPHA,
+        ));
+        let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
+        let text: Vec<u16> = params.search_text.encode_utf16().collect();
+        unsafe {
+            target.DrawText(
+                &text,
+                text_format,
+                &rect,
+                &brush,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
+    }
+    if params.caret_visible {
+        let caret_x = x + search_caret_x(dwrite, text_format, params.search_text, params.caret_utf16, w, h);
+        let caret_h = 22.0;
+        let caret_y = y + ((h - caret_h) / 2.0).max(0.0);
+        let color = crate::design_system::appearance::color(theme::colors::ramp_rgba(
+            params.appearance,
+            theme::colors::TEXT_PRIMARY_ALPHA,
+            theme::colors::TEXT_PRIMARY_ALPHA,
+        ));
+        let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
+        unsafe {
+            target.FillRectangle(
+                &D2D_RECT_F {
+                    left: caret_x,
+                    top: caret_y,
+                    right: caret_x + 1.5,
+                    bottom: caret_y + caret_h,
+                },
+                &brush,
+            );
+        }
     }
     Ok(())
+}
+
+fn search_caret_x(
+    dwrite: &IDWriteFactory,
+    format: &IDWriteTextFormat,
+    text: &str,
+    caret_utf16: usize,
+    max_w: f32,
+    max_h: f32,
+) -> f32 {
+    if text.is_empty() || caret_utf16 == 0 {
+        return 0.0;
+    }
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    let end = caret_utf16.min(wide.len());
+    if end == 0 {
+        return 0.0;
+    }
+    unsafe {
+        let Ok(layout) = dwrite.CreateTextLayout(&wide[..end], format, max_w.max(1.0), max_h.max(1.0))
+        else {
+            return 0.0;
+        };
+        let mut metrics = DWRITE_TEXT_METRICS::default();
+        if layout.GetMetrics(&mut metrics).is_err() {
+            return 0.0;
+        }
+        metrics.width
+    }
 }
 
 /// Brush alpha is the frozen dark scrim; later D2D content stays fully opaque.
@@ -741,6 +849,101 @@ mod tests {
     use super::*;
 
     #[test]
+    fn list_type_uses_theme_tokens() {
+        let dwrite: IDWriteFactory =
+            unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).unwrap() };
+        let fonts = list_fonts(&dwrite).unwrap();
+        unsafe {
+            assert_eq!(fonts.title.GetFontSize(), theme::typography::ROW_TITLE);
+            assert_eq!(fonts.trailing.GetFontSize(), theme::typography::ROW_TRAILING);
+            assert_eq!(fonts.header.GetFontSize(), theme::typography::SECTION_HEADER);
+            assert_eq!(fonts.keycap.GetFontSize(), theme::typography::KEY_CAP);
+        }
+    }
+
+    #[test]
+    fn typed_query_paints_in_search_field() {
+        let (w, h, bits) = crate::design_system::test_render::with_offscreen(750, 64, |target| {
+            let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
+            let text_format = make_text_format(
+                &dwrite,
+                w!("Microsoft YaHei UI"),
+                crate::palette::edit::SEARCH_FONT_DIP,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                false,
+                false,
+            )?;
+            let body = make_text_format(
+                &dwrite,
+                w!("Microsoft YaHei UI"),
+                theme::typography::ROW_TITLE,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                false,
+                false,
+            )?;
+            let list_fonts = ListFonts {
+                title: body.clone(),
+                trailing: body.clone(),
+                header: body.clone(),
+                chip: body.clone(),
+                keycap: body.clone(),
+                calc_result: body.clone(),
+                calc_badge: body.clone(),
+                emoji: body,
+            };
+            let mut cache = IconCache::new();
+            paint_layers(
+                target,
+                &dwrite,
+                &text_format,
+                &list_fonts,
+                PaintParams {
+                    placeholder: false,
+                    placeholder_text: "",
+                    search_text: "notepad",
+                    caret_visible: true,
+                    caret_utf16: 7,
+                    search_trailing: 0.0,
+                    header_symbol: "magnifyingglass",
+                    items: &[],
+                    scroll: 0.0,
+                    cache: &mut cache,
+                    appearance: 0,
+                    footer: FooterPaint {
+                        show_action_group: false,
+                        primary_label: "",
+                        primary_destructive: false,
+                    },
+                    menu: None,
+                    clipboard_preview: None,
+                    tab_hint: None,
+                    clipboard_filter: None,
+                    compact_favorite_icons: &[],
+                    empty_results: None,
+                    chat: None,
+                },
+                96.0,
+            )
+        })
+        .expect("search text");
+        let field = tinycast_pure::layout::palette_chrome::search_field_rect(750.0, 0.0);
+        let x0 = (field.x + 8.0).round() as usize;
+        let y0 = (field.y + 8.0).round() as usize;
+        let x1 = (field.x + 80.0).round() as usize;
+        let y1 = (field.y + field.h - 8.0).round() as usize;
+        let mut max_r = 0u8;
+        for y in y0..y1.min(h) {
+            for x in x0..x1.min(w) {
+                max_r = max_r.max(bits[(y * w + x) * 4 + 2]);
+            }
+        }
+        assert!(
+            max_r > 80,
+            "typed search text must be visible in the field, max_r={max_r}"
+        );
+    }
+
+    #[test]
     fn scrim_alpha_is_baked_into_brush_not_source_constant() {
         let c = scrim_color();
         assert_eq!(c.r, 0.0);
@@ -756,7 +959,7 @@ mod tests {
             let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
             let text_format = make_text_format(
                 &dwrite,
-                w!("Segoe UI"),
+                w!("Microsoft YaHei UI"),
                 crate::palette::edit::SEARCH_FONT_DIP,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
@@ -764,7 +967,7 @@ mod tests {
             )?;
             let body = make_text_format(
                 &dwrite,
-                w!("Segoe UI"),
+                w!("Microsoft YaHei UI"),
                 13.0,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 false,
@@ -799,6 +1002,10 @@ mod tests {
                 PaintParams {
                     placeholder: false,
                     placeholder_text: "",
+                    search_text: "",
+                    caret_visible: false,
+                    caret_utf16: 0,
+                    search_trailing: 0.0,
                     header_symbol: "magnifyingglass",
                     items: &items,
                     scroll: 0.0,

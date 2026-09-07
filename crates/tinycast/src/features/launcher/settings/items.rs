@@ -684,7 +684,7 @@ impl FieldEdit {
                 CLIP_DEFAULT_PRECIS.0 as u32,
                 CLEARTYPE_QUALITY.0 as u32,
                 DEFAULT_PITCH.0 as u32,
-                w!("Segoe UI"),
+                w!("Microsoft YaHei UI"),
             )
         };
         if font.is_invalid() {

@@ -57,7 +57,7 @@ pub struct MenuPaint<'a> {
 pub fn paint_footer(
     target: &ID2D1RenderTarget,
     dwrite: &IDWriteFactory,
-    fonts: &ListFonts,
+    _fonts: &ListFonts,
     width: f32,
     height: f32,
     footer: &FooterPaint<'_>,
@@ -137,7 +137,7 @@ pub fn paint_footer(
     )?;
     draw_text(
         target,
-        &fonts.header,
+        &ds.bar,
         label,
         D2D_RECT_F {
             left: primary.x + pad,
@@ -165,7 +165,7 @@ pub fn paint_footer(
     }
     draw_text(
         target,
-        &fonts.header,
+        &ds.bar,
         muted,
         D2D_RECT_F {
             left: actions.x + pad,
@@ -457,7 +457,7 @@ mod tests {
     fn test_list_fonts(dwrite: &IDWriteFactory) -> windows::core::Result<ListFonts> {
         let format = unsafe {
             dwrite.CreateTextFormat(
-                w!("Segoe UI"),
+                w!("Microsoft YaHei UI"),
                 None,
                 DWRITE_FONT_WEIGHT_REGULAR,
                 DWRITE_FONT_STYLE_NORMAL,

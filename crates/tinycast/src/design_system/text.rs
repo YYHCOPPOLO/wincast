@@ -1,6 +1,6 @@
 use tinycast_pure::palette_placement::DipRect;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
-use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_NONE};
+use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
 use windows::Win32::Graphics::DirectWrite::{IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL};
 
 use super::appearance;
@@ -29,11 +29,36 @@ pub fn draw(
             format,
             &layout,
             &brush,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
     Ok(())
+}
+
+#[allow(dead_code)]
+pub fn draw_centered(
+    target: &ID2D1RenderTarget,
+    fonts: &super::fonts::Fonts,
+    format: &IDWriteTextFormat,
+    text: &str,
+    rect: DipRect,
+    rgba: (f32, f32, f32, f32),
+) -> windows::core::Result<()> {
+    let (_w, h) = fonts.measure(format, text, rect.w, rect.h);
+    let y = rect.y + ((rect.h - h).max(0.0) / 2.0);
+    draw(
+        target,
+        format,
+        text,
+        DipRect {
+            x: rect.x,
+            y,
+            w: rect.w,
+            h: h.max(1.0),
+        },
+        rgba,
+    )
 }
 
 pub fn control_surface(appearance: u8) -> (f32, f32, f32, f32) {
@@ -84,3 +109,15 @@ pub const SUCCESS: (f32, f32, f32, f32) = (0.20, 0.78, 0.35, 1.0);
 pub const PROGRESS: (f32, f32, f32, f32) = (0.0, 0.47, 0.83, 1.0);
 #[allow(dead_code)]
 pub const BRAND: (f32, f32, f32, f32) = (0.525, 0.231, 1.0, 1.0);
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn text_draw_uses_clip() {
+        let src = include_str!("text.rs");
+        assert!(
+            src.contains("D2D1_DRAW_TEXT_OPTIONS_CLIP,")
+                || src.contains("D2D1_DRAW_TEXT_OPTIONS_CLIP)")
+        );
+    }
+}

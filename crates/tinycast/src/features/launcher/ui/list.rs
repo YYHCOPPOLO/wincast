@@ -660,7 +660,7 @@ fn paint_empty_results(
     )?;
     let format = unsafe {
         dwrite.CreateTextFormat(
-            w!("Segoe UI"),
+            w!("Microsoft YaHei UI"),
             None,
             DWRITE_FONT_WEIGHT_REGULAR,
             DWRITE_FONT_STYLE_NORMAL,
@@ -777,7 +777,7 @@ fn paint_header(
     panel_w: f32,
     h: f32,
 ) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&muted_color(0.45), None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&muted_color(theme::colors::TEXT_SECONDARY_ALPHA), None)? };
     let rect = D2D_RECT_F {
         left: theme::spacing::MD,
         top: y,
@@ -824,39 +824,13 @@ fn paint_row(
     }
 
     let mut right = panel_w - inset;
-    let chrome = unsafe { target.CreateSolidColorBrush(&muted_color(0.50), None)? };
+    let chrome = unsafe { target.CreateSolidColorBrush(&muted_color(theme::colors::TEXT_SECONDARY_ALPHA), None)? };
     if let Some(cap) = keycap {
-        let cap_w = text_width(dwrite, &fonts.keycap, cap, 80.0, h).max(theme::size::KEY_CAP)
-            + theme::spacing::SM * 2.0;
-        let cap_h = theme::size::KEY_CAP;
-        let cap_x = right - cap_w;
-        let cap_y = y + (h - cap_h) / 2.0;
-        let rounded = D2D1_ROUNDED_RECT {
-            rect: D2D_RECT_F {
-                left: cap_x,
-                top: cap_y,
-                right: cap_x + cap_w,
-                bottom: cap_y + cap_h,
-            },
-            radiusX: theme::radius::KEY_CAP,
-            radiusY: theme::radius::KEY_CAP,
-        };
-        unsafe {
-            target.FillRoundedRectangle(&rounded, &chrome);
-        }
-        draw_text(
-            target,
-            &fonts.keycap,
-            &chrome,
-            D2D_RECT_F {
-                left: cap_x,
-                top: cap_y,
-                right: cap_x + cap_w,
-                bottom: cap_y + cap_h,
-            },
-            cap,
+        let ds = crate::design_system::Fonts::new(dwrite)?;
+        let cap_w = crate::design_system::paint_keycap(
+            target, &ds, cap, right, y, h, true, appearance,
         )?;
-        right = cap_x - theme::spacing::SM;
+        right -= cap_w + theme::spacing::SM;
     }
 
     if !trailing.is_empty() {

@@ -196,7 +196,7 @@ fn assistant_plain(text: &str) -> String {
 fn wrap_format(dwrite: &IDWriteFactory, trailing: bool) -> windows::core::Result<IDWriteTextFormat> {
     let format = unsafe {
         dwrite.CreateTextFormat(
-            w!("Segoe UI"),
+            w!("Microsoft YaHei UI"),
             None,
             DWRITE_FONT_WEIGHT_REGULAR,
             DWRITE_FONT_STYLE_NORMAL,
