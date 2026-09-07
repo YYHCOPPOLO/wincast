@@ -17,6 +17,7 @@ pub mod feature_flags;
 pub mod file_search;
 pub mod hotkey;
 pub mod hotkey_store;
+pub mod i18n;
 pub mod launcher_ranking;
 pub mod meeting;
 pub mod note;
