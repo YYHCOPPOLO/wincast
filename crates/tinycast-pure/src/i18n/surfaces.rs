@@ -215,6 +215,11 @@ pub fn clipboard_filter_title(filter: &str, lang: UiLang) -> &'static str {
     }
 }
 
+pub fn clipboard_unavailable(lang: UiLang) -> &'static str {
+    pick(lang, "Clipboard storage is unavailable. Existing history has been preserved.",
+        "剪贴板存储不可用，已有历史记录已保留。")
+}
+
 pub fn clipboard_empty(filter: &str, lang: UiLang) -> &'static str {
     match (filter, lang) {
         ("all", UiLang::ZhHans) => "剪贴板历史为空",

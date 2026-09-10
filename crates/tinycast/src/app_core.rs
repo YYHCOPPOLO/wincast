@@ -305,12 +305,8 @@ impl AppCore {
     }
 
     pub fn install_clipboard_images(&mut self) {
-        let mut inserted = false;
-        for path in clip_manager::take_pending_images() {
-            self.clipboard.insert_image(path);
-            inserted = true;
-        }
-        if inserted && self.palette.mode == PaletteMode::Clipboard {
+        let inserted = clip_manager::install_pending_images(&mut self.clipboard);
+        if (inserted || self.clipboard.last_error().is_some()) && self.palette.mode == PaletteMode::Clipboard {
             self.clamp_selection();
             self.invalidate_palette();
         }
@@ -383,6 +379,9 @@ impl AppCore {
         if self.palette.mode != PaletteMode::Clipboard {
             return None;
         }
+        if let Some(error) = self.clipboard.last_error() {
+            return Some(format!("{}\n\n{error}", tinycast_pure::i18n::clipboard_unavailable(self.ui_lang())));
+        }
         let rows = self
             .clipboard
             .search(&self.palette.query, self.clipboard_filter);
@@ -399,10 +398,11 @@ impl AppCore {
             PaletteMode::Ai | PaletteMode::QuicklinkArguments | PaletteMode::ExtensionCommand => {
                 None
             }
-            PaletteMode::Clipboard => Some(clip_screen::empty_message_lang(
-                self.clipboard_filter,
-                lang,
-            )),
+            PaletteMode::Clipboard => Some(if self.clipboard.is_available() {
+                clip_screen::empty_message_lang(self.clipboard_filter, lang)
+            } else {
+                tinycast_pure::i18n::clipboard_unavailable(lang)
+            }),
             PaletteMode::Launcher => Some(tinycast_pure::i18n::empty_no_apps(lang)),
             PaletteMode::CalculatorHistory => Some(if q.is_empty() {
                 tinycast_pure::i18n::empty_no_calculations(lang)
@@ -4929,6 +4929,29 @@ mod tests {
             c.empty_results_text(),
             Some("Clipboard history is empty")
         );
+    }
+
+    #[test]
+    fn clipboard_storage_error_uses_localized_palette_messages() {
+        let root = std::env::temp_dir().join(format!("tinycast-clipboard-ui-{}", crate::features::clipboard::service::store::new_id()));
+        std::fs::create_dir(&root).unwrap();
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        }
+        let _cleanup = Cleanup(root.clone());
+        std::fs::write(root.join("clipboard.sqlite3"), b"corrupt UI fixture").unwrap();
+        let mut c = AppCore::new();
+        c.clipboard = ClipboardStore::open(root);
+        c.palette.mode = PaletteMode::Clipboard;
+        for (lang, expected) in [("en", "Clipboard storage is unavailable. Existing history has been preserved."),
+            ("zh-Hans", "剪贴板存储不可用，已有历史记录已保留。")] {
+            c.settings.ui_language = lang.into();
+            assert_eq!(c.empty_results_text(), Some(expected));
+            assert!(c.clipboard_preview().unwrap().starts_with(expected));
+        }
+        c.palette.mode = PaletteMode::Launcher;
+        assert!(c.clipboard_preview().is_none());
     }
 
     #[test]
