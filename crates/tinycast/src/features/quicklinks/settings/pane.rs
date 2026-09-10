@@ -30,7 +30,8 @@ pub fn section_header() -> &'static str {
 }
 
 pub const ENABLE_TITLE: &str = "Quicklinks";
-pub const ENABLE_SUBTITLE: &str = "Open URLs, files, and searches from the launcher. Off by default.";
+pub const ENABLE_SUBTITLE: &str =
+    "Open URLs, files, and searches from the launcher. Off by default.";
 pub const SHOW_IN_LAUNCHER: &str = "Show in launcher";
 pub const CREATE_LABEL: &str = "Create";
 pub const IMPORT_LABEL: &str = "Import";
@@ -47,11 +48,7 @@ pub enum QuicklinksHit {
 }
 
 pub fn content_height(count: usize) -> f32 {
-    ds::switch_section_next_y(true)
-        + ITEM_H
-        + theme::spacing::SM
-        + ITEM_H * count as f32
-        + 24.0
+    ds::switch_section_next_y(true) + ITEM_H + theme::spacing::SM + ITEM_H * count as f32 + 24.0
 }
 
 pub fn hit(x: f32, y: f32, scroll: f32, count: usize) -> Option<QuicklinksHit> {
@@ -107,7 +104,13 @@ pub fn paint(
         ),
         true,
     );
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     let origin = -scroll;
     let mut y = ds::form_origin() + origin;
     paint_toggle_row(
@@ -385,7 +388,10 @@ mod tests {
             Some(QuicklinksHit::ShowInLauncher)
         );
         let y = ds::switch_section_next_y(true) + 4.0;
-        assert_eq!(hit(theme::spacing::XL + 4.0, y, 0.0, 0), Some(QuicklinksHit::Create));
+        assert_eq!(
+            hit(theme::spacing::XL + 4.0, y, 0.0, 0),
+            Some(QuicklinksHit::Create)
+        );
         assert_eq!(
             hit(theme::spacing::XL + BTN_W + 12.0, y, 0.0, 0),
             Some(QuicklinksHit::Import)

@@ -6,12 +6,12 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, GetWindowLongPtrW,
-    GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW,
-    RegisterClassW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
-    ShowWindow, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOP, IDC_ARROW, MSG,
-    SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_KEYDOWN,
-    WM_NCDESTROY, WNDCLASSW, WS_CHILD, WS_EX_CLIENTEDGE, WS_POPUP, WS_TABSTOP, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW, RegisterClassW,
+    SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
+    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOP, IDC_ARROW, MSG, SW_SHOW, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WNDCLASSW, WS_CHILD,
+    WS_EX_CLIENTEDGE, WS_POPUP, WS_TABSTOP, WS_VISIBLE,
 };
 
 use crate::platform::screens::dip_scalar_to_px;
@@ -182,7 +182,9 @@ fn create(
                 dip_scalar_to_px(240.0, dpi),
                 dip_scalar_to_px(24.0, dpi),
                 hwnd,
-                windows::Win32::UI::WindowsAndMessaging::HMENU(ID_CONFIRM as *mut core::ffi::c_void),
+                windows::Win32::UI::WindowsAndMessaging::HMENU(
+                    ID_CONFIRM as *mut core::ffi::c_void,
+                ),
                 hinstance,
                 None,
             )?;
@@ -191,7 +193,14 @@ fn create(
                 tinycast_pure::i18n::editor_needs_confirmation(lang),
             );
         }
-        let _ = button(hwnd, ID_SAVE, tinycast_pure::i18n::editor_save(lang), 250, 190, dpi)?;
+        let _ = button(
+            hwnd,
+            ID_SAVE,
+            tinycast_pure::i18n::editor_save(lang),
+            250,
+            190,
+            dpi,
+        )?;
         let _ = button(
             hwnd,
             ID_CANCEL,
@@ -200,13 +209,20 @@ fn create(
             190,
             dpi,
         )?;
-        let _ = label(hwnd, tinycast_pure::i18n::editor_name_label(lang), 20, 16, dpi);
+        let _ = label(
+            hwnd,
+            tinycast_pure::i18n::editor_name_label(lang),
+            20,
+            16,
+            dpi,
+        );
         let _ = label(hwnd, labels.value_label, 20, 68, dpi);
         if let Some(init) = initial {
             set_text(inner.name, &init.name);
             set_text(inner.command, &init.command);
             if init.confirm {
-                let _ = SendMessageW(inner.confirm, 0x00F1, WPARAM(1), LPARAM(0)); // BM_SETCHECK
+                let _ = SendMessageW(inner.confirm, 0x00F1, WPARAM(1), LPARAM(0));
+                // BM_SETCHECK
             }
         }
         let _ = SetFocus(inner.name);
@@ -241,7 +257,14 @@ fn edit_field(
     }
 }
 
-fn button(parent: HWND, id: usize, title: &str, x: i32, y: i32, dpi: u32) -> windows::core::Result<HWND> {
+fn button(
+    parent: HWND,
+    id: usize,
+    title: &str,
+    x: i32,
+    y: i32,
+    dpi: u32,
+) -> windows::core::Result<HWND> {
     let mut wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
         CreateWindowExW(

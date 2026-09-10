@@ -2,10 +2,10 @@
 
 use tinycast_pure::meeting::{detect_link, MeetingEvent};
 use windows::core::Interface;
-use windows::Foundation::TimeSpan;
 use windows::ApplicationModel::Appointments::{
     AppointmentManager, AppointmentStoreAccessType, FindAppointmentsOptions,
 };
+use windows::Foundation::TimeSpan;
 
 use crate::platform::clock::unix_now;
 
@@ -66,10 +66,11 @@ impl CalendarStore {
 }
 
 fn fetch_appointments() -> Result<Vec<MeetingEvent>, String> {
-    let store = AppointmentManager::RequestStoreAsync(AppointmentStoreAccessType::AllCalendarsReadOnly)
-        .map_err(|e| e.to_string())?
-        .get()
-        .map_err(|e| e.to_string())?;
+    let store =
+        AppointmentManager::RequestStoreAsync(AppointmentStoreAccessType::AllCalendarsReadOnly)
+            .map_err(|e| e.to_string())?
+            .get()
+            .map_err(|e| e.to_string())?;
     let start = start_of_today();
     // [startOfToday, endOfTomorrow+1day) ≈ 3 days
     let duration = TimeSpan {
@@ -93,9 +94,7 @@ fn fetch_appointments() -> Result<Vec<MeetingEvent>, String> {
             .and_then(|d| d.UniversalTime.checked_div(10_000_000))
             .map(|t| t - 11_644_473_600)
             .unwrap_or(0);
-        let dur_secs = duration
-            .map(|d| d.Duration / 10_000_000)
-            .unwrap_or(0);
+        let dur_secs = duration.map(|d| d.Duration / 10_000_000).unwrap_or(0);
         let subject = appt.Subject().map(|s| s.to_string()).unwrap_or_default();
         let location = appt.Location().map(|s| s.to_string()).unwrap_or_default();
         let details = appt.Details().map(|s| s.to_string()).unwrap_or_default();

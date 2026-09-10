@@ -12,10 +12,8 @@ pub struct HotKeyStore {
 impl HotKeyStore {
     pub fn load(path: impl AsRef<Path>) -> Self {
         let raw = match std::fs::read(path.as_ref()) {
-            Ok(bytes) => {
-                serde_json::from_slice::<BTreeMap<String, HotKeyBinding>>(&bytes)
-                    .unwrap_or_default()
-            }
+            Ok(bytes) => serde_json::from_slice::<BTreeMap<String, HotKeyBinding>>(&bytes)
+                .unwrap_or_default(),
             Err(_) => BTreeMap::new(),
         };
         let mut bindings = BTreeMap::new();

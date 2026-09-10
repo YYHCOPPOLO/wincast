@@ -95,10 +95,7 @@ fn top_level_label(host: &str) -> Option<&str> {
 }
 
 fn is_host_label(label: &str) -> bool {
-    !label.is_empty()
-        && label
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    !label.is_empty() && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
 #[cfg(test)]

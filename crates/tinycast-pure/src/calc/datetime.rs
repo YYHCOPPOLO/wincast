@@ -191,14 +191,18 @@ fn parse_moment(phrase: &str, now: i64, bias: MomentBias) -> Option<Moment> {
 fn parse_single(atom: &str, now: i64, bias: MomentBias) -> Option<Moment> {
     let sod = start_of_day(now);
     match atom {
-        "now" => return Some(Moment {
-            unix: now,
-            has_time: true,
-        }),
-        "today" => return Some(Moment {
-            unix: sod,
-            has_time: false,
-        }),
+        "now" => {
+            return Some(Moment {
+                unix: now,
+                has_time: true,
+            })
+        }
+        "today" => {
+            return Some(Moment {
+                unix: sod,
+                has_time: false,
+            })
+        }
         "tomorrow" => {
             return Some(Moment {
                 unix: sod + 86400,

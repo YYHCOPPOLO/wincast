@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use tinycast_pure::app_entry::AppEntry;
 use tinycast_pure::favorites::FavoritesStore;
-use tinycast_pure::i18n::{favorites_title, kind_label, kind_section_title, results_title, UiLang};
 use tinycast_pure::hotkey::{DoubleTapModifier, HotKeyBinding};
+use tinycast_pure::i18n::{favorites_title, kind_label, kind_section_title, results_title, UiLang};
 use tinycast_pure::launcher_results::{
     list_items, LauncherListItem, LauncherSection, LauncherSectionKind,
 };
@@ -205,7 +205,9 @@ pub fn slots_of(items: &[PaintItem]) -> Vec<SlotKind> {
             PaintItem::Header { .. } => SlotKind::Header,
             PaintItem::Row { .. } => SlotKind::Row,
             PaintItem::Calc { .. } => SlotKind::Calc,
-            PaintItem::EmojiRow { glyphs, columns, .. } => SlotKind::EmojiRow {
+            PaintItem::EmojiRow {
+                glyphs, columns, ..
+            } => SlotKind::EmojiRow {
                 cells: glyphs.len(),
                 columns: *columns,
             },
@@ -630,13 +632,7 @@ pub fn paint(
     let content_h = content_height(&slots_of(items));
     let visible = fade_visible(panel_h);
     paint_fade(
-        target,
-        panel_w,
-        clip_top,
-        bottom,
-        content_h,
-        visible,
-        appearance,
+        target, panel_w, clip_top, bottom, content_h, visible, appearance,
     )?;
     Ok(())
 }
@@ -691,10 +687,7 @@ fn paint_empty_results(
         theme::colors::TEXT_SECONDARY_ALPHA,
     );
     let brush = unsafe {
-        target.CreateSolidColorBrush(
-            &crate::design_system::appearance::color(secondary),
-            None,
-        )?
+        target.CreateSolidColorBrush(&crate::design_system::appearance::color(secondary), None)?
     };
     let wide: Vec<u16> = text.encode_utf16().collect();
     let text_top = glyph.y + glyph.h + theme::spacing::MD;
@@ -788,7 +781,9 @@ fn paint_header(
     panel_w: f32,
     h: f32,
 ) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&muted_color(theme::colors::TEXT_SECONDARY_ALPHA), None)? };
+    let brush = unsafe {
+        target.CreateSolidColorBrush(&muted_color(theme::colors::TEXT_SECONDARY_ALPHA), None)?
+    };
     let rect = D2D_RECT_F {
         left: theme::spacing::MD,
         top: y,
@@ -835,12 +830,13 @@ fn paint_row(
     }
 
     let mut right = panel_w - inset;
-    let chrome = unsafe { target.CreateSolidColorBrush(&muted_color(theme::colors::TEXT_SECONDARY_ALPHA), None)? };
+    let chrome = unsafe {
+        target.CreateSolidColorBrush(&muted_color(theme::colors::TEXT_SECONDARY_ALPHA), None)?
+    };
     if let Some(cap) = keycap {
         let ds = crate::design_system::Fonts::new(dwrite)?;
-        let cap_w = crate::design_system::paint_keycap(
-            target, &ds, cap, right, y, h, true, appearance,
-        )?;
+        let cap_w =
+            crate::design_system::paint_keycap(target, &ds, cap, right, y, h, true, appearance)?;
         right -= cap_w + theme::spacing::SM;
     }
 
@@ -1222,7 +1218,10 @@ mod tests {
     #[test]
     fn fade_constants_match_spec() {
         assert_eq!(tinycast_pure::layout::list::edge_dissolve_top_band(), 86.0);
-        assert_eq!(tinycast_pure::layout::list::edge_dissolve_bottom_band(), 80.0);
+        assert_eq!(
+            tinycast_pure::layout::list::edge_dissolve_bottom_band(),
+            80.0
+        );
     }
 
     #[test]

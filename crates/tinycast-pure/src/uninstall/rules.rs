@@ -1,7 +1,14 @@
 use super::plan::UninstallIdentity;
 
 pub const STRIPPED_EXTENSIONS: &[&str] = &[
-    "plist", "savedstate", "binarycookies", "lockfile", "lock", "sfl", "sfl2", "sfl3",
+    "plist",
+    "savedstate",
+    "binarycookies",
+    "lockfile",
+    "lock",
+    "sfl",
+    "sfl2",
+    "sfl3",
 ];
 
 pub fn matchable_forms(name: &str) -> Vec<String> {
@@ -15,7 +22,10 @@ pub fn matchable_forms(name: &str) -> Vec<String> {
         if ext.is_empty() || !STRIPPED_EXTENSIONS.contains(&ext.as_str()) {
             break;
         }
-        current = current.rsplit_once('.').map(|(s, _)| s.to_string()).unwrap_or_default();
+        current = current
+            .rsplit_once('.')
+            .map(|(s, _)| s.to_string())
+            .unwrap_or_default();
         if current.is_empty() {
             break;
         }
@@ -72,9 +82,7 @@ pub fn is_descendant(path: &str, ancestor: &str) -> bool {
 }
 
 pub fn normalize(path: &str) -> String {
-    path.replace('\\', "/")
-        .trim_end_matches('/')
-        .to_string()
+    path.replace('\\', "/").trim_end_matches('/').to_string()
 }
 
 pub fn folded(value: &str) -> String {
@@ -143,7 +151,12 @@ mod tests {
 
     #[test]
     fn home_is_not_an_acceptable_candidate() {
-        assert!(!is_acceptable_candidate("C:/Users/me", "C:/Users/me", "C:/Users/me", "C:/apps/x"));
+        assert!(!is_acceptable_candidate(
+            "C:/Users/me",
+            "C:/Users/me",
+            "C:/Users/me",
+            "C:/apps/x"
+        ));
         assert!(!is_home_root("C:/Users/me/AppData", "C:/Users/me"));
         assert!(is_home_root("C:/Users/me", "C:/Users/me"));
     }
@@ -153,7 +166,13 @@ mod tests {
         assert!(is_generic_display_name("Microsoft"));
         assert!(is_generic_display_name("Temp"));
         assert!(!is_generic_display_name("Slack"));
-        assert!(display_name_is_shared("Mail", &["Mail".into(), "Mail".into()]));
-        assert!(!display_name_is_shared("Slack", &["Slack".into(), "Zoom".into()]));
+        assert!(display_name_is_shared(
+            "Mail",
+            &["Mail".into(), "Mail".into()]
+        ));
+        assert!(!display_name_is_shared(
+            "Slack",
+            &["Slack".into(), "Zoom".into()]
+        ));
     }
 }

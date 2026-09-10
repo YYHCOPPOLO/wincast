@@ -23,7 +23,9 @@ impl AppKind {
             "Snippets" | "Snippet" | "片段" => Some(AppKind::Snippet),
             "System Actions" | "System Action" | "系统操作" => Some(AppKind::SystemAction),
             "Window Management" | "Window Command" | "窗口管理" => Some(AppKind::WindowCommand),
-            "Custom Commands" | "Custom Command" | "自定义命令" => Some(AppKind::CustomCommand),
+            "Custom Commands" | "Custom Command" | "自定义命令" => {
+                Some(AppKind::CustomCommand)
+            }
             "Commands" | "Command" | "命令" => Some(AppKind::Command),
             _ => None,
         }

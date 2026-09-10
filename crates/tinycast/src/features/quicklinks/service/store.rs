@@ -83,8 +83,7 @@ impl QuicklinkStore {
 
     pub fn import_from_bytes(&mut self, bytes: &[u8]) -> Result<usize, String> {
         self.ensure_available()?;
-        let incoming: Vec<Quicklink> =
-            serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+        let incoming: Vec<Quicklink> = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
         let mut n = 0usize;
         for link in incoming {
             if link.name.trim().is_empty() || link.destination.trim().is_empty() {

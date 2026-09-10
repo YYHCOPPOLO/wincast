@@ -12,8 +12,14 @@ pub struct IgnoreList {
 
 impl IgnoreList {
     /// Compiled in rather than stored, so changing the shipped rules reaches installs that already ran.
-    pub const DEFAULTS: &'static [&'static str] =
-        &["node_modules", "DerivedData", "build", "dist", "target", "Pods"];
+    pub const DEFAULTS: &'static [&'static str] = &[
+        "node_modules",
+        "DerivedData",
+        "build",
+        "dist",
+        "target",
+        "Pods",
+    ];
 
     pub fn defaults() -> Self {
         Self::from_patterns(Self::DEFAULTS.iter().copied())
@@ -87,7 +93,10 @@ fn is_meta(ch: char) -> bool {
 
 /// Case-insensitive glob. `*` spans `/` (FNM_PATHNAME off), so `**/tmp/**` works.
 pub fn glob_match(pattern: &str, candidate: &str) -> bool {
-    glob_rec(&pattern.chars().collect::<Vec<_>>(), &candidate.chars().collect::<Vec<_>>())
+    glob_rec(
+        &pattern.chars().collect::<Vec<_>>(),
+        &candidate.chars().collect::<Vec<_>>(),
+    )
 }
 
 fn glob_rec(pat: &[char], text: &[char]) -> bool {

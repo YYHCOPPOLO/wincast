@@ -125,9 +125,7 @@ pub fn discover(
             if !is_acceptable_candidate(&path, &root_s, &home, &bundle_path) {
                 continue;
             }
-            let matches = identity
-                .as_ref()
-                .is_some_and(|id| id.matches_bundle(&name))
+            let matches = identity.as_ref().is_some_and(|id| id.matches_bundle(&name))
                 || (allow_display && folded(&name) == display);
             if !matches {
                 continue;
@@ -208,11 +206,7 @@ pub fn take_sizes() -> Option<Vec<(String, u64)>> {
 
 fn matching_install_locations(target: &UninstallTarget, peers: &[InstalledPeer]) -> Vec<String> {
     let want_name = folded(&target.display_name);
-    let want_id = target
-        .bundle_id
-        .as_deref()
-        .map(folded)
-        .unwrap_or_default();
+    let want_id = target.bundle_id.as_deref().map(folded).unwrap_or_default();
     let mut out = Vec::new();
     for row in arp_rows() {
         if (!want_id.is_empty() && folded(&row.0) == want_id)
@@ -266,12 +260,18 @@ fn appx_install_roots() -> Vec<PathBuf> {
 fn arp_rows() -> Vec<(String, String, String)> {
     let mut rows = Vec::new();
     const KEYS: &[(HKEY, &str)] = &[
-        (HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (
+            HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
         (
             HKEY_LOCAL_MACHINE,
             r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
         ),
-        (HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (
+            HKEY_CURRENT_USER,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
     ];
     for (root, path) in KEYS {
         rows.extend(enum_uninstall(*root, path));
@@ -291,7 +291,18 @@ fn enum_uninstall(root: HKEY, path: &str) -> Vec<(String, String, String)> {
         loop {
             let mut name = [0u16; 256];
             let mut name_len = name.len() as u32;
-            if RegEnumKeyExW(key, index, windows::core::PWSTR(name.as_mut_ptr()), &mut name_len, None, windows::core::PWSTR::null(), None, None).is_err() {
+            if RegEnumKeyExW(
+                key,
+                index,
+                windows::core::PWSTR(name.as_mut_ptr()),
+                &mut name_len,
+                None,
+                windows::core::PWSTR::null(),
+                None,
+                None,
+            )
+            .is_err()
+            {
                 break;
             }
             index += 1;
@@ -304,7 +315,11 @@ fn enum_uninstall(root: HKEY, path: &str) -> Vec<(String, String, String)> {
             let display = reg_sz(sub, "DisplayName").unwrap_or_default();
             let location = reg_sz(sub, "InstallLocation").unwrap_or_default();
             let _ = RegCloseKey(sub);
-            out.push((sub_name, display, location.trim().trim_matches('"').to_string()));
+            out.push((
+                sub_name,
+                display,
+                location.trim().trim_matches('"').to_string(),
+            ));
         }
         let _ = RegCloseKey(key);
     }
@@ -316,7 +331,14 @@ fn reg_sz(key: HKEY, name: &str) -> Option<String> {
     let mut ty = REG_VALUE_TYPE::default();
     let mut size = 0u32;
     unsafe {
-        let _ = RegQueryValueExW(key, PCWSTR(wide.as_ptr()), None, Some(&mut ty), None, Some(&mut size));
+        let _ = RegQueryValueExW(
+            key,
+            PCWSTR(wide.as_ptr()),
+            None,
+            Some(&mut ty),
+            None,
+            Some(&mut size),
+        );
         if ty != REG_SZ || size == 0 {
             return None;
         }

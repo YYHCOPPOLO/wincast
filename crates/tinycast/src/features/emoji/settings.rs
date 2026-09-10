@@ -55,7 +55,13 @@ pub fn paint(
         ),
         false,
     );
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     let y = enable.y;
     let pad = theme::spacing::XL;
     let tone = EmojiSkinTone::from_raw(tone_raw);

@@ -71,7 +71,13 @@ pub fn paint(
         ),
         true,
     );
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     paint_toggle(
         target,
         formats,
@@ -133,7 +139,8 @@ fn paint_toggle(
     let text_w = width - pad * 3.0 - TOGGLE_W;
     let title_a = if disabled { 0.45 } else { 0.92 };
     let sub_a = if disabled { 0.32 } else { 0.55 };
-    let brush = unsafe { target.CreateSolidColorBrush(&ds::ramp_color(appearance, title_a), None)? };
+    let brush =
+        unsafe { target.CreateSolidColorBrush(&ds::ramp_color(appearance, title_a), None)? };
     let title_wide: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -150,7 +157,8 @@ fn paint_toggle(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::ramp_color(appearance, sub_a), None)? };
+    let muted_brush =
+        unsafe { target.CreateSolidColorBrush(&ds::ramp_color(appearance, sub_a), None)? };
     let sub_wide: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(

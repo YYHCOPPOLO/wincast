@@ -215,7 +215,10 @@ mod tests {
     #[test]
     fn ai_settings_do_not_serialize_into_backup() {
         assert_eq!(coverage_bucket(AppSettingsKey::AiEnabled), Bucket::Excluded);
-        assert_eq!(coverage_bucket(AppSettingsKey::AiConnections), Bucket::Excluded);
+        assert_eq!(
+            coverage_bucket(AppSettingsKey::AiConnections),
+            Bucket::Excluded
+        );
     }
 
     #[test]

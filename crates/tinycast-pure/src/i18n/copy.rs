@@ -1,8 +1,8 @@
 use crate::app_entry::AppKind;
 use crate::i18n::{open_verb, UiLang};
 use crate::palette_menu::{
-    ActionContext, MenuItem, ID_COPY_PATH, ID_FAVORITE, ID_MOVE_DOWN, ID_MOVE_UP, ID_OPEN,
-    ID_QUIT, ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
+    ActionContext, MenuItem, ID_COPY_PATH, ID_FAVORITE, ID_MOVE_DOWN, ID_MOVE_UP, ID_OPEN, ID_QUIT,
+    ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
 };
 use crate::system_action::SystemActionId;
 
@@ -87,22 +87,14 @@ pub fn system_confirm(id: SystemActionId, lang: UiLang) -> Option<(&'static str,
     match lang {
         UiLang::En => Some(en),
         UiLang::ZhHans => match id {
-            SystemActionId::Restart => Some((
-                "确定要重启电脑吗？",
-                "未保存的应用可能会提示你保存。",
-            )),
-            SystemActionId::ShutDown => Some((
-                "确定要关机吗？",
-                "未保存的应用可能会提示你保存。",
-            )),
-            SystemActionId::LogOut => Some((
-                "确定要注销吗？",
-                "未保存的应用可能会提示你保存。",
-            )),
-            SystemActionId::EmptyTrash => Some((
-                "确定清空回收站吗？",
-                "回收站中的项目将被永久删除。",
-            )),
+            SystemActionId::Restart => {
+                Some(("确定要重启电脑吗？", "未保存的应用可能会提示你保存。"))
+            }
+            SystemActionId::ShutDown => Some(("确定要关机吗？", "未保存的应用可能会提示你保存。")),
+            SystemActionId::LogOut => Some(("确定要注销吗？", "未保存的应用可能会提示你保存。")),
+            SystemActionId::EmptyTrash => {
+                Some(("确定清空回收站吗？", "回收站中的项目将被永久删除。"))
+            }
             _ => None,
         },
     }
@@ -211,9 +203,7 @@ pub fn general_row_subtitle(row: GeneralRow, lang: UiLang) -> Option<&'static st
             Some("Hyper Key will remap with Shift in the chord.")
         }
         (GeneralRow::HyperShift, UiLang::ZhHans) => Some("组合中会包含 Shift。"),
-        (GeneralRow::Appearance, UiLang::En) => {
-            Some("Match the system, or pin Light or Dark.")
-        }
+        (GeneralRow::Appearance, UiLang::En) => Some("Match the system, or pin Light or Dark."),
         (GeneralRow::Appearance, UiLang::ZhHans) => Some("跟随系统，或固定浅色 / 深色。"),
         (GeneralRow::Compact, UiLang::En) => Some("Open the launcher as a slim search bar."),
         (GeneralRow::Compact, UiLang::ZhHans) => Some("以纤细搜索条打开启动器。"),
@@ -232,18 +222,14 @@ pub fn general_row_subtitle(row: GeneralRow, lang: UiLang) -> Option<&'static st
         (GeneralRow::LaunchAtLogin, UiLang::En) => {
             Some("Start Tinycast automatically when you log in.")
         }
-        (GeneralRow::LaunchAtLogin, UiLang::ZhHans) => {
-            Some("登录 Windows 后自动启动 Tinycast。")
-        }
+        (GeneralRow::LaunchAtLogin, UiLang::ZhHans) => Some("登录 Windows 后自动启动 Tinycast。"),
         (GeneralRow::ShowInMenuBar, UiLang::En) => {
             Some("Keep the Tinycast icon in the menu bar. Shortcuts still work when hidden.")
         }
         (GeneralRow::ShowInMenuBar, UiLang::ZhHans) => {
             Some("在通知区域保留 Tinycast 图标。隐藏后快捷键仍可用。")
         }
-        (GeneralRow::AutoSwitchInput, UiLang::En) => {
-            Some("Switch IME when the palette opens.")
-        }
+        (GeneralRow::AutoSwitchInput, UiLang::En) => Some("Switch IME when the palette opens."),
         (GeneralRow::AutoSwitchInput, UiLang::ZhHans) => Some("打开面板时切换输入法。"),
         _ => None,
     }
@@ -523,7 +509,10 @@ mod tests {
 
     #[test]
     fn actions_menu_zh_uses_open_verb() {
-        let items = actions_for_lang(ActionContext::for_kind(AppKind::Application), UiLang::ZhHans);
+        let items = actions_for_lang(
+            ActionContext::for_kind(AppKind::Application),
+            UiLang::ZhHans,
+        );
         assert_eq!(items[0].label, "打开应用");
         assert!(items.iter().any(|i| i.label == "添加到收藏"));
         let en = crate::palette_menu::actions_for(ActionContext::for_kind(AppKind::Application));

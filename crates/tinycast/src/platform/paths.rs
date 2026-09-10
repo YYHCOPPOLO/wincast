@@ -40,16 +40,27 @@ impl TestDataDir {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         static NEXT_ROOT: AtomicU64 = AtomicU64::new(0);
-        let temp = std::env::temp_dir().canonicalize().expect("resolve test temp directory");
-        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let temp = std::env::temp_dir()
+            .canonicalize()
+            .expect("resolve test temp directory");
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         loop {
             let sequence = NEXT_ROOT.fetch_add(1, Ordering::Relaxed);
-            let root = temp.join(format!("tinycast-test-data-{}-{stamp}-{sequence}", std::process::id()));
+            let root = temp.join(format!(
+                "tinycast-test-data-{}-{stamp}-{sequence}",
+                std::process::id()
+            ));
             // Never adopt an existing directory, even after a process ID reuse.
             match std::fs::create_dir(&root) {
                 Ok(()) => return Self(root),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => panic!("create owned test data directory {}: {error}", root.display()),
+                Err(error) => panic!(
+                    "create owned test data directory {}: {error}",
+                    root.display()
+                ),
             }
         }
     }
@@ -63,11 +74,17 @@ impl Drop for TestDataDir {
         match self.0.canonicalize() {
             Ok(resolved) if resolved == self.0 => {
                 if let Err(error) = std::fs::remove_dir_all(&resolved) {
-                    eprintln!("could not clean test data directory {}: {error}", resolved.display());
+                    eprintln!(
+                        "could not clean test data directory {}: {error}",
+                        resolved.display()
+                    );
                 }
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
-            result => eprintln!("refusing cleanup of changed test root {}: {result:?}", self.0.display()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            result => eprintln!(
+                "refusing cleanup of changed test root {}: {result:?}",
+                self.0.display()
+            ),
         }
     }
 }
@@ -78,7 +95,10 @@ mod tests {
     use std::path::Path;
 
     fn environment_dir(var: &str) -> PathBuf {
-        std::env::var_os(var).map(PathBuf::from).unwrap_or_default().join(BUNDLE_ID)
+        std::env::var_os(var)
+            .map(PathBuf::from)
+            .unwrap_or_default()
+            .join(BUNDLE_ID)
     }
 
     fn isolated_dirs() -> (PathBuf, PathBuf, PathBuf) {
@@ -90,7 +110,12 @@ mod tests {
         let root = roaming.parent().unwrap().parent().unwrap().to_path_buf();
         assert_eq!(local.parent().and_then(Path::parent), Some(root.as_path()));
         assert!(root.is_absolute());
-        assert!(root.file_name().unwrap().to_str().unwrap().starts_with("tinycast-test-data-"));
+        assert!(root
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("tinycast-test-data-"));
         assert!(root.is_dir());
         (root, roaming, local)
     }
@@ -142,7 +167,9 @@ mod tests {
         let child_root = std::thread::spawn(|| {
             let (root, roaming, local) = isolated_dirs();
             let mut clipboard = ClipboardStore::open(local.clone());
-            assert!(clipboard.insert_text("owned clipboard fixture".into()).is_some());
+            assert!(clipboard
+                .insert_text("owned clipboard fixture".into())
+                .is_some());
             let mut chat = ChatHistoryStore::in_roaming();
             let mut session = ChatSession::new(1);
             session.append(ChatMessage::user("owned chat fixture", 1));
@@ -152,11 +179,16 @@ mod tests {
             assert!(roaming.join("ai-chats.sqlite3").is_file());
             // Both SQLite handles remain in scope until this thread returns.
             root
-        }).join().unwrap();
+        })
+        .join()
+        .unwrap();
         assert!(!child_root.try_exists().unwrap());
         assert!(parent_root.is_dir());
         for dir in [roaming, local] {
-            assert_eq!(std::fs::read(dir.join("keep.txt")).unwrap(), b"another thread's fixture");
+            assert_eq!(
+                std::fs::read(dir.join("keep.txt")).unwrap(),
+                b"another thread's fixture"
+            );
         }
     }
 
@@ -173,8 +205,13 @@ mod tests {
             panic!("intentional fixture-unwind test");
         });
         let panic = worker.join().expect_err("worker should unwind");
-        assert_eq!(panic.downcast_ref::<&str>(), Some(&"intentional fixture-unwind test"));
-        let root = rx.recv().expect("worker must have created an isolated root");
+        assert_eq!(
+            panic.downcast_ref::<&str>(),
+            Some(&"intentional fixture-unwind test")
+        );
+        let root = rx
+            .recv()
+            .expect("worker must have created an isolated root");
         assert!(!root.try_exists().unwrap());
     }
 

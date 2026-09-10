@@ -103,7 +103,13 @@ pub fn paint(
         ),
         false,
     );
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     let origin = -scroll;
     let inset = theme::spacing::XXL;
     let rows = layout(disabled.len());

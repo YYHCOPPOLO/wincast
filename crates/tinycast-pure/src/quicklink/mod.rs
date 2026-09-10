@@ -90,7 +90,12 @@ pub fn detect_kind(raw: &str) -> Option<DestinationKind> {
     }
     if let Some((scheme, rest)) = t.split_once(':') {
         let scheme = scheme.to_ascii_lowercase();
-        if scheme.len() == 1 && scheme.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+        if scheme.len() == 1
+            && scheme
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic())
+        {
             return Some(DestinationKind::Path);
         }
         if rest.chars().all(|c| c.is_ascii_digit()) {
@@ -123,7 +128,9 @@ fn looks_like_host(t: &str) -> bool {
     let mut parts = host.rsplitn(2, '.');
     let tld = parts.next().unwrap_or("");
     let rest = parts.next().unwrap_or("");
-    !rest.is_empty() && tld.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) && tld.len() >= 2
+    !rest.is_empty()
+        && tld.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && tld.len() >= 2
 }
 
 pub fn id_from_entry(entry_id: &str) -> Option<&str> {
@@ -147,11 +154,7 @@ mod tests {
         let args: HashMap<String, String> = [("q".into(), "a b".into())].into();
         let o = expand_destination("https://ex.com/q={argument name=\"q\"}", &ctx, &args);
         assert!(o.text.contains("a%20b"));
-        let raw = expand_destination(
-            "https://ex.com/q={argument name=\"q\" | raw}",
-            &ctx,
-            &args,
-        );
+        let raw = expand_destination("https://ex.com/q={argument name=\"q\" | raw}", &ctx, &args);
         assert!(raw.text.contains("a b"));
         assert!(!raw.text.contains("a%20b"));
     }

@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use tinycast_pure::quicklink::{detect_kind, DestinationKind, Quicklink};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW};
+use windows::Win32::UI::Shell::{
+    ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
+};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 pub fn open_destination(expanded: &str) -> Result<(), String> {

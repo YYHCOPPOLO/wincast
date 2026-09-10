@@ -6,8 +6,8 @@ use tinycast_pure::hotkey::{KeyShortcut, Modifiers};
 use windows::core::w;
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY_CURRENT_USER,
-    KEY_QUERY_VALUE, KEY_SET_VALUE, REG_BINARY, REG_VALUE_TYPE,
+    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
+    HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_BINARY, REG_VALUE_TYPE,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_CAPITAL, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN,

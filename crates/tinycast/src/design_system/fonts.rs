@@ -1,15 +1,15 @@
 use tinycast_pure::theme;
 use windows::core::{w, PCWSTR};
-use windows::Win32::Graphics::Gdi::{
-    CreateFontW, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, FW_NORMAL,
-    HFONT, OUT_DEFAULT_PRECIS,
-};
 use windows::Win32::Graphics::DirectWrite::{
     IDWriteFactory, IDWriteTextFormat, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_FONT_WEIGHT_REGULAR,
     DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
     DWRITE_TEXT_METRICS, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
+};
+use windows::Win32::Graphics::Gdi::{
+    CreateFontW, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, FW_NORMAL,
+    HFONT, OUT_DEFAULT_PRECIS,
 };
 
 pub fn ui_font_family() -> &'static str {
@@ -159,12 +159,10 @@ impl Fonts {
         }
         let wide: Vec<u16> = text.encode_utf16().collect();
         unsafe {
-            let Ok(layout) = self.dwrite.CreateTextLayout(
-                &wide,
-                format,
-                max_w.max(1.0),
-                max_h.max(1.0),
-            ) else {
+            let Ok(layout) =
+                self.dwrite
+                    .CreateTextLayout(&wide, format, max_w.max(1.0), max_h.max(1.0))
+            else {
                 return (0.0, 0.0);
             };
             let mut metrics = DWRITE_TEXT_METRICS::default();

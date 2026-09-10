@@ -48,7 +48,9 @@ pub fn cap_rows(n: usize) -> usize {
 /// AND: every token must occur in the filename (case- and diacritic-insensitive).
 pub fn matches_filename(filename: &str, query: &str) -> bool {
     let folded = fold(filename);
-    tokens(query).iter().all(|term| folded.contains(&fold(term)))
+    tokens(query)
+        .iter()
+        .all(|term| folded.contains(&fold(term)))
 }
 
 /// Hidden path components and application-bundle contents are structural, not ignore patterns.
@@ -212,7 +214,10 @@ mod tests {
     fn hidden_and_app_bundle_are_structural() {
         let ignore = IgnoreList::defaults();
         assert!(is_excluded_path("C:/src/.cache/x", &ignore));
-        assert!(is_excluded_path("C:/Apps/Local.app/Contents/Info.plist", &ignore));
+        assert!(is_excluded_path(
+            "C:/Apps/Local.app/Contents/Info.plist",
+            &ignore
+        ));
         assert!(!is_excluded_path("C:/src/foo/report.pdf", &ignore));
     }
 }

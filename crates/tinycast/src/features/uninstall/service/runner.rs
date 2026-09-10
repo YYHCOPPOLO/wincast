@@ -62,6 +62,9 @@ mod tests {
         assert!(!impl_src.contains("remove_dir_all"));
         assert!(!impl_src.contains("std::fs::remove_file"));
         let _ = fs::metadata(".");
-        assert_eq!(native_windows_path("C:/Users/me/AppData/Local/Foo"), r"C:\Users\me\AppData\Local\Foo");
+        assert_eq!(
+            native_windows_path("C:/Users/me/AppData/Local/Foo"),
+            r"C:\Users\me\AppData\Local\Foo"
+        );
     }
 }

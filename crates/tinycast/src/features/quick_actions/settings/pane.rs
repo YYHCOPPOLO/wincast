@@ -69,7 +69,13 @@ pub fn paint(
     );
     let mut section = section;
     section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 2.0;
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     let y0 = ds::form_origin() - scroll;
     paint_toggle(
         target,
@@ -157,7 +163,8 @@ fn paint_row(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+    let muted_brush =
+        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let sub: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(

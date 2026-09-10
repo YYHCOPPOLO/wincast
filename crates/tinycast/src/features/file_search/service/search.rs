@@ -17,8 +17,8 @@ use windows::Win32::System::Com::{
     CLSIDFromProgID, CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Search::{
-    IAccessor, ICommandText, IDBCreateCommand, IDBCreateSession, IDBInitialize, IRowset,
-    DBBINDING, HACCESSOR,
+    IAccessor, ICommandText, IDBCreateCommand, IDBCreateSession, IDBInitialize, IRowset, DBBINDING,
+    HACCESSOR,
 };
 
 const DBGUID_DEFAULT: GUID = GUID::from_u128(0xC8B521FB_5CF3_11CE_ADE5_00AA0044773D);
@@ -146,14 +146,7 @@ unsafe fn read_rowset_paths(rowset: &IRowset) -> Result<Vec<String>, SearchError
     binding.wType = DBTYPE_WSTR;
     let mut haccessor = HACCESSOR::default();
     accessor
-        .CreateAccessor(
-            DBACCESSOR_ROWDATA,
-            1,
-            &binding,
-            BUF,
-            &mut haccessor,
-            None,
-        )
+        .CreateAccessor(DBACCESSOR_ROWDATA, 1, &binding, BUF, &mut haccessor, None)
         .map_err(|_| SearchError)?;
     let mut paths = Vec::new();
     loop {

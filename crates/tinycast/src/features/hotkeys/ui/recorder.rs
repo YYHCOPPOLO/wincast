@@ -144,11 +144,35 @@ pub fn paint_callout(
         target.DrawRoundedRectangle(&rounded, &stroke, theme::size::HAIRLINE, None);
     }
     let (label, tint) = if let Some(owner) = conflict {
-        (owner, D2D1_COLOR_F { r: 1.0, g: 0.55, b: 0.2, a: 1.0 })
+        (
+            owner,
+            D2D1_COLOR_F {
+                r: 1.0,
+                g: 0.55,
+                b: 0.2,
+                a: 1.0,
+            },
+        )
     } else if modifiers.ctrl || modifiers.alt || modifiers.shift || modifiers.win {
-        ("Add a key", D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: 0.6 })
+        (
+            "Add a key",
+            D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.6,
+            },
+        )
     } else {
-        ("Type a shortcut", D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: 0.6 })
+        (
+            "Type a shortcut",
+            D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.6,
+            },
+        )
     };
     let brush = unsafe { target.CreateSolidColorBrush(&tint, None)? };
     let wide: Vec<u16> = label.encode_utf16().collect();

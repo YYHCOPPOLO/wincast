@@ -45,9 +45,10 @@ impl UninstallIdentity {
             if !owns(&folded_form, &self.bundle_id, self.allows_prefix) {
                 return false;
             }
-            !self.other_bundle_ids.iter().any(|other| {
-                other.len() > self.bundle_id.len() && owns(&folded_form, other, true)
-            })
+            !self
+                .other_bundle_ids
+                .iter()
+                .any(|other| other.len() > self.bundle_id.len() && owns(&folded_form, other, true))
         })
     }
 }
@@ -107,7 +108,10 @@ pub fn removable_ids(candidates: &[UninstallCandidate]) -> Vec<String> {
 }
 
 /// Bundle last so a failed leftover pass can be retried while the app still exists.
-pub fn recycle_order(candidates: &[UninstallCandidate], selected: &UninstallSelection) -> Vec<String> {
+pub fn recycle_order(
+    candidates: &[UninstallCandidate],
+    selected: &UninstallSelection,
+) -> Vec<String> {
     let mut leftovers = Vec::new();
     let mut bundles = Vec::new();
     for c in candidates {

@@ -27,7 +27,10 @@ mod tests {
 
     #[test]
     fn first_ask_is_one_interval_after_first_seen() {
-        assert_eq!(SupportReminderSchedule::wait(0, 0), SupportReminderSchedule::INTERVAL);
+        assert_eq!(
+            SupportReminderSchedule::wait(0, 0),
+            SupportReminderSchedule::INTERVAL
+        );
         assert_eq!(
             SupportReminderSchedule::wait(0, SupportReminderSchedule::INTERVAL),
             0
@@ -40,7 +43,9 @@ mod tests {
             SupportReminderSchedule::pump_delay(0),
             SupportReminderSchedule::RETRY
         );
-        assert!(SupportReminderSchedule::pump_delay(SupportReminderSchedule::INTERVAL)
-            >= SupportReminderSchedule::RETRY);
+        assert!(
+            SupportReminderSchedule::pump_delay(SupportReminderSchedule::INTERVAL)
+                >= SupportReminderSchedule::RETRY
+        );
     }
 }

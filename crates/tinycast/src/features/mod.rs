@@ -1,7 +1,7 @@
 pub mod ai;
 pub mod backup;
-pub mod calendar;
 pub mod calculator;
+pub mod calendar;
 pub mod clipboard;
 pub mod custom_commands;
 pub mod emoji;

@@ -27,13 +27,7 @@ impl WindowMover {
         }
     }
 
-    pub fn perform(
-        &mut self,
-        hwnd: HWND,
-        command: WindowCommandId,
-        gap: f32,
-        cycle: bool,
-    ) -> bool {
+    pub fn perform(&mut self, hwnd: HWND, command: WindowCommandId, gap: f32, cycle: bool) -> bool {
         if hwnd.is_invalid() || !unsafe { IsWindow(hwnd).as_bool() } {
             return false;
         }
@@ -252,11 +246,7 @@ fn toggle_fullscreen(hwnd: HWND) -> bool {
         if IsZoomed(hwnd).as_bool() {
             ShowWindow(hwnd, SW_RESTORE).as_bool()
         } else {
-            ShowWindow(
-                hwnd,
-                windows::Win32::UI::WindowsAndMessaging::SW_MAXIMIZE,
-            )
-            .as_bool()
+            ShowWindow(hwnd, windows::Win32::UI::WindowsAndMessaging::SW_MAXIMIZE).as_bool()
         }
     }
 }

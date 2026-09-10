@@ -219,11 +219,7 @@ fn base_conversion(tokens: &[Token], query: &str) -> Option<CalcResult> {
             other if decimal_literal(other).is_some() => {
                 let value = decimal_literal(other).unwrap();
                 if value >= 0.0 && value.round() == value && value <= 9_007_199_254_740_992.0 {
-                    (
-                        value as u64,
-                        "Decimal",
-                        literal_text.to_string(),
-                    )
+                    (value as u64, "Decimal", literal_text.to_string())
                 } else {
                     return None;
                 }
@@ -233,11 +229,7 @@ fn base_conversion(tokens: &[Token], query: &str) -> Option<CalcResult> {
     } else if let Some(value) = parser_eval(value_tokens) {
         if value >= 0.0 && value.round() == value && value <= 9_007_199_254_740_992.0 {
             let source = value as u64;
-            (
-                source,
-                "Decimal",
-                format::grouped(&source.to_string()),
-            )
+            (source, "Decimal", format::grouped(&source.to_string()))
         } else {
             return None;
         }
@@ -425,7 +417,10 @@ enum CurrencyConv {
     Unavailable,
 }
 
-fn parse_currency_conversion(tokens: &[Token], rates: Option<&CurrencyRates>) -> Option<CurrencyConv> {
+fn parse_currency_conversion(
+    tokens: &[Token],
+    rates: Option<&CurrencyRates>,
+) -> Option<CurrencyConv> {
     let tokens = amount_first(tokens);
     let n = tokens.len();
     if n < 3 || !is_connector(&tokens[n - 2]) {
@@ -528,10 +523,9 @@ fn currency_conversion_result(query: &str, conversion: CurrencyConv) -> CalcResu
         CurrencyConv::NoRate { code } => {
             CalcResult::error(query, format!("No exchange rate for {code}."))
         }
-        CurrencyConv::Unavailable => CalcResult::error(
-            query,
-            "Exchange rates unavailable — check your connection.",
-        ),
+        CurrencyConv::Unavailable => {
+            CalcResult::error(query, "Exchange rates unavailable — check your connection.")
+        }
     }
 }
 
@@ -540,20 +534,24 @@ fn eval_percent(tokens: &[Token], query: &str) -> Option<CalcResult> {
 }
 
 fn parse_off(tokens: &[Token], query: &str) -> Option<CalcResult> {
-    let off = tokens.iter().position(|t| matches!(t, Token::Ident(n) if n == "off"))?;
+    let off = tokens
+        .iter()
+        .position(|t| matches!(t, Token::Ident(n) if n == "off"))?;
     if off < 2 || tokens[off - 1] != Token::Op('%') {
         return None;
     }
     let pct = parser_eval(&tokens[..off - 1])?;
     let base = parser_eval(&tokens[off + 1..])?;
     let result = base * (1.0 - pct / 100.0);
-    result.is_finite().then(|| {
-        percent_card(query, format::display(result), format::copy_text(result))
-    })
+    result
+        .is_finite()
+        .then(|| percent_card(query, format::display(result), format::copy_text(result)))
 }
 
 fn parse_as_percent_of(tokens: &[Token], query: &str) -> Option<CalcResult> {
-    let as_idx = tokens.iter().position(|t| matches!(t, Token::Ident(n) if n == "as"))?;
+    let as_idx = tokens
+        .iter()
+        .position(|t| matches!(t, Token::Ident(n) if n == "as"))?;
     if as_idx + 2 >= tokens.len()
         || tokens[as_idx + 1] != Token::Op('%')
         || !matches!(&tokens[as_idx + 2], Token::Ident(n) if n == "of")
@@ -612,7 +610,8 @@ fn tokenize(input: &str) -> Option<Vec<Token>> {
                     end += 1;
                 }
                 if end > start {
-                    if let Ok(value) = u64::from_str_radix(&chars[start..end].iter().collect::<String>(), radix)
+                    if let Ok(value) =
+                        u64::from_str_radix(&chars[start..end].iter().collect::<String>(), radix)
                     {
                         tokens.push(Token::IntLiteral { value, radix });
                         i = end;
@@ -659,7 +658,9 @@ fn tokenize(input: &str) -> Option<Vec<Token>> {
             if !value.is_finite() {
                 return None;
             }
-            if i < chars.len() && (chars[i] == 'k' || chars[i] == 'K') && is_compact_suffix(&chars, i)
+            if i < chars.len()
+                && (chars[i] == 'k' || chars[i] == 'K')
+                && is_compact_suffix(&chars, i)
             {
                 tokens.push(Token::CompactNumber(value * 1_000.0));
                 i += 1;
@@ -678,7 +679,10 @@ fn tokenize(input: &str) -> Option<Vec<Token>> {
                     letter_end += 1;
                 }
                 if letter_end < chars.len() && is_digit(chars[letter_end]) {
-                    let prefix: String = chars[i..letter_end].iter().collect::<String>().to_lowercase();
+                    let prefix: String = chars[i..letter_end]
+                        .iter()
+                        .collect::<String>()
+                        .to_lowercase();
                     if units::lookup(&prefix).is_none() && currency::lookup(&prefix).is_some() {
                         tokens.push(Token::Ident(prefix));
                         i = letter_end;
@@ -776,10 +780,7 @@ fn is_temperature_conversion(chars: &[char], from: usize) -> bool {
 }
 
 fn parser_eval(tokens: &[Token]) -> Option<f64> {
-    let mut parser = Parser {
-        tokens,
-        pos: 0,
-    };
+    let mut parser = Parser { tokens, pos: 0 };
     let result = parser.parse_expression(0)?;
     if !parser.is_at_end() || !result.effective().is_finite() {
         return None;
@@ -1092,7 +1093,9 @@ fn eval_quantity(
     let value = match parser.parse() {
         Some(value) => value,
         None => {
-            return parser.issue.map(|message| CalcResult::error(query, message));
+            return parser
+                .issue
+                .map(|message| CalcResult::error(query, message));
         }
     };
     if parser.dimension_count == 0 {
@@ -1121,7 +1124,9 @@ fn eval_quantity(
     if let Some(target_name) = split.target_name {
         return match parser.converted(value, &target_name) {
             Some(output) => converted_result(output, &expression_text(&split.expression_tokens)),
-            None => parser.issue.map(|message| CalcResult::error(query, message)),
+            None => parser
+                .issue
+                .map(|message| CalcResult::error(query, message)),
         };
     }
 
@@ -1173,16 +1178,16 @@ fn eval_quantity(
                     if let Some(output) =
                         rates.and_then(|r| r.convert(value.amount, definition.code, target.code))
                     {
-                        return Some(currency_result(
-                            output,
-                            target,
-                            expression,
-                            definition.name,
-                        ));
+                        return Some(currency_result(output, target, expression, definition.name));
                     }
                 }
             }
-            Some(currency_result(value.amount, definition, expression, "Expression"))
+            Some(currency_result(
+                value.amount,
+                definition,
+                expression,
+                "Expression",
+            ))
         }
     }
 }
@@ -1199,7 +1204,11 @@ fn region_target(region: Option<&str>, from: CurrencyDef) -> Option<CurrencyDef>
 fn converted_result(value: QValue, expression: &str) -> Option<CalcResult> {
     match value.kind {
         QKind::Scalar => None,
-        QKind::Unit(unit) => Some(measurement_result(value.amount, unit, expression.to_string())),
+        QKind::Unit(unit) => Some(measurement_result(
+            value.amount,
+            unit,
+            expression.to_string(),
+        )),
         QKind::Currency(definition) => Some(currency_result(
             value.amount,
             definition,
@@ -1314,7 +1323,12 @@ fn expression_text(tokens: &[Token]) -> String {
 
         match &tokens[index] {
             Token::Number(value) | Token::CompactNumber(value) => {
-                add(&mut parts, &format::copy_text(*value), false, &mut attach_next);
+                add(
+                    &mut parts,
+                    &format::copy_text(*value),
+                    false,
+                    &mut attach_next,
+                );
             }
             Token::IntLiteral { value, .. } => {
                 add(&mut parts, &value.to_string(), false, &mut attach_next);
@@ -1784,7 +1798,11 @@ impl QuantityParser<'_> {
         let close = self.matching_parenthesis()?;
         self.position += 1;
         let target_name = self.grouped_target(close);
-        let end = if target_name.is_some() { close - 2 } else { close };
+        let end = if target_name.is_some() {
+            close - 2
+        } else {
+            close
+        };
         let value = self.parse_grouped_value(end)?;
         self.position = close + 1;
         match target_name {

@@ -51,10 +51,7 @@ mod i18n_scan {
                 !impl_src.contains("label: \"Open\".into()"),
                 "embedded Open action"
             );
-            assert!(
-                !impl_src.contains("\"Actions\""),
-                "embedded Actions footer"
-            );
+            assert!(!impl_src.contains("\"Actions\""), "embedded Actions footer");
             assert!(
                 !impl_src.contains("w!(\"Remind me later\")"),
                 "embedded Remind me later"

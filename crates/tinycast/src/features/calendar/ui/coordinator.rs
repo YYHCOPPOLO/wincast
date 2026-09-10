@@ -75,9 +75,9 @@ pub fn create_event(owner: windows::Win32::Foundation::HWND, lang: UiLang) {
 }
 
 fn show_add_appointment(title: &str, minutes: i64) -> windows::core::Result<()> {
+    use windows::core::HSTRING;
     use windows::ApplicationModel::Appointments::{Appointment, AppointmentManager};
     use windows::Foundation::{DateTime, Rect, TimeSpan};
-    use windows::core::HSTRING;
     let appt = Appointment::new()?;
     appt.SetSubject(&HSTRING::from(title))?;
     let now = crate::platform::clock::unix_now();

@@ -16,7 +16,11 @@ const CACHE_FRESH_SECS: i64 = 24 * 3600;
 pub enum FeedOutcome {
     Empty,
     Current,
-    Available { version: Version, notes: String, zip_url: String },
+    Available {
+        version: Version,
+        notes: String,
+        zip_url: String,
+    },
     Failed(String),
 }
 
@@ -70,14 +74,14 @@ fn parse_releases(body: &str, channel: Channel) -> Result<Option<Release>, Strin
     };
     let mut best: Option<Release> = None;
     for item in items {
-        let prerelease = item.get("prerelease").and_then(|v| v.as_bool()).unwrap_or(false);
+        let prerelease = item
+            .get("prerelease")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if !channel.accepts_prerelease(prerelease) {
             continue;
         }
-        let tag = item
-            .get("tag_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let tag = item.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
         let Some(version) = parse_version(tag) else {
             continue;
         };
@@ -145,10 +149,7 @@ pub fn touch_cache() {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let _ = std::fs::write(
-        cache_path(),
-        format!("{{\"lastCheckedAt\":{now}}}"),
-    );
+    let _ = std::fs::write(cache_path(), format!("{{\"lastCheckedAt\":{now}}}"));
 }
 
 pub fn empty_hud() -> &'static str {

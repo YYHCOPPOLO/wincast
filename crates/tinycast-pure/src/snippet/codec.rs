@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::model::{default_name, StoredSnippet, SnippetSourceRevision};
+use super::model::{default_name, SnippetSourceRevision, StoredSnippet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CodecError {
@@ -43,13 +43,7 @@ pub fn parse_markdown(path: &Path, bytes: &str) -> Result<StoredSnippet, CodecEr
         .skip(1)
         .find(|(_, line)| line.text == "---")
         .map(|(i, _)| i)
-        .ok_or_else(|| {
-            parse_error(
-                path,
-                1,
-                "Missing closing frontmatter delimiter",
-            )
-        })?;
+        .ok_or_else(|| parse_error(path, 1, "Missing closing frontmatter delimiter"))?;
 
     let mut name: Option<String> = None;
     let mut keyword: Option<String> = None;
@@ -116,7 +110,10 @@ pub fn parse_markdown(path: &Path, bytes: &str) -> Result<StoredSnippet, CodecEr
 }
 
 pub fn serialize(s: &StoredSnippet) -> String {
-    let mut lines = vec!["---".to_string(), format!("name: {}", encode_scalar(&s.name))];
+    let mut lines = vec![
+        "---".to_string(),
+        format!("name: {}", encode_scalar(&s.name)),
+    ];
     if let Some(keyword) = &s.keyword {
         lines.push(format!("keyword: {}", encode_scalar(keyword)));
     }
@@ -284,7 +281,10 @@ mod tests {
     }
 
     fn expect_err(raw: &str) {
-        assert!(parse_markdown(Path::new("/tmp/codec.md"), raw).is_err(), "{raw}");
+        assert!(
+            parse_markdown(Path::new("/tmp/codec.md"), raw).is_err(),
+            "{raw}"
+        );
     }
 
     #[test]

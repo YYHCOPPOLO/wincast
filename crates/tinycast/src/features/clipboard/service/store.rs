@@ -73,7 +73,7 @@ impl ClipboardStore {
             let images = dir.join("images");
             match std::fs::symlink_metadata(&images) {
                 Ok(_) => checked_directory(&images)?,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => return Err(e.to_string()),
             }
             let conn = open_db(&dir.join("clipboard.sqlite3"))?;
@@ -82,8 +82,11 @@ impl ClipboardStore {
             // cannot be opened safely. There is deliberately no recovery delete.
             std::fs::create_dir_all(&images).map_err(|e| e.to_string())?;
             checked_directory(&images)?;
-            conn.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)
-                .map_err(|e| e.to_string())?;
+            conn.set_db_config(
+                rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+                false,
+            )
+            .map_err(|e| e.to_string())?;
             Ok((conn, dir, items))
         })();
         match opened {
@@ -167,7 +170,11 @@ impl ClipboardStore {
             }
         };
         let path = dir.join(format!("{}.png", new_id()));
-        let mut file = match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+        let mut file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
             Ok(file) => file,
             Err(error) => {
                 self.last_error = Some(error.to_string());
@@ -235,10 +242,12 @@ impl ClipboardStore {
             self.reinsert(item, created_at, None);
         } else {
             let stamp = next_pin_stamp(&self.items);
-            self.transact(|tx| expect_one(tx.execute(
-                "UPDATE items SET pinned_at = ?1 WHERE id = ?2",
-                params![stamp, id],
-            )?));
+            self.transact(|tx| {
+                expect_one(tx.execute(
+                    "UPDATE items SET pinned_at = ?1 WHERE id = ?2",
+                    params![stamp, id],
+                )?)
+            });
         }
     }
 
@@ -273,11 +282,14 @@ impl ClipboardStore {
 
     fn delete_images_after(&mut self, sql: &str, params: impl rusqlite::Params) {
         let deleted = self.transact(|tx| {
-            let paths = tx.prepare(sql)?.query_map(params, |row| row.get::<_, Option<String>>(0))?
+            let paths = tx
+                .prepare(sql)?
+                .query_map(params, |row| row.get::<_, Option<String>>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             // Include pins and rows outside the in-memory window. A shared file
             // still belongs to a surviving row even if another row was deleted.
-            let referenced = tx.prepare("SELECT image_path FROM items WHERE image_path IS NOT NULL")?
+            let referenced = tx
+                .prepare("SELECT image_path FROM items WHERE image_path IS NOT NULL")?
                 .query_map([], |row| row.get::<_, String>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok((paths, referenced))
@@ -298,25 +310,46 @@ impl ClipboardStore {
         Ok(images)
     }
 
-    fn remove_unreferenced_images(&self, deleted: impl Iterator<Item = String>, referenced: Vec<String>) {
-        let Ok(root) = self.checked_images_dir() else { return; };
+    fn remove_unreferenced_images(
+        &self,
+        deleted: impl Iterator<Item = String>,
+        referenced: Vec<String>,
+    ) {
+        let Ok(root) = self.checked_images_dir() else {
+            return;
+        };
         let references: Vec<PathBuf> = referenced.into_iter().map(PathBuf::from).collect();
-        let canonical_references: HashSet<PathBuf> = references.iter()
-            .filter_map(|path| std::fs::canonicalize(path).ok()).collect();
+        let canonical_references: HashSet<PathBuf> = references
+            .iter()
+            .filter_map(|path| std::fs::canonicalize(path).ok())
+            .collect();
         for path in deleted.map(PathBuf::from) {
-            if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir)
+            if !path.is_absolute()
+                || path.components().any(|c| c == Component::ParentDir)
                 || references.contains(&path)
             {
                 continue;
             }
-            let Some(parent) = path.parent() else { continue; };
-            if checked_directory(parent).is_err() || std::fs::canonicalize(parent).ok().as_ref() != Some(&root) {
+            let Some(parent) = path.parent() else {
+                continue;
+            };
+            if checked_directory(parent).is_err()
+                || std::fs::canonicalize(parent).ok().as_ref() != Some(&root)
+            {
                 continue;
             }
-            let Ok(metadata) = std::fs::symlink_metadata(&path) else { continue; };
-            if !metadata.is_file() || is_reparse(&metadata) { continue; }
-            let Ok(canonical) = std::fs::canonicalize(&path) else { continue; };
-            if canonical.parent() == Some(root.as_path()) && !canonical_references.contains(&canonical) {
+            let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if !metadata.is_file() || is_reparse(&metadata) {
+                continue;
+            }
+            let Ok(canonical) = std::fs::canonicalize(&path) else {
+                continue;
+            };
+            if canonical.parent() == Some(root.as_path())
+                && !canonical_references.contains(&canonical)
+            {
                 let _ = std::fs::remove_file(path);
             }
         }
@@ -332,7 +365,8 @@ impl ClipboardStore {
         if let Some(item) = self.items.iter().find(|i| i.id == id).cloned() {
             return Some(item);
         }
-        self.conn.as_ref()?
+        self.conn
+            .as_ref()?
             .query_row(
                 "SELECT id, created_at, pinned_at, kind, text, image_path FROM items WHERE id = ?1",
                 params![id],
@@ -362,7 +396,10 @@ impl ClipboardStore {
         });
     }
 
-    fn transact<T>(&mut self, operation: impl FnOnce(&Transaction<'_>) -> rusqlite::Result<T>) -> Option<T> {
+    fn transact<T>(
+        &mut self,
+        operation: impl FnOnce(&Transaction<'_>) -> rusqlite::Result<T>,
+    ) -> Option<T> {
         let conn = self.conn.as_mut()?;
         let result = (|| {
             let tx = conn.transaction()?;
@@ -460,7 +497,9 @@ impl ClipboardStore {
 
     #[cfg(test)]
     fn reload(&mut self) {
-        let Some(conn) = &self.conn else { return; };
+        let Some(conn) = &self.conn else {
+            return;
+        };
         match load_items(conn) {
             Ok(items) => self.items = items,
             Err(error) => self.last_error = Some(error.to_string()),
@@ -469,11 +508,14 @@ impl ClipboardStore {
 }
 
 fn load_items(conn: &Connection) -> rusqlite::Result<Vec<ClipboardItem>> {
-    let floor = conn.query_row(
-        "SELECT rowid FROM items WHERE pinned_at IS NULL ORDER BY rowid DESC LIMIT 1 OFFSET ?1",
-        params![MEMORY_WINDOW - 1],
-        |row| row.get::<_, i64>(0),
-    ).optional()?.unwrap_or(0);
+    let floor = conn
+        .query_row(
+            "SELECT rowid FROM items WHERE pinned_at IS NULL ORDER BY rowid DESC LIMIT 1 OFFSET ?1",
+            params![MEMORY_WINDOW - 1],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+        .unwrap_or(0);
     // Two indexed branches, not `pinned_at IS NOT NULL OR rowid >= ?`.
     conn.prepare(
         "SELECT id, created_at, pinned_at, kind, text, image_path FROM (
@@ -481,11 +523,17 @@ fn load_items(conn: &Connection) -> rusqlite::Result<Vec<ClipboardItem>> {
            UNION ALL
            SELECT rowid AS rid, * FROM items WHERE pinned_at IS NOT NULL AND rowid < ?1
          ) ORDER BY rid DESC",
-    )?.query_map(params![floor], row_item)?.collect()
+    )?
+    .query_map(params![floor], row_item)?
+    .collect()
 }
 
 fn expect_one(changed: usize) -> rusqlite::Result<()> {
-    if changed == 1 { Ok(()) } else { Err(rusqlite::Error::StatementChangedRows(changed)) }
+    if changed == 1 {
+        Ok(())
+    } else {
+        Err(rusqlite::Error::StatementChangedRows(changed))
+    }
 }
 
 fn is_reparse(metadata: &std::fs::Metadata) -> bool {
@@ -548,7 +596,8 @@ fn row_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
 }
 
 fn validate_schema(conn: &Connection) -> Result<(), String> {
-    let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))
+    let version: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|e| format!("Cannot read clipboard database version: {e:?}"))?;
     let sql: String = conn
         .query_row(
@@ -558,13 +607,37 @@ fn validate_schema(conn: &Connection) -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
     let lower = sql.to_lowercase();
-    let columns = conn.prepare("PRAGMA table_info(items)").map_err(|e| e.to_string())?
-        .query_map([], |row| Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(5)?)))
-        .map_err(|e| e.to_string())?.collect::<rusqlite::Result<Vec<_>>>().map_err(|e| e.to_string())?;
-    let expected = [("rowid", "INTEGER", 1), ("id", "TEXT", 0), ("created_at", "INTEGER", 0),
-        ("pinned_at", "INTEGER", 0), ("kind", "TEXT", 0), ("text", "TEXT", 0), ("image_path", "TEXT", 0)];
-    if version != 0 || !lower.contains("autoincrement") || columns.len() != expected.len()
-        || columns.iter().zip(expected).any(|((name, kind, pk), (n, k, p))| name != n || !kind.eq_ignore_ascii_case(k) || *pk != p)
+    let columns = conn
+        .prepare("PRAGMA table_info(items)")
+        .map_err(|e| e.to_string())?
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(5)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    let expected = [
+        ("rowid", "INTEGER", 1),
+        ("id", "TEXT", 0),
+        ("created_at", "INTEGER", 0),
+        ("pinned_at", "INTEGER", 0),
+        ("kind", "TEXT", 0),
+        ("text", "TEXT", 0),
+        ("image_path", "TEXT", 0),
+    ];
+    if version != 0
+        || !lower.contains("autoincrement")
+        || columns.len() != expected.len()
+        || columns
+            .iter()
+            .zip(expected)
+            .any(|((name, kind, pk), (n, k, p))| {
+                name != n || !kind.eq_ignore_ascii_case(k) || *pk != p
+            })
     {
         return Err("Unsupported clipboard database schema (original preserved)".into());
     }
@@ -575,8 +648,12 @@ fn validate_schema(conn: &Connection) -> Result<(), String> {
     if objects != 3 {
         return Err("Incomplete clipboard database schema (original preserved)".into());
     }
-    let check: String = conn.query_row("PRAGMA quick_check(1)", [], |row| row.get(0)).map_err(|e| e.to_string())?;
-    if check != "ok" { return Err(check); }
+    let check: String = conn
+        .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    if check != "ok" {
+        return Err(check);
+    }
     load_items(conn).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -593,13 +670,16 @@ fn open_db(path: &Path) -> Result<Connection, String> {
         sidecar.push(suffix);
         match std::fs::symlink_metadata(Path::new(&sidecar)) {
             Ok(metadata) => {
-                if !existing || suffix == "-journal" || !metadata.is_file() || is_reparse(&metadata) {
+                if !existing || suffix == "-journal" || !metadata.is_file() || is_reparse(&metadata)
+                {
                     // In particular, never let opening a database recover a hot
                     // rollback journal before its schema has been validated.
-                    return Err("Clipboard database has unsupported sidecars (originals preserved)".into());
+                    return Err(
+                        "Clipboard database has unsupported sidecars (originals preserved)".into(),
+                    );
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.to_string()),
         }
     }
@@ -610,25 +690,41 @@ fn open_db(path: &Path) -> Result<Connection, String> {
         // A concurrently locked database leaves clipboard history unavailable.
         let probe = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
             .map_err(|e| e.to_string())?;
-        probe.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)
+        probe
+            .set_db_config(
+                rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+                true,
+            )
             .map_err(|e| e.to_string())?;
-        probe.busy_timeout(Duration::from_millis(100)).map_err(|e| e.to_string())?;
-        probe.execute_batch("PRAGMA query_only=ON; PRAGMA locking_mode=EXCLUSIVE;").map_err(|e| e.to_string())?;
+        probe
+            .busy_timeout(Duration::from_millis(100))
+            .map_err(|e| e.to_string())?;
+        probe
+            .execute_batch("PRAGMA query_only=ON; PRAGMA locking_mode=EXCLUSIVE;")
+            .map_err(|e| e.to_string())?;
         validate_schema(&probe)?;
         drop(probe);
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
             .map_err(|e| e.to_string())?;
-        conn.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)
+        conn.set_db_config(
+            rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+            true,
+        )
+        .map_err(|e| e.to_string())?;
+        conn.busy_timeout(Duration::from_millis(100))
             .map_err(|e| e.to_string())?;
-        conn.busy_timeout(Duration::from_millis(100)).map_err(|e| e.to_string())?;
         // No CREATE, journal-mode changes, or migrations on an existing file.
         validate_schema(&conn)?;
         return Ok(conn);
     }
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
-    conn.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)
+    conn.set_db_config(
+        rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+        true,
+    )
+    .map_err(|e| e.to_string())?;
+    conn.busy_timeout(Duration::from_millis(100))
         .map_err(|e| e.to_string())?;
-    conn.busy_timeout(Duration::from_millis(100)).map_err(|e| e.to_string())?;
     conn.execute_batch(
         "
         PRAGMA journal_mode=WAL;
@@ -653,7 +749,8 @@ fn open_db(path: &Path) -> Result<Connection, String> {
           INSERT INTO items_fts(items_fts, rowid, text) VALUES('delete', old.rowid, old.text);
         END;
         ",
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
@@ -731,21 +828,32 @@ mod tests {
     }
 
     fn connection(store: &ClipboardStore) -> &Connection {
-        store.conn.as_ref().expect("fixture database should be available")
+        store
+            .conn
+            .as_ref()
+            .expect("fixture database should be available")
     }
 
     fn fail_deletes(store: &ClipboardStore) {
-        connection(store).execute_batch("
+        connection(store)
+            .execute_batch(
+                "
             CREATE TABLE attempted_deletes(value INTEGER);
             CREATE TRIGGER reject_delete BEFORE DELETE ON items BEGIN
                 INSERT INTO attempted_deletes VALUES(1);
                 SELECT RAISE(FAIL, 'injected delete failure');
             END;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
     }
 
     fn assert_delete_rolled_back(store: &ClipboardStore) {
-        let attempts: i64 = connection(store).query_row("SELECT COUNT(*) FROM attempted_deletes", [], |row| row.get(0)).unwrap();
+        let attempts: i64 = connection(store)
+            .query_row("SELECT COUNT(*) FROM attempted_deletes", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
         assert_eq!(attempts, 0, "trigger side effects must roll back too");
     }
 
@@ -753,9 +861,17 @@ mod tests {
     fn corrupt_open_preserves_database_sidecars_and_images() {
         let fixture = Fixture::new();
         let image = fixture.image("keep.png");
-        let files = ["clipboard.sqlite3", "clipboard.sqlite3-wal", "clipboard.sqlite3-shm"];
+        let files = [
+            "clipboard.sqlite3",
+            "clipboard.sqlite3-wal",
+            "clipboard.sqlite3-shm",
+        ];
         for file in files {
-            std::fs::write(fixture.0.join(file), format!("original corrupt fixture {file}")).unwrap();
+            std::fs::write(
+                fixture.0.join(file),
+                format!("original corrupt fixture {file}"),
+            )
+            .unwrap();
         }
         let mut store = fixture.open();
         assert!(!store.is_available());
@@ -763,7 +879,10 @@ mod tests {
         store.clear();
         drop(store);
         for file in files {
-            assert_eq!(std::fs::read(fixture.0.join(file)).unwrap(), format!("original corrupt fixture {file}").as_bytes());
+            assert_eq!(
+                std::fs::read(fixture.0.join(file)).unwrap(),
+                format!("original corrupt fixture {file}").as_bytes()
+            );
         }
         assert!(image.exists());
     }
@@ -804,7 +923,8 @@ mod tests {
         }
         let path = fixture.0.join("clipboard.sqlite3");
         let lock = Connection::open(&path).unwrap();
-        lock.execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE;").unwrap();
+        lock.execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE;")
+            .unwrap();
         let before = std::fs::read(&path).unwrap();
         let result = std::panic::catch_unwind(|| fixture.open());
         assert!(result.is_ok(), "locked databases must not be recreated");
@@ -825,7 +945,10 @@ mod tests {
         connection(&store).execute_batch("CREATE TRIGGER reject_insert BEFORE INSERT ON items BEGIN SELECT RAISE(FAIL, 'injected insert failure'); END;").unwrap();
         store.toggle_pin(&id);
         assert_eq!(store.search("", ClipboardFilter::All), before);
-        assert_eq!(store.search("alpha", ClipboardFilter::All), vec![before[0].clone()]);
+        assert_eq!(
+            store.search("alpha", ClipboardFilter::All),
+            vec![before[0].clone()]
+        );
         store.reload();
         assert_eq!(store.search("", ClipboardFilter::All), before);
     }
@@ -863,7 +986,9 @@ mod tests {
         let mut store = fixture.open();
         let image = fixture.image("keep.png");
         store.insert_image(image.clone());
-        connection(&store).execute("UPDATE items SET created_at = 0", []).unwrap();
+        connection(&store)
+            .execute("UPDATE items SET created_at = 0", [])
+            .unwrap();
         store.reload();
         let before = store.search("", ClipboardFilter::All);
         fail_deletes(&store);
@@ -890,7 +1015,9 @@ mod tests {
         store.insert_image(pinned.clone()); // the stale row must not delete a pin's image
         store.insert_image(outside.clone());
         store.insert_image(store.images_dir().join("..").join("traversal.png"));
-        connection(&store).execute("UPDATE items SET created_at = 0", []).unwrap();
+        connection(&store)
+            .execute("UPDATE items SET created_at = 0", [])
+            .unwrap();
         store.reload();
         store.prune_unpinned_older_than(1);
         assert!(!stale.exists());
@@ -932,7 +1059,10 @@ mod tests {
         let store = fixture.open();
         assert!(store.is_available(), "{:?}", store.last_error());
         assert_eq!(store.search("", ClipboardFilter::All), before);
-        assert_eq!(store.search("beta", ClipboardFilter::All), vec![before[1].clone()]);
+        assert_eq!(
+            store.search("beta", ClipboardFilter::All),
+            vec![before[1].clone()]
+        );
     }
 
     #[test]
@@ -940,7 +1070,12 @@ mod tests {
         let fixture = Fixture::new();
         let before = {
             let mut store = fixture.open();
-            connection(&store).set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true).unwrap();
+            connection(&store)
+                .set_db_config(
+                    rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+                    true,
+                )
+                .unwrap();
             store.insert_text("persisted only in WAL".into()).unwrap();
             store.search("", ClipboardFilter::All)
         };
@@ -974,19 +1109,37 @@ mod tests {
         let path = fixture.0.join("clipboard.sqlite3");
         {
             let conn = Connection::open(&path).unwrap();
-            conn.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true).unwrap();
+            conn.set_db_config(
+                rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+                true,
+            )
+            .unwrap();
             conn.pragma_update(None, "user_version", 99).unwrap();
         }
-        let paths: Vec<_> = std::fs::read_dir(&fixture.0).unwrap().map(|e| e.unwrap().path())
-            .filter(|p| p.is_file()).collect();
+        let paths: Vec<_> = std::fs::read_dir(&fixture.0)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.is_file())
+            .collect();
         assert!(paths.iter().any(|p| p.to_string_lossy().ends_with("-wal")));
         let before: Vec<_> = paths.iter().map(|p| std::fs::read(p).unwrap()).collect();
         let store = fixture.open();
         assert!(!store.is_available());
-        assert!(store.last_error().unwrap().contains("Unsupported clipboard database schema"), "{:?}", store.last_error());
+        assert!(
+            store
+                .last_error()
+                .unwrap()
+                .contains("Unsupported clipboard database schema"),
+            "{:?}",
+            store.last_error()
+        );
         drop(store);
         for (path, original) in paths.iter().zip(before) {
-            assert!(std::fs::read(path).unwrap() == original, "changed {}", path.display());
+            assert!(
+                std::fs::read(path).unwrap() == original,
+                "changed {}",
+                path.display()
+            );
         }
     }
 
@@ -1008,7 +1161,10 @@ mod tests {
         std::fs::remove_file(sidecar).unwrap(); // owned fixture, not a recovery path
         {
             let conn = Connection::open(fixture.0.join("clipboard.sqlite3")).unwrap();
-            conn.execute_batch("CREATE TABLE unrelated(value TEXT); INSERT INTO unrelated VALUES('keep');").unwrap();
+            conn.execute_batch(
+                "CREATE TABLE unrelated(value TEXT); INSERT INTO unrelated VALUES('keep');",
+            )
+            .unwrap();
         }
         let before = std::fs::read(fixture.0.join("clipboard.sqlite3")).unwrap();
         let store = fixture.open();
@@ -1023,7 +1179,9 @@ mod tests {
         let mut store = fixture.open();
         store.insert_text("valid cached text".into()).unwrap();
         let before = store.search("", ClipboardFilter::All);
-        connection(&store).execute("UPDATE items SET created_at = 'invalid integer'", []).unwrap();
+        connection(&store)
+            .execute("UPDATE items SET created_at = 'invalid integer'", [])
+            .unwrap();
         store.reload();
         assert_eq!(store.search("", ClipboardFilter::All), before);
         assert!(store.last_error().is_some());
@@ -1038,14 +1196,20 @@ mod tests {
         store.insert_text("existing".into()).unwrap();
         let keep = fixture.image("untracked.png");
         let before = store.search("", ClipboardFilter::All);
-        connection(&store).execute_batch("CREATE TABLE attempts(value INTEGER);
+        connection(&store)
+            .execute_batch(
+                "CREATE TABLE attempts(value INTEGER);
             CREATE TRIGGER reject_insert BEFORE INSERT ON items BEGIN
-              INSERT INTO attempts VALUES(1); SELECT RAISE(FAIL, 'injected insert failure'); END;").unwrap();
+              INSERT INTO attempts VALUES(1); SELECT RAISE(FAIL, 'injected insert failure'); END;",
+            )
+            .unwrap();
         assert!(store.save_image(b"encoded fixture png").is_none());
         assert_eq!(store.search("", ClipboardFilter::All), before);
         assert_eq!(std::fs::read_dir(store.images_dir()).unwrap().count(), 1);
         assert!(keep.exists());
-        let attempts: i64 = connection(&store).query_row("SELECT COUNT(*) FROM attempts", [], |r| r.get(0)).unwrap();
+        let attempts: i64 = connection(&store)
+            .query_row("SELECT COUNT(*) FROM attempts", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(attempts, 0);
         assert!(!store.is_available());
     }
@@ -1056,12 +1220,18 @@ mod tests {
         let mut store = fixture.open();
         let id = store.insert_text("existing".into()).unwrap();
         let before = store.search("", ClipboardFilter::All);
-        connection(&store).execute_batch("CREATE TABLE attempts(value INTEGER);
+        connection(&store)
+            .execute_batch(
+                "CREATE TABLE attempts(value INTEGER);
             CREATE TRIGGER reject_update BEFORE UPDATE ON items BEGIN
-              INSERT INTO attempts VALUES(1); SELECT RAISE(FAIL, 'injected update failure'); END;").unwrap();
+              INSERT INTO attempts VALUES(1); SELECT RAISE(FAIL, 'injected update failure'); END;",
+            )
+            .unwrap();
         store.toggle_pin(&id);
         assert_eq!(store.search("", ClipboardFilter::All), before);
-        let attempts: i64 = connection(&store).query_row("SELECT COUNT(*) FROM attempts", [], |r| r.get(0)).unwrap();
+        let attempts: i64 = connection(&store)
+            .query_row("SELECT COUNT(*) FROM attempts", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(attempts, 0);
     }
 
@@ -1078,13 +1248,19 @@ mod tests {
                 CREATE TRIGGER reject_commit BEFORE DELETE ON items BEGIN INSERT INTO child VALUES(1); END;").unwrap();
             store.reload();
             let before = store.search("", ClipboardFilter::All);
-            if prune { store.prune_unpinned_older_than(1); } else { store.clear(); }
+            if prune {
+                store.prune_unpinned_older_than(1);
+            } else {
+                store.clear();
+            }
             assert!(!store.is_available());
             assert_eq!(store.search("", ClipboardFilter::All), before);
             assert!(image.exists());
             store.reload();
             assert_eq!(store.search("", ClipboardFilter::All), before);
-            let children: i64 = connection(&store).query_row("SELECT COUNT(*) FROM child", [], |r| r.get(0)).unwrap();
+            let children: i64 = connection(&store)
+                .query_row("SELECT COUNT(*) FROM child", [], |r| r.get(0))
+                .unwrap();
             assert_eq!(children, 0);
         }
     }

@@ -127,9 +127,7 @@ pub(crate) fn snapshot(
     now: i64,
 ) -> Option<(CurrencyRates, bool)> {
     let fiat = parse_frankfurter(fiat_json)?;
-    let crypto = crypto_json
-        .map(parse_coingecko)
-        .unwrap_or_default();
+    let crypto = crypto_json.map(parse_coingecko).unwrap_or_default();
     let fiat_refs: Vec<(&str, f64)> = fiat.iter().map(|(c, r)| (c.as_str(), *r)).collect();
     let crypto_refs: Vec<(&str, f64)> = crypto.iter().map(|(c, r)| (c.as_str(), *r)).collect();
     let mut rates = merge_feeds(&fiat_refs, &crypto_refs);
@@ -160,7 +158,10 @@ fn parse_frankfurter(json: &str) -> Option<Vec<(String, f64)>> {
 }
 
 fn rebase_to_usd(pairs: Vec<(String, f64)>) -> Option<Vec<(String, f64)>> {
-    let usd = pairs.iter().find(|(code, _)| code == "USD").map(|(_, r)| *r)?;
+    let usd = pairs
+        .iter()
+        .find(|(code, _)| code == "USD")
+        .map(|(_, r)| *r)?;
     if !usable(usd) {
         return None;
     }
@@ -179,11 +180,7 @@ fn rebase_to_usd(pairs: Vec<(String, f64)>) -> Option<Vec<(String, f64)>> {
 }
 
 fn parse_coingecko(json: &str) -> Vec<(String, f64)> {
-    const MAP: &[(&str, &str)] = &[
-        ("bitcoin", "BTC"),
-        ("ethereum", "ETH"),
-        ("solana", "SOL"),
-    ];
+    const MAP: &[(&str, &str)] = &[("bitcoin", "BTC"), ("ethereum", "ETH"), ("solana", "SOL")];
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
     };
@@ -266,7 +263,8 @@ mod tests {
 
     #[test]
     fn frankfurter_rebase_and_coin_invert() {
-        let fiat = r#"{"amount":1.0,"base":"EUR","date":"2024-01-01","rates":{"USD":1.1,"GBP":0.88}}"#;
+        let fiat =
+            r#"{"amount":1.0,"base":"EUR","date":"2024-01-01","rates":{"USD":1.1,"GBP":0.88}}"#;
         let crypto = r#"{"bitcoin":{"usd":55000.0},"ethereum":{"usd":2000.0}}"#;
         let (rates, complete) = snapshot(fiat, Some(crypto), 42).unwrap();
         assert!(complete);

@@ -70,7 +70,8 @@ pub fn paint(
     let origin = -scroll;
     let pad = theme::spacing::XL;
     let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+    let muted_brush =
+        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     for (i, _) in ROWS.iter().enumerate() {
         let y = 24.0 + i as f32 * ROW_H + origin;
         let title: Vec<u16> = tinycast_pure::i18n::permission_title(i, formats.lang)
@@ -135,9 +136,6 @@ mod tests {
     fn permissions_rows_have_settings_uris() {
         assert_eq!(ROWS.len(), 4);
         assert!(ROWS.iter().all(|r| r.uri.starts_with("ms-settings:")));
-        assert_eq!(
-            hit(400.0, 30.0, 0.0, 500.0),
-            Some(PermissionHit::Open(0))
-        );
+        assert_eq!(hit(400.0, 30.0, 0.0, 500.0), Some(PermissionHit::Open(0)));
     }
 }

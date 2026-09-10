@@ -158,7 +158,11 @@ pub fn empty_no_meetings(lang: UiLang) -> &'static str {
 }
 
 pub fn empty_nothing_scheduled(lang: UiLang) -> &'static str {
-    pick(lang, "Nothing scheduled today or tomorrow", "今天和明天没有日程")
+    pick(
+        lang,
+        "Nothing scheduled today or tomorrow",
+        "今天和明天没有日程",
+    )
 }
 
 pub fn footer_copy_answer(lang: UiLang) -> &'static str {
@@ -216,8 +220,11 @@ pub fn clipboard_filter_title(filter: &str, lang: UiLang) -> &'static str {
 }
 
 pub fn clipboard_unavailable(lang: UiLang) -> &'static str {
-    pick(lang, "Clipboard storage is unavailable. Existing history has been preserved.",
-        "剪贴板存储不可用，已有历史记录已保留。")
+    pick(
+        lang,
+        "Clipboard storage is unavailable. Existing history has been preserved.",
+        "剪贴板存储不可用，已有历史记录已保留。",
+    )
 }
 
 pub fn clipboard_empty(filter: &str, lang: UiLang) -> &'static str {

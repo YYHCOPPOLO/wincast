@@ -62,11 +62,7 @@ impl FileSearchSession {
         }
     }
 
-    pub fn from_settings(
-        scopes: &[String],
-        ignore: &[String],
-        host: HWND,
-    ) -> Self {
+    pub fn from_settings(scopes: &[String], ignore: &[String], host: HWND) -> Self {
         let home = std::env::var("USERPROFILE").unwrap_or_default();
         Self::new(home, scopes, ignore, host)
     }
@@ -232,12 +228,8 @@ mod tests {
 
     #[test]
     fn empty_query_does_no_work() {
-        let mut s = FileSearchSession::new(
-            "C:/Users/test".into(),
-            &["~".into()],
-            &[],
-            HWND::default(),
-        );
+        let mut s =
+            FileSearchSession::new("C:/Users/test".into(), &["~".into()], &[], HWND::default());
         s.search("   ");
         assert_eq!(s.state(), State::Idle);
         assert!(s.results().is_empty());
@@ -249,19 +241,19 @@ mod tests {
 
     #[test]
     fn superseded_result_is_dropped() {
-        let mut s = FileSearchSession::new(
-            "C:/Users/test".into(),
-            &["~".into()],
-            &[],
-            HWND::default(),
-        );
+        let mut s =
+            FileSearchSession::new("C:/Users/test".into(), &["~".into()], &[], HWND::default());
         s.search("one");
         let old = s.revision;
         s.search("two");
         s.accept(
             old,
             "one".into(),
-            Ok(vec![FileSearchHit::from_path("C:/a.txt", false, "C:/Users/test")]),
+            Ok(vec![FileSearchHit::from_path(
+                "C:/a.txt",
+                false,
+                "C:/Users/test",
+            )]),
         );
         assert!(s.results().is_empty());
         assert_eq!(s.state(), State::Searching);

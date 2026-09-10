@@ -45,7 +45,9 @@ impl UpcomingWindow {
     pub fn carded(&self, events: &[MeetingEvent], now: i64) -> Option<MeetingEvent> {
         let lead = self.lead_secs();
         Self::agenda(events, now).into_iter().find(|e| {
-            e.link.is_some() && now >= e.start - lead && now < e.start.saturating_add(lead).min(e.end)
+            e.link.is_some()
+                && now >= e.start - lead
+                && now < e.start.saturating_add(lead).min(e.end)
         })
     }
 

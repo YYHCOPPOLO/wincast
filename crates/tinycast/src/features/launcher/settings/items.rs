@@ -218,14 +218,14 @@ pub fn hotkey_action_key(entry: &AppEntry) -> Option<String> {
         AppKind::Command => CommandID::from_raw(&entry.id)
             .and_then(CommandID::hotkey_defaults_key)
             .map(str::to_string),
-        AppKind::SystemAction => tinycast_pure::system_action::SystemActionId::from_entry_id(
-            &entry.id,
-        )
-        .map(|id| format!("hotkey.systemAction.{}", id.raw())),
-        AppKind::WindowCommand => tinycast_pure::window_command::WindowCommandId::from_entry_id(
-            &entry.id,
-        )
-        .map(|id| format!("hotkey.windowCommand.{}", id.raw())),
+        AppKind::SystemAction => {
+            tinycast_pure::system_action::SystemActionId::from_entry_id(&entry.id)
+                .map(|id| format!("hotkey.systemAction.{}", id.raw()))
+        }
+        AppKind::WindowCommand => {
+            tinycast_pure::window_command::WindowCommandId::from_entry_id(&entry.id)
+                .map(|id| format!("hotkey.windowCommand.{}", id.raw()))
+        }
         _ => None,
     }
 }

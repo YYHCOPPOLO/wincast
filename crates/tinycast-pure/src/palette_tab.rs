@@ -76,9 +76,19 @@ mod tests {
 
     #[test]
     fn compact_never_advertises_tab() {
-        assert!(!tab_opens_ai_chat(PaletteMode::Launcher, true, false, false));
+        assert!(!tab_opens_ai_chat(
+            PaletteMode::Launcher,
+            true,
+            false,
+            false
+        ));
         assert!(tab_opens_ai_chat(PaletteMode::Launcher, true, true, false));
-        assert!(!tab_opens_ai_chat(PaletteMode::Launcher, false, true, false));
+        assert!(!tab_opens_ai_chat(
+            PaletteMode::Launcher,
+            false,
+            true,
+            false
+        ));
     }
 
     #[test]

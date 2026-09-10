@@ -319,12 +319,7 @@ pub fn action_group_rects_measured(
 }
 
 pub fn action_group_rects(panel_w: f32, panel_h: f32) -> Option<ActionGroupRects> {
-    action_group_rects_measured(
-        panel_w,
-        panel_h,
-        PRIMARY_BUTTON_WIDTH,
-        ACTIONS_BUTTON_WIDTH,
-    )
+    action_group_rects_measured(panel_w, panel_h, PRIMARY_BUTTON_WIDTH, ACTIONS_BUTTON_WIDTH)
 }
 
 pub fn clamp_menu_selection(selection: usize, count: usize) -> usize {

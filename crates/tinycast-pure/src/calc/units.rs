@@ -169,11 +169,23 @@ fn build_table() -> HashMap<String, UnitDef> {
 
     add(
         UnitDef::new("mm", "Millimeters", UnitCategory::Length, 0.001, 0.0),
-        &["mm", "millimeter", "millimeters", "millimetre", "millimetres"],
+        &[
+            "mm",
+            "millimeter",
+            "millimeters",
+            "millimetre",
+            "millimetres",
+        ],
     );
     add(
         UnitDef::new("cm", "Centimeters", UnitCategory::Length, 0.01, 0.0),
-        &["cm", "centimeter", "centimeters", "centimetre", "centimetres"],
+        &[
+            "cm",
+            "centimeter",
+            "centimeters",
+            "centimetre",
+            "centimetres",
+        ],
     );
     add(
         UnitDef::new("m", "Meters", UnitCategory::Length, 1.0, 0.0),
@@ -294,7 +306,13 @@ fn build_table() -> HashMap<String, UnitDef> {
         &["yd2", "sqyd"],
     );
     add(
-        UnitDef::new("mi²", "Square Miles", UnitCategory::Area, 2_589_988.110336, 0.0),
+        UnitDef::new(
+            "mi²",
+            "Square Miles",
+            UnitCategory::Area,
+            2_589_988.110336,
+            0.0,
+        ),
         &["mi2", "sqmi"],
     );
     add(
@@ -308,7 +326,13 @@ fn build_table() -> HashMap<String, UnitDef> {
 
     add(
         UnitDef::new("mL", "Milliliters", UnitCategory::Volume, 0.001, 0.0),
-        &["ml", "milliliter", "milliliters", "millilitre", "millilitres"],
+        &[
+            "ml",
+            "milliliter",
+            "milliliters",
+            "millilitre",
+            "millilitres",
+        ],
     );
     add(
         UnitDef::new("L", "Liters", UnitCategory::Volume, 1.0, 0.0),
@@ -319,11 +343,23 @@ fn build_table() -> HashMap<String, UnitDef> {
         &["cup", "cups"],
     );
     add(
-        UnitDef::new("tbsp", "Tablespoons", UnitCategory::Volume, 0.01478676478125, 0.0),
+        UnitDef::new(
+            "tbsp",
+            "Tablespoons",
+            UnitCategory::Volume,
+            0.01478676478125,
+            0.0,
+        ),
         &["tbsp", "tablespoon", "tablespoons"],
     );
     add(
-        UnitDef::new("tsp", "Teaspoons", UnitCategory::Volume, 0.00492892159375, 0.0),
+        UnitDef::new(
+            "tsp",
+            "Teaspoons",
+            UnitCategory::Volume,
+            0.00492892159375,
+            0.0,
+        ),
         &["tsp", "teaspoon", "teaspoons"],
     );
     add(
@@ -339,7 +375,13 @@ fn build_table() -> HashMap<String, UnitDef> {
         &["pt", "pint", "pints"],
     );
     add(
-        UnitDef::new("fl oz", "Fluid Ounces", UnitCategory::Volume, 0.0295735295625, 0.0),
+        UnitDef::new(
+            "fl oz",
+            "Fluid Ounces",
+            UnitCategory::Volume,
+            0.0295735295625,
+            0.0,
+        ),
         &["floz"],
     );
 
@@ -372,15 +414,33 @@ fn build_table() -> HashMap<String, UnitDef> {
         &["pb", "petabyte", "petabytes"],
     );
     add(
-        UnitDef::new("KiB", "Kibibytes", UnitCategory::DigitalStorage, 1024.0, 0.0),
+        UnitDef::new(
+            "KiB",
+            "Kibibytes",
+            UnitCategory::DigitalStorage,
+            1024.0,
+            0.0,
+        ),
         &["kib", "kibibyte", "kibibytes"],
     );
     add(
-        UnitDef::new("MiB", "Mebibytes", UnitCategory::DigitalStorage, 1_048_576.0, 0.0),
+        UnitDef::new(
+            "MiB",
+            "Mebibytes",
+            UnitCategory::DigitalStorage,
+            1_048_576.0,
+            0.0,
+        ),
         &["mib", "mebibyte", "mebibytes"],
     );
     add(
-        UnitDef::new("GiB", "Gibibytes", UnitCategory::DigitalStorage, 1_073_741_824.0, 0.0),
+        UnitDef::new(
+            "GiB",
+            "Gibibytes",
+            UnitCategory::DigitalStorage,
+            1_073_741_824.0,
+            0.0,
+        ),
         &["gib", "gibibyte", "gibibytes"],
     );
     add(
@@ -408,11 +468,23 @@ fn build_table() -> HashMap<String, UnitDef> {
         &["grad", "grads", "gradian", "gradians", "gon"],
     );
     add(
-        UnitDef::new("arcmin", "Arcminutes", UnitCategory::Angle, pi / 10800.0, 0.0),
+        UnitDef::new(
+            "arcmin",
+            "Arcminutes",
+            UnitCategory::Angle,
+            pi / 10800.0,
+            0.0,
+        ),
         &["arcmin", "arcminute", "arcminutes"],
     );
     add(
-        UnitDef::new("arcsec", "Arcseconds", UnitCategory::Angle, pi / 648000.0, 0.0),
+        UnitDef::new(
+            "arcsec",
+            "Arcseconds",
+            UnitCategory::Angle,
+            pi / 648000.0,
+            0.0,
+        ),
         &["arcsec", "arcsecond", "arcseconds"],
     );
     add(
@@ -482,11 +554,23 @@ fn build_table() -> HashMap<String, UnitDef> {
         &["atm", "atmosphere", "atmospheres"],
     );
     add(
-        UnitDef::new("mmHg", "Millimeters of Mercury", UnitCategory::Pressure, 133.322387415, 0.0),
+        UnitDef::new(
+            "mmHg",
+            "Millimeters of Mercury",
+            UnitCategory::Pressure,
+            133.322387415,
+            0.0,
+        ),
         &["mmhg"],
     );
     add(
-        UnitDef::new("Torr", "Torr", UnitCategory::Pressure, 101325.0 / 760.0, 0.0),
+        UnitDef::new(
+            "Torr",
+            "Torr",
+            UnitCategory::Pressure,
+            101325.0 / 760.0,
+            0.0,
+        ),
         &["torr"],
     );
 
@@ -495,19 +579,43 @@ fn build_table() -> HashMap<String, UnitDef> {
         &["bps"],
     );
     add(
-        UnitDef::new("Kbps", "Kilobits per Second", UnitCategory::DataRate, 1e3, 0.0),
+        UnitDef::new(
+            "Kbps",
+            "Kilobits per Second",
+            UnitCategory::DataRate,
+            1e3,
+            0.0,
+        ),
         &["kbps"],
     );
     add(
-        UnitDef::new("Mbps", "Megabits per Second", UnitCategory::DataRate, 1e6, 0.0),
+        UnitDef::new(
+            "Mbps",
+            "Megabits per Second",
+            UnitCategory::DataRate,
+            1e6,
+            0.0,
+        ),
         &["mbps"],
     );
     add(
-        UnitDef::new("Gbps", "Gigabits per Second", UnitCategory::DataRate, 1e9, 0.0),
+        UnitDef::new(
+            "Gbps",
+            "Gigabits per Second",
+            UnitCategory::DataRate,
+            1e9,
+            0.0,
+        ),
         &["gbps"],
     );
     add(
-        UnitDef::new("Tbps", "Terabits per Second", UnitCategory::DataRate, 1e12, 0.0),
+        UnitDef::new(
+            "Tbps",
+            "Terabits per Second",
+            UnitCategory::DataRate,
+            1e12,
+            0.0,
+        ),
         &["tbps"],
     );
 

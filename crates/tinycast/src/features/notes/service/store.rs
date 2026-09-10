@@ -15,7 +15,9 @@ pub enum NotesError {
 impl std::fmt::Display for NotesError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NotesError::InvalidLocation => write!(f, "The note file is outside this Tinycast channel."),
+            NotesError::InvalidLocation => {
+                write!(f, "The note file is outside this Tinycast channel.")
+            }
             NotesError::Io(msg) => write!(f, "{msg}"),
         }
     }
@@ -158,7 +160,11 @@ impl NotesStore {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()).unwrap_or("").eq_ignore_ascii_case("md")
+            if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .eq_ignore_ascii_case("md")
                 && path.is_file()
             {
                 let name = path

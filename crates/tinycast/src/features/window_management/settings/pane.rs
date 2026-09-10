@@ -206,7 +206,13 @@ pub fn paint(
     )
     .0;
     section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 4.0;
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     let origin = -scroll;
     paint_row(
         target,
@@ -337,7 +343,10 @@ fn paint_command(
 ) -> windows::core::Result<()> {
     let pad = theme::spacing::XL;
     let brush = unsafe {
-        target.CreateSolidColorBrush(&ds::ramp_color(appearance, if visible { 0.92 } else { 0.4 }), None)?
+        target.CreateSolidColorBrush(
+            &ds::ramp_color(appearance, if visible { 0.92 } else { 0.4 }),
+            None,
+        )?
     };
     let name_w: Vec<u16> = name.encode_utf16().collect();
     let rec_w: Vec<u16> = rec.encode_utf16().collect();
@@ -426,7 +435,8 @@ fn paint_row(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+    let muted_brush =
+        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let sub_wide: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -487,10 +497,7 @@ mod tests {
 
     #[test]
     fn window_command_recorder_well_is_120() {
-        let key = format!(
-            "hotkey.windowCommand.{}",
-            WindowCommandId::all()[0].raw()
-        );
+        let key = format!("hotkey.windowCommand.{}", WindowCommandId::all()[0].raw());
         let well = recorder_well_for_action(&key, 400.0, 0.0).unwrap();
         assert_eq!(well.w, theme::size::SHORTCUT_RECORDER);
         assert_eq!(RECORDER_W, 120.0);

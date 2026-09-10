@@ -3,9 +3,7 @@
 
 pub mod settings;
 
-use tinycast_pure::emoji::{
-    search_emoji_with_tone, EmojiSkinTone, CELL_DIP, GRID_COLUMNS,
-};
+use tinycast_pure::emoji::{search_emoji_with_tone, EmojiSkinTone, CELL_DIP, GRID_COLUMNS};
 use tinycast_pure::theme;
 
 use crate::features::launcher::ui::list::PaintItem;
@@ -72,7 +70,9 @@ pub fn hit_index(items: &[PaintItem], x: f32, y: f32, scroll: f32, panel_w: f32)
             PaintItem::Header { .. } => SlotKind::Header,
             PaintItem::Row { .. } => SlotKind::Row,
             PaintItem::Calc { .. } => SlotKind::Calc,
-            PaintItem::EmojiRow { glyphs, columns, .. } => SlotKind::EmojiRow {
+            PaintItem::EmojiRow {
+                glyphs, columns, ..
+            } => SlotKind::EmojiRow {
                 cells: glyphs.len(),
                 columns: *columns,
             },
@@ -108,7 +108,9 @@ mod tests {
     #[test]
     fn emoji_paint_items_are_grid_rows_with_group_headers() {
         let items = paint_items("", EmojiSkinTone::None, 0, theme::size::PANEL_WIDTH);
-        assert!(items.iter().any(|i| matches!(i, PaintItem::Header { title } if title == "Smileys")));
+        assert!(items
+            .iter()
+            .any(|i| matches!(i, PaintItem::Header { title } if title == "Smileys")));
         assert!(items
             .iter()
             .any(|i| matches!(i, PaintItem::EmojiRow { glyphs, .. } if !glyphs.is_empty())));

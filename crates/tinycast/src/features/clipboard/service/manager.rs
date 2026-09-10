@@ -133,8 +133,8 @@ fn source_is_disabled(settings: &AppSettings) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::store::new_id;
+    use super::*;
 
     struct Fixture(PathBuf);
 
@@ -149,7 +149,9 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             if let Err(error) = std::fs::remove_dir_all(&self.0) {
-                if !std::thread::panicking() { panic!("fixture cleanup failed: {error}"); }
+                if !std::thread::panicking() {
+                    panic!("fixture cleanup failed: {error}");
+                }
             }
         }
     }
@@ -162,7 +164,10 @@ mod tests {
         let mut entered = false;
         // Never touch the live clipboard, even for the failing baseline.
         capture_if_available(&mut store, |_| entered = true);
-        assert!(!entered, "unavailable storage must stop before clipboard/UI access");
+        assert!(
+            !entered,
+            "unavailable storage must stop before clipboard/UI access"
+        );
         assert!(!fixture.0.join("images").exists());
     }
 
@@ -172,7 +177,10 @@ mod tests {
         let path = fixture.0.join("clipboard.sqlite3");
         std::fs::write(&path, b"corrupt fixture").unwrap();
         let mut store = ClipboardStore::open(fixture.0.clone());
-        let mut pending = vec![PendingImage { dir: store.images_dir(), png: b"pending image".to_vec() }];
+        let mut pending = vec![PendingImage {
+            dir: store.images_dir(),
+            png: b"pending image".to_vec(),
+        }];
         assert!(!install_images(&mut store, &mut pending));
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].png, b"pending image");
@@ -186,13 +194,19 @@ mod tests {
         let mut store = ClipboardStore::open(fixture.0.clone());
         let conn = rusqlite::Connection::open(fixture.0.join("clipboard.sqlite3")).unwrap();
         conn.execute_batch("CREATE TRIGGER reject_insert BEFORE INSERT ON items BEGIN SELECT RAISE(FAIL, 'injected insert failure'); END;").unwrap();
-        let mut pending = vec![PendingImage { dir: store.images_dir(), png: b"pending image".to_vec() }];
+        let mut pending = vec![PendingImage {
+            dir: store.images_dir(),
+            png: b"pending image".to_vec(),
+        }];
         assert!(!install_images(&mut store, &mut pending));
         assert_eq!(pending.len(), 1);
         assert!(!store.is_available());
         assert_eq!(std::fs::read_dir(store.images_dir()).unwrap().count(), 0);
         // Simulate another encoder completing after the first storage failure.
-        pending.push(PendingImage { dir: store.images_dir(), png: b"later capture".to_vec() });
+        pending.push(PendingImage {
+            dir: store.images_dir(),
+            png: b"later capture".to_vec(),
+        });
         assert!(!install_images(&mut store, &mut pending));
         assert_eq!(pending.len(), 2);
         assert_eq!(std::fs::read_dir(store.images_dir()).unwrap().count(), 0);
@@ -209,8 +223,14 @@ mod tests {
         let mut store = ClipboardStore::open(fixture.0.clone());
         let other_dir = fixture.0.join("other-store");
         let mut pending = vec![
-            PendingImage { dir: other_dir.clone(), png: b"other image".to_vec() },
-            PendingImage { dir: store.images_dir(), png: b"owned image".to_vec() },
+            PendingImage {
+                dir: other_dir.clone(),
+                png: b"other image".to_vec(),
+            },
+            PendingImage {
+                dir: store.images_dir(),
+                png: b"owned image".to_vec(),
+            },
         ];
         assert!(install_images(&mut store, &mut pending));
         assert_eq!(pending.len(), 1);
@@ -218,7 +238,10 @@ mod tests {
         assert!(!other_dir.exists());
         let rows = store.search("", super::super::store::ClipboardFilter::Images);
         assert_eq!(rows.len(), 1);
-        assert_eq!(std::fs::read(rows[0].image_path.as_ref().unwrap()).unwrap(), b"owned image");
+        assert_eq!(
+            std::fs::read(rows[0].image_path.as_ref().unwrap()).unwrap(),
+            b"owned image"
+        );
     }
 
     #[test]

@@ -1,6 +1,8 @@
 //! HWND Direct2D host. HWND targets present opaque; layered UpdateLayeredWindow keeps scrim alpha.
 
-use windows::Win32::Foundation::{COLORREF, D2DERR_RECREATE_TARGET, HANDLE, HWND, POINT, RECT, SIZE};
+use windows::Win32::Foundation::{
+    COLORREF, D2DERR_RECREATE_TARGET, HANDLE, HWND, POINT, RECT, SIZE,
+};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_PIXEL_FORMAT, D2D_SIZE_U,
 };

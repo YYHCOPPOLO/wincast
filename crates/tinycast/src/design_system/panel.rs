@@ -4,7 +4,8 @@ use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_COLOR_F, D2D1_GRADIENT_STOP, D2D_POINT_2F, D2D_RECT_F,
 };
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
+    ID2D1RenderTarget, D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2,
+    D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
 };
 
 use super::appearance;
@@ -97,8 +98,8 @@ pub fn paint_sheen(
 mod tests {
     #[test]
     fn dark_scrim_center_is_black_40() {
-        let (w, h, bits) = crate::design_system::test_render::panel_scrim(100, 100, 0)
-            .expect("offscreen");
+        let (w, h, bits) =
+            crate::design_system::test_render::panel_scrim(100, 100, 0).expect("offscreen");
         let i = ((h / 2) * w + (w / 2)) * 4;
         let b = bits[i] as f32;
         let g = bits[i + 1] as f32;

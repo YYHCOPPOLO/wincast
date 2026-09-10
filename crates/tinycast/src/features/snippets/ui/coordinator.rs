@@ -72,7 +72,9 @@ impl ArgumentSession {
     }
 
     pub fn current_name(&self) -> &str {
-        self.current().map(|s| s.name.as_str()).unwrap_or("Argument")
+        self.current()
+            .map(|s| s.name.as_str())
+            .unwrap_or("Argument")
     }
 
     pub fn current_options(&self) -> &[String] {
@@ -106,7 +108,11 @@ impl ArgumentSession {
     }
 }
 
-pub fn paint_argument_items(session: &ArgumentSession, query: &str, selection: usize) -> Vec<PaintItem> {
+pub fn paint_argument_items(
+    session: &ArgumentSession,
+    query: &str,
+    selection: usize,
+) -> Vec<PaintItem> {
     let mut items = Vec::new();
     if session.index > 0 {
         items.push(PaintItem::Header {
@@ -150,13 +156,7 @@ pub fn expand_record(
     args: &HashMap<String, String>,
 ) -> ExpandOutput {
     let snippets: Vec<TemplateSnippet> = library.iter().map(StoredSnippet::to_template).collect();
-    expand_snippet(
-        &record.body,
-        ctx,
-        args,
-        &snippets,
-        Some(&record.identity()),
-    )
+    expand_snippet(&record.body, ctx, args, &snippets, Some(&record.identity()))
 }
 
 pub fn expansion_context(

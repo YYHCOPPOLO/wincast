@@ -41,18 +41,16 @@ pub fn currency_for_locale(locale: &str) -> Option<&'static str> {
 }
 
 fn locale_region(locale: &str) -> Option<[u8; 2]> {
-    let tag = locale.split(['-', '_']).rev().find(|part| {
-        part.len() == 2 && part.bytes().all(|b| b.is_ascii_alphabetic())
-    })?;
+    let tag = locale
+        .split(['-', '_'])
+        .rev()
+        .find(|part| part.len() == 2 && part.bytes().all(|b| b.is_ascii_alphabetic()))?;
     let bytes = tag.as_bytes();
     Some([bytes[0].to_ascii_uppercase(), bytes[1].to_ascii_uppercase()])
 }
 
 fn upsert_rate(table: &mut Vec<(String, f64)>, code: &str, rate: f64) {
-    if let Some(existing) = table
-        .iter_mut()
-        .find(|(c, _)| c.eq_ignore_ascii_case(code))
-    {
+    if let Some(existing) = table.iter_mut().find(|(c, _)| c.eq_ignore_ascii_case(code)) {
         existing.0 = code.to_string();
         existing.1 = rate;
         return;

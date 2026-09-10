@@ -84,18 +84,72 @@ pub struct Emoji {
 
 const CATALOG: &[(&str, &str, &[&str], &str, bool)] = &[
     ("😀", "grinning face", &["smile", "happy"], "Smileys", false),
-    ("😃", "grinning face with big eyes", &["smile", "happy"], "Smileys", false),
-    ("😄", "grinning face with smiling eyes", &["smile", "happy"], "Smileys", false),
-    ("😁", "beaming face with smiling eyes", &["smile"], "Smileys", false),
-    ("😆", "grinning squinting face", &["laugh", "smile"], "Smileys", false),
-    ("😅", "grinning face with sweat", &["smile"], "Smileys", false),
-    ("🤣", "rolling on the floor laughing", &["laugh"], "Smileys", false),
-    ("😂", "face with tears of joy", &["laugh", "smile"], "Smileys", false),
+    (
+        "😃",
+        "grinning face with big eyes",
+        &["smile", "happy"],
+        "Smileys",
+        false,
+    ),
+    (
+        "😄",
+        "grinning face with smiling eyes",
+        &["smile", "happy"],
+        "Smileys",
+        false,
+    ),
+    (
+        "😁",
+        "beaming face with smiling eyes",
+        &["smile"],
+        "Smileys",
+        false,
+    ),
+    (
+        "😆",
+        "grinning squinting face",
+        &["laugh", "smile"],
+        "Smileys",
+        false,
+    ),
+    (
+        "😅",
+        "grinning face with sweat",
+        &["smile"],
+        "Smileys",
+        false,
+    ),
+    (
+        "🤣",
+        "rolling on the floor laughing",
+        &["laugh"],
+        "Smileys",
+        false,
+    ),
+    (
+        "😂",
+        "face with tears of joy",
+        &["laugh", "smile"],
+        "Smileys",
+        false,
+    ),
     ("🙂", "slightly smiling face", &["smile"], "Smileys", false),
-    ("😊", "smiling face with smiling eyes", &["smile", "happy"], "Smileys", false),
+    (
+        "😊",
+        "smiling face with smiling eyes",
+        &["smile", "happy"],
+        "Smileys",
+        false,
+    ),
     ("😇", "smiling face with halo", &["smile"], "Smileys", false),
     ("☺", "smiling face", &["smile"], "Smileys", false),
-    ("😍", "smiling face with heart-eyes", &["love", "smile"], "Smileys", false),
+    (
+        "😍",
+        "smiling face with heart-eyes",
+        &["love", "smile"],
+        "Smileys",
+        false,
+    ),
     ("🤩", "star-struck", &["smile"], "Smileys", false),
     ("😘", "face blowing a kiss", &["love"], "Smileys", false),
     ("👍", "thumbs up", &["yes", "ok"], "People", true),
@@ -108,9 +162,21 @@ const CATALOG: &[(&str, &str, &[&str], &str, bool)] = &[
     ("⭐", "star", &["star"], "Symbols", false),
     ("❤️", "red heart", &["love", "heart"], "Symbols", false),
     ("💯", "hundred points", &["100"], "Symbols", false),
-    ("✅", "check mark button", &["check", "done"], "Symbols", false),
+    (
+        "✅",
+        "check mark button",
+        &["check", "done"],
+        "Symbols",
+        false,
+    ),
     ("❌", "cross mark", &["x", "no"], "Symbols", false),
-    ("🎉", "party popper", &["party", "tada"], "Activities", false),
+    (
+        "🎉",
+        "party popper",
+        &["party", "tada"],
+        "Activities",
+        false,
+    ),
     ("🚀", "rocket", &["ship"], "Travel", false),
     ("💡", "light bulb", &["idea"], "Objects", false),
     ("📝", "memo", &["note", "write"], "Objects", false),
@@ -182,7 +248,10 @@ mod tests {
 
     #[test]
     fn skin_tone_round_trips_and_cycles() {
-        assert_eq!(EmojiSkinTone::from_raw("medium-dark").as_raw(), "medium-dark");
+        assert_eq!(
+            EmojiSkinTone::from_raw("medium-dark").as_raw(),
+            "medium-dark"
+        );
         assert_eq!(EmojiSkinTone::None.cycle(), EmojiSkinTone::Light);
         assert_eq!(EmojiSkinTone::Dark.cycle(), EmojiSkinTone::None);
         assert_eq!(EmojiSkinTone::Light.label(), "Light");

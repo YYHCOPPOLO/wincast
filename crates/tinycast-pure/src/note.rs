@@ -32,10 +32,7 @@ pub struct NoteSummary {
 
 /// Empty query lists metadata only. A nonempty query filters filenames (and titles).
 pub fn filter_filenames(summaries: &[NoteSummary], query: &str) -> Vec<NoteSummary> {
-    let terms: Vec<String> = query
-        .split_whitespace()
-        .map(|t| t.to_lowercase())
-        .collect();
+    let terms: Vec<String> = query.split_whitespace().map(|t| t.to_lowercase()).collect();
     if terms.is_empty() {
         return summaries.to_vec();
     }

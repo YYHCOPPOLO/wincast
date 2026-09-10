@@ -191,7 +191,11 @@ fn paint_remind_row(
         target,
         box_rect,
         theme::radius::RECORDER_KEY_CAP,
-        theme::colors::ramp_rgba(0, theme::colors::BORDER_DARK_ALPHA, theme::colors::BORDER_LIGHT_ALPHA),
+        theme::colors::ramp_rgba(
+            0,
+            theme::colors::BORDER_DARK_ALPHA,
+            theme::colors::BORDER_LIGHT_ALPHA,
+        ),
         theme::size::HAIRLINE,
     )?;
     if on {

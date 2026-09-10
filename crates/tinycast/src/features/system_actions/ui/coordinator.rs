@@ -34,9 +34,7 @@ pub fn plan(id: SystemActionId) -> RunPlan {
 pub fn plan_for(id: SystemActionId, lang: UiLang) -> RunPlan {
     match id.confirmation() {
         Confirmation::Required { .. } => {
-            let (title, message) = system_confirm(id, lang).unwrap_or_else(|| {
-                (id.name(), "")
-            });
+            let (title, message) = system_confirm(id, lang).unwrap_or_else(|| (id.name(), ""));
             RunPlan::Confirm {
                 title: title.to_string(),
                 message: message.to_string(),

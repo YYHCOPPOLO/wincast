@@ -83,7 +83,8 @@ pub fn calc_error_icon_rect(inner: DipRect) -> DipRect {
 pub fn empty_results_center(panel_w: f32, panel_h: f32) -> DipRect {
     let top = content_top();
     let bottom = (panel_h - theme::size::BOTTOM_BAR_HEIGHT).max(top);
-    let h = theme::typography::HEADER_ICON * 2.0 + theme::spacing::MD + theme::typography::ROW_TITLE;
+    let h =
+        theme::typography::HEADER_ICON * 2.0 + theme::spacing::MD + theme::typography::ROW_TITLE;
     DipRect {
         x: 0.0,
         y: top + ((bottom - top - h) / 2.0).max(0.0),
@@ -283,7 +284,9 @@ mod tests {
 
     #[test]
     fn chat_transcript_can_exceed_view() {
-        let texts: Vec<String> = (0..24).map(|i| format!("message {i} with extra words")).collect();
+        let texts: Vec<String> = (0..24)
+            .map(|i| format!("message {i} with extra words"))
+            .collect();
         let h = chat_transcript_height(texts.iter().map(|t| (true, t.as_str())), None, 750.0);
         assert!(h > view_height(theme::size::PANEL_HEIGHT));
     }

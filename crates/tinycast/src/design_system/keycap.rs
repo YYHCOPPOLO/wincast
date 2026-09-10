@@ -1,12 +1,8 @@
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP,
-};
-use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_METRICS,
-};
+use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
+use windows::Win32::Graphics::DirectWrite::{DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_METRICS};
 
 use super::appearance;
 use super::fonts::Fonts;
@@ -41,7 +37,13 @@ pub fn paint_keycap(
             theme::colors::BORDER_DARK_ALPHA,
             theme::colors::BORDER_LIGHT_ALPHA,
         );
-        stroke_squircle(target, rect, theme::radius::KEY_CAP, rgba, theme::size::HAIRLINE)?;
+        stroke_squircle(
+            target,
+            rect,
+            theme::radius::KEY_CAP,
+            rgba,
+            theme::size::HAIRLINE,
+        )?;
     } else {
         let rgba = theme::colors::ramp_rgba(
             appearance,
@@ -83,23 +85,19 @@ pub fn paint_keycap(
 
 #[cfg(test)]
 mod tests {
-    use windows::Win32::Graphics::DirectWrite::{
-        DWriteCreateFactory, DWRITE_FACTORY_TYPE_SHARED,
-    };
+    use windows::Win32::Graphics::DirectWrite::{DWriteCreateFactory, DWRITE_FACTORY_TYPE_SHARED};
 
     #[test]
     fn keycap_paints_chip_width() {
-        let (_w, _h, bits) =
-            crate::design_system::test_render::with_offscreen(200, 40, |target| {
-                let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
-                let fonts = crate::design_system::Fonts::new(&dwrite)?;
-                let w = crate::design_system::paint_keycap(
-                    target, &fonts, "↵", 180.0, 0.0, 36.0, true, 0,
-                )?;
-                assert!(w >= tinycast_pure::theme::size::KEY_CAP);
-                Ok(())
-            })
-            .expect("keycap");
+        let (_w, _h, bits) = crate::design_system::test_render::with_offscreen(200, 40, |target| {
+            let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
+            let fonts = crate::design_system::Fonts::new(&dwrite)?;
+            let w =
+                crate::design_system::paint_keycap(target, &fonts, "↵", 180.0, 0.0, 36.0, true, 0)?;
+            assert!(w >= tinycast_pure::theme::size::KEY_CAP);
+            Ok(())
+        })
+        .expect("keycap");
         assert!(!bits.is_empty());
     }
 }

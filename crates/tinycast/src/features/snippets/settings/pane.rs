@@ -38,8 +38,7 @@ pub fn enable_copy_lang(lang: tinycast_pure::i18n::UiLang) -> ConfirmCopy {
 }
 
 pub fn content_height() -> f32 {
-    let (section, _, _) =
-        ds::feature_switch_section(420.0, ds::CARD_INSET, section_header(), true);
+    let (section, _, _) = ds::feature_switch_section(420.0, ds::CARD_INSET, section_header(), true);
     section.next_y() + ds::CARD_INSET
 }
 

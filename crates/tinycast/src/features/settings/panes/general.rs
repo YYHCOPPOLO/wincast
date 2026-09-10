@@ -9,13 +9,9 @@ use tinycast_pure::i18n::{
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_ROUNDED_RECT,
-};
+use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_ROUNDED_RECT};
 
-use crate::design_system::settings::{
-    self as ds, GroupedSection, RowTrailing, CARD_PAD, ROW_H,
-};
+use crate::design_system::settings::{self as ds, GroupedSection, RowTrailing, CARD_PAD, ROW_H};
 use crate::features::hotkeys::service::hyper::HyperKey;
 use crate::features::launcher::settings::items::Formats;
 
@@ -97,7 +93,12 @@ pub fn general_sections(lang: UiLang) -> [&'static str; 5] {
 
 fn section_specs(
     lang: UiLang,
-) -> [(GeneralSection, &'static str, Option<&'static str>, &'static [GeneralHit]); 5] {
+) -> [(
+    GeneralSection,
+    &'static str,
+    Option<&'static str>,
+    &'static [GeneralHit],
+); 5] {
     [
         (
             GeneralSection::GlobalShortcuts,
@@ -302,9 +303,7 @@ pub fn paint(
                     hyper_on,
                     RowTrailing::Toggle(state.hyper_shift && hyper_on),
                 ),
-                GeneralHit::Appearance => {
-                    (static_sub, true, RowTrailing::Label(appearance_trail))
-                }
+                GeneralHit::Appearance => (static_sub, true, RowTrailing::Label(appearance_trail)),
                 GeneralHit::Language => (static_sub, true, RowTrailing::Label(language_trail)),
                 GeneralHit::Compact => (static_sub, true, RowTrailing::Toggle(state.compact)),
                 GeneralHit::FavoritesInCompact => (
@@ -315,15 +314,15 @@ pub fn paint(
                 GeneralHit::FollowCursor => {
                     (static_sub, true, RowTrailing::Toggle(state.follow_cursor))
                 }
-                GeneralHit::Draggable => {
-                    (static_sub, true, RowTrailing::Toggle(state.draggable))
-                }
+                GeneralHit::Draggable => (static_sub, true, RowTrailing::Toggle(state.draggable)),
                 GeneralHit::LaunchAtLogin => {
                     (static_sub, true, RowTrailing::Toggle(state.launch_at_login))
                 }
-                GeneralHit::ShowInMenuBar => {
-                    (static_sub, true, RowTrailing::Toggle(state.show_in_menu_bar))
-                }
+                GeneralHit::ShowInMenuBar => (
+                    static_sub,
+                    true,
+                    RowTrailing::Toggle(state.show_in_menu_bar),
+                ),
                 GeneralHit::PopToRoot => (pop_sub.as_str(), true, RowTrailing::Label("")),
                 GeneralHit::AutoSwitchInput => {
                     (static_sub, true, RowTrailing::Toggle(state.auto_switch))
@@ -460,15 +459,23 @@ mod tests {
             .map(|(h, _)| h)
             .collect();
         assert!(hits.contains(&GeneralHit::Language));
-        let appearance = hits.iter().position(|h| *h == GeneralHit::Appearance).unwrap();
-        let language = hits.iter().position(|h| *h == GeneralHit::Language).unwrap();
+        let appearance = hits
+            .iter()
+            .position(|h| *h == GeneralHit::Appearance)
+            .unwrap();
+        let language = hits
+            .iter()
+            .position(|h| *h == GeneralHit::Language)
+            .unwrap();
         assert_eq!(language, appearance + 1);
     }
 
     #[test]
     fn cycle_ui_language_flips_zh_and_en() {
         assert_eq!(
-            tinycast_pure::i18n::UiLang::parse("zh-Hans").cycle().as_str(),
+            tinycast_pure::i18n::UiLang::parse("zh-Hans")
+                .cycle()
+                .as_str(),
             "en"
         );
     }

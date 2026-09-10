@@ -8,8 +8,8 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
-use crate::features::ai::service::chatgpt::CodexPhase;
 use crate::design_system::settings as ds;
+use crate::features::ai::service::chatgpt::CodexPhase;
 use crate::features::launcher::settings::items::{Formats, Rect};
 
 const ROW_H: f32 = 52.0;
@@ -209,7 +209,10 @@ pub fn cycle_retention(days: i64) -> i64 {
     }
 }
 
-pub fn default_model_title(selection: Option<&ModelSelection>, connections: &[AiConnection]) -> String {
+pub fn default_model_title(
+    selection: Option<&ModelSelection>,
+    connections: &[AiConnection],
+) -> String {
     default_model_title_lang(selection, connections, tinycast_pure::i18n::UiLang::En)
 }
 
@@ -311,13 +314,16 @@ pub fn paint(
     let (section, _, _) = ds::feature_switch_section(
         width,
         ds::CARD_INSET - scroll,
-        tinycast_pure::i18n::pane_section_title(
-            tinycast_pure::settings_tab::SettingsTab::Ai,
-            lang,
-        ),
+        tinycast_pure::i18n::pane_section_title(tinycast_pure::settings_tab::SettingsTab::Ai, lang),
         false,
     );
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     paint_toggle(
         target,
         formats,
@@ -512,7 +518,8 @@ fn paint_row(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+    let muted_brush =
+        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let sub: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -593,7 +600,14 @@ mod tests {
         );
         let top = connection_row_top(0, Some(0));
         assert_eq!(
-            hit(20.0, top + ROW_H + theme::spacing::SM + 4.0, 0.0, 1, width, Some(0)),
+            hit(
+                20.0,
+                top + ROW_H + theme::spacing::SM + 4.0,
+                0.0,
+                1,
+                width,
+                Some(0)
+            ),
             Some(AiHit::CycleProvider)
         );
         assert!(editor_rects(0, Some(0), width).is_some());

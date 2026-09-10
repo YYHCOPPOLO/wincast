@@ -86,7 +86,13 @@ pub fn paint(
         ),
         true,
     );
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     let origin = -scroll;
     let mut y = ds::form_origin() + origin;
     paint_toggle_row(
@@ -121,7 +127,15 @@ pub fn paint(
     )?;
     y += ITEM_H + theme::spacing::SM;
     for cmd in commands {
-        paint_item(target, formats, &cmd.name, &cmd.command, y, width, appearance)?;
+        paint_item(
+            target,
+            formats,
+            &cmd.name,
+            &cmd.command,
+            y,
+            width,
+            appearance,
+        )?;
         y += ITEM_H;
     }
     Ok(())
@@ -328,12 +342,7 @@ mod tests {
             Some(CustomCommandsHit::ShowInLauncher)
         );
         assert_eq!(
-            hit(
-                20.0,
-                ds::switch_section_next_y(true) + 4.0,
-                0.0,
-                0
-            ),
+            hit(20.0, ds::switch_section_next_y(true) + 4.0, 0.0, 0),
             Some(CustomCommandsHit::New)
         );
     }

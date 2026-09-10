@@ -983,7 +983,10 @@ fn window_title(hwnd: HWND) -> String {
             inner_from(hwnd)
                 .and_then(|inner| core_from_host((*inner).host))
                 .map(|core| tinycast_pure::i18n::notes_window_title((*core).ui_lang()).to_string())
-                .unwrap_or_else(|| tinycast_pure::i18n::notes_window_title(tinycast_pure::i18n::UiLang::ZhHans).into())
+                .unwrap_or_else(|| {
+                    tinycast_pure::i18n::notes_window_title(tinycast_pure::i18n::UiLang::ZhHans)
+                        .into()
+                })
         }
     }
 }

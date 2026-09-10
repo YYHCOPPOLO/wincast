@@ -37,8 +37,7 @@ pub fn action_group_rects_for_label(
     primary_label: &str,
     actions_label: &str,
 ) -> Option<ActionGroupRects> {
-    let dwrite: IDWriteFactory =
-        unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()? };
+    let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()? };
     let fonts = Fonts::new(&dwrite).ok()?;
     action_group_rects_for_fonts(&fonts, panel_w, panel_h, primary_label, actions_label)
 }
@@ -133,14 +132,7 @@ pub fn paint_footer(
     let primary = group.primary;
     let mut right = primary.x + primary.w - pad;
     right -= crate::design_system::paint_keycap(
-        target,
-        &ds,
-        "↵",
-        right,
-        primary.y,
-        primary.h,
-        true,
-        appearance,
+        target, &ds, "↵", right, primary.y, primary.h, true, appearance,
     )?;
     draw_text(
         target,
@@ -159,14 +151,7 @@ pub fn paint_footer(
     right = actions.x + actions.w - pad;
     for token in action_caps.iter().rev() {
         right -= crate::design_system::paint_keycap(
-            target,
-            &ds,
-            token,
-            right,
-            actions.y,
-            actions.h,
-            true,
-            appearance,
+            target, &ds, token, right, actions.y, actions.h, true, appearance,
         )?;
         right -= theme::spacing::XXS;
     }
@@ -187,7 +172,14 @@ pub fn paint_footer(
 
 fn bar_button_width(fonts: &Fonts, label: &str, caps: &[&str]) -> f32 {
     let pad = theme::spacing::MD;
-    let mut w = pad + text_width(&fonts.dwrite, &fonts.bar, label, 240.0, theme::size::BAR_BUTTON_HEIGHT);
+    let mut w = pad
+        + text_width(
+            &fonts.dwrite,
+            &fonts.bar,
+            label,
+            240.0,
+            theme::size::BAR_BUTTON_HEIGHT,
+        );
     if !caps.is_empty() {
         w += theme::spacing::SM;
     }
@@ -202,7 +194,13 @@ fn bar_button_width(fonts: &Fonts, label: &str, caps: &[&str]) -> f32 {
 
 fn keycap_width(fonts: &Fonts, text: &str) -> f32 {
     let pad = theme::spacing::XS;
-    let text_w = text_width(&fonts.dwrite, &fonts.keycap, text, 80.0, theme::size::KEY_CAP);
+    let text_w = text_width(
+        &fonts.dwrite,
+        &fonts.keycap,
+        text,
+        80.0,
+        theme::size::KEY_CAP,
+    );
     (text_w + pad * 2.0).max(theme::size::KEY_CAP)
 }
 
@@ -518,14 +516,9 @@ mod tests {
     fn action_group_hits_match_measured_paint_rects() {
         let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).expect("dwrite") };
         let fonts = Fonts::new(&dwrite).expect("fonts");
-        let painted = action_group_rects_for_fonts(
-            &fonts,
-            750.0,
-            475.0,
-            "Open Application",
-            "Actions",
-        )
-        .unwrap();
+        let painted =
+            action_group_rects_for_fonts(&fonts, 750.0, 475.0, "Open Application", "Actions")
+                .unwrap();
         let hit =
             action_group_rects_for_label(750.0, 475.0, "Open Application", "Actions").unwrap();
         assert_eq!(painted, hit);

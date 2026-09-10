@@ -67,9 +67,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     if code >= 0 {
         let info = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
         let needed = NEEDED.load(Ordering::SeqCst);
-        if needed & HYPER != 0
-            && crate::features::hotkeys::service::hyper::on_ll(wparam, info)
-        {
+        if needed & HYPER != 0 && crate::features::hotkeys::service::hyper::on_ll(wparam, info) {
             return LRESULT(1);
         }
         if needed & DOUBLE_TAP != 0 {
@@ -79,5 +77,10 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             crate::features::snippets::service::listener::on_ll(wparam, info);
         }
     }
-    CallNextHookEx(HHOOK(HOOK.load(Ordering::SeqCst) as *mut core::ffi::c_void), code, wparam, lparam)
+    CallNextHookEx(
+        HHOOK(HOOK.load(Ordering::SeqCst) as *mut core::ffi::c_void),
+        code,
+        wparam,
+        lparam,
+    )
 }

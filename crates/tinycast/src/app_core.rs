@@ -6,15 +6,15 @@ use tinycast_pure::favorites::FavoritesStore;
 use tinycast_pure::feature_flags::FeatureFlags;
 use tinycast_pure::hotkey::HotKeyBinding;
 use tinycast_pure::hotkey_store::HotKeyStore;
+use tinycast_pure::i18n::{actions_for_lang, chrome, command_title, Chrome};
 use tinycast_pure::launcher_ranking::LauncherRankingStore;
 use tinycast_pure::launcher_results::{
     is_category_listing, ordered_results, selectable_rows, LauncherSection,
 };
-use tinycast_pure::i18n::{actions_for_lang, chrome, command_title, Chrome};
 use tinycast_pure::palette_menu::{
     can_open_actions, clamp_menu_selection, menu_button_rect, menu_frame, menu_row_at, point_in,
-    ActionContext, MenuItem, OpenMenu, ID_COPY_PATH, ID_FAVORITE, ID_MOVE_DOWN, ID_MOVE_UP, ID_OPEN,
-    ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
+    ActionContext, MenuItem, OpenMenu, ID_COPY_PATH, ID_FAVORITE, ID_MOVE_DOWN, ID_MOVE_UP,
+    ID_OPEN, ID_RESET_RANKING, ID_SHOW_IN_FOLDER, ID_UNINSTALL,
 };
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{default_anchor, frame_for};
@@ -40,6 +40,8 @@ use crate::features::calculator::ui::{card, coordinator as calc_coordinator};
 use crate::features::clipboard::service::manager as clip_manager;
 use crate::features::clipboard::service::store::{ClipboardFilter, ClipboardStore};
 use crate::features::clipboard::ui::screen as clip_screen;
+use crate::features::custom_commands::service::store::CustomCommandStore;
+use crate::features::custom_commands::ui::coordinator as custom_coordinator;
 use crate::features::launcher::service::app_index::AppIndex;
 use crate::features::launcher::settings::items::{
     commands_catalog_for, commit_alias_text, hotkey_action_key,
@@ -52,10 +54,8 @@ use crate::features::launcher::ui::list::{
     clamp_scroll, content_height, ensure_visible, list_bottom, list_top, paint_items, row_y,
     selectable_at_y, slots_of, PaintItem, ROW_HEIGHT,
 };
-use crate::features::custom_commands::service::store::CustomCommandStore;
 use crate::features::quicklinks::service::store::QuicklinkStore;
 use crate::features::quicklinks::ui::coordinator as quicklink_coordinator;
-use crate::features::custom_commands::ui::coordinator as custom_coordinator;
 use crate::features::snippets::service::injector;
 use crate::features::snippets::service::listener::KeywordListener;
 use crate::features::snippets::service::repository::SnippetRepository;
@@ -171,11 +171,12 @@ impl AppCore {
             custom_commands: CustomCommandStore::load(),
             quicklinks: QuicklinkStore::load(),
             snippet_listener: KeywordListener::new(),
-            file_search: crate::features::file_search::service::session::FileSearchSession::from_settings(
-                &[],
-                &[],
-                HWND::default(),
-            ),
+            file_search:
+                crate::features::file_search::service::session::FileSearchSession::from_settings(
+                    &[],
+                    &[],
+                    HWND::default(),
+                ),
             notes: crate::features::notes::service::store::NotesStore::in_roaming(),
             notes_switcher: Vec::new(),
             calendar: crate::features::calendar::service::store::CalendarStore::new(),
@@ -199,7 +200,8 @@ impl AppCore {
             ai: crate::features::ai::ui::coordinator::AiChatCoordinator::new(),
             ai_factory: crate::features::ai::service::factory::ProviderFactory::new(HWND::default()),
             chatgpt: crate::features::ai::service::chatgpt::ChatGptManager::new(),
-            quick_actions: crate::features::quick_actions::ui::coordinator::QuickActionCoordinator::new(),
+            quick_actions:
+                crate::features::quick_actions::ui::coordinator::QuickActionCoordinator::new(),
             qa_panel: None,
             launcher_query: String::new(),
             ai_model_choices: Vec::new(),
@@ -223,7 +225,8 @@ impl AppCore {
         self.apply_clipboard_retention();
         self.apply_snippets_enabled();
         self.apply_file_search_policy();
-        self.ai.apply_enabled(self.settings.ai_enabled, self.settings.ai_retention_days);
+        self.ai
+            .apply_enabled(self.settings.ai_enabled, self.settings.ai_retention_days);
         self.maybe_onboarding();
         self.maybe_support_reminder();
         self.schedule_support_pump();
@@ -306,7 +309,9 @@ impl AppCore {
 
     pub fn install_clipboard_images(&mut self) {
         let inserted = clip_manager::install_pending_images(&mut self.clipboard);
-        if (inserted || self.clipboard.last_error().is_some()) && self.palette.mode == PaletteMode::Clipboard {
+        if (inserted || self.clipboard.last_error().is_some())
+            && self.palette.mode == PaletteMode::Clipboard
+        {
             self.clamp_selection();
             self.invalidate_palette();
         }
@@ -359,7 +364,8 @@ impl AppCore {
             return None;
         }
         Some(crate::palette::d2d::FilterButtonPaint {
-            title: clip_screen::filter_title_lang(self.clipboard_filter, self.ui_lang()).to_string(),
+            title: clip_screen::filter_title_lang(self.clipboard_filter, self.ui_lang())
+                .to_string(),
             open: self.menu == OpenMenu::ClipboardFilter,
             rect: clip_screen::filter_button_rect(theme::size::PANEL_WIDTH),
         })
@@ -380,7 +386,10 @@ impl AppCore {
             return None;
         }
         if let Some(error) = self.clipboard.last_error() {
-            return Some(format!("{}\n\n{error}", tinycast_pure::i18n::clipboard_unavailable(self.ui_lang())));
+            return Some(format!(
+                "{}\n\n{error}",
+                tinycast_pure::i18n::clipboard_unavailable(self.ui_lang())
+            ));
         }
         let rows = self
             .clipboard
@@ -766,10 +775,7 @@ impl AppCore {
         }
         self.calendar.refresh();
         let now = unix_now();
-        let Some(event) = self
-            .calendar_window()
-            .joinable(self.calendar.events(), now)
-        else {
+        let Some(event) = self.calendar_window().joinable(self.calendar.events(), now) else {
             self.hide_palette();
             self.show_message_hud_tone(
                 crate::features::calendar::ui::coordinator::NOTHING_TO_JOIN,
@@ -785,10 +791,7 @@ impl AppCore {
             return;
         }
         let now = unix_now();
-        let Some(event) = self
-            .calendar_window()
-            .joinable(self.calendar.events(), now)
-        else {
+        let Some(event) = self.calendar_window().joinable(self.calendar.events(), now) else {
             self.show_message_hud_tone(
                 crate::features::calendar::ui::coordinator::NOTHING_TO_JOIN,
                 tinycast_pure::dialog::DialogTone::Neutral,
@@ -797,7 +800,10 @@ impl AppCore {
         };
         if let Some(url) = crate::features::calendar::ui::coordinator::copy_url(&event) {
             let _ = copy_text(&url);
-            self.show_message_hud_tone("Copied meeting link", tinycast_pure::dialog::DialogTone::Success);
+            self.show_message_hud_tone(
+                "Copied meeting link",
+                tinycast_pure::dialog::DialogTone::Success,
+            );
         }
     }
 
@@ -868,23 +874,24 @@ impl AppCore {
             armed_at: self.calendar.armed_at(),
         };
         let joined = self.calendar.joined().clone();
-        if let Some(event) = policy.meeting(
-            self.calendar.events(),
-            now,
-            self.calendar_window(),
-            &joined,
-        ) {
+        if let Some(event) =
+            policy.meeting(self.calendar.events(), now, self.calendar_window(), &joined)
+        {
             if self.settings.auto_join_confirms && !self.settings.camera_preview {
-                let ok = crate::surfaces::dialog::confirm(&crate::surfaces::dialog::ConfirmPrompt {
-                    title: tinycast_pure::i18n::join_now_title(event.title.as_str(), self.ui_lang()),
-                    message: tinycast_pure::i18n::join_now_message(self.ui_lang()).into(),
-                    accept: tinycast_pure::i18n::join_now_accept(self.ui_lang()).into(),
-                    cancel: tinycast_pure::i18n::chrome(
-                        tinycast_pure::i18n::Chrome::Cancel,
-                        self.ui_lang(),
-                    )
-                    .into(),
-                });
+                let ok =
+                    crate::surfaces::dialog::confirm(&crate::surfaces::dialog::ConfirmPrompt {
+                        title: tinycast_pure::i18n::join_now_title(
+                            event.title.as_str(),
+                            self.ui_lang(),
+                        ),
+                        message: tinycast_pure::i18n::join_now_message(self.ui_lang()).into(),
+                        accept: tinycast_pure::i18n::join_now_accept(self.ui_lang()).into(),
+                        cancel: tinycast_pure::i18n::chrome(
+                            tinycast_pure::i18n::Chrome::Cancel,
+                            self.ui_lang(),
+                        )
+                        .into(),
+                    });
                 self.calendar.mark_joined(&event.id);
                 if !ok {
                     return;
@@ -1067,8 +1074,10 @@ impl AppCore {
         match std::fs::read(&path) {
             Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
                 Ok(json) => {
-                    let summary =
-                        crate::features::backup::service::actions::apply_import(&mut self.settings, json);
+                    let summary = crate::features::backup::service::actions::apply_import(
+                        &mut self.settings,
+                        json,
+                    );
                     self.apply_imported_settings();
                     self.show_alert(
                         "Import complete",
@@ -1167,29 +1176,27 @@ impl AppCore {
             .entries
             .iter()
             .filter(|e| e.kind == AppKind::Application)
-            .map(|e| crate::features::uninstall::service::scanner::InstalledPeer {
-                bundle_id: e.fields.bundle_id.clone().unwrap_or_default(),
-                display_name: e.name.clone(),
-            })
+            .map(
+                |e| crate::features::uninstall::service::scanner::InstalledPeer {
+                    bundle_id: e.fields.bundle_id.clone().unwrap_or_default(),
+                    display_name: e.name.clone(),
+                },
+            )
             .collect();
         let Some(candidates) = crate::features::uninstall::service::scanner::discover(
             &target,
             crate::features::uninstall::service::scanner::running_id(),
             &peers,
         ) else {
-            self.show_alert(
-                "Can’t Uninstall",
-                "Tinycast won’t uninstall itself.",
-            );
+            self.show_alert("Can’t Uninstall", "Tinycast won’t uninstall itself.");
             return;
         };
         self.uninstall_name = entry.name.clone();
         self.uninstall_entry_id = entry.id.clone();
         self.uninstall_candidates = candidates;
-        self.uninstall_selection =
-            crate::features::uninstall::ui::coordinator::default_selection(
-                &self.uninstall_candidates,
-            );
+        self.uninstall_selection = crate::features::uninstall::ui::coordinator::default_selection(
+            &self.uninstall_candidates,
+        );
         let paths: Vec<String> = self
             .uninstall_candidates
             .iter()
@@ -1233,9 +1240,10 @@ impl AppCore {
             &self.uninstall_candidates,
             &self.uninstall_selection,
         );
-        let bundle_selected = self.uninstall_candidates.iter().any(|c| {
-            c.is_bundle && self.uninstall_selection.contains(&c.id)
-        });
+        let bundle_selected = self
+            .uninstall_candidates
+            .iter()
+            .any(|c| c.is_bundle && self.uninstall_selection.contains(&c.id));
         match crate::features::uninstall::service::runner::recycle_all(&order) {
             Ok(_) => {
                 if bundle_selected && !self.uninstall_entry_id.is_empty() {
@@ -1500,11 +1508,8 @@ impl AppCore {
         });
         let existing = index.and_then(|i| self.quicklinks.links().get(i).cloned());
         self.pause_global_hotkeys();
-        let drafted = crate::features::quicklinks::ui::editor::edit(
-            owner,
-            initial.as_ref(),
-            self.ui_lang(),
-        );
+        let drafted =
+            crate::features::quicklinks::ui::editor::edit(owner, initial.as_ref(), self.ui_lang());
         self.resume_global_hotkeys();
         let Some(draft) = drafted else {
             return;
@@ -1576,9 +1581,7 @@ impl AppCore {
     }
 
     pub fn on_snippet_keyword(&mut self) {
-        let Some(pending) =
-            crate::features::snippets::service::listener::take_pending()
-        else {
+        let Some(pending) = crate::features::snippets::service::listener::take_pending() else {
             return;
         };
         if !self.settings.snippets_enabled {
@@ -1710,7 +1713,8 @@ impl AppCore {
             return crate::features::ai::ui::screen::paint_history(&rows, self.palette.selection);
         }
         if self.palette.mode == PaletteMode::Emoji {
-            let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
+            let tone =
+                tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
             return crate::features::emoji::paint_items(
                 &self.palette.query,
                 tone,
@@ -1814,8 +1818,16 @@ impl AppCore {
         }
         let card = self.calc_result();
         let meeting = self.meeting_card();
-        let lead = if card.is_some() || meeting.is_some() { 1 } else { 0 };
-        let row_sel = self.palette.selection.checked_sub(lead).unwrap_or(usize::MAX);
+        let lead = if card.is_some() || meeting.is_some() {
+            1
+        } else {
+            0
+        };
+        let row_sel = self
+            .palette
+            .selection
+            .checked_sub(lead)
+            .unwrap_or(usize::MAX);
         let mut items = paint_items(&self.sections(), row_sel, &self.favorites, self.ui_lang());
         if let Some(result) = card {
             items.insert(0, card::paint_item(&result, self.palette.selection == 0));
@@ -2370,7 +2382,8 @@ impl AppCore {
             return;
         }
         if self.palette.mode == PaletteMode::Emoji {
-            let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
+            let tone =
+                tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
             if let Some(glyph) =
                 crate::features::emoji::glyph_at(&self.palette.query, tone, self.palette.selection)
             {
@@ -2558,10 +2571,16 @@ impl AppCore {
                 }
             }
             LaunchSpec::OpenAiChat => self.open_ai_chat(),
-            LaunchSpec::FixGrammar => self.run_quick_action(tinycast_pure::ai::QuickAction::FixGrammar),
+            LaunchSpec::FixGrammar => {
+                self.run_quick_action(tinycast_pure::ai::QuickAction::FixGrammar)
+            }
             LaunchSpec::Rewrite => self.run_quick_action(tinycast_pure::ai::QuickAction::Rewrite),
-            LaunchSpec::Translate => self.run_quick_action(tinycast_pure::ai::QuickAction::Translate),
-            LaunchSpec::Summarize => self.run_quick_action(tinycast_pure::ai::QuickAction::Summarize),
+            LaunchSpec::Translate => {
+                self.run_quick_action(tinycast_pure::ai::QuickAction::Translate)
+            }
+            LaunchSpec::Summarize => {
+                self.run_quick_action(tinycast_pure::ai::QuickAction::Summarize)
+            }
             LaunchSpec::CheckForUpdates => self.check_for_updates(),
             other => {
                 self.hide_palette();
@@ -2636,14 +2655,11 @@ impl AppCore {
         id: tinycast_pure::system_action::SystemActionId,
         failure: crate::features::system_actions::service::runner::Failure,
     ) {
-        self.show_alert(
-            &format!("“{}” Failed", id.name()),
-            &failure.message,
-        );
+        self.show_alert(&format!("“{}” Failed", id.name()), &failure.message);
         if let Some(uri) = failure.settings_uri {
-            let _ = crate::features::launcher::ui::coordinator::execute(
-                &LaunchSpec::Uri(uri.to_string()),
-            );
+            let _ = crate::features::launcher::ui::coordinator::execute(&LaunchSpec::Uri(
+                uri.to_string(),
+            ));
         }
     }
 
@@ -2721,8 +2737,7 @@ impl AppCore {
             return;
         }
         let snapshot = self.hotkeys.snapshot();
-        let retargeted =
-            tinycast_pure::hotkey::retarget_hyper_bindings(&snapshot, on);
+        let retargeted = tinycast_pure::hotkey::retarget_hyper_bindings(&snapshot, on);
         for (action, binding) in retargeted {
             self.hotkeys.set(action, Some(binding));
         }
@@ -2777,7 +2792,10 @@ impl AppCore {
         self.invalidate_settings();
     }
 
-    pub fn toggle_setting_bool(&mut self, which: crate::features::settings::panes::general::GeneralToggle) {
+    pub fn toggle_setting_bool(
+        &mut self,
+        which: crate::features::settings::panes::general::GeneralToggle,
+    ) {
         use crate::features::settings::panes::general::GeneralToggle;
         match which {
             GeneralToggle::Compact => self.settings.compact_mode = !self.settings.compact_mode,
@@ -3039,7 +3057,8 @@ impl AppCore {
         let search = tinycast_pure::layout::palette_chrome::search_field_rect(panel_w, trailing);
         let search_right = search.x + search.w;
         for (i, entry) in entries.iter().enumerate() {
-            let rect = tinycast_pure::layout::palette_chrome::compact_favorite_slot(i, search_right);
+            let rect =
+                tinycast_pure::layout::palette_chrome::compact_favorite_slot(i, search_right);
             if point_in(rect, x, y) {
                 let entry = entry.clone();
                 self.activate_entry(&entry);
@@ -3431,7 +3450,11 @@ impl AppCore {
 
     fn reveal_selected(&mut self) {
         if self.palette.mode == PaletteMode::FileSearch {
-            if let Some(hit) = self.file_search.results().get(self.palette.selection).cloned()
+            if let Some(hit) = self
+                .file_search
+                .results()
+                .get(self.palette.selection)
+                .cloned()
             {
                 self.hide_palette();
                 let _ = crate::features::file_search::ui::coordinator::reveal(&hit);
@@ -3515,7 +3538,8 @@ impl AppCore {
         }
         self.settings.ai_enabled = enabled;
         let _ = self.settings.save();
-        self.ai.apply_enabled(enabled, self.settings.ai_retention_days);
+        self.ai
+            .apply_enabled(enabled, self.settings.ai_retention_days);
         if !enabled {
             self.chatgpt.stop();
             if matches!(self.palette.mode, PaletteMode::Ai | PaletteMode::AiHistory) {
@@ -3537,7 +3561,8 @@ impl AppCore {
             palette_visible: self.palette_visible,
         };
         match crate::surfaces::updates::check_for_updates(activity, self.ui_lang()) {
-            crate::surfaces::updates::UpdateUi::Hidden | crate::surfaces::updates::UpdateUi::Deferred => {}
+            crate::surfaces::updates::UpdateUi::Hidden
+            | crate::surfaces::updates::UpdateUi::Deferred => {}
             crate::surfaces::updates::UpdateUi::Hud(message) => {
                 if self.hud.is_none() && !self.host.is_invalid() {
                     self.hud = MessageHud::create(self.host).ok();
@@ -3564,7 +3589,9 @@ impl AppCore {
         }
         let target = self.action_target();
         let selection =
-            crate::features::quick_actions::ui::coordinator::QuickActionCoordinator::capture(target);
+            crate::features::quick_actions::ui::coordinator::QuickActionCoordinator::capture(
+                target,
+            );
         self.hide_palette();
         let selection = match selection {
             Ok(text) => text,
@@ -3813,9 +3840,7 @@ impl AppCore {
 
     pub fn chatgpt_row_action(&mut self) {
         use crate::features::ai::service::chatgpt::{which_codex, CodexPhase, INSTALL_DOCS};
-        if !self.settings.ai_enabled
-            && !matches!(self.chatgpt.phase(), CodexPhase::Unavailable)
-        {
+        if !self.settings.ai_enabled && !matches!(self.chatgpt.phase(), CodexPhase::Unavailable) {
             if self.hud.is_none() && !self.host.is_invalid() {
                 self.hud = MessageHud::create(self.host).ok();
             }
@@ -3870,10 +3895,11 @@ impl AppCore {
         let was_visible = self.palette_visible;
         self.palette.prepare(PaletteMode::Ai);
         self.palette.query = draft;
-        self.ai.apply_open_policy(crate::features::ai::ui::coordinator::open_policy(
-            self.settings.ai_opens_to,
-            self.settings.ai_new_chat_after_minutes,
-        ));
+        self.ai
+            .apply_open_policy(crate::features::ai::ui::coordinator::open_policy(
+                self.settings.ai_opens_to,
+                self.settings.ai_new_chat_after_minutes,
+            ));
         self.palette_visible = true;
         self.expanded = true;
         self.list_scroll = 0.0;
@@ -3972,10 +3998,11 @@ impl AppCore {
                     break;
                 }
                 let id = slots[items.len()];
-                self.ai_model_choices.push(tinycast_pure::ai::ModelSelection::Api {
-                    connection: conn.id.clone(),
-                    model: model.clone(),
-                });
+                self.ai_model_choices
+                    .push(tinycast_pure::ai::ModelSelection::Api {
+                        connection: conn.id.clone(),
+                        model: model.clone(),
+                    });
                 items.push(MenuItem {
                     id,
                     label: format!("{} · {model}", conn.title()),
@@ -4032,7 +4059,8 @@ impl AppCore {
             PaletteMode::Schedule => self.schedule_rows().len(),
             PaletteMode::Uninstall => self.uninstall_visible().len(),
             PaletteMode::Emoji => {
-                let tone = tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
+                let tone =
+                    tinycast_pure::emoji::EmojiSkinTone::from_raw(&self.settings.emoji_skin_tone);
                 tinycast_pure::emoji::search_emoji_with_tone(&self.palette.query, tone).len()
             }
             PaletteMode::Quicklinks => {
@@ -4165,10 +4193,11 @@ impl AppCore {
                     self.palette.query = self.ai.draft.clone();
                 }
                 self.palette.mode = PaletteMode::Ai;
-                self.ai.apply_open_policy(crate::features::ai::ui::coordinator::open_policy(
-                    self.settings.ai_opens_to,
-                    self.settings.ai_new_chat_after_minutes,
-                ));
+                self.ai
+                    .apply_open_policy(crate::features::ai::ui::coordinator::open_policy(
+                        self.settings.ai_opens_to,
+                        self.settings.ai_new_chat_after_minutes,
+                    ));
             }
         }
         self.palette.selection = 0;
@@ -4522,8 +4551,7 @@ impl AppCore {
         if !self.settings.custom_commands_enabled {
             return;
         }
-        let Some(id) = tinycast_pure::custom_command::CustomCommand::id_from_entry(entry_id)
-        else {
+        let Some(id) = tinycast_pure::custom_command::CustomCommand::id_from_entry(entry_id) else {
             return;
         };
         let Some(command) = self.custom_commands.get(id).cloned() else {
@@ -4707,8 +4735,12 @@ impl AppCore {
             session.now,
             session.locale,
         );
-        let output =
-            snippet_coordinator::expand_record(&record, &self.snippet_records, &ctx, &session.values);
+        let output = snippet_coordinator::expand_record(
+            &record,
+            &self.snippet_records,
+            &ctx,
+            &session.values,
+        );
         let _ = session.tz;
         if let Some(keyword) = session.keyword {
             let target = HWND(session.target as *mut core::ffi::c_void);
@@ -4720,11 +4752,7 @@ impl AppCore {
             }
             return;
         }
-        self.deliver_snippet_with(
-            &session.snippet_name,
-            session.show_confirmation,
-            output,
-        );
+        self.deliver_snippet_with(&session.snippet_name, session.show_confirmation, output);
     }
 
     fn deliver_snippet(
@@ -4886,7 +4914,8 @@ mod tests {
         assert_eq!(c.compact_favorite_icon_sources().len(), 1);
         let trailing = c.search_trailing_width();
         let search = tinycast_pure::layout::palette_chrome::search_field_rect(750.0, trailing);
-        let slot = tinycast_pure::layout::palette_chrome::compact_favorite_slot(0, search.x + search.w);
+        let slot =
+            tinycast_pure::layout::palette_chrome::compact_favorite_slot(0, search.x + search.w);
         c.pointer_down(slot.x + 2.0, slot.y + 2.0, 750.0, 64.0, false);
         assert_eq!(c.compact_favorite_icon_sources().len(), 1);
     }
@@ -4925,27 +4954,34 @@ mod tests {
         c.settings.ui_language = "en".into();
         c.perform_hotkey("hotkey.toggleClipboard");
         assert_eq!(c.palette.mode, PaletteMode::Clipboard);
-        assert_eq!(
-            c.empty_results_text(),
-            Some("Clipboard history is empty")
-        );
+        assert_eq!(c.empty_results_text(), Some("Clipboard history is empty"));
     }
 
     #[test]
     fn clipboard_storage_error_uses_localized_palette_messages() {
-        let root = std::env::temp_dir().join(format!("tinycast-clipboard-ui-{}", crate::features::clipboard::service::store::new_id()));
+        let root = std::env::temp_dir().join(format!(
+            "tinycast-clipboard-ui-{}",
+            crate::features::clipboard::service::store::new_id()
+        ));
         std::fs::create_dir(&root).unwrap();
         struct Cleanup(std::path::PathBuf);
         impl Drop for Cleanup {
-            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
         }
         let _cleanup = Cleanup(root.clone());
         std::fs::write(root.join("clipboard.sqlite3"), b"corrupt UI fixture").unwrap();
         let mut c = AppCore::new();
         c.clipboard = ClipboardStore::open(root);
         c.palette.mode = PaletteMode::Clipboard;
-        for (lang, expected) in [("en", "Clipboard storage is unavailable. Existing history has been preserved."),
-            ("zh-Hans", "剪贴板存储不可用，已有历史记录已保留。")] {
+        for (lang, expected) in [
+            (
+                "en",
+                "Clipboard storage is unavailable. Existing history has been preserved.",
+            ),
+            ("zh-Hans", "剪贴板存储不可用，已有历史记录已保留。"),
+        ] {
             c.settings.ui_language = lang.into();
             assert_eq!(c.empty_results_text(), Some(expected));
             assert!(c.clipboard_preview().unwrap().starts_with(expected));
@@ -4986,10 +5022,12 @@ mod tests {
         c.handle_key(0x09);
         assert_eq!(c.palette.mode, PaletteMode::Ai);
         for i in 0..24 {
-            c.ai.session.messages.push(tinycast_pure::ai::ChatMessage::user(
-                format!("message {i} with extra words so the transcript is tall"),
-                1,
-            ));
+            c.ai.session
+                .messages
+                .push(tinycast_pure::ai::ChatMessage::user(
+                    format!("message {i} with extra words so the transcript is tall"),
+                    1,
+                ));
         }
         assert_eq!(c.list_scroll, 0.0);
         c.scroll_list(-120);
@@ -5071,9 +5109,11 @@ mod tests {
         c.pause_global_hotkeys();
         c.resume_global_hotkeys();
         assert!(c.hotkeys.get("hotkey.togglePalette").is_none());
-        assert!(tinycast_pure::hotkey::registered_combos(&c.hotkeys.snapshot())
-            .iter()
-            .all(|(action, _)| action != "hotkey.togglePalette"));
+        assert!(
+            tinycast_pure::hotkey::registered_combos(&c.hotkeys.snapshot())
+                .iter()
+                .all(|(action, _)| action != "hotkey.togglePalette")
+        );
     }
 
     #[test]
@@ -5103,9 +5143,8 @@ mod tests {
 
     #[test]
     fn add_ai_connection_does_not_ship_a_catalog() {
-        let mut conn = tinycast_pure::ai::AiConnection::new(
-            tinycast_pure::ai::ProviderKind::OpenAiCompatible,
-        );
+        let mut conn =
+            tinycast_pure::ai::AiConnection::new(tinycast_pure::ai::ProviderKind::OpenAiCompatible);
         assert!(conn.models.is_empty());
         crate::features::ai::settings::pane::apply_draft(
             &mut conn,
@@ -5622,9 +5661,7 @@ mod tests {
             PaintItem::Row { title, .. } if title == "Left Half"
         )));
         assert_eq!(
-            launch_spec(
-                &tinycast_pure::window_command::WindowCommandId::LeftHalf.as_entry()
-            ),
+            launch_spec(&tinycast_pure::window_command::WindowCommandId::LeftHalf.as_entry()),
             LaunchSpec::RunWindowCommand("window-command:left-half".into())
         );
     }

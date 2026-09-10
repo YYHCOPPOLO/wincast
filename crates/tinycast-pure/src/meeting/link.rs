@@ -49,7 +49,11 @@ impl Provider {
             (Provider::GoogleMeet, &["meet.google.com"]),
             (
                 Provider::Teams,
-                &["teams.microsoft.com", "teams.microsoft.us", "teams.live.com"],
+                &[
+                    "teams.microsoft.com",
+                    "teams.microsoft.us",
+                    "teams.live.com",
+                ],
             ),
             (Provider::Webex, &["webex.com", "webex.com.cn"]),
             (Provider::Jitsi, &["meet.jit.si", "8x8.vc"]),
@@ -80,11 +84,11 @@ impl Provider {
             .map(|s| s.to_ascii_lowercase())
             .collect();
         match self {
-            Provider::Zoom => segments.iter().any(|s| matches!(s.as_str(), "j" | "w" | "s" | "my")),
+            Provider::Zoom => segments
+                .iter()
+                .any(|s| matches!(s.as_str(), "j" | "w" | "s" | "my")),
             Provider::GoogleMeet => segments.len() == 1 && segments[0] != "tel",
-            Provider::Teams => {
-                segments.iter().any(|s| s == "meetup-join" || s == "meet")
-            }
+            Provider::Teams => segments.iter().any(|s| s == "meetup-join" || s == "meet"),
             Provider::Webex
             | Provider::Jitsi
             | Provider::Whereby
@@ -146,7 +150,9 @@ fn classify(url: &str) -> Option<MeetingLink> {
     }
 }
 
-const TERMINATORS: &[char] = &[' ', '\t', '\n', '\r', '"', '\'', '<', '>', '«', '»', '\u{00A0}'];
+const TERMINATORS: &[char] = &[
+    ' ', '\t', '\n', '\r', '"', '\'', '<', '>', '«', '»', '\u{00A0}',
+];
 const TRAILING: &[char] = &['.', ',', ';', ':', ')', ']', '}', '!', '?'];
 
 fn web_urls(text: &str) -> Vec<String> {
@@ -239,7 +245,11 @@ fn zoom_app_url(url: &str) -> Option<String> {
 
 fn teams_app_url(url: &str) -> Option<String> {
     let parts = UrlParts::parse(url)?;
-    if !parts.host.to_ascii_lowercase().ends_with("teams.microsoft.com") {
+    if !parts
+        .host
+        .to_ascii_lowercase()
+        .ends_with("teams.microsoft.com")
+    {
         return None;
     }
     let mut out = format!("msteams:{}", parts.path);
@@ -269,6 +279,9 @@ mod tests {
         assert!(detect_link(&["https://zoom.us/download"]).is_none());
         let l = detect_link(&["https://zoom.us/j/123456789?pwd=secret"]).unwrap();
         assert_eq!(l.provider, Provider::Zoom);
-        assert!(l.app_url().unwrap().starts_with("zoommtg://zoom.us/join?confno=123456789"));
+        assert!(l
+            .app_url()
+            .unwrap()
+            .starts_with("zoommtg://zoom.us/join?confno=123456789"));
     }
 }

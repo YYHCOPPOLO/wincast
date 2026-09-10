@@ -1,8 +1,6 @@
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Gdi::{
-    BeginPaint, DeleteObject, EndPaint, HFONT, PAINTSTRUCT,
-};
+use windows::Win32::Graphics::Gdi::{BeginPaint, DeleteObject, EndPaint, HFONT, PAINTSTRUCT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{EM_GETSEL, EM_REPLACESEL, EM_SETMARGINS};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -14,13 +12,12 @@ use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow,
-    HideCaret, SendMessageW, SetWindowPos, SetWindowTextW, EC_LEFTMARGIN, EC_RIGHTMARGIN,
-    ES_AUTOHSCROLL, ES_LEFT, GWLP_USERDATA, HWND_TOP, SWP_NOACTIVATE, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CHAR, WM_ERASEBKGND, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION,
-    WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCDESTROY,
-    WM_PAINT, WM_SETFOCUS, WM_SETFONT,
-    WS_CHILD, WS_VISIBLE,
+    CreateWindowExW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HideCaret, IsWindow,
+    SendMessageW, SetWindowPos, SetWindowTextW, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL,
+    ES_LEFT, GWLP_USERDATA, HWND_TOP, SWP_NOACTIVATE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR,
+    WM_ERASEBKGND, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
+    WM_KILLFOCUS, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT,
+    WM_SETFOCUS, WM_SETFONT, WS_CHILD, WS_VISIBLE,
 };
 
 use crate::app_core::AppCore;

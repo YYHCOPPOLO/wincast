@@ -5,7 +5,9 @@ use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 use windows::core::{Interface, BSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, RECT};
-use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+};
 use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
 use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
 use windows::Win32::System::Threading::{
@@ -169,8 +171,7 @@ pub fn capture_selection(hwnd: HWND, allow_synthetic_copy: bool) -> Option<Strin
 }
 
 pub fn capture_for_quick_action(hwnd: HWND) -> Result<String, String> {
-    if hwnd.is_invalid()
-        || crate::features::window_management::ui::coordinator::hwnd_is_ours(hwnd)
+    if hwnd.is_invalid() || crate::features::window_management::ui::coordinator::hwnd_is_ours(hwnd)
     {
         return Err("Tinycast is never the target.".into());
     }
@@ -394,7 +395,11 @@ fn select_suffix(range: &IUIAutomationTextRange, keyword: &str) -> bool {
     }
     unsafe {
         if range
-            .MoveEndpointByRange(TextPatternRangeEndpoint_Start, range, TextPatternRangeEndpoint_End)
+            .MoveEndpointByRange(
+                TextPatternRangeEndpoint_Start,
+                range,
+                TextPatternRangeEndpoint_End,
+            )
             .is_err()
         {
             return false;
@@ -405,8 +410,13 @@ fn select_suffix(range: &IUIAutomationTextRange, keyword: &str) -> bool {
         {
             return false;
         }
-        let got = range.GetText(-1).ok().map(|b| b.to_string()).unwrap_or_default();
-        if !text_ends_with_keyword(&got, keyword) && got.to_lowercase() != keyword.trim().to_lowercase()
+        let got = range
+            .GetText(-1)
+            .ok()
+            .map(|b| b.to_string())
+            .unwrap_or_default();
+        if !text_ends_with_keyword(&got, keyword)
+            && got.to_lowercase() != keyword.trim().to_lowercase()
         {
             return false;
         }

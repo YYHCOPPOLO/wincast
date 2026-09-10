@@ -225,10 +225,7 @@ pub fn window_group_title(g: crate::window_command::WindowGroup, lang: UiLang) -
     }
 }
 
-pub fn system_action_title(
-    id: crate::system_action::SystemActionId,
-    lang: UiLang,
-) -> &'static str {
+pub fn system_action_title(id: crate::system_action::SystemActionId, lang: UiLang) -> &'static str {
     use crate::system_action::SystemActionId;
     match lang {
         UiLang::En => id.name(),
@@ -272,9 +269,8 @@ pub fn system_action_title(
 mod tests {
     use crate::command_id::CommandID;
     use crate::i18n::{
-        command_title, kind_section_title, open_verb, palette_placeholder,
-        settings_section_title, settings_tab_title, system_action_title,
-        window_command_title, UiLang,
+        command_title, kind_section_title, open_verb, palette_placeholder, settings_section_title,
+        settings_tab_title, system_action_title, window_command_title, UiLang,
     };
 
     #[test]
@@ -301,7 +297,10 @@ mod tests {
         assert_eq!(command_title(CommandID::Settings, UiLang::En), "Settings");
         assert_eq!(command_title(CommandID::Settings, UiLang::ZhHans), "设置");
         assert_eq!(command_title(CommandID::AiChat, UiLang::ZhHans), "AI 对话");
-        assert_eq!(command_title(CommandID::Quit, UiLang::ZhHans), "退出 Tinycast");
+        assert_eq!(
+            command_title(CommandID::Quit, UiLang::ZhHans),
+            "退出 Tinycast"
+        );
         assert_eq!(
             command_title(CommandID::SearchEmoji, UiLang::ZhHans),
             "搜索表情与符号"
@@ -323,7 +322,10 @@ mod tests {
     fn settings_tabs_match_spec_11_1() {
         use crate::settings_tab::{SettingsSection, SettingsTab};
         assert_eq!(SettingsTab::General.title(), "General");
-        assert_eq!(settings_tab_title(SettingsTab::General, UiLang::ZhHans), "通用");
+        assert_eq!(
+            settings_tab_title(SettingsTab::General, UiLang::ZhHans),
+            "通用"
+        );
         assert_eq!(
             settings_tab_title(SettingsTab::WindowManagement, UiLang::ZhHans),
             "窗口管理"
@@ -359,10 +361,7 @@ mod tests {
         assert_eq!(AppKind::named_by("Commands"), Some(AppKind::Command));
         assert_eq!(AppKind::named_by("命令"), Some(AppKind::Command));
         assert_eq!(AppKind::named_by("片段"), Some(AppKind::Snippet));
-        assert_eq!(
-            AppKind::named_by("窗口管理"),
-            Some(AppKind::WindowCommand)
-        );
+        assert_eq!(AppKind::named_by("窗口管理"), Some(AppKind::WindowCommand));
         assert_eq!(kind_section_title(AppKind::Command, UiLang::ZhHans), "命令");
         assert_eq!(open_verb(AppKind::Application, UiLang::ZhHans), "打开应用");
         assert_eq!(

@@ -15,11 +15,11 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW,
-    RegisterClassW, SetForegroundWindow, SetWindowLongPtrW, ShowWindow,
-    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WNDCLASSW, WS_CHILD, WS_EX_CLIENTEDGE,
-    WS_POPUP, WS_TABSTOP, WS_VISIBLE,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW, RegisterClassW,
+    SetForegroundWindow, SetWindowLongPtrW, ShowWindow, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA,
+    IDC_ARROW, MSG, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY,
+    WM_KEYDOWN, WM_NCDESTROY, WNDCLASSW, WS_CHILD, WS_EX_CLIENTEDGE, WS_POPUP, WS_TABSTOP,
+    WS_VISIBLE,
 };
 
 use crate::design_system::settings as ds;
@@ -144,7 +144,13 @@ pub fn paint(
         ),
         false,
     );
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     let origin = -scroll;
     let l = layout(scopes.len(), ignores.len());
     paint_toggle(
@@ -276,7 +282,8 @@ fn paint_toggle(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+    let muted_brush =
+        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let sub_wide: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -348,7 +355,8 @@ fn paint_item(
         );
     }
     if !trailing.is_empty() {
-        let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+        let muted_brush =
+            unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
         let t: Vec<u16> = trailing.encode_utf16().collect();
         unsafe {
             target.DrawText(
@@ -475,13 +483,11 @@ fn create_prompt(
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        let cancel_wide: Vec<u16> = tinycast_pure::i18n::chrome(
-            tinycast_pure::i18n::Chrome::Cancel,
-            lang,
-        )
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
+        let cancel_wide: Vec<u16> =
+            tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang)
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
         let _ = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
@@ -510,10 +516,7 @@ fn create_prompt(
             hinstance,
             None,
         )?;
-        let inner = Box::new(PromptInner {
-            edit,
-            result: None,
-        });
+        let inner = Box::new(PromptInner { edit, result: None });
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
         Ok(hwnd)
     }

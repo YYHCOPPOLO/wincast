@@ -34,7 +34,10 @@ pub enum RepositoryError {
     },
     FileNotFound(PathBuf),
     InvalidLocation(PathBuf),
-    Io { path: PathBuf, message: String },
+    Io {
+        path: PathBuf,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for RepositoryError {
@@ -49,7 +52,9 @@ impl std::fmt::Display for RepositoryError {
                 write!(
                     f,
                     "The snippet file no longer exists. ({})",
-                    path.file_name().and_then(|n| n.to_str()).unwrap_or("snippet")
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("snippet")
                 )
             }
             RepositoryError::InvalidLocation(path) => {
@@ -330,11 +335,7 @@ fn fingerprint(dir: &Path) -> u64 {
     let Ok(mut entries) = std::fs::read_dir(dir) else {
         return 0;
     };
-    let mut names: Vec<_> = entries
-        .by_ref()
-        .flatten()
-        .map(|e| e.path())
-        .collect();
+    let mut names: Vec<_> = entries.by_ref().flatten().map(|e| e.path()).collect();
     names.sort();
     for path in names {
         let meta = std::fs::metadata(&path);
@@ -363,9 +364,9 @@ fn io_err(path: &Path, err: std::io::Error) -> RepositoryError {
 
 impl SnippetRepository {
     fn validated(&self, path: &Path) -> Result<PathBuf, RepositoryError> {
-        let parent = path.parent().ok_or_else(|| {
-            RepositoryError::InvalidLocation(path.to_path_buf())
-        })?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| RepositoryError::InvalidLocation(path.to_path_buf()))?;
         let same_dir = parent == self.snippets_dir
             || (parent.canonicalize().ok().as_deref()
                 == self.snippets_dir.canonicalize().ok().as_deref());
@@ -401,7 +402,9 @@ mod tests {
     fn roaming_library_is_under_bundle_snippets() {
         let repo = SnippetRepository::in_roaming();
         assert_eq!(
-            repo.snippets_directory().file_name().and_then(|n| n.to_str()),
+            repo.snippets_directory()
+                .file_name()
+                .and_then(|n| n.to_str()),
             Some("Snippets")
         );
     }
@@ -419,12 +422,8 @@ mod tests {
     #[test]
     fn create_save_delete_and_conflict() {
         let (dir, repo) = temp_repo();
-        let first = repo
-            .create("Same", None, true, false, "One")
-            .unwrap();
-        let second = repo
-            .create("Same", None, true, false, "Two")
-            .unwrap();
+        let first = repo.create("Same", None, true, false, "One").unwrap();
+        let second = repo.create("Same", None, true, false, "Two").unwrap();
         assert_eq!(first.path.file_name().unwrap(), "same.md");
         assert_eq!(second.path.file_name().unwrap(), "same-2.md");
 
@@ -476,7 +475,10 @@ mod tests {
         std::fs::write(dir.join("invalid.md"), "---\nname: unquoted\n---\nBody").unwrap();
         let snap = repo.load().unwrap();
         assert_eq!(
-            snap.records.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            snap.records
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>(),
             ["Valid"]
         );
         assert_eq!(snap.issues.len(), 1);

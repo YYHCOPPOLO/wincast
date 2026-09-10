@@ -211,7 +211,9 @@ fn layout(fonts: &Fonts, content: &DialogContent<'_>) -> (f32, DialogHits) {
 }
 
 fn button_width(fonts: &Fonts, label: &str) -> f32 {
-    let tw = fonts.measure(&fonts.bar, label, 240.0, theme::size::MENU_BUTTON).0;
+    let tw = fonts
+        .measure(&fonts.bar, label, 240.0, theme::size::MENU_BUTTON)
+        .0;
     (tw + theme::spacing::XL * 2.0).max(72.0)
 }
 
@@ -355,7 +357,10 @@ mod tests {
         assert!(h >= 120.0);
         let cancel = hits.cancel.expect("cancel");
         assert!(cancel.x + cancel.w <= hits.accept.x + 0.5);
-        assert_eq!(hits.accept.x + hits.accept.w, theme::size::DIALOG_WIDTH - theme::spacing::XXL);
+        assert_eq!(
+            hits.accept.x + hits.accept.w,
+            theme::size::DIALOG_WIDTH - theme::spacing::XXL
+        );
     }
 
     #[test]

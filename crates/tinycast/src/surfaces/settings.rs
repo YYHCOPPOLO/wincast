@@ -7,10 +7,10 @@ use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
 use tinycast_pure::theme;
 use windows::core::{w, PCWSTR};
+use windows::Foundation::Numerics::Matrix3x2;
 use windows::Win32::Foundation::{
     COLORREF, D2DERR_RECREATE_TARGET, FALSE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
-use windows::Foundation::Numerics::Matrix3x2;
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F,
     D2D_SIZE_U,
@@ -44,20 +44,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, CREATESTRUCTW, CS_HREDRAW,
     CS_VREDRAW, EN_CHANGE, EN_KILLFOCUS, GWLP_USERDATA, HWND_TOP, IDC_ARROW, IDI_APPLICATION,
     MINMAXINFO, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN,
-    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_SYSMENU,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
+    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW,
+    WS_SYSMENU,
 };
 
 use crate::app_core::AppCore;
 use crate::features::hotkeys::ui::recorder::Recorder;
 use crate::features::launcher::settings::items::{
-    hit_confirm, hit_launcher, hotkey_action_key, layout_confirm,
-    layout_launcher_items, layout_search_section, paint_confirm, paint_confirm_copy,
-    paint_launcher_items, paint_search_section, ConfirmCopy, FieldEdit, Formats, Hit,
-    LauncherItemsSection, ALIAS_EDIT_ID, AI_KEY_EDIT_ID, AI_MODEL_EDIT_ID, AI_URL_EDIT_ID,
-    FILTER_EDIT_ID, ITEM_H,
+    hit_confirm, hit_launcher, hotkey_action_key, layout_confirm, layout_launcher_items,
+    layout_search_section, paint_confirm, paint_confirm_copy, paint_launcher_items,
+    paint_search_section, ConfirmCopy, FieldEdit, Formats, Hit, LauncherItemsSection,
+    AI_KEY_EDIT_ID, AI_MODEL_EDIT_ID, AI_URL_EDIT_ID, ALIAS_EDIT_ID, FILTER_EDIT_ID, ITEM_H,
 };
 use crate::platform::screens::{dip_scalar_to_px, screens_px, target_screen_from_cursor_px};
 
@@ -771,7 +771,9 @@ unsafe fn recording_well_rect(
         let hits = crate::features::settings::panes::general::layout_general(detail_w, scroll);
         let row = hits
             .iter()
-            .find(|(h, _)| *h == crate::features::settings::panes::general::GeneralHit::PaletteRecorder)?
+            .find(|(h, _)| {
+                *h == crate::features::settings::panes::general::GeneralHit::PaletteRecorder
+            })?
             .1;
         return Some(crate::features::hotkeys::ui::recorder::well_in_row(row));
     }
@@ -1059,10 +1061,7 @@ unsafe fn paint_detail_panes(
     if selected == SettingsTab::General {
         hide_edits(inner);
         if let Some(core) = core {
-            let palette_label = core
-                .hotkeys
-                .get("hotkey.togglePalette")
-                .map(|b| b.label());
+            let palette_label = core.hotkeys.get("hotkey.togglePalette").map(|b| b.label());
             crate::features::settings::panes::general::paint(
                 target,
                 formats,
@@ -1234,7 +1233,8 @@ unsafe fn layout_ai_edits(
         hide_ai_edits(inner);
         return;
     };
-    let place = |edit: Option<&mut FieldEdit>, mut rect: crate::features::launcher::settings::items::Rect| {
+    let place = |edit: Option<&mut FieldEdit>,
+                 mut rect: crate::features::launcher::settings::items::Rect| {
         rect.x += sidebar_w;
         rect.y -= scroll;
         if let Some(edit) = edit {
@@ -1413,9 +1413,8 @@ unsafe fn ensure_edit_brush(hwnd: HWND, appearance: u8) -> HBRUSH {
         let _ = DeleteObject((*inner).edit_brush);
     }
     let (r, g, b) = crate::design_system::settings::detail_rgb(appearance);
-    let colorref = COLORREF(
-        ((b * 255.0) as u32) << 16 | ((g * 255.0) as u32) << 8 | (r * 255.0) as u32,
-    );
+    let colorref =
+        COLORREF(((b * 255.0) as u32) << 16 | ((g * 255.0) as u32) << 8 | (r * 255.0) as u32);
     let brush = CreateSolidBrush(colorref);
     (*inner).edit_brush = brush;
     (*inner).edit_appearance = appearance;
@@ -2002,9 +2001,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             Some(crate::features::window_management::settings::pane::WindowHit::Enable) => {
                 (*core).set_window_management_enabled(!(*core).settings.window_management_enabled);
             }
-            Some(
-                crate::features::window_management::settings::pane::WindowHit::ShowInLauncher,
-            ) => {
+            Some(crate::features::window_management::settings::pane::WindowHit::ShowInLauncher) => {
                 (*core).set_window_management_show_in_launcher(
                     !(*core).settings.window_management_show_in_launcher,
                 );
@@ -2034,7 +2031,9 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                     }
                 }
             }
-            Some(crate::features::window_management::settings::pane::WindowHit::RecorderClear(i)) => {
+            Some(crate::features::window_management::settings::pane::WindowHit::RecorderClear(
+                i,
+            )) => {
                 if let Some(id) = tinycast_pure::window_command::WindowCommandId::all().get(i) {
                     let key = format!("hotkey.windowCommand.{}", id.raw());
                     (*inner).recorder.cancel();
@@ -2188,9 +2187,8 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                 }
             }
             Some(crate::features::extensions::settings::pane::ExtensionsHit::ShowInLauncher) => {
-                (*core).set_extensions_show_in_launcher(
-                    !(*core).settings.extensions_show_in_launcher,
-                );
+                (*core)
+                    .set_extensions_show_in_launcher(!(*core).settings.extensions_show_in_launcher);
             }
             None => {}
         }
@@ -2226,8 +2224,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                 (*core).set_file_search_enabled(!(*core).settings.file_search_enabled);
             }
             Some(crate::features::file_search::settings::pane::FileSearchHit::AddFolder) => {
-                if let Some(path) =
-                    crate::features::file_search::settings::pane::pick_folder(hwnd)
+                if let Some(path) = crate::features::file_search::settings::pane::pick_folder(hwnd)
                 {
                     (*core).add_file_search_scope(path);
                 }
@@ -2307,12 +2304,8 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             return;
         };
         use crate::features::settings::panes::general::{GeneralHit, GeneralToggle};
-        match crate::features::settings::panes::general::hit(
-            detail_x,
-            y,
-            (*inner).scroll,
-            detail_w,
-        ) {
+        match crate::features::settings::panes::general::hit(detail_x, y, (*inner).scroll, detail_w)
+        {
             Some(GeneralHit::PaletteRecorder) => {
                 (*core).pause_global_hotkeys();
                 (*inner).recorder.begin("hotkey.togglePalette".into());
@@ -2392,19 +2385,14 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
             return;
         };
         let count = (*core).quicklink_records().len();
-        match crate::features::quicklinks::settings::pane::hit(
-            detail_x,
-            y,
-            (*inner).scroll,
-            count,
-        ) {
+        match crate::features::quicklinks::settings::pane::hit(detail_x, y, (*inner).scroll, count)
+        {
             Some(crate::features::quicklinks::settings::pane::QuicklinksHit::Enable) => {
                 (*core).set_quicklinks_enabled(!(*core).settings.quicklinks_enabled);
             }
             Some(crate::features::quicklinks::settings::pane::QuicklinksHit::ShowInLauncher) => {
-                (*core).set_quicklinks_show_in_launcher(
-                    !(*core).settings.quicklinks_show_in_launcher,
-                );
+                (*core)
+                    .set_quicklinks_show_in_launcher(!(*core).settings.quicklinks_show_in_launcher);
             }
             Some(crate::features::quicklinks::settings::pane::QuicklinksHit::Create) => {
                 (*core).edit_quicklink(hwnd, None);
@@ -2460,9 +2448,8 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                 return;
             }
             None => {
-                launcher_shift = crate::features::custom_commands::settings::pane::content_height(
-                    count,
-                );
+                launcher_shift =
+                    crate::features::custom_commands::settings::pane::content_height(count);
             }
         }
     }

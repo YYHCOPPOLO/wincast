@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tinycast_pure::double_tap::DoubleTapDetector;
 use tinycast_pure::hotkey::{DoubleTapModifier, HotKeyBinding};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
-    VK_RWIN, VK_SHIFT,
+    VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RCONTROL, VK_RMENU,
+    VK_RSHIFT, VK_RWIN, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
@@ -91,7 +91,9 @@ fn modifier_of(vk: u16) -> Option<DoubleTapModifier> {
         x if x == VK_CONTROL.0 || x == VK_LCONTROL.0 || x == VK_RCONTROL.0 => {
             Some(DoubleTapModifier::Control)
         }
-        x if x == VK_MENU.0 || x == VK_LMENU.0 || x == VK_RMENU.0 => Some(DoubleTapModifier::Option),
+        x if x == VK_MENU.0 || x == VK_LMENU.0 || x == VK_RMENU.0 => {
+            Some(DoubleTapModifier::Option)
+        }
         x if x == VK_SHIFT.0 || x == VK_LSHIFT.0 || x == VK_RSHIFT.0 => {
             Some(DoubleTapModifier::Shift)
         }

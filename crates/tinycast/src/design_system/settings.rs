@@ -182,7 +182,10 @@ pub fn paint_grouped_section(
                 left: card.x,
                 top: card.y + card.h + theme::spacing::SM,
                 right: card.x + card.w,
-                bottom: card.y + card.h + theme::spacing::SM + section.footer_h.max(footer_block_h(1)),
+                bottom: card.y
+                    + card.h
+                    + theme::spacing::SM
+                    + section.footer_h.max(footer_block_h(1)),
             },
             (r, g, b, a),
         )?;
@@ -377,12 +380,7 @@ pub fn paint_overflow_fade(
     let y1 = viewport_h;
     let y0 = (y1 - band).max(0.0);
     let (r, g, b) = detail_rgb(appearance);
-    let clear = D2D1_COLOR_F {
-        r,
-        g,
-        b,
-        a: 0.0,
-    };
+    let clear = D2D1_COLOR_F { r, g, b, a: 0.0 };
     let outer = D2D1_COLOR_F { r, g, b, a: 1.0 };
     let stops = [
         D2D1_GRADIENT_STOP {

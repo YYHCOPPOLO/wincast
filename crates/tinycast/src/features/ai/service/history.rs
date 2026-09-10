@@ -3,9 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection, OptionalExtension};
-use tinycast_pure::ai::{
-    ChatConversation, ChatMessage, ChatRole, ChatSession, ChatState, Uuid,
-};
+use tinycast_pure::ai::{ChatConversation, ChatMessage, ChatRole, ChatSession, ChatState, Uuid};
 
 const SCHEMA: &str = "
 PRAGMA foreign_keys = ON;
@@ -178,10 +176,13 @@ impl ChatHistoryStore {
             ).is_err() {
                 return;
             }
-            if tx.execute(
-                "DELETE FROM messages WHERE conversation_id = ?1",
-                params![session.id.as_str()],
-            ).is_err() {
+            if tx
+                .execute(
+                    "DELETE FROM messages WHERE conversation_id = ?1",
+                    params![session.id.as_str()],
+                )
+                .is_err()
+            {
                 return;
             }
             for (i, message) in session.messages.iter().enumerate() {
@@ -337,25 +338,42 @@ mod tests {
         assert_eq!(store.conversations(), &[expected.summary()]);
         let conn = store.conn.as_ref().unwrap();
         assert!(conn.is_autocommit(), "save must leave no transaction open");
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(count, expected.messages.len() as i64);
     }
 
     fn inject_failure(store: &ChatHistoryStore, event: &str) {
-        store.conn.as_ref().unwrap().execute_batch(&format!("
+        store
+            .conn
+            .as_ref()
+            .unwrap()
+            .execute_batch(&format!(
+                "
             CREATE TABLE attempted_writes(value INTEGER);
             CREATE TRIGGER reject_write {event} BEGIN
                 INSERT INTO attempted_writes VALUES(1);
                 SELECT RAISE(FAIL, 'injected history failure');
             END;
-        ")).unwrap();
+        "
+            ))
+            .unwrap();
     }
 
     fn assert_trigger_rolled_back(store: &ChatHistoryStore) {
-        let attempts: i64 = store.conn.as_ref().unwrap().query_row(
-            "SELECT COUNT(*) FROM attempted_writes", [], |row| row.get(0),
-        ).unwrap();
-        assert_eq!(attempts, 0, "failed statement side effects must roll back too");
+        let attempts: i64 = store
+            .conn
+            .as_ref()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM attempted_writes", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            attempts, 0,
+            "failed statement side effects must roll back too"
+        );
     }
 
     #[test]
@@ -367,7 +385,12 @@ mod tests {
         assert_saved(&mut store, &original);
         assert_trigger_rolled_back(&store);
 
-        store.conn.as_ref().unwrap().execute_batch("DROP TRIGGER reject_write").unwrap();
+        store
+            .conn
+            .as_ref()
+            .unwrap()
+            .execute_batch("DROP TRIGGER reject_write")
+            .unwrap();
         store.save(&updated);
         assert_saved(&mut store, &updated);
     }
@@ -414,18 +437,28 @@ mod tests {
     #[test]
     fn failed_commit_preserves_complete_conversation() {
         let (mut store, original) = saved_conversation();
-        store.conn.as_ref().unwrap().execute_batch("
+        store
+            .conn
+            .as_ref()
+            .unwrap()
+            .execute_batch(
+                "
             CREATE TABLE parent(id INTEGER PRIMARY KEY);
             CREATE TABLE child(id INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED);
             CREATE TRIGGER reject_commit AFTER INSERT ON messages WHEN NEW.position = 1 BEGIN
                 INSERT INTO child VALUES(1);
             END;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         store.save(&replacement(&original));
         assert_saved(&mut store, &original);
-        let count: i64 = store.conn.as_ref().unwrap().query_row(
-            "SELECT COUNT(*) FROM child", [], |row| row.get(0),
-        ).unwrap();
+        let count: i64 = store
+            .conn
+            .as_ref()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM child", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(count, 0);
     }
 

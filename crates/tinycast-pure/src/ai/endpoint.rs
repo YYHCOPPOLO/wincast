@@ -71,8 +71,14 @@ impl Uuid {
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ModelSelection {
-    Api { connection: Uuid, model: String },
-    ChatGpt { model: String, effort: Option<String> },
+    Api {
+        connection: Uuid,
+        model: String,
+    },
+    ChatGpt {
+        model: String,
+        effort: Option<String>,
+    },
 }
 
 impl ModelSelection {
@@ -144,7 +150,9 @@ pub fn same_destination(a: &str, b: &str) -> bool {
 }
 
 pub fn url_is_loopback(url: &str) -> bool {
-    parse_url(url).map(|u| is_loopback(&u.host)).unwrap_or(false)
+    parse_url(url)
+        .map(|u| is_loopback(&u.host))
+        .unwrap_or(false)
 }
 
 pub fn parse_url(url: &str) -> Option<Url> {

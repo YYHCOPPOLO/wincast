@@ -52,14 +52,18 @@ pub fn read(bytes: &[u8], passphrase: &str) -> Result<serde_json::Value, Raycast
         Some(RaycastFormat::V2) => decrypt_v2(bytes, passphrase)?,
         None => return Err(RaycastError::BadFormat),
     };
-    Ok(tinycast_pure::settings_backup::filter_import(&map_to_tinycast(json)))
+    Ok(tinycast_pure::settings_backup::filter_import(
+        &map_to_tinycast(json),
+    ))
 }
 
 fn decrypt_v1(bytes: &[u8], passphrase: &str) -> Result<serde_json::Value, RaycastError> {
     if bytes.len() < 32 || bytes.len() % 16 != 0 {
         return Err(RaycastError::WrongPassphrase);
     }
-    let iv: [u8; 16] = bytes[..16].try_into().map_err(|_| RaycastError::WrongPassphrase)?;
+    let iv: [u8; 16] = bytes[..16]
+        .try_into()
+        .map_err(|_| RaycastError::WrongPassphrase)?;
     let key = Sha256::digest(passphrase.as_bytes());
     type Aes256CbcDec = cbc::Decryptor<Aes256>;
     let dec = Aes256CbcDec::new((&*key).into(), &iv.into());
@@ -84,7 +88,8 @@ fn decrypt_v2(bytes: &[u8], passphrase: &str) -> Result<serde_json::Value, Rayca
     if header_len == 0 || FIXED + header_len + TAG > bytes.len() {
         return Err(RaycastError::WrongPassphrase);
     }
-    let header_bytes = gunzip(&bytes[FIXED..FIXED + header_len]).ok_or(RaycastError::WrongPassphrase)?;
+    let header_bytes =
+        gunzip(&bytes[FIXED..FIXED + header_len]).ok_or(RaycastError::WrongPassphrase)?;
     let header: serde_json::Value =
         serde_json::from_slice(&header_bytes).map_err(|_| RaycastError::WrongPassphrase)?;
     if header.get("schemaVersion").and_then(|v| v.as_i64()) != Some(3) {
@@ -101,7 +106,8 @@ fn decrypt_v2(bytes: &[u8], passphrase: &str) -> Result<serde_json::Value, Rayca
     }
     let mut key = [0u8; 32];
     let params = Params::new(14, 8, 1, 32).map_err(|_| RaycastError::WrongPassphrase)?;
-    scrypt(passphrase.as_bytes(), &salt, &params, &mut key).map_err(|_| RaycastError::WrongPassphrase)?;
+    scrypt(passphrase.as_bytes(), &salt, &params, &mut key)
+        .map_err(|_| RaycastError::WrongPassphrase)?;
     let cipher = Aes256Gcm16::new_from_slice(&key).map_err(|_| RaycastError::WrongPassphrase)?;
     let nonce = Nonce::<U16>::from_slice(&iv);
     let mut boxed = bytes[payload_start..payload_end].to_vec();
@@ -183,11 +189,17 @@ fn collect_keys(value: &serde_json::Value, out: &mut serde_json::Map<String, ser
     }
 }
 
-fn extract_raycast(value: &serde_json::Value, out: &mut serde_json::Map<String, serde_json::Value>) {
+fn extract_raycast(
+    value: &serde_json::Value,
+    out: &mut serde_json::Map<String, serde_json::Value>,
+) {
     match value {
         serde_json::Value::Object(map) => {
             if let Some(v) = map.get("raycastPreferredWindowMode") {
-                out.insert("compactMode".into(), serde_json::json!(v.as_str() == Some("compact")));
+                out.insert(
+                    "compactMode".into(),
+                    serde_json::json!(v.as_str() == Some("compact")),
+                );
             }
             if let Some(v) = map.get("showFavoritesInCompactMode") {
                 out.insert("showFavoritesInCompactMode".into(), v.clone());

@@ -53,8 +53,7 @@ pub mod test_render {
     ) -> windows::core::Result<(usize, usize, Vec<u8>)> {
         let dpi = 96.0;
         unsafe {
-            let factory: ID2D1Factory =
-                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
+            let factory: ID2D1Factory = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
             let mem_dc = CreateCompatibleDC(HDC::default());
             if mem_dc.is_invalid() {
                 return Err(windows::core::Error::from_win32());
@@ -70,7 +69,14 @@ pub mod test_render {
                 biCompression: BI_RGB.0 as u32,
                 ..Default::default()
             };
-            let dib = CreateDIBSection(mem_dc, &bmi, DIB_RGB_COLORS, &mut bits, HANDLE::default(), 0)?;
+            let dib = CreateDIBSection(
+                mem_dc,
+                &bmi,
+                DIB_RGB_COLORS,
+                &mut bits,
+                HANDLE::default(),
+                0,
+            )?;
             let prev = SelectObject(mem_dc, dib);
             let result = (|| {
                 let props = D2D1_RENDER_TARGET_PROPERTIES {

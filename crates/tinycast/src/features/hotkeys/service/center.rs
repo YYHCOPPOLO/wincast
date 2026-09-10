@@ -61,10 +61,11 @@ pub fn sync(hwnd: HWND, store: &HotKeyStore) {
 }
 
 pub fn on_hotkey_id(id: i32) {
-    let action = MAP
-        .lock()
-        .ok()
-        .and_then(|m| m.iter().find(|(i, _, _)| *i == id).map(|(_, a, _)| a.clone()));
+    let action = MAP.lock().ok().and_then(|m| {
+        m.iter()
+            .find(|(i, _, _)| *i == id)
+            .map(|(_, a, _)| a.clone())
+    });
     if let Some(action) = action {
         dispatch_action(&action);
     }
@@ -108,7 +109,11 @@ pub fn take_pending() -> Option<String> {
     PENDING.lock().ok()?.take()
 }
 
-pub fn conflict_owner(store: &HotKeyStore, binding: &HotKeyBinding, excluding: &str) -> Option<String> {
+pub fn conflict_owner(
+    store: &HotKeyStore,
+    binding: &HotKeyBinding,
+    excluding: &str,
+) -> Option<String> {
     store_bindings(store)
         .into_iter()
         .find(|(action, b)| action != excluding && b == binding)

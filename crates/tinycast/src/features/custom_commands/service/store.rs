@@ -151,7 +151,11 @@ mod tests {
             })
             .unwrap();
         assert_eq!(
-            store.commands().iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            store
+                .commands()
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>(),
             ["A", "B"]
         );
         store.remove("2").unwrap();

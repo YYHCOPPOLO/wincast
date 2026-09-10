@@ -54,7 +54,13 @@ fn pick(owner: HWND, save: bool) -> Option<std::path::PathBuf> {
         lpstrFilter: PCWSTR(filter.as_mut_ptr()),
         lpstrFile: PWSTR(file.as_mut_ptr()),
         nMaxFile: file.len() as u32,
-        Flags: OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | if save { OFN_OVERWRITEPROMPT } else { Default::default() },
+        Flags: OFN_NOCHANGEDIR
+            | OFN_PATHMUSTEXIST
+            | if save {
+                OFN_OVERWRITEPROMPT
+            } else {
+                Default::default()
+            },
         lpstrDefExt: w!("json"),
         ..Default::default()
     };

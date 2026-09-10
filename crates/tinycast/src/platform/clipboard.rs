@@ -9,7 +9,9 @@ use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
     RegisterClipboardFormatW, SetClipboardData,
 };
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::System::Memory::{
+    GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
+};
 
 const CF_UNICODETEXT: u32 = 13;
 const CF_DIB: u32 = 8;
@@ -145,8 +147,13 @@ fn decode_unicode_text(bytes: &[u8]) -> Option<String> {
     if bytes.is_empty() || bytes.len() % 2 != 0 {
         return None;
     }
-    let units = bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]]));
-    let len = units.clone().take(MAX_CLIPBOARD_TEXT_UNITS + 1).position(|u| u == 0)?;
+    let units = bytes
+        .chunks_exact(2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]));
+    let len = units
+        .clone()
+        .take(MAX_CLIPBOARD_TEXT_UNITS + 1)
+        .position(|u| u == 0)?;
     let wide: Vec<_> = units.take(len).collect();
     Some(String::from_utf16_lossy(&wide))
 }
@@ -155,7 +162,9 @@ struct GlobalReadLock(HGLOBAL);
 
 impl Drop for GlobalReadLock {
     fn drop(&mut self) {
-        unsafe { let _ = GlobalUnlock(self.0); }
+        unsafe {
+            let _ = GlobalUnlock(self.0);
+        }
     }
 }
 
@@ -265,13 +274,17 @@ fn dib_to_rgba(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
         return None;
     }
     let read_u32 = |offset: usize| {
-        Some(u32::from_le_bytes(data.get(offset..offset.checked_add(4)?)?.try_into().ok()?))
+        Some(u32::from_le_bytes(
+            data.get(offset..offset.checked_add(4)?)?.try_into().ok()?,
+        ))
     };
     if header_size == 124 {
         // Linked/embedded color profiles have extra packed-DIB layout and color
         // conversion rules. Reject them instead of treating profile bytes as pixels.
-        if read_u32(112)? != 0 || read_u32(116)? != 0
-            || matches!(read_u32(56)?, 0x4c494e4b | 0x4d424544) {
+        if read_u32(112)? != 0
+            || read_u32(116)? != 0
+            || matches!(read_u32(56)?, 0x4c494e4b | 0x4d424544)
+        {
             return None;
         }
     }
@@ -300,14 +313,21 @@ fn dib_to_rgba(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     let red = DibChannel::new(masks[0], bpp)?;
     let green = DibChannel::new(masks[1], bpp)?;
     let blue = DibChannel::new(masks[2], bpp)?;
-    let alpha = if masks[3] == 0 { None } else { Some(DibChannel::new(masks[3], bpp)?) };
+    let alpha = if masks[3] == 0 {
+        None
+    } else {
+        Some(DibChannel::new(masks[3], bpp)?)
+    };
     // Even true-color DIBs may carry an optimization color table (RGBQUADs).
     let colors_used = read_u32(32)? as usize;
     if colors_used as u64 > 1u64 << bpp {
         return None;
     }
     offset = offset.checked_add(colors_used.checked_mul(4)?)?;
-    let row_bytes = (width as usize).checked_mul(bpp as usize)?.div_ceil(32).checked_mul(4)?;
+    let row_bytes = (width as usize)
+        .checked_mul(bpp as usize)?
+        .div_ceil(32)
+        .checked_mul(4)?;
     let pixel_bytes = row_bytes.checked_mul(height as usize)?;
     let declared_bytes = read_u32(20)? as usize;
     if declared_bytes != 0 && declared_bytes < pixel_bytes {
@@ -332,7 +352,9 @@ fn dib_to_rgba(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
             pixel[..bytes_per_pixel].copy_from_slice(src);
             let pixel = u32::from_le_bytes(pixel);
             rgba[dst..dst + 4].copy_from_slice(&[
-                red.extract(pixel), green.extract(pixel), blue.extract(pixel),
+                red.extract(pixel),
+                green.extract(pixel),
+                blue.extract(pixel),
                 alpha.map_or(255, |channel| channel.extract(pixel)),
             ]);
         }
@@ -344,7 +366,9 @@ fn dib_rgba_len(width: u32, height: u32) -> Option<usize> {
     if width == 0 || height == 0 || width > 8192 || height > 8192 {
         return None;
     }
-    let bytes = (width as usize).checked_mul(height as usize)?.checked_mul(4)?;
+    let bytes = (width as usize)
+        .checked_mul(height as usize)?
+        .checked_mul(4)?;
     (bytes <= MAX_CLIPBOARD_IMAGE_BYTES).then_some(bytes)
 }
 
@@ -457,7 +481,10 @@ mod tests {
     }
 
     fn utf16_bytes(text: &str) -> Vec<u8> {
-        text.encode_utf16().chain(std::iter::once(0)).flat_map(u16::to_le_bytes).collect()
+        text.encode_utf16()
+            .chain(std::iter::once(0))
+            .flat_map(u16::to_le_bytes)
+            .collect()
     }
 
     #[test]
@@ -480,7 +507,10 @@ mod tests {
     #[test]
     fn bounded_text_obeys_the_unit_limit() {
         let text = "x".repeat(MAX_CLIPBOARD_TEXT_UNITS);
-        assert_eq!(decode_unicode_text(&utf16_bytes(&text)).as_deref(), Some(text.as_str()));
+        assert_eq!(
+            decode_unicode_text(&utf16_bytes(&text)).as_deref(),
+            Some(text.as_str())
+        );
         assert_eq!(decode_unicode_text(&utf16_bytes(&(text + "x"))), None);
     }
 
@@ -493,18 +523,30 @@ mod tests {
     #[test]
     fn global_text_reads_use_allocation_bounds_and_release_the_lock() {
         let memory = OwnedGlobal::filled(16, 0);
-        assert_eq!(unsafe { read_unicode_handle_text(memory.0) }, Some(String::new()));
+        assert_eq!(
+            unsafe { read_unicode_handle_text(memory.0) },
+            Some(String::new())
+        );
         let memory = OwnedGlobal::filled(16, 1);
         assert_eq!(unsafe { read_unicode_handle_text(memory.0) }, None);
-        assert_eq!(unsafe { windows::Win32::System::Memory::GlobalFlags(memory.0) } & 0xff, 0);
+        assert_eq!(
+            unsafe { windows::Win32::System::Memory::GlobalFlags(memory.0) } & 0xff,
+            0
+        );
     }
 
     #[test]
     fn global_image_copy_is_bounded_and_releases_the_lock() {
         let memory = OwnedGlobal::filled(16, 0x89);
         let size = unsafe { GlobalSize(memory.0) };
-        assert_eq!(unsafe { copy_global_image_bytes(memory.0) }, Some(vec![0x89; size]));
-        assert_eq!(unsafe { windows::Win32::System::Memory::GlobalFlags(memory.0) } & 0xff, 0);
+        assert_eq!(
+            unsafe { copy_global_image_bytes(memory.0) },
+            Some(vec![0x89; size])
+        );
+        assert_eq!(
+            unsafe { windows::Win32::System::Memory::GlobalFlags(memory.0) } & 0xff,
+            0
+        );
     }
 
     #[test]
@@ -520,7 +562,9 @@ mod tests {
         assert!(!image_allocation_size_allowed(0));
         assert!(image_allocation_size_allowed(1));
         assert!(image_allocation_size_allowed(MAX_CLIPBOARD_IMAGE_BYTES));
-        assert!(!image_allocation_size_allowed(MAX_CLIPBOARD_IMAGE_BYTES + 1));
+        assert!(!image_allocation_size_allowed(
+            MAX_CLIPBOARD_IMAGE_BYTES + 1
+        ));
         assert!(!image_allocation_size_allowed(usize::MAX));
     }
 
@@ -553,7 +597,13 @@ mod tests {
 
     #[test]
     fn dib_infoheader_external_masks_control_color_order() {
-        let dib = bitfields_dib(40, 1, 32, [0xff, 0xff00, 0xff0000, 0], &[0x12, 0x34, 0x56, 0x99]);
+        let dib = bitfields_dib(
+            40,
+            1,
+            32,
+            [0xff, 0xff00, 0xff0000, 0],
+            &[0x12, 0x34, 0x56, 0x99],
+        );
         assert_eq!(dib_to_rgba(&dib), Some((1, 1, vec![0x12, 0x34, 0x56, 255])));
     }
 
@@ -638,7 +688,10 @@ mod tests {
     fn dib_rejects_invalid_headers_dimensions_and_truncation() {
         let valid = bitfields_dib(124, -1, 32, BGRA_MASKS, &[3, 2, 1, 255]);
         for len in [0, 39, 40, 51, 107, 123, 124, 127] {
-            assert!(dib_to_rgba(&valid[..len]).is_none(), "truncated length {len}");
+            assert!(
+                dib_to_rgba(&valid[..len]).is_none(),
+                "truncated length {len}"
+            );
         }
         for width in [-1i32, 0, 8193, i32::MIN, i32::MAX] {
             let mut dib = valid.clone();
@@ -661,17 +714,29 @@ mod tests {
     fn dib_v5_png_roundtrip_retains_exact_colors_and_transparency() {
         let dib = bitfields_dib(124, -2, 32, BGRA_MASKS, &[3, 2, 1, 0, 9, 8, 7, 128]);
         let encoded = dib_to_png(&dib).unwrap();
-        let mut reader = png::Decoder::new(std::io::Cursor::new(encoded)).read_info().unwrap();
+        let mut reader = png::Decoder::new(std::io::Cursor::new(encoded))
+            .read_info()
+            .unwrap();
         let mut pixels = vec![0; reader.output_buffer_size()];
         let info = reader.next_frame(&mut pixels).unwrap();
-        assert_eq!((info.width, info.height, info.color_type), (1, 2, png::ColorType::Rgba));
+        assert_eq!(
+            (info.width, info.height, info.color_type),
+            (1, 2, png::ColorType::Rgba)
+        );
         assert_eq!(&pixels[..info.buffer_size()], &[1, 2, 3, 0, 7, 8, 9, 128]);
     }
 
     #[test]
     fn dib_decoded_allocation_is_bounded_without_allocating_large_fixtures() {
         assert_eq!(dib_rgba_len(4096, 4096), Some(MAX_CLIPBOARD_IMAGE_BYTES));
-        for (width, height) in [(4096, 4097), (8192, 8192), (8193, 1), (0, 1), (1, 0), (u32::MAX, u32::MAX)] {
+        for (width, height) in [
+            (4096, 4097),
+            (8192, 8192),
+            (8193, 1),
+            (0, 1),
+            (1, 0),
+            (u32::MAX, u32::MAX),
+        ] {
             assert_eq!(dib_rgba_len(width, height), None);
         }
     }
@@ -679,10 +744,20 @@ mod tests {
     #[test]
     fn dib_rejects_incomplete_tables_profiles_and_invalid_image_sizes() {
         let valid = bitfields_dib(124, 1, 32, BGRA_MASKS, &[3, 2, 1, 255]);
-        for (offset, value) in [(32, 1u32), (32, u32::MAX), (112, 124), (116, 1), (20, 3), (20, u32::MAX)] {
+        for (offset, value) in [
+            (32, 1u32),
+            (32, u32::MAX),
+            (112, 124),
+            (116, 1),
+            (20, 3),
+            (20, u32::MAX),
+        ] {
             let mut dib = valid.clone();
             dib[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-            assert!(dib_to_rgba(&dib).is_none(), "field offset {offset}, value {value}");
+            assert!(
+                dib_to_rgba(&dib).is_none(),
+                "field offset {offset}, value {value}"
+            );
         }
         let mut dib = bitfields_dib(40, 1, 32, BGRA_MASKS, &[3, 2, 1, 255]);
         dib.truncate(51);

@@ -93,7 +93,13 @@ pub fn paint(
     );
     let mut section = section;
     section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 4.0;
-    ds::paint_grouped_section(target, formats.header, formats.caption, &section, appearance)?;
+    ds::paint_grouped_section(
+        target,
+        formats.header,
+        formats.caption,
+        &section,
+        appearance,
+    )?;
     paint_toggle(
         target,
         formats,
@@ -202,7 +208,8 @@ fn paint_row(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+    let muted_brush =
+        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
     let s: Vec<u16> = subtitle.encode_utf16().collect();
     unsafe {
         target.DrawText(
@@ -233,10 +240,7 @@ mod tests {
             Some(CalendarHit::Enable)
         );
         assert_eq!(cycle_join_window(5), 10);
-        assert_eq!(
-            hit(20.0, row_y(1) + 4.0, 0.0),
-            Some(CalendarHit::AutoJoin)
-        );
+        assert_eq!(hit(20.0, row_y(1) + 4.0, 0.0), Some(CalendarHit::AutoJoin));
         assert!((row_y(1) - row_y(0) - ROW_H).abs() < 0.001);
     }
 }

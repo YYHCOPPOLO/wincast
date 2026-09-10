@@ -68,14 +68,7 @@ pub fn paint_transcript(
         );
         let rect = chat_layout::chat_assistant_rect(panel_w, y);
         draw_wrapped(
-            target,
-            &wrap_lead,
-            notice,
-            rect.x,
-            y,
-            rect.w,
-            48.0,
-            secondary,
+            target, &wrap_lead, notice, rect.x, y, rect.w, 48.0, secondary,
         )?;
     }
     unsafe {
@@ -193,7 +186,10 @@ fn assistant_plain(text: &str) -> String {
     }
 }
 
-fn wrap_format(dwrite: &IDWriteFactory, trailing: bool) -> windows::core::Result<IDWriteTextFormat> {
+fn wrap_format(
+    dwrite: &IDWriteFactory,
+    trailing: bool,
+) -> windows::core::Result<IDWriteTextFormat> {
     let format = unsafe {
         dwrite.CreateTextFormat(
             w!("Microsoft YaHei UI"),
@@ -217,7 +213,12 @@ fn wrap_format(dwrite: &IDWriteFactory, trailing: bool) -> windows::core::Result
     Ok(format)
 }
 
-fn measure(dwrite: &IDWriteFactory, format: &IDWriteTextFormat, text: &str, max_w: f32) -> (f32, f32) {
+fn measure(
+    dwrite: &IDWriteFactory,
+    format: &IDWriteTextFormat,
+    text: &str,
+    max_w: f32,
+) -> (f32, f32) {
     if text.is_empty() {
         return (0.0, theme::typography::ROW_TITLE);
     }
@@ -230,7 +231,10 @@ fn measure(dwrite: &IDWriteFactory, format: &IDWriteTextFormat, text: &str, max_
         if layout.GetMetrics(&mut metrics).is_err() {
             return (max_w, theme::typography::ROW_TITLE);
         }
-        (metrics.width, metrics.height.max(theme::typography::ROW_TITLE))
+        (
+            metrics.width,
+            metrics.height.max(theme::typography::ROW_TITLE),
+        )
     }
 }
 

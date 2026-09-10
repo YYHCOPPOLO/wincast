@@ -1,5 +1,5 @@
-use windows::core::{w, PCWSTR};
 use tinycast_pure::i18n::{chrome, Chrome};
+use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
@@ -9,15 +9,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     GetCursorPos, GetWindowLongPtrW, LoadIconW, PostMessageW, PostQuitMessage, RegisterClassW,
     SetForegroundWindow, SetWindowLongPtrW, TrackPopupMenu, CREATESTRUCTW, GWLP_USERDATA,
-    IDI_APPLICATION, MF_STRING, TPM_RETURNCMD, TPM_RIGHTBUTTON, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY, WM_LBUTTONDBLCLK,
-    WM_LBUTTONUP, WM_NCCREATE, WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+    IDI_APPLICATION, MF_STRING, TPM_RETURNCMD, TPM_RIGHTBUTTON, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
+    WM_NCCREATE, WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 use super::messages::{
-    TIMER_CALENDAR, TIMER_SUPPORT, WM_APP_INDEX, WM_CLIPBOARDUPDATE, WM_CLIPBOARD_IMAGE,
-    WM_CUSTOM_COMMAND_FAILED, WM_FILE_SEARCH, WM_OPEN_SETTINGS, WM_HOTKEY_ACTION, WM_QUIT_APP,
-    WM_AI, WM_QA, WM_QA_APPLY, WM_QA_COPY, WM_QA_DISMISS, WM_RATES, WM_SNIPPETS, WM_SNIPPET_KEYWORD,
+    TIMER_CALENDAR, TIMER_SUPPORT, WM_AI, WM_APP_INDEX, WM_CLIPBOARDUPDATE, WM_CLIPBOARD_IMAGE,
+    WM_CUSTOM_COMMAND_FAILED, WM_FILE_SEARCH, WM_HOTKEY_ACTION, WM_OPEN_SETTINGS, WM_QA,
+    WM_QA_APPLY, WM_QA_COPY, WM_QA_DISMISS, WM_QUIT_APP, WM_RATES, WM_SNIPPETS, WM_SNIPPET_KEYWORD,
     WM_TOGGLE_PALETTE, WM_TRAY, WM_UNINSTALL_SIZE,
 };
 use crate::app_core::AppCore;
@@ -88,10 +88,7 @@ pub fn set_tooltip(hwnd: HWND, text: &str) {
         let mut data = notify_data(hwnd);
         data.uFlags = NIF_TIP;
         write_tip(&mut data.szTip, text);
-        let _ = Shell_NotifyIconW(
-            windows::Win32::UI::Shell::NIM_MODIFY,
-            &data,
-        );
+        let _ = Shell_NotifyIconW(windows::Win32::UI::Shell::NIM_MODIFY, &data);
     }
 }
 

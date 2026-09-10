@@ -16,8 +16,8 @@ use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
     DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_MEDIUM,
     DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_MEASURING_MODE_NATURAL,
-    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_TRAILING,
-    DWRITE_TEXT_METRICS, DWRITE_WORD_WRAPPING_NO_WRAP,
+    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
+    DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_WORD_WRAPPING_NO_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
@@ -496,7 +496,9 @@ fn paint_layers(
         } else {
             let split = params.clipboard_preview.is_some() && !params.items.is_empty();
             let list_w = if split {
-                tinycast_pure::layout::list::clipboard_columns(size.width).0.w
+                tinycast_pure::layout::list::clipboard_columns(size.width)
+                    .0
+                    .w
             } else {
                 size.width
             };
@@ -549,7 +551,14 @@ fn paint_layers(
                 .as_ref()
                 .map(|_| crate::features::clipboard::ui::screen::filter_trailing_width())
                 .unwrap_or(0.0);
-            let _ = paint_tab_hint(target, dwrite, list_fonts, hint, trailing, params.appearance);
+            let _ = paint_tab_hint(
+                target,
+                dwrite,
+                list_fonts,
+                hint,
+                trailing,
+                params.appearance,
+            );
         }
         if let Some(filter) = &params.clipboard_filter {
             let _ = paint_filter_button(target, list_fonts, filter);
@@ -699,16 +708,8 @@ fn paint_tab_hint(
     let (x, y, w, h) = super::edit::search_field_dip_with_trailing(trailing);
     let right = x + w;
     let ds = crate::design_system::Fonts::new(dwrite)?;
-    let cap_w = crate::design_system::paint_keycap(
-        target,
-        &ds,
-        "⇥",
-        right,
-        y,
-        h,
-        true,
-        appearance,
-    )?;
+    let cap_w =
+        crate::design_system::paint_keycap(target, &ds, "⇥", right, y, h, true, appearance)?;
     let cap_x = right - cap_w;
     let ink = crate::design_system::appearance::color(theme::colors::ramp_rgba(
         appearance,
@@ -747,7 +748,8 @@ fn paint_compact_favorites(
     let (x, _y, w, _h) = super::edit::search_field_dip_with_trailing(trailing);
     let search_right = x + w;
     for (index, source) in icons.iter().enumerate() {
-        let rect = tinycast_pure::layout::palette_chrome::compact_favorite_slot(index, search_right);
+        let rect =
+            tinycast_pure::layout::palette_chrome::compact_favorite_slot(index, search_right);
         list::paint_icon_at(
             target,
             cache,
@@ -813,7 +815,14 @@ fn paint_search_field(
         }
     }
     if params.caret_visible {
-        let caret_x = x + search_caret_x(dwrite, text_format, params.search_text, params.caret_utf16, w, h);
+        let caret_x = x + search_caret_x(
+            dwrite,
+            text_format,
+            params.search_text,
+            params.caret_utf16,
+            w,
+            h,
+        );
         let caret_h = 22.0;
         let caret_y = y + ((h - caret_h) / 2.0).max(0.0);
         let color = crate::design_system::appearance::color(theme::colors::ramp_rgba(
@@ -854,7 +863,8 @@ fn search_caret_x(
         return 0.0;
     }
     unsafe {
-        let Ok(layout) = dwrite.CreateTextLayout(&wide[..end], format, max_w.max(1.0), max_h.max(1.0))
+        let Ok(layout) =
+            dwrite.CreateTextLayout(&wide[..end], format, max_w.max(1.0), max_h.max(1.0))
         else {
             return 0.0;
         };
@@ -889,8 +899,14 @@ mod tests {
         let fonts = list_fonts(&dwrite, "zh-CN").unwrap();
         unsafe {
             assert_eq!(fonts.title.GetFontSize(), theme::typography::ROW_TITLE);
-            assert_eq!(fonts.trailing.GetFontSize(), theme::typography::ROW_TRAILING);
-            assert_eq!(fonts.header.GetFontSize(), theme::typography::SECTION_HEADER);
+            assert_eq!(
+                fonts.trailing.GetFontSize(),
+                theme::typography::ROW_TRAILING
+            );
+            assert_eq!(
+                fonts.header.GetFontSize(),
+                theme::typography::SECTION_HEADER
+            );
             assert_eq!(fonts.keycap.GetFontSize(), theme::typography::KEY_CAP);
         }
     }

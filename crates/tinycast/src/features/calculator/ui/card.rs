@@ -199,10 +199,8 @@ fn paint_column(
             theme::colors::TEXT_SECONDARY_ALPHA,
         );
         let muted_brush = unsafe {
-            target.CreateSolidColorBrush(
-                &crate::design_system::appearance::color(secondary),
-                None,
-            )?
+            target
+                .CreateSolidColorBrush(&crate::design_system::appearance::color(secondary), None)?
         };
         let pill = D2D1_ROUNDED_RECT {
             rect: D2D_RECT_F {
@@ -254,5 +252,3 @@ fn draw_text(
     }
     Ok(())
 }
-
-

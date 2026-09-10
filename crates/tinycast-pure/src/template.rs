@@ -168,9 +168,7 @@ fn expand_inner(
                 }
                 let resolved = resolve_reference(&key, &sorted);
                 let allowed = depth < MAX_REFERENCE_DEPTH
-                    && resolved
-                        .as_ref()
-                        .is_some_and(|s| !visited.contains(&s.id));
+                    && resolved.as_ref().is_some_and(|s| !visited.contains(&s.id));
                 if !allowed {
                     text.push_str(&source);
                     continue;
@@ -224,7 +222,10 @@ fn add_missing(
     }
 }
 
-fn resolve_reference<'a>(key: &str, snippets: &'a [TemplateSnippet]) -> Option<&'a TemplateSnippet> {
+fn resolve_reference<'a>(
+    key: &str,
+    snippets: &'a [TemplateSnippet],
+) -> Option<&'a TemplateSnippet> {
     let normalized = normalize_reference(key);
     let candidates: Vec<&TemplateSnippet> = snippets.iter().filter(|s| s.enabled).collect();
     if let Some(found) = candidates
@@ -430,9 +431,19 @@ fn datetime_joiner(locale: &str) -> &'static str {
 
 fn medium_date(c: &Civil, locale: &str) -> String {
     if is_french(locale) {
-        format!("{} {} {}", c.day, month_name(c.month, locale, false), c.year)
+        format!(
+            "{} {} {}",
+            c.day,
+            month_name(c.month, locale, false),
+            c.year
+        )
     } else {
-        format!("{} {}, {}", month_name(c.month, locale, false), c.day, c.year)
+        format!(
+            "{} {}, {}",
+            month_name(c.month, locale, false),
+            c.day,
+            c.year
+        )
     }
 }
 
@@ -677,13 +688,7 @@ const EN_WEEKDAYS_FULL: [&str; 7] = [
 ];
 const FR_WEEKDAYS_ABBR: [&str; 7] = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
 const FR_WEEKDAYS_FULL: [&str; 7] = [
-    "dimanche",
-    "lundi",
-    "mardi",
-    "mercredi",
-    "jeudi",
-    "vendredi",
-    "samedi",
+    "dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi",
 ];
 
 #[cfg(test)]
@@ -828,7 +833,11 @@ mod tests {
 
     #[test]
     fn first_cursor_includes_nested_and_uses_graphemes() {
-        let child = sn("/tmp/cursor-child.md", "Cursor Child", "👨‍👩‍👧‍👦{cursor}é{cursor}");
+        let child = sn(
+            "/tmp/cursor-child.md",
+            "Cursor Child",
+            "👨‍👩‍👧‍👦{cursor}é{cursor}",
+        );
         let root = sn(
             "/tmp/cursor-root.md",
             "Cursor Root",
@@ -934,10 +943,16 @@ mod tests {
             e("{date format=\"yyyy\" locale=\"fr-FR\"}"),
             "{date format=\"yyyy\" locale=\"fr-FR\"}"
         );
-        assert_eq!(e("{date offset=\"-1d\" format=\"yyyy-MM-dd\"}"), "2026-07-23");
+        assert_eq!(
+            e("{date offset=\"-1d\" format=\"yyyy-MM-dd\"}"),
+            "2026-07-23"
+        );
         assert_eq!(e("{uuid}|{uuid}"), "uuid-1|uuid-2");
         assert_eq!(e("{clipboard}"), "  newest  ");
-        assert_eq!(e("{clipboard offset=1}|{clipboard offset=2}"), "older|oldest");
+        assert_eq!(
+            e("{clipboard offset=1}|{clipboard offset=2}"),
+            "older|oldest"
+        );
         assert_eq!(e("{clipboard offset=9}"), "");
         assert_eq!(e("{clipboard offset=-1}"), "{clipboard offset=-1}");
         assert_eq!(
@@ -970,12 +985,7 @@ mod tests {
         assert!(defaulted.arguments.is_empty());
         args.insert("Tone".into(), "sad".into());
         assert_eq!(
-            expand(
-                "{argument name=\"Tone\" default=\"happy\"}",
-                &ctx,
-                &args
-            )
-            .text,
+            expand("{argument name=\"Tone\" default=\"happy\"}", &ctx, &args).text,
             "sad"
         );
         let optioned = expand(
@@ -1044,7 +1054,10 @@ mod tests {
             tz: "UTC".into(),
             uuid: || "u".into(),
         };
-        assert_eq!(expand("q={clipboard}", &ctx, &Default::default()).text, "q=a b&c");
+        assert_eq!(
+            expand("q={clipboard}", &ctx, &Default::default()).text,
+            "q=a b&c"
+        );
         assert_eq!(
             expand("{snippet:Child}", &ctx, &Default::default()).text,
             "{snippet:Child}"
@@ -1085,7 +1098,13 @@ mod tests {
             "a b&c"
         );
         assert_eq!(
-            expand_with("{clipboard | percent-encode}", &ctx, &Default::default(), true).text,
+            expand_with(
+                "{clipboard | percent-encode}",
+                &ctx,
+                &Default::default(),
+                true
+            )
+            .text,
             "a%20b%26c"
         );
         let mut args = HashMap::new();
@@ -1106,7 +1125,12 @@ mod tests {
             "a b&c"
         );
         assert_eq!(
-            expand("{selectedText | trim | uppercase}", &ctx, &Default::default()).text,
+            expand(
+                "{selectedText | trim | uppercase}",
+                &ctx,
+                &Default::default()
+            )
+            .text,
             "A B&C"
         );
         assert_eq!(
@@ -1133,7 +1157,10 @@ mod tests {
             tz: "UTC".into(),
             uuid: || "u".into(),
         };
-        assert_eq!(expand("[{clipboard}]", &ctx, &Default::default()).text, "[]");
+        assert_eq!(
+            expand("[{clipboard}]", &ctx, &Default::default()).text,
+            "[]"
+        );
     }
 
     #[test]
@@ -1149,12 +1176,8 @@ mod tests {
         let stripped = expand("A{cursor}B{snippet:X}", &ctx, &Default::default());
         assert_eq!(stripped.text, "AB{snippet:X}");
         assert_eq!(stripped.cursor, Some(1));
-        let kept = expand_destination_template(
-            "A{cursor}B{snippet:X}",
-            &ctx,
-            &Default::default(),
-            false,
-        );
+        let kept =
+            expand_destination_template("A{cursor}B{snippet:X}", &ctx, &Default::default(), false);
         assert_eq!(kept.text, "A{cursor}B{snippet:X}");
         assert!(kept.cursor.is_none());
     }

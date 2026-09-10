@@ -67,9 +67,7 @@ impl AiProvider for HttpAiProvider {
         let _ = std::thread::Builder::new()
             .name("tinycast-ai".into())
             .spawn(move || {
-                run_stream(
-                    provider, endpoint, model, key, req, sink, cancel, host_bits,
-                )
+                run_stream(provider, endpoint, model, key, req, sink, cancel, host_bits)
             });
     }
 
@@ -192,7 +190,12 @@ fn emit(sink: &Sender<AiEvent>, event: AiEvent, host_bits: isize) -> bool {
     }
     if host_bits != 0 {
         unsafe {
-            let _ = PostMessageW(HWND(host_bits as *mut core::ffi::c_void), WM_AI, WPARAM(0), LPARAM(0));
+            let _ = PostMessageW(
+                HWND(host_bits as *mut core::ffi::c_void),
+                WM_AI,
+                WPARAM(0),
+                LPARAM(0),
+            );
         }
     }
     stop

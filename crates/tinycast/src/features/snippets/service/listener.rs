@@ -4,9 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tinycast_pure::snippet::keyword::{
-    classify_input, KeywordBuffer, KeywordInput,
-};
+use tinycast_pure::snippet::keyword::{classify_input, KeywordBuffer, KeywordInput};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyState, ToUnicode, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,

@@ -172,10 +172,7 @@ impl ChatSession {
 
 /// Newest user turn is sent whole. Older text walks newest-first into `text_budget`.
 pub fn bounded_context(messages: &[AiMessage], text_budget: usize) -> Vec<AiMessage> {
-    let Some(newest) = messages
-        .iter()
-        .rposition(|m| m.role == Role::User)
-    else {
+    let Some(newest) = messages.iter().rposition(|m| m.role == Role::User) else {
         return messages.to_vec();
     };
     let mut remaining = text_budget as i64;
@@ -227,6 +224,8 @@ mod tests {
         let newest = AiMessage::user("just typed");
         let bounded = bounded_context(&[old, mid, newest], DEFAULT_TEXT_BUDGET);
         assert_eq!(bounded.last().map(|m| m.text.as_str()), Some("just typed"));
-        assert!(bounded.iter().map(|m| m.text.len()).sum::<usize>() <= DEFAULT_TEXT_BUDGET + 80_000);
+        assert!(
+            bounded.iter().map(|m| m.text.len()).sum::<usize>() <= DEFAULT_TEXT_BUDGET + 80_000
+        );
     }
 }
