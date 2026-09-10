@@ -265,8 +265,9 @@ impl ClipboardStore {
         self.reinsert(item, created_at, None);
     }
 
-    pub fn clear(&mut self) {
-        self.delete_images_after("DELETE FROM items RETURNING image_path", []);
+    /// Return true only after the deletion transaction commits.
+    pub fn clear(&mut self) -> bool {
+        self.delete_images_after("DELETE FROM items RETURNING image_path", [])
     }
 
     pub fn prune_unpinned_older_than(&mut self, max_age_secs: i64) {
@@ -280,7 +281,7 @@ impl ClipboardStore {
         );
     }
 
-    fn delete_images_after(&mut self, sql: &str, params: impl rusqlite::Params) {
+    fn delete_images_after(&mut self, sql: &str, params: impl rusqlite::Params) -> bool {
         let deleted = self.transact(|tx| {
             let paths = tx
                 .prepare(sql)?
@@ -294,9 +295,11 @@ impl ClipboardStore {
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok((paths, referenced))
         });
-        if let Some((paths, referenced)) = deleted {
-            self.remove_unreferenced_images(paths.into_iter().flatten(), referenced);
-        }
+        let Some((paths, referenced)) = deleted else {
+            return false;
+        };
+        self.remove_unreferenced_images(paths.into_iter().flatten(), referenced);
+        true
     }
 
     fn checked_images_dir(&self) -> Result<PathBuf, String> {
@@ -974,7 +977,7 @@ mod tests {
         store.insert_image(image.clone());
         let before = store.search("", ClipboardFilter::All);
         fail_deletes(&store);
-        store.clear();
+        assert!(!store.clear());
         assert!(image.exists());
         assert_eq!(store.search("", ClipboardFilter::All), before);
         assert_delete_rolled_back(&store);
@@ -1039,7 +1042,7 @@ mod tests {
         std::fs::write(&outside, b"outside").unwrap();
         store.insert_image(owned.clone());
         store.insert_image(outside.clone());
-        store.clear();
+        assert!(store.clear());
         assert!(!owned.exists());
         assert!(untracked.exists());
         assert!(outside.exists());
@@ -1251,7 +1254,7 @@ mod tests {
             if prune {
                 store.prune_unpinned_older_than(1);
             } else {
-                store.clear();
+                assert!(!store.clear());
             }
             assert!(!store.is_available());
             assert_eq!(store.search("", ClipboardFilter::All), before);

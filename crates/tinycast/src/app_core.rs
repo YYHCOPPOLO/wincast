@@ -269,7 +269,7 @@ impl AppCore {
     }
 
     pub fn clear_clipboard_history(&mut self) {
-        self.clipboard.clear();
+        clip_manager::clear_history(&mut self.clipboard);
         self.invalidate_palette();
         self.invalidate_settings();
     }
