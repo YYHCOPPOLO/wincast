@@ -9,13 +9,15 @@ use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
     RegisterClipboardFormatW, SetClipboardData,
 };
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
 
 const CF_UNICODETEXT: u32 = 13;
 const CF_DIB: u32 = 8;
 const CF_DIBV5: u32 = 17;
 const OPEN_ATTEMPTS: u32 = 8;
 const OPEN_SLEEP_MS: u64 = 8;
+const MAX_CLIPBOARD_TEXT_UNITS: usize = 64 * 1024;
+const MAX_CLIPBOARD_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 
 static OWNER: AtomicIsize = AtomicIsize::new(0);
 
@@ -116,26 +118,44 @@ pub fn read_unicode_text() -> Option<String> {
                 return None;
             }
             let handle = GetClipboardData(CF_UNICODETEXT).ok()?;
-            let hg = HGLOBAL(handle.0);
-            let ptr = GlobalLock(hg);
-            if ptr.is_null() {
-                return None;
-            }
-            let mut len = 0usize;
-            let p = ptr as *const u16;
-            while *p.add(len) != 0 {
-                len += 1;
-                if len > 64 * 1024 {
-                    break;
-                }
-            }
-            let slice = std::slice::from_raw_parts(p, len);
-            let text = String::from_utf16_lossy(slice);
-            let _ = GlobalUnlock(hg);
-            Some(text)
+            read_unicode_handle_text(HGLOBAL(handle.0))
         })();
         let _ = CloseClipboard();
         result
+    }
+}
+
+unsafe fn read_unicode_handle_text(hg: HGLOBAL) -> Option<String> {
+    let size = GlobalSize(hg);
+    if size < 2 || size % 2 != 0 {
+        return None;
+    }
+    let ptr = GlobalLock(hg);
+    if ptr.is_null() {
+        return None;
+    }
+    let _lock = GlobalReadLock(hg);
+    // Include room for the terminator, never more than the actual allocation.
+    // Decode bytes rather than forming a potentially unaligned u16 slice.
+    let len = size.min((MAX_CLIPBOARD_TEXT_UNITS + 1) * 2);
+    decode_unicode_text(std::slice::from_raw_parts(ptr as *const u8, len))
+}
+
+fn decode_unicode_text(bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() || bytes.len() % 2 != 0 {
+        return None;
+    }
+    let units = bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+    let len = units.clone().take(MAX_CLIPBOARD_TEXT_UNITS + 1).position(|u| u == 0)?;
+    let wide: Vec<_> = units.take(len).collect();
+    Some(String::from_utf16_lossy(&wide))
+}
+
+struct GlobalReadLock(HGLOBAL);
+
+impl Drop for GlobalReadLock {
+    fn drop(&mut self) {
+        unsafe { let _ = GlobalUnlock(self.0); }
     }
 }
 
@@ -176,22 +196,27 @@ unsafe fn read_image_bytes_open() -> Option<ImageBytes> {
 
 unsafe fn copy_handle_bytes(fmt: u32) -> Option<Vec<u8>> {
     let handle = GetClipboardData(fmt).ok()?;
-    let hg = HGLOBAL(handle.0);
+    copy_global_image_bytes(HGLOBAL(handle.0))
+}
+
+unsafe fn copy_global_image_bytes(hg: HGLOBAL) -> Option<Vec<u8>> {
+    let size = GlobalSize(hg);
+    if !image_allocation_size_allowed(size) {
+        return None;
+    }
     let ptr = GlobalLock(hg);
     if ptr.is_null() {
         return None;
     }
-    let size = windows::Win32::System::Memory::GlobalSize(hg);
-    let mut bytes = vec![0u8; size];
-    if size > 0 {
-        std::ptr::copy_nonoverlapping(ptr as *const u8, bytes.as_mut_ptr(), size);
-    }
-    let _ = GlobalUnlock(hg);
-    if bytes.is_empty() {
-        None
-    } else {
-        Some(bytes)
-    }
+    let _lock = GlobalReadLock(hg);
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(size).ok()?;
+    bytes.extend_from_slice(std::slice::from_raw_parts(ptr as *const u8, size));
+    Some(bytes)
+}
+
+fn image_allocation_size_allowed(size: usize) -> bool {
+    (1..=MAX_CLIPBOARD_IMAGE_BYTES).contains(&size)
 }
 
 pub fn encode_image_png(bytes: ImageBytes) -> Option<Vec<u8>> {
@@ -354,6 +379,100 @@ unsafe fn global_free_safe(handle: HGLOBAL) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct OwnedGlobal(HGLOBAL);
+
+    impl OwnedGlobal {
+        fn filled(size: usize, byte: u8) -> Self {
+            unsafe {
+                let handle = GlobalAlloc(GMEM_MOVEABLE, size).unwrap();
+                let owned = Self(handle);
+                let ptr = GlobalLock(handle);
+                assert!(!ptr.is_null());
+                std::ptr::write_bytes(
+                    ptr,
+                    byte,
+                    windows::Win32::System::Memory::GlobalSize(handle),
+                );
+                let _ = GlobalUnlock(handle);
+                owned
+            }
+        }
+    }
+
+    impl Drop for OwnedGlobal {
+        fn drop(&mut self) {
+            unsafe { global_free_safe(self.0) }
+        }
+    }
+
+    fn utf16_bytes(text: &str) -> Vec<u8> {
+        text.encode_utf16().chain(std::iter::once(0)).flat_map(u16::to_le_bytes).collect()
+    }
+
+    #[test]
+    fn bounded_text_decodes_chinese_and_surrogate_pairs() {
+        let bytes = utf16_bytes("剪贴板 🦀");
+        assert_eq!(decode_unicode_text(&bytes).as_deref(), Some("剪贴板 🦀"));
+    }
+
+    #[test]
+    fn bounded_text_requires_a_complete_terminated_allocation() {
+        assert_eq!(decode_unicode_text(&[0, 0]), Some(String::new()));
+        assert_eq!(decode_unicode_text(&[]), None);
+        assert_eq!(decode_unicode_text(&[b'A', 0]), None);
+        assert_eq!(decode_unicode_text(&[b'A', 0, 0]), None);
+        assert_eq!(decode_unicode_text(&[0, 0, 1]), None);
+        // A zero byte alone is not a UTF-16 terminator.
+        assert_eq!(decode_unicode_text(&[0, 1]), None);
+    }
+
+    #[test]
+    fn bounded_text_obeys_the_unit_limit() {
+        let text = "x".repeat(MAX_CLIPBOARD_TEXT_UNITS);
+        assert_eq!(decode_unicode_text(&utf16_bytes(&text)).as_deref(), Some(text.as_str()));
+        assert_eq!(decode_unicode_text(&utf16_bytes(&(text + "x"))), None);
+    }
+
+    #[test]
+    fn bounded_text_stops_at_nul_and_accepts_unaligned_bytes() {
+        let bytes = [255, b'A', 0, 0, 0, b'B', 0];
+        assert_eq!(decode_unicode_text(&bytes[1..]).as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn global_text_reads_use_allocation_bounds_and_release_the_lock() {
+        let memory = OwnedGlobal::filled(16, 0);
+        assert_eq!(unsafe { read_unicode_handle_text(memory.0) }, Some(String::new()));
+        let memory = OwnedGlobal::filled(16, 1);
+        assert_eq!(unsafe { read_unicode_handle_text(memory.0) }, None);
+        assert_eq!(unsafe { windows::Win32::System::Memory::GlobalFlags(memory.0) } & 0xff, 0);
+    }
+
+    #[test]
+    fn global_image_copy_is_bounded_and_releases_the_lock() {
+        let memory = OwnedGlobal::filled(16, 0x89);
+        let size = unsafe { GlobalSize(memory.0) };
+        assert_eq!(unsafe { copy_global_image_bytes(memory.0) }, Some(vec![0x89; size]));
+        assert_eq!(unsafe { windows::Win32::System::Memory::GlobalFlags(memory.0) } & 0xff, 0);
+    }
+
+    #[test]
+    fn unterminated_global_text_is_rejected_without_using_clipboard() {
+        // Leave ample allocated memory beyond the old scan limit so the failing
+        // regression itself never reads out of bounds.
+        let memory = OwnedGlobal::filled((MAX_CLIPBOARD_TEXT_UNITS + 8) * 2, 1);
+        assert!(unsafe { read_unicode_handle_text(memory.0) }.is_none());
+    }
+
+    #[test]
+    fn clipboard_image_allocation_is_bounded() {
+        assert!(!image_allocation_size_allowed(0));
+        assert!(image_allocation_size_allowed(1));
+        assert!(image_allocation_size_allowed(MAX_CLIPBOARD_IMAGE_BYTES));
+        assert!(!image_allocation_size_allowed(MAX_CLIPBOARD_IMAGE_BYTES + 1));
+        assert!(!image_allocation_size_allowed(usize::MAX));
+    }
 
     #[test]
     fn dib_24bpp_bottom_up_roundtrips() {
