@@ -245,11 +245,11 @@ fn dib_to_png(data: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn dib_to_rgba(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
-    if data.len() < 40 {
+    if data.len() < 40 || data.len() > MAX_CLIPBOARD_IMAGE_BYTES {
         return None;
     }
     let header_size = u32::from_le_bytes(data[0..4].try_into().ok()?);
-    if header_size < 40 || data.len() < header_size as usize {
+    if !matches!(header_size, 40 | 52 | 56 | 108 | 124) || data.len() < header_size as usize {
         return None;
     }
     let width = i32::from_le_bytes(data[4..8].try_into().ok()?);
@@ -257,71 +257,121 @@ fn dib_to_rgba(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     let planes = u16::from_le_bytes(data[12..14].try_into().ok()?);
     let bpp = u16::from_le_bytes(data[14..16].try_into().ok()?);
     let compression = u32::from_le_bytes(data[16..20].try_into().ok()?);
-    if planes != 1 || width == 0 || height_s == 0 {
+    if planes != 1 || width <= 0 || height_s == 0 {
         return None;
     }
-    if compression != 0 && compression != 3 {
+    // BI_RGB is BGR/BGRX. BI_BITFIELDS defines channels for 16/32-bit pixels.
+    if !matches!((compression, bpp), (0, 24 | 32) | (3, 16 | 32)) {
         return None;
     }
-    if !matches!(bpp, 24 | 32) {
-        return None;
+    let read_u32 = |offset: usize| {
+        Some(u32::from_le_bytes(data.get(offset..offset.checked_add(4)?)?.try_into().ok()?))
+    };
+    if header_size == 124 {
+        // Linked/embedded color profiles have extra packed-DIB layout and color
+        // conversion rules. Reject them instead of treating profile bytes as pixels.
+        if read_u32(112)? != 0 || read_u32(116)? != 0
+            || matches!(read_u32(56)?, 0x4c494e4b | 0x4d424544) {
+            return None;
+        }
     }
     let top_down = height_s < 0;
     let height = height_s.unsigned_abs();
-    let width = width.unsigned_abs();
-    if width > 8192 || height > 8192 {
+    let width = width as u32;
+    let rgba_len = dib_rgba_len(width, height)?;
+    let mut offset = header_size as usize;
+    let mut masks = [0x00ff0000, 0x0000ff00, 0x000000ff, 0];
+    if compression == 3 {
+        masks[..3].copy_from_slice(&[read_u32(40)?, read_u32(44)?, read_u32(48)?]);
+        if header_size == 40 {
+            // BITMAPINFOHEADER has three external masks; V2/V3/V4/V5 embed them.
+            offset = offset.checked_add(12)?;
+        } else if header_size >= 56 {
+            masks[3] = read_u32(52)?;
+        }
+    }
+    let mut used = 0;
+    for mask in masks {
+        if mask & used != 0 {
+            return None;
+        }
+        used |= mask;
+    }
+    let red = DibChannel::new(masks[0], bpp)?;
+    let green = DibChannel::new(masks[1], bpp)?;
+    let blue = DibChannel::new(masks[2], bpp)?;
+    let alpha = if masks[3] == 0 { None } else { Some(DibChannel::new(masks[3], bpp)?) };
+    // Even true-color DIBs may carry an optimization color table (RGBQUADs).
+    let colors_used = read_u32(32)? as usize;
+    if colors_used as u64 > 1u64 << bpp {
         return None;
     }
-    let mut offset = header_size as usize;
-    if compression == 3 {
-        offset = offset.saturating_add(12);
+    offset = offset.checked_add(colors_used.checked_mul(4)?)?;
+    let row_bytes = (width as usize).checked_mul(bpp as usize)?.div_ceil(32).checked_mul(4)?;
+    let pixel_bytes = row_bytes.checked_mul(height as usize)?;
+    let declared_bytes = read_u32(20)? as usize;
+    if declared_bytes != 0 && declared_bytes < pixel_bytes {
+        return None;
     }
-    let row_bytes = ((width as usize * bpp as usize + 31) / 32) * 4;
-    let needed = offset.checked_add(row_bytes.checked_mul(height as usize)?)?;
+    let needed = offset.checked_add(pixel_bytes.max(declared_bytes))?;
     if data.len() < needed {
         return None;
     }
-    let mut rgba = vec![0u8; width as usize * height as usize * 4];
-    let mut any_alpha = false;
+    let mut rgba = Vec::new();
+    rgba.try_reserve_exact(rgba_len).ok()?;
+    rgba.resize(rgba_len, 0);
+    let bytes_per_pixel = bpp as usize / 8;
     for y in 0..height as usize {
         let src_y = if top_down { y } else { height as usize - 1 - y };
-        let src = &data[offset + src_y * row_bytes..];
+        let start = offset + src_y * row_bytes;
+        let src = &data[start..start + row_bytes];
         for x in 0..width as usize {
             let dst = (y * width as usize + x) * 4;
-            match bpp {
-                32 => {
-                    let b = src[x * 4];
-                    let g = src[x * 4 + 1];
-                    let r = src[x * 4 + 2];
-                    let a = src[x * 4 + 3];
-                    rgba[dst] = r;
-                    rgba[dst + 1] = g;
-                    rgba[dst + 2] = b;
-                    rgba[dst + 3] = a;
-                    if a != 0 {
-                        any_alpha = true;
-                    }
-                }
-                24 => {
-                    let b = src[x * 3];
-                    let g = src[x * 3 + 1];
-                    let r = src[x * 3 + 2];
-                    rgba[dst] = r;
-                    rgba[dst + 1] = g;
-                    rgba[dst + 2] = b;
-                    rgba[dst + 3] = 255;
-                    any_alpha = true;
-                }
-                _ => return None,
-            }
-        }
-    }
-    if bpp == 32 && !any_alpha {
-        for px in rgba.chunks_exact_mut(4) {
-            px[3] = 255;
+            let src = &src[x * bytes_per_pixel..][..bytes_per_pixel];
+            let mut pixel = [0; 4];
+            pixel[..bytes_per_pixel].copy_from_slice(src);
+            let pixel = u32::from_le_bytes(pixel);
+            rgba[dst..dst + 4].copy_from_slice(&[
+                red.extract(pixel), green.extract(pixel), blue.extract(pixel),
+                alpha.map_or(255, |channel| channel.extract(pixel)),
+            ]);
         }
     }
     Some((width, height, rgba))
+}
+
+fn dib_rgba_len(width: u32, height: u32) -> Option<usize> {
+    if width == 0 || height == 0 || width > 8192 || height > 8192 {
+        return None;
+    }
+    let bytes = (width as usize).checked_mul(height as usize)?.checked_mul(4)?;
+    (bytes <= MAX_CLIPBOARD_IMAGE_BYTES).then_some(bytes)
+}
+
+#[derive(Clone, Copy)]
+struct DibChannel {
+    mask: u32,
+    shift: u32,
+    max: u32,
+}
+
+impl DibChannel {
+    fn new(mask: u32, bpp: u16) -> Option<Self> {
+        if mask == 0 || (bpp < 32 && mask >> bpp != 0) {
+            return None;
+        }
+        let shift = mask.trailing_zeros();
+        let max = mask >> shift;
+        if max & max.wrapping_add(1) != 0 {
+            return None;
+        }
+        Some(Self { mask, shift, max })
+    }
+
+    fn extract(self, pixel: u32) -> u8 {
+        let value = ((pixel & self.mask) >> self.shift) as u64;
+        ((value * 255 + self.max as u64 / 2) / self.max as u64) as u8
+    }
 }
 
 fn open_clipboard() -> windows::core::Result<()> {
@@ -472,6 +522,171 @@ mod tests {
         assert!(image_allocation_size_allowed(MAX_CLIPBOARD_IMAGE_BYTES));
         assert!(!image_allocation_size_allowed(MAX_CLIPBOARD_IMAGE_BYTES + 1));
         assert!(!image_allocation_size_allowed(usize::MAX));
+    }
+
+    fn dib_header(size: u32, width: i32, height: i32, bpp: u16, compression: u32) -> Vec<u8> {
+        let mut dib = vec![0; size as usize];
+        dib[0..4].copy_from_slice(&size.to_le_bytes());
+        dib[4..8].copy_from_slice(&width.to_le_bytes());
+        dib[8..12].copy_from_slice(&height.to_le_bytes());
+        dib[12..14].copy_from_slice(&1u16.to_le_bytes());
+        dib[14..16].copy_from_slice(&bpp.to_le_bytes());
+        dib[16..20].copy_from_slice(&compression.to_le_bytes());
+        dib
+    }
+
+    fn bitfields_dib(size: u32, height: i32, bpp: u16, masks: [u32; 4], pixels: &[u8]) -> Vec<u8> {
+        let mut dib = dib_header(size, 1, height, bpp, 3);
+        if size == 40 {
+            dib.extend(masks[..3].iter().flat_map(|m| m.to_le_bytes()));
+        } else {
+            let count = if size >= 56 { 4 } else { 3 };
+            for (i, mask) in masks[..count].iter().enumerate() {
+                dib[40 + i * 4..44 + i * 4].copy_from_slice(&mask.to_le_bytes());
+            }
+        }
+        dib.extend_from_slice(pixels);
+        dib
+    }
+
+    const BGRA_MASKS: [u32; 4] = [0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000];
+
+    #[test]
+    fn dib_infoheader_external_masks_control_color_order() {
+        let dib = bitfields_dib(40, 1, 32, [0xff, 0xff00, 0xff0000, 0], &[0x12, 0x34, 0x56, 0x99]);
+        assert_eq!(dib_to_rgba(&dib), Some((1, 1, vec![0x12, 0x34, 0x56, 255])));
+    }
+
+    #[test]
+    fn dib_v4_masks_are_embedded_not_after_the_header() {
+        let dib = bitfields_dib(108, -1, 32, BGRA_MASKS, &[3, 2, 1, 128]);
+        assert_eq!(dib_to_rgba(&dib), Some((1, 1, vec![1, 2, 3, 128])));
+    }
+
+    #[test]
+    fn dib_v5_masks_preserve_fully_transparent_pixels() {
+        let dib = bitfields_dib(124, 1, 32, BGRA_MASKS, &[3, 2, 1, 0]);
+        assert_eq!(dib_to_rgba(&dib), Some((1, 1, vec![1, 2, 3, 0])));
+    }
+
+    #[test]
+    fn dib_v2_v3_embedded_masks_use_the_declared_header_size() {
+        for size in [52, 56] {
+            let dib = bitfields_dib(size, 1, 32, BGRA_MASKS, &[3, 2, 1, 0]);
+            let alpha = if size == 56 { 0 } else { 255 };
+            assert_eq!(dib_to_rgba(&dib), Some((1, 1, vec![1, 2, 3, alpha])));
+        }
+    }
+
+    #[test]
+    fn dib_bitfields_support_16bit_565_and_row_padding() {
+        let dib = bitfields_dib(40, 1, 16, [0xf800, 0x07e0, 0x001f, 0], &[0xe0, 0x07, 0, 0]);
+        assert_eq!(dib_to_rgba(&dib), Some((1, 1, vec![0, 255, 0, 255])));
+    }
+
+    #[test]
+    fn dib_bitfields_scale_non_eight_bit_channels() {
+        let pixel = 1023u32 | (512 << 10) | (1023 << 20) | (2 << 30);
+        let masks = [0x000003ff, 0x000ffc00, 0x3ff00000, 0xc0000000];
+        let dib = bitfields_dib(124, 1, 32, masks, &pixel.to_le_bytes());
+        assert_eq!(dib_to_rgba(&dib), Some((1, 1, vec![255, 128, 255, 170])));
+    }
+
+    #[test]
+    fn dib_bitfields_respect_top_down_and_bottom_up_rows() {
+        let top_down = bitfields_dib(108, -2, 32, BGRA_MASKS, &[0, 0, 255, 255, 255, 0, 0, 128]);
+        let bottom_up = bitfields_dib(108, 2, 32, BGRA_MASKS, &[255, 0, 0, 128, 0, 0, 255, 255]);
+        let expected = Some((1, 2, vec![255, 0, 0, 255, 0, 0, 255, 128]));
+        assert_eq!(dib_to_rgba(&top_down), expected);
+        assert_eq!(dib_to_rgba(&bottom_up), expected);
+    }
+
+    #[test]
+    fn dib_rgb32_reserved_byte_is_not_alpha() {
+        let mut dib = dib_header(40, 1, -1, 32, 0);
+        dib.extend_from_slice(&[3, 2, 1, 17]);
+        assert_eq!(dib_to_rgba(&dib), Some((1, 1, vec![1, 2, 3, 255])));
+    }
+
+    #[test]
+    fn dib_color_table_precedes_pixels() {
+        for size in [40, 124] {
+            let mut dib = bitfields_dib(size, -1, 32, BGRA_MASKS, &[]);
+            dib[32..36].copy_from_slice(&1u32.to_le_bytes());
+            dib.extend_from_slice(&[10, 20, 30, 0]); // optimization color table
+            dib.extend_from_slice(&[3, 2, 1, 255]);
+            assert_eq!(dib_to_rgba(&dib), Some((1, 1, vec![1, 2, 3, 255])));
+        }
+    }
+
+    #[test]
+    fn dib_rejects_zero_overlapping_noncontiguous_and_out_of_range_masks() {
+        for masks in [
+            [0, 0xff00, 0xff, 0],
+            [0xff0000, 0xff0000, 0xff, 0],
+            [0x550000, 0xff00, 0xff, 0],
+            [0xff0000, 0xff00, 0xff, 0xff0000],
+        ] {
+            let dib = bitfields_dib(124, 1, 32, masks, &[0; 16]);
+            assert!(dib_to_rgba(&dib).is_none(), "invalid masks: {masks:x?}");
+        }
+        let dib = bitfields_dib(40, 1, 16, [0xff0000, 0xff00, 0xff, 0], &[0; 4]);
+        assert!(dib_to_rgba(&dib).is_none());
+    }
+
+    #[test]
+    fn dib_rejects_invalid_headers_dimensions_and_truncation() {
+        let valid = bitfields_dib(124, -1, 32, BGRA_MASKS, &[3, 2, 1, 255]);
+        for len in [0, 39, 40, 51, 107, 123, 124, 127] {
+            assert!(dib_to_rgba(&valid[..len]).is_none(), "truncated length {len}");
+        }
+        for width in [-1i32, 0, 8193, i32::MIN, i32::MAX] {
+            let mut dib = valid.clone();
+            dib[4..8].copy_from_slice(&width.to_le_bytes());
+            assert!(dib_to_rgba(&dib).is_none(), "width {width}");
+        }
+        for height in [0i32, 8193, i32::MIN, i32::MAX] {
+            let mut dib = valid.clone();
+            dib[8..12].copy_from_slice(&height.to_le_bytes());
+            assert!(dib_to_rgba(&dib).is_none(), "height {height}");
+        }
+        let mut unknown = dib_header(44, 1, 1, 32, 0);
+        unknown.extend_from_slice(&[0; 4]);
+        assert!(dib_to_rgba(&unknown).is_none());
+        let dib = bitfields_dib(40, 1, 24, BGRA_MASKS, &[0; 4]);
+        assert!(dib_to_rgba(&dib).is_none());
+    }
+
+    #[test]
+    fn dib_v5_png_roundtrip_retains_exact_colors_and_transparency() {
+        let dib = bitfields_dib(124, -2, 32, BGRA_MASKS, &[3, 2, 1, 0, 9, 8, 7, 128]);
+        let encoded = dib_to_png(&dib).unwrap();
+        let mut reader = png::Decoder::new(std::io::Cursor::new(encoded)).read_info().unwrap();
+        let mut pixels = vec![0; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut pixels).unwrap();
+        assert_eq!((info.width, info.height, info.color_type), (1, 2, png::ColorType::Rgba));
+        assert_eq!(&pixels[..info.buffer_size()], &[1, 2, 3, 0, 7, 8, 9, 128]);
+    }
+
+    #[test]
+    fn dib_decoded_allocation_is_bounded_without_allocating_large_fixtures() {
+        assert_eq!(dib_rgba_len(4096, 4096), Some(MAX_CLIPBOARD_IMAGE_BYTES));
+        for (width, height) in [(4096, 4097), (8192, 8192), (8193, 1), (0, 1), (1, 0), (u32::MAX, u32::MAX)] {
+            assert_eq!(dib_rgba_len(width, height), None);
+        }
+    }
+
+    #[test]
+    fn dib_rejects_incomplete_tables_profiles_and_invalid_image_sizes() {
+        let valid = bitfields_dib(124, 1, 32, BGRA_MASKS, &[3, 2, 1, 255]);
+        for (offset, value) in [(32, 1u32), (32, u32::MAX), (112, 124), (116, 1), (20, 3), (20, u32::MAX)] {
+            let mut dib = valid.clone();
+            dib[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+            assert!(dib_to_rgba(&dib).is_none(), "field offset {offset}, value {value}");
+        }
+        let mut dib = bitfields_dib(40, 1, 32, BGRA_MASKS, &[3, 2, 1, 255]);
+        dib.truncate(51);
+        assert!(dib_to_rgba(&dib).is_none());
     }
 
     #[test]
