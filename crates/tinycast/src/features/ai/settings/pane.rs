@@ -698,7 +698,10 @@ mod tests {
             ),
             Some(AiHit::RemoveConnection(0))
         );
-        assert_eq!(redact_ai_error("bad sk-secret"), "Couldn’t save this connection.");
+        assert_eq!(
+            redact_ai_error("bad sk-secret"),
+            "Couldn’t save this connection."
+        );
         assert_eq!(redact_ai_error("Invalid URL"), "Invalid URL");
         let top = connection_row_top(0, Some(0));
         assert_eq!(

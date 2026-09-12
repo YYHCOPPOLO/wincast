@@ -14,7 +14,7 @@ use tinycast_pure::settings_tab::SettingsTab;
 use tinycast_pure::theme;
 use tinycast_pure::visibility::VisibilityStore;
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
     ID2D1RenderTarget, ID2D1SolidColorBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ROUNDED_RECT,
@@ -25,11 +25,14 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{SetWindowTheme, EM_SETMARGINS};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+use windows::Win32::UI::Shell::{
+    DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, GetWindowTextLengthW, GetWindowTextW, SendMessageW, SetWindowPos,
+    CreateWindowExW, GetParent, GetWindowTextLengthW, GetWindowTextW, SendMessageW, SetWindowPos,
     SetWindowTextW, ShowWindow, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL, ES_LEFT,
     ES_PASSWORD, HWND_TOP, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_SETFONT, WS_CHILD,
+    WM_KEYDOWN, WM_NCDESTROY, WM_SETFONT, WM_SYSKEYDOWN, WS_CHILD, WS_TABSTOP,
 };
 
 use crate::platform::screens::dip_scalar_to_px;
@@ -39,6 +42,11 @@ pub const ALIAS_EDIT_ID: usize = 202;
 pub const AI_URL_EDIT_ID: usize = 203;
 pub const AI_MODEL_EDIT_ID: usize = 204;
 pub const AI_KEY_EDIT_ID: usize = 205;
+const FIELD_EDIT_SUBCLASS: usize = 17;
+
+pub fn field_edit_forwards(vk: u16) -> bool {
+    matches!(vk, 0x09 | 0x0D | 0x1B)
+}
 pub const ENABLE_SUBTITLE: &str =
     "Off hides them all and stops their shortcuts. Uncheck one below to hide just that one.";
 
@@ -618,8 +626,10 @@ impl FieldEdit {
     fn create_with(parent: HWND, id: usize, secret: bool) -> windows::core::Result<Self> {
         unsafe {
             let hinstance = GetModuleHandleW(None)?;
-            let mut style =
-                WS_CHILD | WINDOW_STYLE(ES_LEFT as u32) | WINDOW_STYLE(ES_AUTOHSCROLL as u32);
+            let mut style = WS_CHILD
+                | WS_TABSTOP
+                | WINDOW_STYLE(ES_LEFT as u32)
+                | WINDOW_STYLE(ES_AUTOHSCROLL as u32);
             if secret {
                 style |= WINDOW_STYLE(ES_PASSWORD as u32);
             }
@@ -643,6 +653,12 @@ impl FieldEdit {
                 EM_SETMARGINS,
                 WPARAM((EC_LEFTMARGIN | EC_RIGHTMARGIN) as usize),
                 LPARAM(0),
+            );
+            let _ = SetWindowSubclass(
+                hwnd,
+                SUBCLASSPROC::Some(field_edit_subclass),
+                FIELD_EDIT_SUBCLASS,
+                0,
             );
             Ok(Self {
                 hwnd,
@@ -730,6 +746,13 @@ impl FieldEdit {
 impl Drop for FieldEdit {
     fn drop(&mut self) {
         unsafe {
+            if !self.hwnd.is_invalid() {
+                let _ = RemoveWindowSubclass(
+                    self.hwnd,
+                    SUBCLASSPROC::Some(field_edit_subclass),
+                    FIELD_EDIT_SUBCLASS,
+                );
+            }
             if !self.font.is_invalid() {
                 let _ = DeleteObject(self.font);
                 self.font = HFONT::default();
@@ -737,6 +760,31 @@ impl Drop for FieldEdit {
         }
         self.hwnd = HWND::default();
     }
+}
+
+unsafe extern "system" fn field_edit_subclass(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    _data: usize,
+) -> LRESULT {
+    if msg == WM_NCDESTROY {
+        let _ = RemoveWindowSubclass(
+            hwnd,
+            SUBCLASSPROC::Some(field_edit_subclass),
+            FIELD_EDIT_SUBCLASS,
+        );
+    }
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && field_edit_forwards(wparam.0 as u16) {
+        if let Ok(parent) = GetParent(hwnd) {
+            if !parent.is_invalid() {
+                return SendMessageW(parent, msg, wparam, lparam);
+            }
+        }
+    }
+    DefSubclassProc(hwnd, msg, wparam, lparam)
 }
 
 pub struct Formats<'a> {
@@ -1626,6 +1674,17 @@ mod tests {
             Some("app:b")
         );
         assert_eq!(alias_commit_target(None, &ids, Some(9)), None);
-        assert_eq!(alias_commit_target(Some("  "), &ids, Some(0)).as_deref(), Some("app:a"));
+        assert_eq!(
+            alias_commit_target(Some("  "), &ids, Some(0)).as_deref(),
+            Some("app:a")
+        );
+    }
+
+    #[test]
+    fn field_edit_forwards_tab_enter_escape() {
+        assert!(field_edit_forwards(0x09));
+        assert!(field_edit_forwards(0x0D));
+        assert!(field_edit_forwards(0x1B));
+        assert!(!field_edit_forwards(b'A' as u16));
     }
 }

@@ -202,6 +202,64 @@ pub fn hit(_x: f32, y: f32, scroll: f32, width: f32) -> Option<GeneralHit> {
     None
 }
 
+fn row_semantics(
+    hit: GeneralHit,
+    state: &GeneralState<'_>,
+) -> (
+    crate::features::settings::focus::FocusRole,
+    bool,
+    Option<bool>,
+) {
+    use crate::features::settings::focus::FocusRole;
+    let hyper_on = hyper_includes_shift_enabled(state.hyper);
+    match hit {
+        GeneralHit::PaletteRecorder => (FocusRole::Button, true, None),
+        GeneralHit::ResetRanking => (FocusRole::Button, !state.ranking_empty, None),
+        GeneralHit::HyperKey => (FocusRole::Button, true, None),
+        GeneralHit::HyperShift => (
+            FocusRole::Toggle,
+            hyper_on,
+            Some(state.hyper_shift && hyper_on),
+        ),
+        GeneralHit::Appearance => (FocusRole::Button, true, None),
+        GeneralHit::Language => (FocusRole::Button, true, None),
+        GeneralHit::Compact => (FocusRole::Toggle, true, Some(state.compact)),
+        GeneralHit::FavoritesInCompact => (
+            FocusRole::Toggle,
+            state.compact,
+            Some(state.favorites_in_compact),
+        ),
+        GeneralHit::FollowCursor => (FocusRole::Toggle, true, Some(state.follow_cursor)),
+        GeneralHit::Draggable => (FocusRole::Toggle, true, Some(state.draggable)),
+        GeneralHit::LaunchAtLogin => (FocusRole::Toggle, true, Some(state.launch_at_login)),
+        GeneralHit::ShowInMenuBar => (FocusRole::Toggle, true, Some(state.show_in_menu_bar)),
+        GeneralHit::PopToRoot => (FocusRole::Button, true, None),
+        GeneralHit::AutoSwitchInput => (FocusRole::Toggle, true, Some(state.auto_switch)),
+    }
+}
+
+pub fn keyboard_items(
+    width: f32,
+    scroll: f32,
+    state: &GeneralState<'_>,
+) -> Vec<crate::features::settings::focus::FocusItem> {
+    layout_general(width, scroll)
+        .into_iter()
+        .map(|(hit, rect)| {
+            let (role, enabled, checked) = row_semantics(hit, state);
+            crate::features::settings::focus::content_item(
+                general_row_title(copy_row(hit), state.lang),
+                role,
+                enabled,
+                checked,
+                false,
+                rect,
+                None,
+            )
+        })
+        .collect()
+}
+
 pub fn hyper_includes_shift_enabled(hyper: &str) -> bool {
     hyper != "none"
 }
@@ -506,6 +564,49 @@ mod tests {
         assert!(hyper_subtitle("capsLock").contains("logoff"));
         assert!(!hyper_includes_shift_enabled("none"));
         assert!(hyper_includes_shift_enabled("capsLock"));
+    }
+
+    #[test]
+    fn compact_toggle_is_keyboard_reachable_and_favorites_follow() {
+        let state = GeneralState {
+            ranking_empty: true,
+            hyper: "none",
+            hyper_shift: false,
+            appearance: "dark",
+            compact: true,
+            favorites_in_compact: true,
+            follow_cursor: false,
+            draggable: false,
+            launch_at_login: false,
+            show_in_menu_bar: true,
+            pop_to_root: 0,
+            auto_switch: false,
+            chrome: 0,
+            palette_binding: None,
+            recording_palette: false,
+            lang: UiLang::En,
+        };
+        let items = keyboard_items(420.0, 0.0, &state);
+        let compact = items
+            .iter()
+            .find(|i| i.name == "Compact mode")
+            .expect("compact");
+        assert_eq!(
+            compact.role,
+            crate::features::settings::focus::FocusRole::Toggle
+        );
+        assert_eq!(compact.checked, Some(true));
+        let fav = items
+            .iter()
+            .find(|i| i.name == "Show favorites in compact mode")
+            .expect("favorites");
+        assert!(fav.enabled);
+        let hyper_shift = items
+            .iter()
+            .find(|i| i.name == "Include Shift")
+            .expect("shift");
+        assert!(!hyper_shift.enabled);
+        assert!(items.iter().any(|i| i.name == "Pop to Root"));
     }
 
     #[test]

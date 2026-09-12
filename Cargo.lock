@@ -563,6 +563,7 @@ dependencies = [
  "tinycast-pure",
  "unicode-segmentation",
  "windows",
+ "windows-core",
 ]
 
 [[package]]

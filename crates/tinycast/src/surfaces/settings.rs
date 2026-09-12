@@ -37,7 +37,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, GetKeyState, SetFocus, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN,
-    VK_SHIFT,
+    VK_SHIFT, VK_SPACE, VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetWindowLongPtrW,
@@ -46,11 +46,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CS_VREDRAW, EN_CHANGE, EN_KILLFOCUS, GWLP_USERDATA, HWND_TOP, IDC_ARROW, IDI_APPLICATION,
     MINMAXINFO, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE,
     WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY,
-    WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
-    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP,
-    WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW,
-    WS_SYSMENU,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_GETOBJECT, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_SYSKEYDOWN,
+    WM_SYSKEYUP, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    WS_OVERLAPPEDWINDOW, WS_SYSMENU,
 };
+
+#[path = "settings_acc.rs"]
+mod acc;
 
 use crate::app_core::AppCore;
 use crate::features::hotkeys::ui::recorder::Recorder;
@@ -168,6 +171,7 @@ struct SettingsInner {
     ai_edit: Option<usize>,
     ai_error: Option<String>,
     confirming_ai_remove: Option<String>,
+    focus: Option<usize>,
     edit_brush: HBRUSH,
     edit_appearance: u8,
 }
@@ -225,6 +229,7 @@ impl SettingsWindow {
                 ai_edit: None,
                 ai_error: None,
                 confirming_ai_remove: None,
+                focus: None,
                 edit_brush: HBRUSH::default(),
                 edit_appearance: 255,
             });
@@ -598,6 +603,18 @@ fn paint_scene(
                 }
             }
         }
+        if let Some(idx) = (*inner).focus {
+            let items = focus_items(hwnd, inner);
+            if let Some(item) = items.get(idx) {
+                let _ = crate::design_system::squircle::stroke_squircle(
+                    target,
+                    item.rect,
+                    theme::radius::MENU_ROW,
+                    theme::colors::ramp_rgba(appearance, 0.45, 0.35),
+                    2.0,
+                );
+            }
+        }
         let formats = Formats {
             header: header_format,
             body: body_format,
@@ -876,6 +893,7 @@ unsafe fn paint_detail_panes(
             detail_w,
             (*inner).scroll,
             appearance,
+            &(*inner).renderer.dwrite,
         )?;
         return Ok(());
     }
@@ -1366,6 +1384,872 @@ unsafe fn discard_alias(inner: *mut SettingsInner) {
     if let Some(alias) = (*inner).alias.as_ref() {
         alias.hide();
     }
+}
+
+fn focus_items(
+    hwnd: HWND,
+    inner: *mut SettingsInner,
+) -> Vec<crate::features::settings::focus::FocusItem> {
+    unsafe {
+        let (width, height) = client_dip_size(hwnd);
+        if let Some(items) = confirm_focus_items(inner, width, height) {
+            return items;
+        }
+        let tab = selected_tab(inner);
+        let lang = ui_lang(inner);
+        let mut items = crate::features::settings::focus::sidebar_items(tab, lang);
+        let detail_w = (width - theme::size::SETTINGS_SIDEBAR).max(0.0);
+        items.extend(content_focus_items(hwnd, inner, tab, lang, detail_w));
+        items
+    }
+}
+
+fn confirm_focus_items(
+    inner: *mut SettingsInner,
+    width: f32,
+    height: f32,
+) -> Option<Vec<crate::features::settings::focus::FocusItem>> {
+    unsafe {
+        let lang = ui_lang(inner);
+        let copy = if (*inner).confirming_snippets {
+            crate::features::snippets::settings::pane::enable_copy_lang(lang)
+        } else if (*inner).confirming_clear {
+            ConfirmCopy {
+                title: clipboard_confirm_title(lang),
+                message: clipboard_confirm_message(lang).to_string(),
+                accept: clipboard_confirm_action(lang),
+                cancel: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang),
+            }
+        } else if (*inner).confirming_reset {
+            ConfirmCopy::reset_ranking_lang(lang)
+        } else if let Some(id) = (*inner).confirming_ai_remove.as_deref() {
+            let name = core_from_host((*inner).host)
+                .and_then(|core| {
+                    (*core)
+                        .settings
+                        .ai_connections
+                        .iter()
+                        .find(|c| c.id.as_str() == id)
+                        .map(|c| {
+                            if c.name.is_empty() {
+                                tinycast_pure::i18n::ai_add_connection(lang).to_string()
+                            } else {
+                                c.name.clone()
+                            }
+                        })
+                })
+                .unwrap_or_else(|| tinycast_pure::i18n::ai_remove_title(lang).to_string());
+            ConfirmCopy {
+                title: tinycast_pure::i18n::ai_remove_title(lang),
+                message: tinycast_pure::i18n::ai_remove_message(&name, lang),
+                accept: tinycast_pure::i18n::ai_remove_action(lang),
+                cancel: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang),
+            }
+        } else {
+            return None;
+        };
+        let layout = layout_confirm(width, height);
+        Some(vec![
+            confirm_button(copy.accept, layout.accept),
+            confirm_button(copy.cancel, layout.cancel),
+        ])
+    }
+}
+
+fn confirm_button(
+    name: &str,
+    rect: crate::features::launcher::settings::items::Rect,
+) -> crate::features::settings::focus::FocusItem {
+    crate::features::settings::focus::FocusItem {
+        tab: None,
+        name: name.to_string(),
+        role: crate::features::settings::focus::FocusRole::Button,
+        enabled: true,
+        checked: None,
+        secret: false,
+        rect: DipRect {
+            x: rect.x,
+            y: rect.y,
+            w: rect.w,
+            h: rect.h,
+        },
+        edit_id: None,
+        scrolls: false,
+    }
+}
+
+fn push_row(
+    items: &mut Vec<crate::features::settings::focus::FocusItem>,
+    name: impl Into<String>,
+    role: crate::features::settings::focus::FocusRole,
+    enabled: bool,
+    checked: Option<bool>,
+    y: f32,
+    scroll: f32,
+    detail_w: f32,
+    h: f32,
+    edit_id: Option<usize>,
+) {
+    let pad = crate::design_system::settings::content_pad();
+    items.push(crate::features::settings::focus::content_item(
+        name,
+        role,
+        enabled,
+        checked,
+        false,
+        DipRect {
+            x: pad,
+            y: y - scroll,
+            w: (detail_w - pad * 2.0).max(40.0),
+            h,
+        },
+        edit_id,
+    ));
+}
+
+unsafe fn content_focus_items(
+    hwnd: HWND,
+    inner: *mut SettingsInner,
+    tab: SettingsTab,
+    lang: UiLang,
+    detail_w: f32,
+) -> Vec<crate::features::settings::focus::FocusItem> {
+    use crate::design_system::settings as ds;
+    use crate::features::settings::focus::FocusRole;
+    let scroll = (*inner).scroll;
+    let Some(core) = core_from_host((*inner).host) else {
+        return Vec::new();
+    };
+    let mut items = Vec::new();
+    match tab {
+        SettingsTab::General => {
+            let palette_label = (*core)
+                .hotkeys
+                .get("hotkey.togglePalette")
+                .map(|b| b.label());
+            let state = crate::features::settings::panes::general::GeneralState {
+                ranking_empty: (*core).ranking_is_empty(),
+                hyper: &(*core).settings.hyper_key,
+                hyper_shift: (*core).settings.hyper_includes_shift,
+                appearance: (*core).appearance_label(),
+                compact: (*core).settings.compact_mode,
+                favorites_in_compact: (*core).settings.show_favorites_in_compact,
+                follow_cursor: (*core).settings.open_on_cursor_screen,
+                draggable: (*core).settings.palette_draggable,
+                launch_at_login: (*core).settings.launch_at_login,
+                show_in_menu_bar: (*core).settings.show_in_menu_bar,
+                pop_to_root: (*core).settings.pop_to_root_timeout,
+                auto_switch: (*core).settings.auto_switch_input_source,
+                chrome: settings_appearance(inner),
+                palette_binding: palette_label.as_deref(),
+                recording_palette: (*inner).recorder.action.as_deref()
+                    == Some("hotkey.togglePalette"),
+                lang,
+            };
+            return crate::features::settings::panes::general::keyboard_items(
+                detail_w, scroll, &state,
+            );
+        }
+        SettingsTab::Permissions => {
+            for (i, _) in crate::features::settings::panes::permissions::ROWS
+                .iter()
+                .enumerate()
+            {
+                push_row(
+                    &mut items,
+                    tinycast_pure::i18n::permission_title(i, lang),
+                    FocusRole::Button,
+                    true,
+                    None,
+                    24.0 + i as f32 * 56.0,
+                    scroll,
+                    detail_w,
+                    56.0,
+                    None,
+                );
+            }
+        }
+        SettingsTab::About => {
+            let r = crate::features::settings::panes::about::support_rect(detail_w, scroll);
+            items.push(crate::features::settings::focus::content_item(
+                tinycast_pure::i18n::about_support(lang),
+                FocusRole::Button,
+                true,
+                None,
+                false,
+                r,
+                None,
+            ));
+        }
+        SettingsTab::Backup => {
+            let titles = [
+                tinycast_pure::i18n::backup_export(lang),
+                tinycast_pure::i18n::backup_import(lang),
+                tinycast_pure::i18n::backup_raycast(lang),
+            ];
+            for (i, title) in titles.into_iter().enumerate() {
+                push_row(
+                    &mut items,
+                    title,
+                    FocusRole::Button,
+                    true,
+                    None,
+                    24.0 + i as f32 * (44.0 + theme::spacing::XL),
+                    scroll,
+                    detail_w,
+                    44.0,
+                    None,
+                );
+            }
+        }
+        SettingsTab::QuickActions => {
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::qa_enable_title(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.quick_actions_enabled),
+                ds::form_origin(),
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::qa_translate_into(lang),
+                FocusRole::Button,
+                true,
+                None,
+                ds::form_origin() + ds::ROW_H,
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+        }
+        SettingsTab::Notes => {
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::notes_enable_title(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.notes_enabled),
+                ds::form_origin(),
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+        }
+        SettingsTab::Emoji => {
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::emoji_skin_tone_title(lang),
+                FocusRole::Button,
+                true,
+                None,
+                ds::form_origin(),
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+        }
+        SettingsTab::Snippets => {
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::snippets_enable_title(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.snippets_enabled),
+                ds::form_origin(),
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::show_in_launcher(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.snippets_show_in_launcher),
+                ds::form_origin() + ds::ROW_H,
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+        }
+        SettingsTab::Extensions => {
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::extensions_enable_title(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.extensions_enabled),
+                ds::form_origin(),
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::show_in_launcher(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.extensions_show_in_launcher),
+                ds::form_origin() + ds::ROW_H,
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+        }
+        SettingsTab::Calendar => {
+            let rows = [
+                (
+                    tinycast_pure::i18n::calendar_enable_title(lang),
+                    FocusRole::Toggle,
+                    Some((*core).settings.calendar_enabled),
+                ),
+                (
+                    tinycast_pure::i18n::calendar_auto_join(lang),
+                    FocusRole::Toggle,
+                    Some((*core).settings.auto_join_meetings),
+                ),
+                (
+                    tinycast_pure::i18n::calendar_camera(lang),
+                    FocusRole::Toggle,
+                    Some((*core).settings.camera_preview),
+                ),
+                (
+                    tinycast_pure::i18n::calendar_join_window(lang),
+                    FocusRole::Button,
+                    None,
+                ),
+            ];
+            for (i, (name, role, checked)) in rows.into_iter().enumerate() {
+                push_row(
+                    &mut items,
+                    name,
+                    role,
+                    true,
+                    checked,
+                    ds::form_origin() + i as f32 * ds::ROW_H,
+                    scroll,
+                    detail_w,
+                    ds::ROW_H,
+                    None,
+                );
+            }
+        }
+        SettingsTab::WindowManagement => {
+            let rows = [
+                (
+                    tinycast_pure::i18n::window_enable_title(lang),
+                    FocusRole::Toggle,
+                    Some((*core).settings.window_management_enabled),
+                ),
+                (
+                    tinycast_pure::i18n::show_in_launcher(lang),
+                    FocusRole::Toggle,
+                    Some((*core).settings.window_management_show_in_launcher),
+                ),
+                (
+                    tinycast_pure::i18n::window_cycle_title(lang),
+                    FocusRole::Toggle,
+                    Some((*core).settings.window_cycle_on_repeat),
+                ),
+                (
+                    tinycast_pure::i18n::window_gap_title(lang),
+                    FocusRole::Button,
+                    None,
+                ),
+            ];
+            for (i, (name, role, checked)) in rows.into_iter().enumerate() {
+                push_row(
+                    &mut items,
+                    name,
+                    role,
+                    true,
+                    checked,
+                    ds::form_origin() + i as f32 * ds::ROW_H,
+                    scroll,
+                    detail_w,
+                    ds::ROW_H,
+                    None,
+                );
+            }
+        }
+        SettingsTab::FileSearch => {
+            let layout_enable = ds::form_origin();
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::file_search_enable_title(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.file_search_enabled),
+                layout_enable,
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+            let mut y = ds::switch_section_next_y(false) + 22.0;
+            for scope in &(*core).settings.file_search_scopes {
+                push_row(
+                    &mut items,
+                    scope.clone(),
+                    FocusRole::Button,
+                    true,
+                    None,
+                    y,
+                    scroll,
+                    detail_w,
+                    36.0,
+                    None,
+                );
+                y += 36.0;
+            }
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::file_search_add_folder(lang),
+                FocusRole::Button,
+                true,
+                None,
+                y,
+                scroll,
+                detail_w,
+                36.0,
+                None,
+            );
+        }
+        SettingsTab::Clipboard => {
+            let disabled = (*core).settings.clipboard_disabled_apps.len();
+            let mut y = ds::switch_section_next_y(false);
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::clipboard_keep_for(lang),
+                FocusRole::Button,
+                true,
+                None,
+                y,
+                scroll,
+                detail_w,
+                36.0,
+                None,
+            );
+            y += 36.0 + theme::spacing::XL + 24.0 + 36.0;
+            for app in &(*core).settings.clipboard_disabled_apps {
+                push_row(
+                    &mut items,
+                    app.clone(),
+                    FocusRole::Button,
+                    true,
+                    None,
+                    y,
+                    scroll,
+                    detail_w,
+                    36.0,
+                    None,
+                );
+                y += 36.0;
+            }
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::clipboard_add_application(lang),
+                FocusRole::Button,
+                true,
+                None,
+                y,
+                scroll,
+                detail_w,
+                36.0,
+                None,
+            );
+            y += 36.0 + theme::spacing::XL + 24.0;
+            let _ = disabled;
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::clipboard_clear_history(lang),
+                FocusRole::Button,
+                true,
+                None,
+                y,
+                scroll,
+                detail_w,
+                36.0,
+                None,
+            );
+        }
+        SettingsTab::Quicklinks => {
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::quicklinks_enable_title(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.quicklinks_enabled),
+                ds::form_origin(),
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::show_in_launcher(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.quicklinks_show_in_launcher),
+                ds::form_origin() + ds::ROW_H,
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+            let y = ds::switch_section_next_y(true);
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::quicklinks_create(lang),
+                FocusRole::Button,
+                true,
+                None,
+                y,
+                scroll,
+                detail_w,
+                36.0,
+                None,
+            );
+            for (i, link) in (*core).quicklink_records().iter().enumerate() {
+                push_row(
+                    &mut items,
+                    link.name.clone(),
+                    FocusRole::Button,
+                    true,
+                    None,
+                    y + 36.0 + theme::spacing::SM + i as f32 * 36.0,
+                    scroll,
+                    detail_w,
+                    36.0,
+                    None,
+                );
+            }
+        }
+        SettingsTab::Ai => {
+            let titles = [
+                (
+                    tinycast_pure::i18n::ai_enable_title(lang),
+                    FocusRole::Toggle,
+                    Some((*core).settings.ai_enabled),
+                ),
+                (
+                    tinycast_pure::i18n::ai_web_search_title(lang),
+                    FocusRole::Toggle,
+                    Some((*core).settings.ai_web_search),
+                ),
+                (
+                    tinycast_pure::i18n::ai_system_prompt_title(lang),
+                    FocusRole::Toggle,
+                    Some((*core).settings.ai_system_prompt_enabled),
+                ),
+                (
+                    tinycast_pure::i18n::ai_opens_to_title(lang),
+                    FocusRole::Button,
+                    None,
+                ),
+                (
+                    tinycast_pure::i18n::ai_keep_conversations(lang),
+                    FocusRole::Button,
+                    None,
+                ),
+                (
+                    tinycast_pure::i18n::ai_default_model(lang),
+                    FocusRole::Button,
+                    None,
+                ),
+                (
+                    tinycast_pure::i18n::ai_chatgpt_subscription(lang),
+                    FocusRole::Button,
+                    None,
+                ),
+                (
+                    tinycast_pure::i18n::ai_add_connection(lang),
+                    FocusRole::Button,
+                    None,
+                ),
+            ];
+            for (i, (name, role, checked)) in titles.into_iter().enumerate() {
+                let top = if i == 0 {
+                    ds::form_origin()
+                } else {
+                    ds::switch_section_next_y(false) + (i - 1) as f32 * (52.0 + theme::spacing::XL)
+                };
+                push_row(
+                    &mut items, name, role, true, checked, top, scroll, detail_w, 52.0, None,
+                );
+            }
+            let editing = (*inner).ai_edit;
+            for (i, conn) in (*core).settings.ai_connections.iter().enumerate() {
+                let top = crate::features::ai::settings::pane::connection_row_top(i, editing);
+                let label = if conn.name.is_empty() {
+                    tinycast_pure::i18n::ai_add_connection(lang).to_string()
+                } else {
+                    conn.name.clone()
+                };
+                push_row(
+                    &mut items,
+                    label,
+                    FocusRole::Button,
+                    true,
+                    None,
+                    top,
+                    scroll,
+                    detail_w,
+                    52.0,
+                    None,
+                );
+                let remove = crate::features::ai::settings::pane::remove_rect(detail_w, top);
+                items.push(crate::features::settings::focus::content_item(
+                    tinycast_pure::i18n::ai_remove_title(lang),
+                    FocusRole::Button,
+                    true,
+                    None,
+                    false,
+                    DipRect {
+                        x: remove.x,
+                        y: remove.y - scroll,
+                        w: remove.w,
+                        h: remove.h,
+                    },
+                    None,
+                ));
+                if editing == Some(i) {
+                    if let Some(rects) =
+                        crate::features::ai::settings::pane::editor_rects(i, editing, detail_w)
+                    {
+                        items.push(crate::features::settings::focus::content_item(
+                            tinycast_pure::i18n::ai_base_url(lang),
+                            FocusRole::Text,
+                            true,
+                            None,
+                            false,
+                            DipRect {
+                                x: rects.url.x,
+                                y: rects.url.y - scroll,
+                                w: rects.url.w,
+                                h: rects.url.h,
+                            },
+                            Some(AI_URL_EDIT_ID),
+                        ));
+                        items.push(crate::features::settings::focus::content_item(
+                            tinycast_pure::i18n::ai_model_id(lang),
+                            FocusRole::Text,
+                            true,
+                            None,
+                            false,
+                            DipRect {
+                                x: rects.model.x,
+                                y: rects.model.y - scroll,
+                                w: rects.model.w,
+                                h: rects.model.h,
+                            },
+                            Some(AI_MODEL_EDIT_ID),
+                        ));
+                    }
+                }
+            }
+        }
+        SettingsTab::Commands => {
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::custom_commands_enable_title(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.custom_commands_enabled),
+                ds::form_origin(),
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::show_in_launcher(lang),
+                FocusRole::Toggle,
+                true,
+                Some((*core).settings.custom_commands_show_in_launcher),
+                ds::form_origin() + ds::ROW_H,
+                scroll,
+                detail_w,
+                ds::ROW_H,
+                None,
+            );
+            let y = ds::switch_section_next_y(true);
+            push_row(
+                &mut items,
+                tinycast_pure::i18n::custom_commands_new(lang),
+                FocusRole::Button,
+                true,
+                None,
+                y,
+                scroll,
+                detail_w,
+                36.0,
+                None,
+            );
+            for (i, cmd) in (*core).custom_command_records().iter().enumerate() {
+                push_row(
+                    &mut items,
+                    cmd.name.clone(),
+                    FocusRole::Button,
+                    true,
+                    None,
+                    y + 36.0 + theme::spacing::SM + i as f32 * 36.0,
+                    scroll,
+                    detail_w,
+                    36.0,
+                    None,
+                );
+            }
+            items.extend(launcher_focus_items(hwnd, inner, tab, lang, detail_w));
+        }
+        SettingsTab::Applications | SettingsTab::SystemSettings | SettingsTab::SystemActions => {
+            items.extend(launcher_focus_items(hwnd, inner, tab, lang, detail_w));
+        }
+    }
+    let _ = hwnd;
+    items
+}
+
+unsafe fn launcher_focus_items(
+    _hwnd: HWND,
+    inner: *mut SettingsInner,
+    tab: SettingsTab,
+    lang: UiLang,
+    detail_w: f32,
+) -> Vec<crate::features::settings::focus::FocusItem> {
+    use crate::features::settings::focus::FocusRole;
+    let Some(core) = core_from_host((*inner).host) else {
+        return Vec::new();
+    };
+    let Some(section) = LauncherItemsSection::for_lang(tab, lang) else {
+        return Vec::new();
+    };
+    let commands_shift = if tab == SettingsTab::Commands {
+        crate::features::custom_commands::settings::pane::content_height(
+            (*core).custom_command_records().len(),
+        )
+    } else {
+        0.0
+    };
+    let entries = (*core).settings_entries(section.kind);
+    let filtered = crate::features::launcher::settings::items::filter_entries(
+        &entries,
+        section.kind,
+        &(*inner).filter_query,
+    );
+    let layout = layout_launcher_items(
+        &section,
+        filtered.len(),
+        |i| filtered.get(i).and_then(|e| hotkey_action_key(e)).is_some(),
+        detail_w,
+        filtered.is_empty(),
+    )
+    .shifted(commands_shift);
+    let scroll = (*inner).scroll;
+    let kind_on = (*core).visibility.is_kind_enabled(section.kind);
+    let mut items = Vec::new();
+    let enable = layout.enable_row;
+    items.push(crate::features::settings::focus::content_item(
+        section.enable_title_lang(lang),
+        FocusRole::Toggle,
+        true,
+        Some(kind_on),
+        false,
+        DipRect {
+            x: enable.x,
+            y: enable.y - scroll,
+            w: enable.w,
+            h: enable.h,
+        },
+        None,
+    ));
+    if kind_on {
+        items.push(crate::features::settings::focus::content_item(
+            section.search_prompt,
+            FocusRole::Text,
+            true,
+            None,
+            false,
+            DipRect {
+                x: layout.filter.x,
+                y: layout.filter.y - scroll,
+                w: layout.filter.w,
+                h: layout.filter.h,
+            },
+            Some(FILTER_EDIT_ID),
+        ));
+        for (i, row) in layout.items.iter().enumerate() {
+            let name = filtered
+                .get(i)
+                .map(|e| e.name.clone())
+                .unwrap_or_else(|| format!("Item {i}"));
+            let id = filtered.get(i).map(|e| e.id.clone()).unwrap_or_default();
+            let visible = (*core).visibility.is_item_visible(&id);
+            items.push(crate::features::settings::focus::content_item(
+                name.clone(),
+                FocusRole::Toggle,
+                true,
+                Some(visible),
+                false,
+                DipRect {
+                    x: row.checkbox.x,
+                    y: row.checkbox.y - scroll,
+                    w: row.checkbox.w,
+                    h: row.checkbox.h,
+                },
+                None,
+            ));
+            items.push(crate::features::settings::focus::content_item(
+                tinycast_pure::i18n::add_alias_placeholder(lang),
+                FocusRole::Text,
+                true,
+                None,
+                false,
+                DipRect {
+                    x: row.alias.x,
+                    y: row.alias.y - scroll,
+                    w: row.alias.w,
+                    h: row.alias.h,
+                },
+                if (*inner).alias_index == Some(i) {
+                    Some(ALIAS_EDIT_ID)
+                } else {
+                    None
+                },
+            ));
+            if let Some(rec) = row.recorder {
+                items.push(crate::features::settings::focus::content_item(
+                    tinycast_pure::i18n::record_label(lang),
+                    FocusRole::Button,
+                    true,
+                    None,
+                    false,
+                    DipRect {
+                        x: rec.x,
+                        y: rec.y - scroll,
+                        w: rec.w,
+                        h: rec.h,
+                    },
+                    None,
+                ));
+            }
+        }
+    }
+    items
 }
 
 fn alias_edit_focused(inner: *mut SettingsInner) -> bool {
@@ -1940,6 +2824,109 @@ unsafe fn accept_confirmation(inner: *mut SettingsInner) {
     clear_confirmations(inner);
 }
 
+fn native_edit_id(inner: *mut SettingsInner) -> Option<usize> {
+    unsafe {
+        let focus = GetFocus();
+        let matches = |edit: Option<&FieldEdit>, id: usize| {
+            edit.is_some_and(|e| !e.hwnd.is_invalid() && e.hwnd == focus)
+                .then_some(id)
+        };
+        matches((*inner).filter.as_ref(), FILTER_EDIT_ID)
+            .or_else(|| matches((*inner).alias.as_ref(), ALIAS_EDIT_ID))
+            .or_else(|| matches((*inner).ai_url.as_ref(), AI_URL_EDIT_ID))
+            .or_else(|| matches((*inner).ai_model.as_ref(), AI_MODEL_EDIT_ID))
+            .or_else(|| matches((*inner).ai_key.as_ref(), AI_KEY_EDIT_ID))
+    }
+}
+
+fn focus_native_edit(inner: *mut SettingsInner, id: usize) -> bool {
+    unsafe {
+        let hwnd = match id {
+            FILTER_EDIT_ID => (*inner).filter.as_ref().map(|e| e.hwnd),
+            ALIAS_EDIT_ID => (*inner).alias.as_ref().map(|e| e.hwnd),
+            AI_URL_EDIT_ID => (*inner).ai_url.as_ref().map(|e| e.hwnd),
+            AI_MODEL_EDIT_ID => (*inner).ai_model.as_ref().map(|e| e.hwnd),
+            AI_KEY_EDIT_ID => (*inner).ai_key.as_ref().map(|e| e.hwnd),
+            _ => None,
+        };
+        if let Some(hwnd) = hwnd.filter(|h| !h.is_invalid()) {
+            let _ = SetFocus(hwnd);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+unsafe fn scroll_item_into_view(
+    hwnd: HWND,
+    inner: *mut SettingsInner,
+    item: &crate::features::settings::focus::FocusItem,
+) {
+    if !item.scrolls {
+        return;
+    }
+    let view_h = client_dip_size(hwnd).1;
+    if item.rect.y < 0.0 {
+        (*inner).scroll = ((*inner).scroll + item.rect.y).max(0.0);
+    } else if item.rect.y + item.rect.h > view_h {
+        (*inner).scroll += item.rect.y + item.rect.h - view_h;
+    }
+}
+
+unsafe fn move_focus(hwnd: HWND, inner: *mut SettingsInner, back: bool) {
+    let items = focus_items(hwnd, inner);
+    let from = native_edit_id(inner)
+        .and_then(|id| items.iter().position(|i| i.edit_id == Some(id)))
+        .or((*inner).focus);
+    (*inner).focus = crate::features::settings::focus::traverse(&items, from, back);
+    if let Some(idx) = (*inner).focus {
+        if let Some(item) = items.get(idx) {
+            scroll_item_into_view(hwnd, inner, item);
+            if let Some(id) = item.edit_id {
+                if !focus_native_edit(inner, id) {
+                    let _ = SetFocus(hwnd);
+                }
+            } else {
+                let _ = SetFocus(hwnd);
+            }
+        }
+    } else {
+        let _ = SetFocus(hwnd);
+    }
+    let _ = InvalidateRect(hwnd, None, FALSE);
+}
+
+unsafe fn activate_focus(hwnd: HWND, inner: *mut SettingsInner) {
+    let Some(idx) = (*inner).focus else {
+        return;
+    };
+    let items = focus_items(hwnd, inner);
+    let Some(item) = items.get(idx).cloned().filter(|i| i.enabled && !i.secret) else {
+        return;
+    };
+    if let Some(id) = item.edit_id {
+        let _ = focus_native_edit(inner, id);
+        return;
+    }
+    if let Some(tab) = item.tab {
+        if let Some(core) = core_from_host((*inner).host) {
+            (*core).select_settings_tab(tab);
+        }
+        let items = focus_items(hwnd, inner);
+        (*inner).focus = items.iter().position(|i| i.tab == Some(tab));
+        let _ = InvalidateRect(hwnd, None, FALSE);
+        return;
+    }
+    let dpi = GetDpiForWindow(hwnd);
+    let x = dip_scalar_to_px(item.rect.x + item.rect.w / 2.0, dpi);
+    let y = dip_scalar_to_px(item.rect.y + item.rect.h / 2.0, dpi);
+    handle_lbutton(
+        hwnd,
+        LPARAM(((y as u32) << 16 | (x as u32 & 0xffff)) as isize),
+    );
+}
+
 unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
     let Some(inner) = inner_from(hwnd) else {
         return false;
@@ -1950,33 +2937,68 @@ unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
         || (*inner).confirming_ai_remove.is_some()
     {
         let vk = wparam.0 as u16;
-        if vk == 0x1B {
+        if vk == VK_ESCAPE.0 {
             clear_confirmations(inner);
             let _ = InvalidateRect(hwnd, None, FALSE);
             return true;
         }
-        if vk == 0x0D {
-            accept_confirmation(inner);
+        if vk == VK_TAB.0 {
+            move_focus(hwnd, inner, GetKeyState(VK_SHIFT.0 as i32) < 0);
+            return true;
+        }
+        if vk == VK_RETURN.0 || vk == VK_SPACE.0 {
+            if (*inner).focus == Some(1) {
+                clear_confirmations(inner);
+            } else {
+                accept_confirmation(inner);
+            }
             let _ = InvalidateRect(hwnd, None, FALSE);
             return true;
         }
         return true;
     }
-    if alias_edit_focused(inner) {
+    if native_edit_id(inner).is_some() {
         let vk = wparam.0 as u16;
         if vk == VK_ESCAPE.0 {
-            discard_alias(inner);
+            if alias_edit_focused(inner) {
+                discard_alias(inner);
+            }
             let _ = SetFocus(hwnd);
             let _ = InvalidateRect(hwnd, None, FALSE);
             return true;
         }
         if vk == VK_RETURN.0 {
-            commit_alias(inner);
-            let _ = SetFocus(hwnd);
-            let _ = InvalidateRect(hwnd, None, FALSE);
+            if alias_edit_focused(inner) {
+                commit_alias(inner);
+                let _ = SetFocus(hwnd);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+                return true;
+            }
+            if native_edit_id(inner) == Some(AI_URL_EDIT_ID)
+                || native_edit_id(inner) == Some(AI_MODEL_EDIT_ID)
+                || native_edit_id(inner) == Some(AI_KEY_EDIT_ID)
+            {
+                let _ = commit_ai_connection(inner);
+                let _ = SetFocus(hwnd);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+                return true;
+            }
+            return true;
+        }
+        if vk == VK_TAB.0 && (*inner).recorder.action.is_none() {
+            move_focus(hwnd, inner, GetKeyState(VK_SHIFT.0 as i32) < 0);
             return true;
         }
         return false;
+    }
+    let vk = wparam.0 as u16;
+    if (*inner).recorder.action.is_none() && vk == VK_TAB.0 {
+        move_focus(hwnd, inner, GetKeyState(VK_SHIFT.0 as i32) < 0);
+        return true;
+    }
+    if (*inner).recorder.action.is_none() && (vk == VK_SPACE.0 || vk == VK_RETURN.0) {
+        activate_focus(hwnd, inner);
+        return true;
     }
     let Some(action) = (*inner).recorder.action.clone() else {
         return false;
@@ -2146,7 +3168,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         let Some(core) = core_from_host((*inner).host) else {
             return;
         };
-        if crate::features::settings::panes::about::hit(detail_x, y, (*inner).scroll)
+        if crate::features::settings::panes::about::hit(detail_x, y, (*inner).scroll, detail_w)
             == Some(crate::features::settings::panes::about::AboutHit::Support)
         {
             (*core).show_support();
@@ -2648,6 +3670,10 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
     }
 }
 
+unsafe fn handle_getobject(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    acc::handle_getobject(hwnd, wparam, lparam)
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_NCCREATE => {
@@ -2751,6 +3777,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             if let Some(inner) = inner_from(hwnd) {
                 (*inner).renderer.discard_target();
+            }
+            LRESULT(0)
+        }
+        WM_GETOBJECT => {
+            let result = unsafe { handle_getobject(hwnd, wparam, lparam) };
+            if result.0 != 0 {
+                return result;
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        m if m == acc::WM_SETTINGS_ACC_INVOKE => {
+            if let Some(inner) = inner_from(hwnd) {
+                (*inner).focus = Some(wparam.0);
+                activate_focus(hwnd, inner);
             }
             LRESULT(0)
         }
@@ -2883,6 +3923,44 @@ mod tests {
         assert_eq!(*tabs.last().unwrap(), SettingsTab::About);
         assert_eq!(theme::size::SETTINGS_SIDEBAR, 215.0);
         assert_eq!(theme::size::SETTINGS_WINDOW, (860.0, 700.0));
+    }
+
+    #[test]
+    fn settings_exposes_uia_getobject_and_focus_model() {
+        let src = include_str!("settings.rs");
+        let acc = include_str!("settings_acc.rs");
+        assert!(src.contains("WM_GETOBJECT"));
+        assert!(acc.contains("IAccessible"));
+        assert!(acc.contains("accDoDefaultAction"));
+        assert!(acc.contains("UiaReturnRawElementProvider"));
+        let items =
+            crate::features::settings::focus::sidebar_items(SettingsTab::General, UiLang::En);
+        assert!(items.iter().any(|i| i.name == "General"));
+        assert!(items.iter().all(|i| !i.secret));
+        assert!(crate::features::settings::focus::acc_value(&items[0]).is_some());
+        assert_eq!(
+            crate::features::settings::focus::acc_role_id(items[0].role),
+            0x25
+        );
+        let compact = crate::features::settings::focus::content_item(
+            "Compact mode",
+            crate::features::settings::focus::FocusRole::Toggle,
+            true,
+            Some(true),
+            false,
+            DipRect {
+                x: 32.0,
+                y: 80.0,
+                w: 200.0,
+                h: 52.0,
+            },
+            None,
+        );
+        assert_eq!(
+            crate::features::settings::focus::acc_value(&compact).as_deref(),
+            Some("on")
+        );
+        assert!(compact.scrolls);
     }
 
     #[test]
