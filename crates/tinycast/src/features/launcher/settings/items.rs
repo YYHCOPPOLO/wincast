@@ -52,10 +52,10 @@ pub const RESET_CONFIRM_MESSAGE: &str =
 pub const RESET_CONFIRM_ACTION: &str = "Reset Ranking";
 pub const RESET_CONFIRM_CANCEL: &str = "Cancel";
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ConfirmCopy {
     pub title: &'static str,
-    pub message: &'static str,
+    pub message: String,
     pub accept: &'static str,
     pub cancel: &'static str,
 }
@@ -68,7 +68,7 @@ impl ConfirmCopy {
     pub fn reset_ranking_lang(lang: UiLang) -> Self {
         Self {
             title: launcher_reset_confirm_title(lang),
-            message: launcher_reset_confirm_message(lang),
+            message: launcher_reset_confirm_message(lang).to_string(),
             accept: reset_ranking_action(lang),
             cancel: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang),
         }
@@ -237,6 +237,29 @@ pub fn commit_alias_text(draft: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+/// Identity captured when editing starts. Never resolve a pending draft through a
+/// later page's filtered index — that is the tab-switch / filter-shift bug.
+pub fn alias_commit_target(
+    pending_id: Option<&str>,
+    filtered_ids: &[String],
+    index: Option<usize>,
+) -> Option<String> {
+    if let Some(id) = pending_id.map(str::trim).filter(|s| !s.is_empty()) {
+        return Some(id.to_string());
+    }
+    index.and_then(|i| filtered_ids.get(i).cloned())
+}
+
+pub fn alias_commit_pair(
+    pending_id: Option<&str>,
+    draft: &str,
+    filtered_ids: &[String],
+    index: Option<usize>,
+) -> Option<(String, Option<String>)> {
+    let id = alias_commit_target(pending_id, filtered_ids, index)?;
+    Some((id, commit_alias_text(draft)))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1028,7 +1051,7 @@ pub fn paint_confirm_copy(
             w: layout.card.w - CARD_PAD * 2.0,
             h: 48.0,
         },
-        copy.message,
+        &copy.message,
     )?;
     paint_button(
         target,
@@ -1567,5 +1590,42 @@ mod tests {
         assert_eq!(commit_alias_text("   "), None);
         assert_eq!(commit_alias_text("iterm"), Some("iterm".into()));
         assert_eq!(commit_alias_text(" i term "), Some("i term".into()));
+    }
+
+    #[test]
+    fn pending_identity_survives_tab_and_filter_index_shift() {
+        let excel = "app:Excel";
+        let new_tab = vec!["cmd:restart".into(), "cmd:sleep".into()];
+        assert_eq!(new_tab.get(0).map(String::as_str), Some("cmd:restart"));
+        assert_eq!(
+            alias_commit_target(Some(excel), &new_tab, Some(0)).as_deref(),
+            Some(excel)
+        );
+        let filtered = vec!["app:Word".into()];
+        assert_eq!(
+            alias_commit_target(Some(excel), &filtered, Some(0)).as_deref(),
+            Some(excel)
+        );
+        let (id, value) =
+            alias_commit_pair(Some(excel), "  audit-excel-tab  ", &new_tab, Some(0)).unwrap();
+        assert_eq!(id, excel);
+        assert_eq!(value.as_deref(), Some("audit-excel-tab"));
+        assert_eq!(
+            alias_commit_pair(Some(excel), "   ", &new_tab, Some(0))
+                .unwrap()
+                .1,
+            None
+        );
+    }
+
+    #[test]
+    fn missing_identity_falls_back_to_live_index() {
+        let ids = vec!["app:a".into(), "app:b".into()];
+        assert_eq!(
+            alias_commit_target(None, &ids, Some(1)).as_deref(),
+            Some("app:b")
+        );
+        assert_eq!(alias_commit_target(None, &ids, Some(9)), None);
+        assert_eq!(alias_commit_target(Some("  "), &ids, Some(0)).as_deref(), Some("app:a"));
     }
 }

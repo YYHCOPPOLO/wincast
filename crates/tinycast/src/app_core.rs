@@ -1894,6 +1894,11 @@ impl AppCore {
         if self.settings_tab == tab {
             return;
         }
+        if let Some(window) = &self.settings_window {
+            if !window.commit_pending() {
+                return;
+            }
+        }
         self.settings_tab = tab;
         if let Some(window) = &self.settings_window {
             window.on_tab_changed();
@@ -3789,11 +3794,11 @@ impl AppCore {
         let provider = next.provider;
         crate::features::ai::settings::pane::apply_draft(&mut next, provider, &url, &model)
             .map_err(|e| e.message().to_string())?;
-        self.ai_factory.forget_if_retargeted(&previous, &next);
         let trimmed = key.trim();
         if !trimmed.is_empty() {
             self.ai_factory.keys().set(&next.id, trimmed)?;
         }
+        self.ai_factory.forget_if_retargeted(&previous, &next);
         if let Some(slot) = self.settings.ai_connections.get_mut(index) {
             *slot = next;
         }
@@ -3801,6 +3806,19 @@ impl AppCore {
         self.invalidate_settings();
         self.invalidate_palette();
         Ok(())
+    }
+
+    pub fn remove_ai_connection_id(&mut self, id: &str) -> bool {
+        let Some(index) = self
+            .settings
+            .ai_connections
+            .iter()
+            .position(|c| c.id.as_str() == id)
+        else {
+            return false;
+        };
+        self.remove_ai_connection(index);
+        true
     }
 
     pub fn ai_connection_key_saved(&self, index: usize) -> bool {
@@ -5143,6 +5161,25 @@ mod tests {
     }
 
     #[test]
+    fn invalid_ai_url_keeps_saved_connection() {
+        let mut c = AppCore::new();
+        c.add_ai_connection();
+        c.apply_ai_connection_fields(0, "http://127.0.0.1:11434/v1".into(), "llama3".into(), "".into())
+            .unwrap();
+        let saved = c.settings.ai_connections[0].clone();
+        let err = c
+            .apply_ai_connection_fields(0, "http://example.com/v1".into(), "x".into(), "".into())
+            .unwrap_err();
+        assert!(!err.to_ascii_lowercase().contains("sk-"));
+        assert_eq!(c.settings.ai_connections[0].base_url, saved.base_url);
+        assert_eq!(c.settings.ai_connections[0].models, saved.models);
+        let id = saved.id.as_str().to_string();
+        assert!(c.remove_ai_connection_id(&id));
+        assert!(!c.remove_ai_connection_id(&id));
+        assert!(c.settings.ai_connections.is_empty());
+    }
+
+    #[test]
     fn add_ai_connection_does_not_ship_a_catalog() {
         let mut conn =
             tinycast_pure::ai::AiConnection::new(tinycast_pure::ai::ProviderKind::OpenAiCompatible);
@@ -5269,6 +5306,20 @@ mod tests {
         assert_eq!(c.settings_tab, SettingsTab::Ai);
         c.select_settings_tab(SettingsTab::About);
         assert_eq!(c.settings_tab, SettingsTab::About);
+    }
+
+    #[test]
+    fn alias_draft_persists_across_reload_and_tab_change() {
+        let mut c = AppCore::new();
+        c.set_alias_draft("app:Excel", "audit-excel-tab");
+        assert_eq!(c.aliases.get("app:Excel"), Some("audit-excel-tab"));
+        c.select_settings_tab(SettingsTab::QuickActions);
+        assert_eq!(c.aliases.get("app:Excel"), Some("audit-excel-tab"));
+        drop(c);
+        let mut c = AppCore::new();
+        assert_eq!(c.aliases.get("app:Excel"), Some("audit-excel-tab"));
+        c.set_alias_draft("app:Excel", "   ");
+        assert_eq!(c.aliases.get("app:Excel"), None);
     }
 
     #[test]

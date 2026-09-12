@@ -68,7 +68,6 @@ pub fn hit(
     editing: Option<usize>,
 ) -> Option<AiHit> {
     let y = y + scroll;
-    let pad = ds::content_pad();
     let hits = [
         AiHit::Enable,
         AiHit::WebSearch,
@@ -88,7 +87,8 @@ pub fn hit(
     for i in 0..connection_count {
         let top = connection_row_top(i, editing);
         if y >= top && y < top + ROW_H {
-            if x >= width - pad - REMOVE_HIT_W {
+            let remove = remove_rect(width, top);
+            if x >= remove.x && x < remove.x + remove.w {
                 return Some(AiHit::RemoveConnection(i));
             }
             return Some(AiHit::Connection(i));
@@ -101,6 +101,25 @@ pub fn hit(
         }
     }
     None
+}
+
+pub fn remove_rect(width: f32, row_y: f32) -> tinycast_pure::palette_placement::DipRect {
+    let pad = ds::content_pad();
+    tinycast_pure::palette_placement::DipRect {
+        x: width - pad - REMOVE_HIT_W,
+        y: row_y,
+        w: REMOVE_HIT_W,
+        h: ROW_H,
+    }
+}
+
+pub fn redact_ai_error(err: &str) -> String {
+    let lower = err.to_ascii_lowercase();
+    if lower.contains("sk-") || lower.contains("api key") || lower.contains("apikey") {
+        "Couldn’t save this connection.".into()
+    } else {
+        err.lines().next().unwrap_or(err).to_string()
+    }
 }
 
 pub fn connection_row_top(index: usize, editing: Option<usize>) -> f32 {
@@ -309,6 +328,7 @@ pub fn paint(
     codex: CodexPhase,
     editing: Option<usize>,
     key_saved: bool,
+    error: Option<&str>,
     width: f32,
     scroll: f32,
     appearance: u8,
@@ -437,8 +457,9 @@ pub fn paint(
             width,
             true,
             appearance,
-            ds::RowTrailing::Label(remove),
+            ds::RowTrailing::None,
         )?;
+        paint_remove_control(target, formats, remove, remove_rect(width, top), appearance)?;
         if editing == Some(i) {
             let editor_top = top + ROW_H + theme::spacing::SM;
             paint_editor_label(
@@ -481,15 +502,36 @@ pub fn paint(
                 width,
                 appearance,
             )?;
-            paint_editor_hint(
-                target,
-                formats,
-                key_status_lang(key_saved, lang),
-                editor_top,
-                width,
-                appearance,
-            )?;
+            let hint = error.unwrap_or_else(|| key_status_lang(key_saved, lang));
+            paint_editor_hint(target, formats, hint, editor_top, width, appearance)?;
         }
+    }
+    Ok(())
+}
+
+fn paint_remove_control(
+    target: &ID2D1RenderTarget,
+    formats: &Formats<'_>,
+    label: &str,
+    rect: tinycast_pure::palette_placement::DipRect,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    let brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+    let wide: Vec<u16> = label.encode_utf16().collect();
+    unsafe {
+        target.DrawText(
+            &wide,
+            formats.caption,
+            &D2D_RECT_F {
+                left: rect.x,
+                top: rect.y,
+                right: rect.x + rect.w,
+                bottom: rect.y + rect.h,
+            },
+            &brush,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
     }
     Ok(())
 }
@@ -633,9 +675,21 @@ mod tests {
             hit(20.0, connection_row_top(0, None) + 8.0, 0.0, 1, width, None),
             Some(AiHit::Connection(0))
         );
+        let remove = remove_rect(width, connection_row_top(0, None));
         assert_eq!(
             hit(
-                width - 20.0,
+                remove.x - 8.0,
+                connection_row_top(0, None) + 8.0,
+                0.0,
+                1,
+                width,
+                None
+            ),
+            Some(AiHit::Connection(0))
+        );
+        assert_eq!(
+            hit(
+                remove.x + 4.0,
                 connection_row_top(0, None) + 8.0,
                 0.0,
                 1,
@@ -644,6 +698,8 @@ mod tests {
             ),
             Some(AiHit::RemoveConnection(0))
         );
+        assert_eq!(redact_ai_error("bad sk-secret"), "Couldn’t save this connection.");
+        assert_eq!(redact_ai_error("Invalid URL"), "Invalid URL");
         let top = connection_row_top(0, Some(0));
         assert_eq!(
             hit(

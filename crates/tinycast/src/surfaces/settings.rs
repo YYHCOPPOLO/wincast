@@ -36,7 +36,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, SetFocus, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    GetFocus, GetKeyState, SetFocus, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN,
+    VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetWindowLongPtrW,
@@ -54,10 +55,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::app_core::AppCore;
 use crate::features::hotkeys::ui::recorder::Recorder;
 use crate::features::launcher::settings::items::{
-    hit_confirm, hit_launcher, hotkey_action_key, layout_confirm, layout_launcher_items,
-    layout_search_section, paint_confirm, paint_confirm_copy, paint_launcher_items,
-    paint_search_section, ConfirmCopy, FieldEdit, Formats, Hit, LauncherItemsSection,
-    AI_KEY_EDIT_ID, AI_MODEL_EDIT_ID, AI_URL_EDIT_ID, ALIAS_EDIT_ID, FILTER_EDIT_ID, ITEM_H,
+    alias_commit_pair, hit_confirm, hit_launcher, hotkey_action_key, layout_confirm,
+    layout_launcher_items, layout_search_section, paint_confirm, paint_confirm_copy,
+    paint_launcher_items, paint_search_section, ConfirmCopy, FieldEdit, Formats, Hit,
+    LauncherItemsSection, AI_KEY_EDIT_ID, AI_MODEL_EDIT_ID, AI_URL_EDIT_ID, ALIAS_EDIT_ID,
+    FILTER_EDIT_ID, ITEM_H,
 };
 use crate::platform::screens::{dip_scalar_to_px, screens_px, target_screen_from_cursor_px};
 
@@ -154,6 +156,7 @@ struct SettingsInner {
     filter: Option<FieldEdit>,
     alias: Option<FieldEdit>,
     alias_index: Option<usize>,
+    alias_id: Option<String>,
     recorder: Recorder,
     confirming_reset: bool,
     confirming_clear: bool,
@@ -163,6 +166,8 @@ struct SettingsInner {
     ai_model: Option<FieldEdit>,
     ai_key: Option<FieldEdit>,
     ai_edit: Option<usize>,
+    ai_error: Option<String>,
+    confirming_ai_remove: Option<String>,
     edit_brush: HBRUSH,
     edit_appearance: u8,
 }
@@ -208,6 +213,7 @@ impl SettingsWindow {
                 filter: None,
                 alias: None,
                 alias_index: None,
+                alias_id: None,
                 recorder: Recorder::new(),
                 confirming_reset: false,
                 confirming_clear: false,
@@ -217,6 +223,8 @@ impl SettingsWindow {
                 ai_model: None,
                 ai_key: None,
                 ai_edit: None,
+                ai_error: None,
+                confirming_ai_remove: None,
                 edit_brush: HBRUSH::default(),
                 edit_appearance: 255,
             });
@@ -293,6 +301,16 @@ impl SettingsWindow {
             }
         }
         self.invalidate();
+    }
+
+    pub fn commit_pending(&self) -> bool {
+        unsafe {
+            let Some(inner) = inner_from(self.hwnd) else {
+                return true;
+            };
+            commit_alias(inner);
+            commit_ai_connection(inner)
+        }
     }
 }
 
@@ -651,7 +669,11 @@ unsafe fn paint_detail(
         reset_pane_state(inner, false);
         (*inner).shown_tab = selected;
     }
-    if (*inner).confirming_reset || (*inner).confirming_clear || (*inner).confirming_snippets {
+    if (*inner).confirming_reset
+        || (*inner).confirming_clear
+        || (*inner).confirming_snippets
+        || (*inner).confirming_ai_remove.is_some()
+    {
         hide_edits(inner);
         if let Some(core) = core {
             with_detail_origin(target, || {
@@ -695,6 +717,30 @@ unsafe fn paint_detail(
                     (width, height),
                     crate::features::snippets::settings::pane::enable_copy_lang(core.ui_lang()),
                 )?;
+            } else if let Some(id) = (*inner).confirming_ai_remove.as_deref() {
+                let name = core
+                    .settings
+                    .ai_connections
+                    .iter()
+                    .find(|c| c.id.as_str() == id)
+                    .map(|c| c.title())
+                    .unwrap_or_default();
+                let message = tinycast_pure::i18n::ai_remove_message(&name, core.ui_lang());
+                paint_confirm_copy(
+                    target,
+                    formats,
+                    &layout,
+                    (width, height),
+                    ConfirmCopy {
+                        title: tinycast_pure::i18n::ai_remove_title(core.ui_lang()),
+                        message,
+                        accept: tinycast_pure::i18n::ai_remove_action(core.ui_lang()),
+                        cancel: tinycast_pure::i18n::chrome(
+                            tinycast_pure::i18n::Chrome::Cancel,
+                            core.ui_lang(),
+                        ),
+                    },
+                )?;
             } else if (*inner).confirming_clear {
                 paint_confirm_copy(
                     target,
@@ -703,7 +749,7 @@ unsafe fn paint_detail(
                     (width, height),
                     ConfirmCopy {
                         title: clipboard_confirm_title(core.ui_lang()),
-                        message: clipboard_confirm_message(core.ui_lang()),
+                        message: clipboard_confirm_message(core.ui_lang()).to_string(),
                         accept: clipboard_confirm_action(core.ui_lang()),
                         cancel: tinycast_pure::i18n::chrome(
                             tinycast_pure::i18n::Chrome::Cancel,
@@ -884,6 +930,7 @@ unsafe fn paint_detail_panes(
                 core.chatgpt_phase(),
                 (*inner).ai_edit,
                 key_saved,
+                (*inner).ai_error.as_deref(),
                 detail_w,
                 (*inner).scroll,
                 appearance,
@@ -1248,8 +1295,9 @@ unsafe fn layout_ai_edits(
 
 unsafe fn reset_pane_state(inner: *mut SettingsInner, resume_hotkeys: bool) {
     commit_alias(inner);
-    commit_ai_connection(inner);
+    let _ = commit_ai_connection(inner);
     (*inner).ai_edit = None;
+    (*inner).ai_error = None;
     hide_ai_edits(inner);
     (*inner).scroll = 0.0;
     (*inner).filter_query.clear();
@@ -1261,9 +1309,11 @@ unsafe fn reset_pane_state(inner: *mut SettingsInner, resume_hotkeys: bool) {
         alias.hide();
     }
     (*inner).alias_index = None;
+    (*inner).alias_id = None;
     (*inner).confirming_reset = false;
     (*inner).confirming_clear = false;
     (*inner).confirming_snippets = false;
+    (*inner).confirming_ai_remove = None;
     if (*inner).recorder.is_recording() && resume_hotkeys {
         (*inner).recorder.cancel();
         if let Some(core) = core_from_host((*inner).host) {
@@ -1275,12 +1325,8 @@ unsafe fn reset_pane_state(inner: *mut SettingsInner, resume_hotkeys: bool) {
 }
 
 unsafe fn commit_alias(inner: *mut SettingsInner) {
-    let Some(idx) = (*inner).alias_index.take() else {
-        if let Some(alias) = (*inner).alias.as_ref() {
-            alias.hide();
-        }
-        return;
-    };
+    let pending_id = (*inner).alias_id.take();
+    let idx = (*inner).alias_index.take();
     let text = (*inner)
         .alias
         .as_ref()
@@ -1289,22 +1335,46 @@ unsafe fn commit_alias(inner: *mut SettingsInner) {
     if let Some(alias) = (*inner).alias.as_ref() {
         alias.hide();
     }
+    if pending_id.is_none() && idx.is_none() {
+        return;
+    }
     let Some(core) = core_from_host((*inner).host) else {
         return;
     };
     let tab = (*core).settings_tab;
-    let Some(section) = LauncherItemsSection::for_lang(tab, ui_lang(inner)) else {
-        return;
-    };
-    let entries = (*core).settings_entries(section.kind);
-    let filtered = crate::features::launcher::settings::items::filter_entries(
-        &entries,
-        section.kind,
-        &(*inner).filter_query,
-    );
-    if let Some(entry) = filtered.get(idx) {
-        let id = entry.id.clone();
+    let filtered_ids = LauncherItemsSection::for_lang(tab, ui_lang(inner))
+        .map(|section| {
+            let entries = (*core).settings_entries(section.kind);
+            crate::features::launcher::settings::items::filter_entries(
+                &entries,
+                section.kind,
+                &(*inner).filter_query,
+            )
+            .into_iter()
+            .map(|e| e.id.clone())
+            .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if let Some((id, _)) = alias_commit_pair(pending_id.as_deref(), &text, &filtered_ids, idx) {
         (*core).set_alias_draft(&id, &text);
+    }
+}
+
+unsafe fn discard_alias(inner: *mut SettingsInner) {
+    (*inner).alias_id = None;
+    (*inner).alias_index = None;
+    if let Some(alias) = (*inner).alias.as_ref() {
+        alias.hide();
+    }
+}
+
+fn alias_edit_focused(inner: *mut SettingsInner) -> bool {
+    unsafe {
+        let focus = GetFocus();
+        (*inner)
+            .alias
+            .as_ref()
+            .is_some_and(|alias| !alias.hwnd.is_invalid() && alias.hwnd == focus)
     }
 }
 
@@ -1677,7 +1747,7 @@ unsafe fn handle_command(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) {
                 .map(|e| e.hwnd == child)
                 .unwrap_or(false);
         if ai_child {
-            commit_ai_connection(inner);
+            let _ = commit_ai_connection(inner);
             let _ = InvalidateRect(hwnd, None, FALSE);
         }
     }
@@ -1693,6 +1763,7 @@ unsafe fn open_ai_editor(inner: *mut SettingsInner, index: usize) {
         return;
     };
     (*inner).ai_edit = Some(index);
+    (*inner).ai_error = None;
     if let Some(edit) = (*inner).ai_url.as_ref() {
         edit.set_text(&conn.base_url);
     }
@@ -1704,9 +1775,10 @@ unsafe fn open_ai_editor(inner: *mut SettingsInner, index: usize) {
     }
 }
 
-unsafe fn commit_ai_connection(inner: *mut SettingsInner) {
+unsafe fn commit_ai_connection(inner: *mut SettingsInner) -> bool {
     let Some(index) = (*inner).ai_edit else {
-        return;
+        (*inner).ai_error = None;
+        return true;
     };
     let url = (*inner)
         .ai_url
@@ -1723,15 +1795,20 @@ unsafe fn commit_ai_connection(inner: *mut SettingsInner) {
         .as_ref()
         .map(FieldEdit::text)
         .unwrap_or_default();
-    if let Some(edit) = (*inner).ai_key.as_ref() {
-        edit.set_text("");
-    }
     let Some(core) = core_from_host((*inner).host) else {
-        return;
+        return true;
     };
-    if let Err(err) = (*core).apply_ai_connection_fields(index, url, model, key) {
-        if !err.to_lowercase().contains("sk-") {
-            // Keep the editor open; URL validation failed.
+    match (*core).apply_ai_connection_fields(index, url, model, key) {
+        Ok(()) => {
+            if let Some(edit) = (*inner).ai_key.as_ref() {
+                edit.set_text("");
+            }
+            (*inner).ai_error = None;
+            true
+        }
+        Err(err) => {
+            (*inner).ai_error = Some(crate::features::ai::settings::pane::redact_ai_error(&err));
+            false
         }
     }
 }
@@ -1838,36 +1915,68 @@ unsafe fn pane_content_height(inner: *mut SettingsInner, window_w: f32) -> f32 {
     .content_height
 }
 
+unsafe fn clear_confirmations(inner: *mut SettingsInner) {
+    (*inner).confirming_reset = false;
+    (*inner).confirming_clear = false;
+    (*inner).confirming_snippets = false;
+    (*inner).confirming_ai_remove = None;
+}
+
+unsafe fn accept_confirmation(inner: *mut SettingsInner) {
+    if let Some(core) = core_from_host((*inner).host) {
+        if (*inner).confirming_snippets {
+            (*core).set_snippets_enabled(true);
+        } else if (*inner).confirming_clear {
+            (*core).clear_clipboard_history();
+        } else if let Some(id) = (*inner).confirming_ai_remove.clone() {
+            (*core).remove_ai_connection_id(&id);
+            (*inner).ai_edit = None;
+            (*inner).ai_error = None;
+            hide_ai_edits(inner);
+        } else if (*inner).confirming_reset {
+            (*core).reset_learned_ranking();
+        }
+    }
+    clear_confirmations(inner);
+}
+
 unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
     let Some(inner) = inner_from(hwnd) else {
         return false;
     };
-    if (*inner).confirming_reset || (*inner).confirming_clear || (*inner).confirming_snippets {
+    if (*inner).confirming_reset
+        || (*inner).confirming_clear
+        || (*inner).confirming_snippets
+        || (*inner).confirming_ai_remove.is_some()
+    {
         let vk = wparam.0 as u16;
         if vk == 0x1B {
-            (*inner).confirming_reset = false;
-            (*inner).confirming_clear = false;
-            (*inner).confirming_snippets = false;
+            clear_confirmations(inner);
             let _ = InvalidateRect(hwnd, None, FALSE);
             return true;
         }
         if vk == 0x0D {
-            if let Some(core) = core_from_host((*inner).host) {
-                if (*inner).confirming_snippets {
-                    (*core).set_snippets_enabled(true);
-                } else if (*inner).confirming_clear {
-                    (*core).clear_clipboard_history();
-                } else {
-                    (*core).reset_learned_ranking();
-                }
-            }
-            (*inner).confirming_reset = false;
-            (*inner).confirming_clear = false;
-            (*inner).confirming_snippets = false;
+            accept_confirmation(inner);
             let _ = InvalidateRect(hwnd, None, FALSE);
             return true;
         }
         return true;
+    }
+    if alias_edit_focused(inner) {
+        let vk = wparam.0 as u16;
+        if vk == VK_ESCAPE.0 {
+            discard_alias(inner);
+            let _ = SetFocus(hwnd);
+            let _ = InvalidateRect(hwnd, None, FALSE);
+            return true;
+        }
+        if vk == VK_RETURN.0 {
+            commit_alias(inner);
+            let _ = SetFocus(hwnd);
+            let _ = InvalidateRect(hwnd, None, FALSE);
+            return true;
+        }
+        return false;
     }
     let Some(action) = (*inner).recorder.action.clone() else {
         return false;
@@ -1944,28 +2053,15 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         return;
     };
     let (width, height) = client_dip_size(hwnd);
-    if (*inner).confirming_reset || (*inner).confirming_clear || (*inner).confirming_snippets {
+    if (*inner).confirming_reset
+        || (*inner).confirming_clear
+        || (*inner).confirming_snippets
+        || (*inner).confirming_ai_remove.is_some()
+    {
         let layout = layout_confirm(width, height);
         match hit_confirm(&layout, x, y) {
-            Some(Hit::ConfirmReset) => {
-                if let Some(core) = core_from_host((*inner).host) {
-                    if (*inner).confirming_snippets {
-                        (*core).set_snippets_enabled(true);
-                    } else if (*inner).confirming_clear {
-                        (*core).clear_clipboard_history();
-                    } else {
-                        (*core).reset_learned_ranking();
-                    }
-                }
-                (*inner).confirming_reset = false;
-                (*inner).confirming_clear = false;
-                (*inner).confirming_snippets = false;
-            }
-            Some(Hit::ConfirmCancel) => {
-                (*inner).confirming_reset = false;
-                (*inner).confirming_clear = false;
-                (*inner).confirming_snippets = false;
-            }
+            Some(Hit::ConfirmReset) => accept_confirmation(inner),
+            Some(Hit::ConfirmCancel) => clear_confirmations(inner),
             _ => {}
         }
         let _ = InvalidateRect(hwnd, None, FALSE);
@@ -2127,27 +2223,34 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                 (*core).chatgpt_row_action();
             }
             Some(crate::features::ai::settings::pane::AiHit::AddConnection) => {
-                commit_ai_connection(inner);
-                (*core).add_ai_connection();
-                let last = (*core).settings.ai_connections.len().saturating_sub(1);
-                open_ai_editor(inner, last);
+                if commit_ai_connection(inner) {
+                    (*core).add_ai_connection();
+                    let last = (*core).settings.ai_connections.len().saturating_sub(1);
+                    open_ai_editor(inner, last);
+                }
             }
             Some(crate::features::ai::settings::pane::AiHit::Connection(i)) => {
-                commit_ai_connection(inner);
-                open_ai_editor(inner, i);
-            }
-            Some(crate::features::ai::settings::pane::AiHit::CycleProvider) => {
-                if let Some(i) = (*inner).ai_edit {
-                    commit_ai_connection(inner);
-                    (*core).cycle_ai_connection(i);
+                if commit_ai_connection(inner) {
                     open_ai_editor(inner, i);
                 }
             }
+            Some(crate::features::ai::settings::pane::AiHit::CycleProvider) => {
+                if let Some(i) = (*inner).ai_edit {
+                    if commit_ai_connection(inner) {
+                        (*core).cycle_ai_connection(i);
+                        open_ai_editor(inner, i);
+                    }
+                }
+            }
             Some(crate::features::ai::settings::pane::AiHit::RemoveConnection(i)) => {
-                commit_ai_connection(inner);
-                (*core).remove_ai_connection(i);
-                (*inner).ai_edit = None;
-                hide_ai_edits(inner);
+                let _ = commit_ai_connection(inner);
+                let id = {
+                    let list = &(*core).settings.ai_connections;
+                    list.get(i).map(|c| c.id.as_str().to_string())
+                };
+                if let Some(id) = id {
+                    (*inner).confirming_ai_remove = Some(id);
+                }
             }
             None => {}
         }
@@ -2502,6 +2605,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         Some(Hit::Alias(i)) => {
             commit_alias(inner);
             (*inner).alias_index = Some(i);
+            (*inner).alias_id = filtered.get(i).map(|e| e.id.clone());
             if let Some(alias) = (*inner).alias.as_ref() {
                 let text = filtered
                     .get(i)
@@ -2653,10 +2757,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_CLOSE => {
             if let Some(inner) = inner_from(hwnd) {
                 commit_alias(inner);
-                commit_ai_connection(inner);
-                (*inner).confirming_reset = false;
-                (*inner).confirming_clear = false;
-                (*inner).confirming_snippets = false;
+                let _ = commit_ai_connection(inner);
+                clear_confirmations(inner);
                 if (*inner).recorder.is_recording() {
                     (*inner).recorder.cancel();
                     if let Some(core) = core_from_host((*inner).host) {

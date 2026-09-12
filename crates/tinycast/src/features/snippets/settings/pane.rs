@@ -31,7 +31,7 @@ pub fn enable_copy() -> ConfirmCopy {
 pub fn enable_copy_lang(lang: tinycast_pure::i18n::UiLang) -> ConfirmCopy {
     ConfirmCopy {
         title: tinycast_pure::i18n::snippets_confirm_title(lang),
-        message: tinycast_pure::i18n::snippets_confirm_message(lang),
+        message: tinycast_pure::i18n::snippets_confirm_message(lang).to_string(),
         accept: tinycast_pure::i18n::snippets_confirm_action(lang),
         cancel: tinycast_pure::i18n::cancel_label(lang),
     }

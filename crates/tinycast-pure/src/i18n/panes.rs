@@ -137,6 +137,25 @@ pub fn ai_none(lang: UiLang) -> &'static str {
     pick(lang, "None", "无")
 }
 
+pub fn ai_remove_title(lang: UiLang) -> &'static str {
+    pick(lang, "Remove API connection?", "移除 API 连接？")
+}
+
+pub fn ai_remove_message(name: &str, lang: UiLang) -> String {
+    match lang {
+        UiLang::En => format!("Remove {name} from this PC? The saved key is deleted."),
+        UiLang::ZhHans => format!("从这台电脑移除 {name}？已保存的密钥会一并删除。"),
+    }
+}
+
+pub fn ai_remove_action(lang: UiLang) -> &'static str {
+    pick(lang, "Remove", "移除")
+}
+
+pub fn ai_save_failed(lang: UiLang) -> &'static str {
+    pick(lang, "Couldn’t save this connection.", "无法保存此连接。")
+}
+
 pub fn ai_chatgpt_subscription(lang: UiLang) -> &'static str {
     pick(lang, "ChatGPT subscription", "ChatGPT 订阅")
 }
