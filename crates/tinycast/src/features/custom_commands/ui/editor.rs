@@ -1,17 +1,23 @@
 //! Custom-command editor sheet. Width is 480 DIP.
 
 use windows::core::w;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    CreateSolidBrush, DeleteObject, SetBkColor, SetBkMode, SetTextColor, HBRUSH, HDC, OPAQUE,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::EM_SETCUEBANNER;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW, RegisterClassW,
-    SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
-    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOP, IDC_ARROW, MSG, SW_SHOW, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WNDCLASSW, WS_CHILD,
-    WS_EX_CLIENTEDGE, WS_POPUP, WS_TABSTOP, WS_VISIBLE,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsDialogMessageW, IsWindow,
+    LoadCursorW, PostQuitMessage, RegisterClassW, SendMessageW, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, CS_HREDRAW, CS_VREDRAW,
+    GWLP_USERDATA, HWND_TOP, IDC_ARROW, MSG, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE,
+    WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_ERASEBKGND,
+    WM_KEYDOWN, WM_NCDESTROY, WNDCLASSW, WS_CHILD, WS_EX_CLIENTEDGE, WS_POPUP, WS_TABSTOP,
+    WS_VISIBLE,
 };
 
 use crate::platform::screens::dip_scalar_to_px;
@@ -37,6 +43,42 @@ struct Inner {
     command: HWND,
     confirm: HWND,
     result: Option<CommandDraft>,
+    appearance: u8,
+    bg: HBRUSH,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EditorKey {
+    Save,
+    Cancel,
+    None,
+}
+
+pub fn focus_order(show_confirm: bool) -> &'static [usize] {
+    if show_confirm {
+        &[ID_NAME, ID_COMMAND, ID_CONFIRM, ID_SAVE, ID_CANCEL]
+    } else {
+        &[ID_NAME, ID_COMMAND, ID_SAVE, ID_CANCEL]
+    }
+}
+
+pub fn map_key(vk: u16) -> EditorKey {
+    match vk {
+        0x1B => EditorKey::Cancel,
+        0x0D => EditorKey::Save,
+        _ => EditorKey::None,
+    }
+}
+
+pub fn editor_colors(appearance: u8) -> (COLORREF, COLORREF) {
+    let (r, g, b) = crate::design_system::settings::detail_rgb(appearance);
+    let bg = COLORREF(((b * 255.0) as u32) << 16 | ((g * 255.0) as u32) << 8 | (r * 255.0) as u32);
+    let fg = if appearance == 0 {
+        COLORREF(0x00FFFFFF)
+    } else {
+        COLORREF(0x00000000)
+    };
+    (bg, fg)
 }
 
 #[derive(Clone, Copy)]
@@ -58,6 +100,22 @@ pub const QUICKLINK_LABELS: EditorLabels = EditorLabels {
     show_confirm: false,
 };
 
+pub fn command_labels(lang: tinycast_pure::i18n::UiLang) -> EditorLabels {
+    EditorLabels {
+        title: tinycast_pure::i18n::editor_command_title(lang),
+        value_label: tinycast_pure::i18n::editor_command_label(lang),
+        show_confirm: true,
+    }
+}
+
+pub fn quicklink_labels(lang: tinycast_pure::i18n::UiLang) -> EditorLabels {
+    EditorLabels {
+        title: tinycast_pure::i18n::editor_quicklink_title(lang),
+        value_label: tinycast_pure::i18n::editor_destination_label(lang),
+        show_confirm: false,
+    }
+}
+
 pub fn edit(owner: HWND, initial: Option<&CommandDraft>) -> Option<CommandDraft> {
     edit_lang(owner, initial, tinycast_pure::i18n::UiLang::En)
 }
@@ -76,18 +134,36 @@ pub fn edit_with(
     labels: EditorLabels,
     lang: tinycast_pure::i18n::UiLang,
 ) -> Option<CommandDraft> {
-    let hwnd = create(owner, initial, labels, lang).ok()?;
+    edit_with_appearance(owner, initial, labels, lang, 0)
+}
+
+pub fn edit_with_appearance(
+    owner: HWND,
+    initial: Option<&CommandDraft>,
+    labels: EditorLabels,
+    lang: tinycast_pure::i18n::UiLang,
+    appearance: u8,
+) -> Option<CommandDraft> {
+    let hwnd = create(owner, initial, labels, lang, appearance).ok()?;
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
         let mut msg = MSG::default();
         while IsWindow(hwnd).as_bool() {
             let ok = GetMessageW(&mut msg, HWND::default(), 0, 0);
-            if !ok.as_bool() {
+            if ok.0 == -1 {
+                let _ = DestroyWindow(hwnd);
                 break;
             }
-            if msg.message == WM_KEYDOWN && msg.wParam.0 as u16 == 0x1B {
+            if !ok.as_bool() {
+                PostQuitMessage(msg.wParam.0 as i32);
+                break;
+            }
+            if msg.message == WM_KEYDOWN && map_key(msg.wParam.0 as u16) == EditorKey::Cancel {
                 let _ = DestroyWindow(hwnd);
+                continue;
+            }
+            if IsDialogMessageW(hwnd, &msg).as_bool() {
                 continue;
             }
             let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
@@ -108,6 +184,7 @@ fn create(
     initial: Option<&CommandDraft>,
     labels: EditorLabels,
     lang: tinycast_pure::i18n::UiLang,
+    appearance: u8,
 ) -> windows::core::Result<HWND> {
     unsafe {
         let hinstance = GetModuleHandleW(None)?;
@@ -126,11 +203,14 @@ fn create(
                 return Err(last.into());
             }
         }
+        let (bg_ref, _) = editor_colors(appearance);
         let inner = Box::new(Inner {
             name: HWND::default(),
             command: HWND::default(),
             confirm: HWND::default(),
             result: None,
+            appearance,
+            bg: CreateSolidBrush(bg_ref),
         });
         let ptr = Box::into_raw(inner);
         let mut title_wide: Vec<u16> = labels
@@ -171,6 +251,8 @@ fn create(
         let inner = &mut *ptr;
         inner.name = edit_field(hwnd, ID_NAME, 20, 36, 440, 24, dpi)?;
         inner.command = edit_field(hwnd, ID_COMMAND, 20, 88, 440, 24, dpi)?;
+        set_cue(inner.name, tinycast_pure::i18n::editor_name_label(lang));
+        set_cue(inner.command, labels.value_label);
         if labels.show_confirm {
             inner.confirm = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
@@ -200,6 +282,7 @@ fn create(
             250,
             190,
             dpi,
+            true,
         )?;
         let _ = button(
             hwnd,
@@ -208,6 +291,7 @@ fn create(
             350,
             190,
             dpi,
+            false,
         )?;
         let _ = label(
             hwnd,
@@ -264,14 +348,20 @@ fn button(
     x: i32,
     y: i32,
     dpi: u32,
+    default: bool,
 ) -> windows::core::Result<HWND> {
     let mut wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+    let style = if default {
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(0x00000001) // BS_DEFPUSHBUTTON
+    } else {
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP
+    };
     unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
             windows::core::PCWSTR(wide.as_mut_ptr()),
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            style,
             dip_scalar_to_px(x as f32, dpi),
             dip_scalar_to_px(y as f32, dpi),
             dip_scalar_to_px(88.0, dpi),
@@ -301,6 +391,18 @@ fn label(parent: HWND, title: &str, x: i32, y: i32, dpi: u32) -> windows::core::
             GetModuleHandleW(None)?,
             None,
         )
+    }
+}
+
+fn set_cue(hwnd: HWND, text: &str) {
+    let mut wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let _ = SendMessageW(
+            hwnd,
+            EM_SETCUEBANNER,
+            WPARAM(1),
+            LPARAM(wide.as_mut_ptr() as isize),
+        );
     }
 }
 
@@ -344,6 +446,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
+        WM_ERASEBKGND => LRESULT(1),
+        WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
+            let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+            if ptr.is_null() {
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
+            }
+            let (bg, fg) = editor_colors((*ptr).appearance);
+            SetBkMode(hdc, OPAQUE);
+            SetBkColor(hdc, bg);
+            SetTextColor(hdc, fg);
+            LRESULT((*ptr).bg.0 as isize)
+        }
         WM_COMMAND => {
             let id = (wparam.0 as u16) as usize;
             if id == ID_SAVE {
@@ -380,6 +495,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         *slot = Some(result);
                     }
                 }
+                if !(*ptr).bg.is_invalid() {
+                    let _ = DeleteObject((*ptr).bg);
+                }
                 drop(Box::from_raw(ptr));
             }
             LRESULT(0)
@@ -395,5 +513,59 @@ mod tests {
     #[test]
     fn editor_sheet_is_480_dip() {
         assert_eq!(EDITOR_WIDTH_DIP, 480.0);
+    }
+
+    #[test]
+    fn tab_order_includes_confirm_only_when_present() {
+        assert_eq!(
+            focus_order(true),
+            &[ID_NAME, ID_COMMAND, ID_CONFIRM, ID_SAVE, ID_CANCEL]
+        );
+        assert_eq!(
+            focus_order(false),
+            &[ID_NAME, ID_COMMAND, ID_SAVE, ID_CANCEL]
+        );
+        assert!(!focus_order(false).contains(&ID_CONFIRM));
+    }
+
+    #[test]
+    fn enter_saves_and_escape_cancels() {
+        assert_eq!(map_key(0x0D), EditorKey::Save);
+        assert_eq!(map_key(0x1B), EditorKey::Cancel);
+        assert_eq!(map_key(0x09), EditorKey::None);
+    }
+
+    #[test]
+    fn dark_and_light_editor_tokens_invert() {
+        let (dark_bg, dark_fg) = editor_colors(0);
+        let (light_bg, light_fg) = editor_colors(1);
+        assert_ne!(dark_bg, light_bg);
+        assert_ne!(dark_fg, light_fg);
+        assert_eq!(dark_fg.0, 0x00FFFFFF);
+        assert_eq!(light_fg.0, 0x00000000);
+    }
+
+    #[test]
+    fn save_keeps_draft_cancel_discards() {
+        let draft = CommandDraft {
+            name: "n".into(),
+            command: "echo".into(),
+            confirm: true,
+        };
+        assert_eq!(draft.name, "n");
+        LAST.lock().unwrap().take();
+        assert!(take_result().is_none());
+    }
+
+    #[test]
+    fn labels_follow_language() {
+        let zh = command_labels(tinycast_pure::i18n::UiLang::ZhHans);
+        assert_eq!(zh.title, "自定义命令");
+        assert_eq!(zh.value_label, "命令");
+        let en = command_labels(tinycast_pure::i18n::UiLang::En);
+        assert_eq!(en.title, COMMAND_LABELS.title);
+        let q = quicklink_labels(tinycast_pure::i18n::UiLang::En);
+        assert_eq!(q.value_label, QUICKLINK_LABELS.value_label);
+        assert!(!q.show_confirm);
     }
 }

@@ -12,13 +12,20 @@ pub fn edit(
     owner: windows::Win32::Foundation::HWND,
     initial: Option<&QuicklinkDraft>,
     lang: tinycast_pure::i18n::UiLang,
+    appearance: u8,
 ) -> Option<QuicklinkDraft> {
     let seed = initial.map(|d| CommandDraft {
         name: d.name.clone(),
         command: d.destination.clone(),
         confirm: false,
     });
-    let drafted = editor::edit_with(owner, seed.as_ref(), editor::QUICKLINK_LABELS, lang)?;
+    let drafted = editor::edit_with_appearance(
+        owner,
+        seed.as_ref(),
+        editor::quicklink_labels(lang),
+        lang,
+        appearance,
+    )?;
     Some(QuicklinkDraft {
         name: drafted.name,
         destination: drafted.command,

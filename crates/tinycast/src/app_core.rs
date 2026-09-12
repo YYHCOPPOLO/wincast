@@ -1105,7 +1105,7 @@ impl AppCore {
             );
             return;
         }
-        let passphrase = crate::features::custom_commands::ui::editor::edit_with(
+        let passphrase = crate::features::custom_commands::ui::editor::edit_with_appearance(
             owner,
             None,
             crate::features::custom_commands::ui::editor::EditorLabels {
@@ -1114,6 +1114,7 @@ impl AppCore {
                 show_confirm: false,
             },
             self.ui_lang(),
+            self.resolved_appearance(),
         )
         .map(|d| d.command)
         .unwrap_or_default();
@@ -1434,8 +1435,13 @@ impl AppCore {
             return;
         }
         self.pause_global_hotkeys();
-        let drafted =
-            crate::features::custom_commands::ui::editor::edit_lang(owner, None, self.ui_lang());
+        let drafted = crate::features::custom_commands::ui::editor::edit_with_appearance(
+            owner,
+            None,
+            crate::features::custom_commands::ui::editor::command_labels(self.ui_lang()),
+            self.ui_lang(),
+            self.resolved_appearance(),
+        );
         self.resume_global_hotkeys();
         let Some(draft) = drafted else {
             return;
@@ -1470,10 +1476,12 @@ impl AppCore {
             confirm: existing.confirm,
         };
         self.pause_global_hotkeys();
-        let drafted = crate::features::custom_commands::ui::editor::edit_lang(
+        let drafted = crate::features::custom_commands::ui::editor::edit_with_appearance(
             owner,
             Some(&initial),
+            crate::features::custom_commands::ui::editor::command_labels(self.ui_lang()),
             self.ui_lang(),
+            self.resolved_appearance(),
         );
         self.resume_global_hotkeys();
         let Some(draft) = drafted else {
@@ -1508,8 +1516,12 @@ impl AppCore {
         });
         let existing = index.and_then(|i| self.quicklinks.links().get(i).cloned());
         self.pause_global_hotkeys();
-        let drafted =
-            crate::features::quicklinks::ui::editor::edit(owner, initial.as_ref(), self.ui_lang());
+        let drafted = crate::features::quicklinks::ui::editor::edit(
+            owner,
+            initial.as_ref(),
+            self.ui_lang(),
+            self.resolved_appearance(),
+        );
         self.resume_global_hotkeys();
         let Some(draft) = drafted else {
             return;
@@ -1856,6 +1868,13 @@ impl AppCore {
 
     pub fn appearance_key(&self) -> u8 {
         0
+    }
+
+    pub fn resolved_appearance(&self) -> u8 {
+        match self.settings.appearance {
+            crate::app_settings::Appearance::Light => 1,
+            _ => 0,
+        }
     }
 
     pub fn menu_is_open(&self) -> bool {
@@ -5164,8 +5183,13 @@ mod tests {
     fn invalid_ai_url_keeps_saved_connection() {
         let mut c = AppCore::new();
         c.add_ai_connection();
-        c.apply_ai_connection_fields(0, "http://127.0.0.1:11434/v1".into(), "llama3".into(), "".into())
-            .unwrap();
+        c.apply_ai_connection_fields(
+            0,
+            "http://127.0.0.1:11434/v1".into(),
+            "llama3".into(),
+            "".into(),
+        )
+        .unwrap();
         let saved = c.settings.ai_connections[0].clone();
         let err = c
             .apply_ai_connection_fields(0, "http://example.com/v1".into(), "x".into(), "".into())

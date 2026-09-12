@@ -415,6 +415,22 @@ pub fn editor_needs_confirmation(lang: UiLang) -> &'static str {
     pick(lang, "Needs confirmation", "需要确认")
 }
 
+pub fn editor_command_title(lang: UiLang) -> &'static str {
+    pick(lang, "Custom Command", "自定义命令")
+}
+
+pub fn editor_command_label(lang: UiLang) -> &'static str {
+    pick(lang, "Command", "命令")
+}
+
+pub fn editor_quicklink_title(lang: UiLang) -> &'static str {
+    pick(lang, "Quicklink", "快捷链接")
+}
+
+pub fn editor_destination_label(lang: UiLang) -> &'static str {
+    pick(lang, "Destination", "目标")
+}
+
 pub fn ignore_pattern_title(lang: UiLang) -> &'static str {
     pick(lang, "Ignore pattern", "忽略规则")
 }
