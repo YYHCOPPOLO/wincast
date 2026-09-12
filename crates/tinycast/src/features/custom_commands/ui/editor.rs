@@ -1,17 +1,18 @@
 //! Custom-command editor sheet. Width is 480 DIP.
 
-use windows::core::w;
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, WPARAM};
+use windows::core::{w, PCWSTR};
+use windows::Win32::Foundation::{COLORREF, FALSE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateSolidBrush, DeleteObject, SetBkColor, SetBkMode, SetTextColor, HBRUSH, HDC, OPAQUE,
+    CreateSolidBrush, DeleteObject, FillRect, SetBkColor, SetBkMode, SetTextColor, HBRUSH, HDC,
+    OPAQUE,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::EM_SETCUEBANNER;
+use windows::Win32::UI::Controls::{SetWindowTheme, EM_SETCUEBANNER};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsDialogMessageW, IsWindow,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
+    GetParent, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsDialogMessageW, IsWindow,
     LoadCursorW, PostQuitMessage, RegisterClassW, SendMessageW, SetForegroundWindow,
     SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, CS_HREDRAW, CS_VREDRAW,
     GWLP_USERDATA, HWND_TOP, IDC_ARROW, MSG, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE,
@@ -137,6 +138,57 @@ pub fn edit_with(
     edit_with_appearance(owner, initial, labels, lang, 0)
 }
 
+pub fn escape_belongs_to_sheet(sheet: isize, msg_hwnd: isize, parent: Option<isize>) -> bool {
+    msg_hwnd != 0 && sheet != 0 && (msg_hwnd == sheet || parent == Some(sheet))
+}
+
+pub fn field_acc_names(
+    value_label: &'static str,
+    lang: tinycast_pure::i18n::UiLang,
+) -> (&'static str, &'static str) {
+    (tinycast_pure::i18n::editor_name_label(lang), value_label)
+}
+
+struct OwnerEnableGuard {
+    hwnd: HWND,
+    active: bool,
+}
+
+impl OwnerEnableGuard {
+    fn new(owner: HWND) -> Self {
+        if owner.is_invalid() {
+            return Self {
+                hwnd: owner,
+                active: false,
+            };
+        }
+        unsafe {
+            let _ = EnableWindow(owner, FALSE);
+        }
+        Self {
+            hwnd: owner,
+            active: true,
+        }
+    }
+
+    fn restore(&mut self) {
+        if !self.active {
+            return;
+        }
+        unsafe {
+            let _ = EnableWindow(self.hwnd, TRUE);
+            let _ = SetForegroundWindow(self.hwnd);
+        }
+        self.active = false;
+    }
+}
+
+impl Drop for OwnerEnableGuard {
+    fn drop(&mut self) {
+        self.restore();
+    }
+}
+
 pub fn edit_with_appearance(
     owner: HWND,
     initial: Option<&CommandDraft>,
@@ -146,6 +198,7 @@ pub fn edit_with_appearance(
 ) -> Option<CommandDraft> {
     let hwnd = create(owner, initial, labels, lang, appearance).ok()?;
     unsafe {
+        let mut owner_guard = OwnerEnableGuard::new(owner);
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
         let mut msg = MSG::default();
@@ -156,10 +209,15 @@ pub fn edit_with_appearance(
                 break;
             }
             if !ok.as_bool() {
+                let _ = DestroyWindow(hwnd);
                 PostQuitMessage(msg.wParam.0 as i32);
                 break;
             }
-            if msg.message == WM_KEYDOWN && map_key(msg.wParam.0 as u16) == EditorKey::Cancel {
+            let parent = GetParent(msg.hwnd).ok().map(|h| h.0 as isize);
+            if msg.message == WM_KEYDOWN
+                && map_key(msg.wParam.0 as u16) == EditorKey::Cancel
+                && escape_belongs_to_sheet(hwnd.0 as isize, msg.hwnd.0 as isize, parent)
+            {
                 let _ = DestroyWindow(hwnd);
                 continue;
             }
@@ -169,6 +227,7 @@ pub fn edit_with_appearance(
             let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        owner_guard.restore();
     }
     take_result()
 }
@@ -251,8 +310,11 @@ fn create(
         let inner = &mut *ptr;
         inner.name = edit_field(hwnd, ID_NAME, 20, 36, 440, 24, dpi)?;
         inner.command = edit_field(hwnd, ID_COMMAND, 20, 88, 440, 24, dpi)?;
-        set_cue(inner.name, tinycast_pure::i18n::editor_name_label(lang));
-        set_cue(inner.command, labels.value_label);
+        let (name_acc, value_acc) = field_acc_names(labels.value_label, lang);
+        set_cue(inner.name, name_acc);
+        set_cue(inner.command, value_acc);
+        set_acc_name(inner.name, name_acc);
+        set_acc_name(inner.command, value_acc);
         if labels.show_confirm {
             inner.confirm = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
@@ -274,8 +336,9 @@ fn create(
                 inner.confirm,
                 tinycast_pure::i18n::editor_needs_confirmation(lang),
             );
+            style_child(inner.confirm);
         }
-        let _ = button(
+        let save = button(
             hwnd,
             ID_SAVE,
             tinycast_pure::i18n::editor_save(lang),
@@ -284,7 +347,8 @@ fn create(
             dpi,
             true,
         )?;
-        let _ = button(
+        style_child(save);
+        let cancel = button(
             hwnd,
             ID_CANCEL,
             tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang),
@@ -293,14 +357,17 @@ fn create(
             dpi,
             false,
         )?;
-        let _ = label(
+        style_child(cancel);
+        let name_label = label(
             hwnd,
             tinycast_pure::i18n::editor_name_label(lang),
             20,
             16,
             dpi,
-        );
-        let _ = label(hwnd, labels.value_label, 20, 68, dpi);
+        )?;
+        style_child(name_label);
+        let value_label = label(hwnd, labels.value_label, 20, 68, dpi)?;
+        style_child(value_label);
         if let Some(init) = initial {
             set_text(inner.name, &init.name);
             set_text(inner.command, &init.command);
@@ -324,7 +391,7 @@ fn edit_field(
     dpi: u32,
 ) -> windows::core::Result<HWND> {
     unsafe {
-        CreateWindowExW(
+        let hwnd = CreateWindowExW(
             WS_EX_CLIENTEDGE,
             w!("EDIT"),
             w!(""),
@@ -337,7 +404,9 @@ fn edit_field(
             windows::Win32::UI::WindowsAndMessaging::HMENU(id as *mut core::ffi::c_void),
             GetModuleHandleW(None)?,
             None,
-        )
+        )?;
+        style_child(hwnd);
+        Ok(hwnd)
     }
 }
 
@@ -394,6 +463,40 @@ fn label(parent: HWND, title: &str, x: i32, y: i32, dpi: u32) -> windows::core::
     }
 }
 
+fn style_child(hwnd: HWND) {
+    if hwnd.is_invalid() {
+        return;
+    }
+    unsafe {
+        let _ = SetWindowTheme(hwnd, w!(""), w!(""));
+    }
+}
+
+fn set_acc_name(hwnd: HWND, name: &str) {
+    if hwnd.is_invalid() || name.is_empty() {
+        return;
+    }
+    let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let svc: windows::core::Result<windows::Win32::UI::Accessibility::IAccPropServices> =
+            windows::Win32::System::Com::CoCreateInstance(
+                &windows::Win32::UI::Accessibility::CAccPropServices,
+                None,
+                windows::Win32::System::Com::CLSCTX_INPROC_SERVER,
+            );
+        if let Ok(svc) = svc {
+            const OBJID_CLIENT: u32 = 0xFFFF_FFFC;
+            let _ = svc.SetHwndPropStr(
+                hwnd,
+                OBJID_CLIENT,
+                0,
+                windows::Win32::UI::Accessibility::PROPID_ACC_NAME,
+                PCWSTR(wide.as_ptr()),
+            );
+        }
+    }
+}
+
 fn set_cue(hwnd: HWND, text: &str) {
     let mut wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
@@ -446,7 +549,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
-        WM_ERASEBKGND => LRESULT(1),
+        WM_ERASEBKGND => {
+            let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+            if ptr.is_null() || (*ptr).bg.is_invalid() {
+                return LRESULT(1);
+            }
+            let mut rc = RECT::default();
+            let _ = GetClientRect(hwnd, &mut rc);
+            let _ = FillRect(hdc, &rc, (*ptr).bg);
+            LRESULT(1)
+        }
         WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
@@ -567,5 +680,30 @@ mod tests {
         let q = quicklink_labels(tinycast_pure::i18n::UiLang::En);
         assert_eq!(q.value_label, QUICKLINK_LABELS.value_label);
         assert!(!q.show_confirm);
+        let zh = field_acc_names(
+            quicklink_labels(tinycast_pure::i18n::UiLang::ZhHans).value_label,
+            tinycast_pure::i18n::UiLang::ZhHans,
+        );
+        assert_eq!(zh.0, "名称");
+        assert_eq!(zh.1, "目标");
+    }
+
+    #[test]
+    fn escape_only_cancels_sheet_or_child() {
+        assert!(escape_belongs_to_sheet(10, 10, None));
+        assert!(escape_belongs_to_sheet(10, 11, Some(10)));
+        assert!(!escape_belongs_to_sheet(10, 11, Some(99)));
+        assert!(!escape_belongs_to_sheet(10, 0, None));
+        assert!(!escape_belongs_to_sheet(0, 10, None));
+    }
+
+    #[test]
+    fn editor_themes_and_fills_client() {
+        let src = include_str!("editor.rs");
+        assert!(src.contains("SetWindowTheme"));
+        assert!(src.contains("EnableWindow"));
+        assert!(src.contains("FillRect"));
+        assert!(src.contains("SetHwndPropStr"));
+        assert!(src.contains("escape_belongs_to_sheet"));
     }
 }

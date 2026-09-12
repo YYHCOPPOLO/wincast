@@ -1,7 +1,7 @@
 use tinycast_pure::hotkey::{CaptureOutcome, Modifiers};
 use tinycast_pure::i18n::{
-    clipboard_confirm_action, clipboard_confirm_message, clipboard_confirm_title,
-    settings_section_title, settings_tab_title, UiLang,
+    chrome, clipboard_confirm_action, clipboard_confirm_message, clipboard_confirm_title,
+    settings_section_title, settings_tab_title, Chrome, UiLang,
 };
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
@@ -314,7 +314,11 @@ impl SettingsWindow {
                 return true;
             };
             commit_alias(inner);
-            commit_ai_connection(inner)
+            let ok = commit_ai_connection(inner);
+            crate::features::ai::settings::pane::ai_navigation_allowed(
+                (*inner).ai_edit.is_some(),
+                ok,
+            )
         }
     }
 }
@@ -1551,23 +1555,9 @@ unsafe fn content_focus_items(
             );
         }
         SettingsTab::Permissions => {
-            for (i, _) in crate::features::settings::panes::permissions::ROWS
-                .iter()
-                .enumerate()
-            {
-                push_row(
-                    &mut items,
-                    tinycast_pure::i18n::permission_title(i, lang),
-                    FocusRole::Button,
-                    true,
-                    None,
-                    24.0 + i as f32 * 56.0,
-                    scroll,
-                    detail_w,
-                    56.0,
-                    None,
-                );
-            }
+            return crate::features::settings::panes::permissions::keyboard_items(
+                detail_w, scroll, lang,
+            );
         }
         SettingsTab::About => {
             let r = crate::features::settings::panes::about::support_rect(detail_w, scroll);
@@ -2057,6 +2047,37 @@ unsafe fn content_focus_items(
                                 h: rects.model.h,
                             },
                             Some(AI_MODEL_EDIT_ID),
+                        ));
+                        items.push(crate::features::settings::focus::content_item(
+                            tinycast_pure::i18n::ai_api_key(lang),
+                            FocusRole::Text,
+                            true,
+                            None,
+                            true,
+                            DipRect {
+                                x: rects.key.x,
+                                y: rects.key.y - scroll,
+                                w: rects.key.w,
+                                h: rects.key.h,
+                            },
+                            Some(AI_KEY_EDIT_ID),
+                        ));
+                        let editor_top = top + ds::ROW_H + theme::spacing::SM;
+                        let discard =
+                            crate::features::ai::settings::pane::discard_rect(detail_w, editor_top);
+                        items.push(crate::features::settings::focus::content_item(
+                            chrome(Chrome::Cancel, lang),
+                            FocusRole::Button,
+                            true,
+                            None,
+                            false,
+                            DipRect {
+                                x: discard.x,
+                                y: discard.y - scroll,
+                                w: discard.w,
+                                h: discard.h,
+                            },
+                            None,
                         ));
                     }
                 }
@@ -2659,6 +2680,12 @@ unsafe fn open_ai_editor(inner: *mut SettingsInner, index: usize) {
     }
 }
 
+unsafe fn discard_ai_editor(inner: *mut SettingsInner) {
+    (*inner).ai_edit = None;
+    (*inner).ai_error = None;
+    hide_ai_edits(inner);
+}
+
 unsafe fn commit_ai_connection(inner: *mut SettingsInner) -> bool {
     let Some(index) = (*inner).ai_edit else {
         (*inner).ai_error = None;
@@ -2691,7 +2718,10 @@ unsafe fn commit_ai_connection(inner: *mut SettingsInner) -> bool {
             true
         }
         Err(err) => {
-            (*inner).ai_error = Some(crate::features::ai::settings::pane::redact_ai_error(&err));
+            (*inner).ai_error = Some(crate::features::ai::settings::pane::redact_ai_error(
+                &err,
+                ui_lang(inner),
+            ));
             false
         }
     }
@@ -2902,11 +2932,14 @@ unsafe fn activate_focus(hwnd: HWND, inner: *mut SettingsInner) {
         return;
     };
     let items = focus_items(hwnd, inner);
-    let Some(item) = items.get(idx).cloned().filter(|i| i.enabled && !i.secret) else {
+    let Some(item) = items.get(idx).cloned().filter(|i| i.enabled) else {
         return;
     };
     if let Some(id) = item.edit_id {
         let _ = focus_native_edit(inner, id);
+        return;
+    }
+    if item.secret {
         return;
     }
     if let Some(tab) = item.tab {
@@ -2962,6 +2995,8 @@ unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
         if vk == VK_ESCAPE.0 {
             if alias_edit_focused(inner) {
                 discard_alias(inner);
+            } else if (*inner).ai_edit.is_some() {
+                discard_ai_editor(inner);
             }
             let _ = SetFocus(hwnd);
             let _ = InvalidateRect(hwnd, None, FALSE);
@@ -2998,6 +3033,12 @@ unsafe fn handle_keydown(hwnd: HWND, wparam: WPARAM) -> bool {
     }
     if (*inner).recorder.action.is_none() && (vk == VK_SPACE.0 || vk == VK_RETURN.0) {
         activate_focus(hwnd, inner);
+        return true;
+    }
+    if (*inner).recorder.action.is_none() && vk == VK_ESCAPE.0 && (*inner).ai_edit.is_some() {
+        discard_ai_editor(inner);
+        let _ = SetFocus(hwnd);
+        let _ = InvalidateRect(hwnd, None, FALSE);
         return true;
     }
     let Some(action) = (*inner).recorder.action.clone() else {
@@ -3263,6 +3304,9 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
                         open_ai_editor(inner, i);
                     }
                 }
+            }
+            Some(crate::features::ai::settings::pane::AiHit::DiscardEditor) => {
+                discard_ai_editor(inner);
             }
             Some(crate::features::ai::settings::pane::AiHit::RemoveConnection(i)) => {
                 let _ = commit_ai_connection(inner);

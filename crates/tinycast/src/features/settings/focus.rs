@@ -27,7 +27,7 @@ pub struct FocusItem {
 
 impl FocusItem {
     pub fn focusable(&self) -> bool {
-        self.enabled && !self.secret
+        self.enabled
     }
 }
 
@@ -207,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn disabled_and_secret_are_skipped() {
+    fn disabled_are_skipped_and_secret_key_is_focusable() {
         let items = vec![
             FocusItem {
                 tab: None,
@@ -258,10 +258,15 @@ mod tests {
                 scrolls: true,
             },
         ];
-        assert_eq!(traverse(&items, Some(0), false), Some(0));
+        assert!(items[1].focusable());
+        assert!(!items[2].focusable());
+        assert_eq!(traverse(&items, Some(0), false), Some(1));
         assert_eq!(traverse(&items, Some(1), false), Some(0));
         assert_eq!(acc_value(&items[1]), None);
+        assert!(!items[1].name.to_ascii_lowercase().contains("sk-"));
         assert_eq!(acc_value(&items[0]).as_deref(), Some("on"));
+        assert_eq!(acc_state(&items[1], false) & 0x20000, 0x20000);
+        assert_eq!(acc_role_id(FocusRole::Text), 0x2A);
         assert_eq!(acc_role_id(FocusRole::Button), 0x2B);
     }
 

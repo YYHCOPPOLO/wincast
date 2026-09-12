@@ -1,6 +1,7 @@
 //! Settings → AI. No Apple Intelligence row.
 
 use tinycast_pure::ai::{validate_url, AiConnection, EndpointError, ModelSelection, ProviderKind};
+use tinycast_pure::i18n::UiLang;
 use tinycast_pure::theme;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
@@ -16,6 +17,8 @@ const EDITOR_ROW_H: f32 = 36.0;
 const EDITOR_ROWS: usize = 4;
 const EDITOR_FIELD_H: f32 = 22.0;
 const REMOVE_HIT_W: f32 = 72.0;
+const DISCARD_HIT_W: f32 = 88.0;
+const HINT_H: f32 = 28.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AiHit {
@@ -30,6 +33,7 @@ pub enum AiHit {
     Connection(usize),
     RemoveConnection(usize),
     CycleProvider,
+    DiscardEditor,
 }
 
 pub fn section_header() -> &'static str {
@@ -37,7 +41,11 @@ pub fn section_header() -> &'static str {
 }
 
 pub fn editor_height() -> f32 {
-    EDITOR_ROWS as f32 * EDITOR_ROW_H + theme::spacing::MD + 18.0
+    EDITOR_ROWS as f32 * EDITOR_ROW_H + theme::spacing::MD + HINT_H
+}
+
+pub fn ai_navigation_allowed(editing: bool, commit_ok: bool) -> bool {
+    !editing || commit_ok
 }
 
 pub fn content_height(connection_count: usize, editing: Option<usize>) -> f32 {
@@ -95,6 +103,14 @@ pub fn hit(
         }
         if editing == Some(i) {
             let editor_top = top + ROW_H + theme::spacing::SM;
+            let discard = discard_rect(width, editor_top);
+            if x >= discard.x
+                && x < discard.x + discard.w
+                && y >= discard.y
+                && y < discard.y + discard.h
+            {
+                return Some(AiHit::DiscardEditor);
+            }
             if y >= editor_top && y < editor_top + EDITOR_ROW_H {
                 return Some(AiHit::CycleProvider);
             }
@@ -113,13 +129,28 @@ pub fn remove_rect(width: f32, row_y: f32) -> tinycast_pure::palette_placement::
     }
 }
 
-pub fn redact_ai_error(err: &str) -> String {
+pub fn discard_rect(width: f32, editor_top: f32) -> tinycast_pure::palette_placement::DipRect {
+    let pad = ds::content_pad();
+    tinycast_pure::palette_placement::DipRect {
+        x: width - pad - DISCARD_HIT_W,
+        y: editor_top + EDITOR_ROWS as f32 * EDITOR_ROW_H,
+        w: DISCARD_HIT_W,
+        h: HINT_H,
+    }
+}
+
+pub fn redact_ai_error(err: &str, lang: UiLang) -> String {
     let lower = err.to_ascii_lowercase();
     if lower.contains("sk-") || lower.contains("api key") || lower.contains("apikey") {
-        "Couldn’t save this connection.".into()
-    } else {
-        err.lines().next().unwrap_or(err).to_string()
+        return tinycast_pure::i18n::ai_save_failed(lang).into();
     }
+    if err == EndpointError::InvalidUrl.message() {
+        return tinycast_pure::i18n::ai_invalid_url(lang).into();
+    }
+    if err == EndpointError::InsecureRemoteUrl.message() {
+        return tinycast_pure::i18n::ai_insecure_url(lang).into();
+    }
+    err.lines().next().unwrap_or(err).to_string()
 }
 
 pub fn connection_row_top(index: usize, editing: Option<usize>) -> f32 {
@@ -503,7 +534,22 @@ pub fn paint(
                 appearance,
             )?;
             let hint = error.unwrap_or_else(|| key_status_lang(key_saved, lang));
-            paint_editor_hint(target, formats, hint, editor_top, width, appearance)?;
+            let discard = discard_rect(width, editor_top);
+            paint_editor_hint(
+                target,
+                formats,
+                hint,
+                editor_top,
+                (discard.x - theme::spacing::SM).max(ds::content_pad()),
+                appearance,
+            )?;
+            paint_remove_control(
+                target,
+                formats,
+                tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang),
+                discard,
+                appearance,
+            )?;
         }
     }
     Ok(())
@@ -599,7 +645,7 @@ fn paint_editor_hint(
     formats: &Formats<'_>,
     hint: &str,
     top: f32,
-    width: f32,
+    right: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
     if hint.is_empty() {
@@ -616,8 +662,8 @@ fn paint_editor_hint(
             &D2D_RECT_F {
                 left: pad,
                 top: y,
-                right: width - pad,
-                bottom: y + 18.0,
+                right,
+                bottom: y + HINT_H,
             },
             &muted,
             D2D1_DRAW_TEXT_OPTIONS_CLIP,
@@ -699,10 +745,10 @@ mod tests {
             Some(AiHit::RemoveConnection(0))
         );
         assert_eq!(
-            redact_ai_error("bad sk-secret"),
+            redact_ai_error("bad sk-secret", UiLang::En),
             "Couldn’t save this connection."
         );
-        assert_eq!(redact_ai_error("Invalid URL"), "Invalid URL");
+        assert_eq!(redact_ai_error("Invalid URL", UiLang::En), "Invalid URL");
         let top = connection_row_top(0, Some(0));
         assert_eq!(
             hit(
@@ -742,5 +788,63 @@ mod tests {
         let next = cycle_default_model(None, &[with_model], true);
         assert!(matches!(next, Some(ModelSelection::Api { .. })));
         assert!(!codex_title(CodexPhase::Idle).eq_ignore_ascii_case("connect"));
+    }
+
+    #[test]
+    fn failed_save_keeps_draft_and_discard_allows_navigation() {
+        let mut conn = AiConnection::new(ProviderKind::OpenAiCompatible);
+        apply_draft(
+            &mut conn,
+            ProviderKind::OpenAiCompatible,
+            "http://127.0.0.1:11434/v1",
+            "llama3",
+        )
+        .unwrap();
+        let saved = conn.clone();
+        assert!(apply_draft(
+            &mut conn,
+            ProviderKind::OpenAiCompatible,
+            "http://example.com/v1",
+            "x",
+        )
+        .is_err());
+        assert_eq!(conn.base_url, saved.base_url);
+        assert_eq!(conn.models, saved.models);
+        assert!(!ai_navigation_allowed(true, false));
+        assert!(ai_navigation_allowed(false, false));
+        assert!(ai_navigation_allowed(true, true));
+        let width = 400.0;
+        let editor_top = connection_row_top(0, Some(0)) + ROW_H + theme::spacing::SM;
+        let discard = discard_rect(width, editor_top);
+        assert_eq!(
+            hit(discard.x + 4.0, discard.y + 4.0, 0.0, 1, width, Some(0)),
+            Some(AiHit::DiscardEditor)
+        );
+        let remove = remove_rect(width, connection_row_top(0, Some(0)));
+        assert!(discard.y >= remove.y + remove.h);
+    }
+
+    #[test]
+    fn save_errors_are_localized_and_redacted() {
+        let zh = UiLang::ZhHans;
+        let invalid = EndpointError::InvalidUrl.message();
+        let insecure = EndpointError::InsecureRemoteUrl.message();
+        assert_ne!(redact_ai_error(invalid, zh), invalid);
+        assert_eq!(
+            redact_ai_error(invalid, zh),
+            tinycast_pure::i18n::ai_invalid_url(zh)
+        );
+        assert_eq!(
+            redact_ai_error(insecure, zh),
+            tinycast_pure::i18n::ai_insecure_url(zh)
+        );
+        let stored = redact_ai_error("could not store API key", zh);
+        assert_eq!(stored, tinycast_pure::i18n::ai_save_failed(zh));
+        assert!(!stored.to_ascii_lowercase().contains("sk-"));
+        assert!(!stored.contains("API key"));
+        assert_eq!(
+            redact_ai_error("bad sk-secret", zh),
+            tinycast_pure::i18n::ai_save_failed(zh)
+        );
     }
 }

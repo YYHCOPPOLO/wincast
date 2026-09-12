@@ -156,6 +156,22 @@ pub fn ai_save_failed(lang: UiLang) -> &'static str {
     pick(lang, "Couldn’t save this connection.", "无法保存此连接。")
 }
 
+pub fn ai_invalid_url(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "Enter a valid provider base URL.",
+        "请输入有效的服务商接口地址。",
+    )
+}
+
+pub fn ai_insecure_url(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "Remote AI providers require an HTTPS base URL.",
+        "远程 AI 服务商需要 HTTPS 接口地址。",
+    )
+}
+
 pub fn ai_chatgpt_subscription(lang: UiLang) -> &'static str {
     pick(lang, "ChatGPT subscription", "ChatGPT 订阅")
 }
@@ -614,4 +630,20 @@ pub fn cancel_label(lang: UiLang) -> &'static str {
 
 pub fn reset_ranking_action(lang: UiLang) -> &'static str {
     chrome(Chrome::ResetRanking, lang)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ai_save_errors_are_translated() {
+        assert_ne!(ai_invalid_url(UiLang::ZhHans), ai_invalid_url(UiLang::En));
+        assert_ne!(ai_insecure_url(UiLang::ZhHans), ai_insecure_url(UiLang::En));
+        assert_eq!(ai_save_failed(UiLang::ZhHans), "无法保存此连接。");
+        assert_eq!(
+            ai_invalid_url(UiLang::En),
+            "Enter a valid provider base URL."
+        );
+    }
 }

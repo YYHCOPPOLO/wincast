@@ -130,9 +130,6 @@ impl IAccessible_Impl for SettingsAcc_Impl {
             return Ok(BSTR::from("Settings"));
         }
         let item = item_at(hwnd_of(self.hwnd), id)?;
-        if item.secret {
-            return not_found();
-        }
         Ok(BSTR::from(item.name.as_str()))
     }
 
