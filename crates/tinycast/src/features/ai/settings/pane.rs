@@ -2,10 +2,8 @@
 
 use tinycast_pure::ai::{validate_url, AiConnection, EndpointError, ModelSelection, ProviderKind};
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ROUNDED_RECT,
-};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
+use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
 use crate::design_system::settings as ds;
@@ -13,11 +11,11 @@ use crate::features::ai::service::chatgpt::CodexPhase;
 use crate::features::launcher::settings::items::{Formats, Rect};
 
 const ROW_H: f32 = 52.0;
-const TOGGLE_W: f32 = 40.0;
-const TOGGLE_H: f32 = 22.0;
 const FIXED_ROWS: usize = 8;
-const EDITOR_ROW_H: f32 = 40.0;
+const EDITOR_ROW_H: f32 = 36.0;
 const EDITOR_ROWS: usize = 4;
+const EDITOR_FIELD_H: f32 = 22.0;
+const REMOVE_HIT_W: f32 = 72.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AiHit {
@@ -39,7 +37,7 @@ pub fn section_header() -> &'static str {
 }
 
 pub fn editor_height() -> f32 {
-    EDITOR_ROWS as f32 * EDITOR_ROW_H + theme::spacing::MD
+    EDITOR_ROWS as f32 * EDITOR_ROW_H + theme::spacing::MD + 18.0
 }
 
 pub fn content_height(connection_count: usize, editing: Option<usize>) -> f32 {
@@ -70,7 +68,7 @@ pub fn hit(
     editing: Option<usize>,
 ) -> Option<AiHit> {
     let y = y + scroll;
-    let pad = theme::spacing::XL;
+    let pad = ds::content_pad();
     let hits = [
         AiHit::Enable,
         AiHit::WebSearch,
@@ -90,7 +88,7 @@ pub fn hit(
     for i in 0..connection_count {
         let top = connection_row_top(i, editing);
         if y >= top && y < top + ROW_H {
-            if x >= width - pad - 72.0 {
+            if x >= width - pad - REMOVE_HIT_W {
                 return Some(AiHit::RemoveConnection(i));
             }
             return Some(AiHit::Connection(i));
@@ -127,12 +125,17 @@ pub fn editor_rects(index: usize, editing: Option<usize>, width: f32) -> Option<
         return None;
     }
     let top = connection_row_top(index, editing) + ROW_H + theme::spacing::SM;
-    let pad = theme::spacing::XL;
-    let field = |row: usize| Rect {
-        x: pad,
-        y: top + (row as f32) * EDITOR_ROW_H + 16.0,
-        w: (width - pad * 2.0).max(40.0),
-        h: 22.0,
+    let pad = ds::content_pad();
+    let field_x = pad + theme::size::FORM_LABEL_WIDTH + theme::spacing::LG;
+    let field_w = (width - pad - field_x).max(40.0);
+    let field = |row: usize| {
+        let y = top + (row as f32) * EDITOR_ROW_H;
+        Rect {
+            x: field_x,
+            y: y + (EDITOR_ROW_H - EDITOR_FIELD_H) / 2.0,
+            w: field_w,
+            h: EDITOR_FIELD_H,
+        }
     };
     Some(EditorRects {
         url: field(1),
@@ -324,128 +327,165 @@ pub fn paint(
         &section,
         appearance,
     )?;
-    paint_toggle(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::ai_enable_title(lang),
         tinycast_pure::i18n::ai_enable_subtitle(lang),
-        enabled,
         row_y(0) - scroll,
         width,
+        true,
         appearance,
+        ds::RowTrailing::Toggle(enabled),
     )?;
-    paint_toggle(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::ai_web_search_title(lang),
         tinycast_pure::i18n::ai_web_search_subtitle(lang),
-        web_search,
         row_y(1) - scroll,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Toggle(web_search),
     )?;
-    paint_toggle(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::ai_system_prompt_title(lang),
         tinycast_pure::i18n::ai_system_prompt_subtitle(lang),
-        system_prompt,
         row_y(2) - scroll,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Toggle(system_prompt),
     )?;
-    paint_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::ai_opens_to_title(lang),
-        tinycast_pure::i18n::ai_opens_to_value(opens_to != 0, lang),
+        "",
         row_y(3) - scroll,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Label(tinycast_pure::i18n::ai_opens_to_value(opens_to != 0, lang)),
     )?;
-    paint_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::ai_keep_conversations(lang),
-        tinycast_pure::i18n::ai_retention_value(retention, lang),
+        "",
         row_y(4) - scroll,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Label(tinycast_pure::i18n::ai_retention_value(retention, lang)),
     )?;
     let model = default_model_title_lang(default_model, connections, lang);
-    paint_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::ai_default_model(lang),
-        &model,
+        "",
         row_y(5) - scroll,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Label(&model),
     )?;
-    paint_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::ai_chatgpt_subscription(lang),
-        codex_title_lang(codex, lang),
+        "",
         row_y(6) - scroll,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Label(codex_title_lang(codex, lang)),
     )?;
-    paint_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::ai_add_connection(lang),
         tinycast_pure::i18n::ai_add_connection_sub(lang),
         row_y(7) - scroll,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::None,
     )?;
+    let remove = tinycast_pure::i18n::remove_label(lang);
     for (i, conn) in connections.iter().enumerate() {
         let top = connection_row_top(i, editing) - scroll;
-        paint_row(
+        ds::paint_form_row(
             target,
-            formats,
+            formats.body,
+            formats.caption,
             &conn.title(),
             conn.provider.title(),
             top,
             width,
+            true,
             appearance,
+            ds::RowTrailing::Label(remove),
         )?;
         if editing == Some(i) {
             let editor_top = top + ROW_H + theme::spacing::SM;
-            paint_row(
+            paint_editor_label(
                 target,
                 formats,
                 tinycast_pure::i18n::ai_provider(lang),
                 conn.provider.title(),
                 editor_top,
+                0,
                 width,
                 appearance,
             )?;
-            paint_row(
+            paint_editor_label(
                 target,
                 formats,
                 tinycast_pure::i18n::ai_base_url(lang),
                 "",
-                editor_top + EDITOR_ROW_H,
+                editor_top,
+                1,
                 width,
                 appearance,
             )?;
-            paint_row(
+            paint_editor_label(
                 target,
                 formats,
                 tinycast_pure::i18n::ai_model_id(lang),
                 "",
-                editor_top + EDITOR_ROW_H * 2.0,
+                editor_top,
+                2,
                 width,
                 appearance,
             )?;
-            paint_row(
+            paint_editor_label(
                 target,
                 formats,
                 tinycast_pure::i18n::ai_api_key(lang),
+                "",
+                editor_top,
+                3,
+                width,
+                appearance,
+            )?;
+            paint_editor_hint(
+                target,
+                formats,
                 key_status_lang(key_saved, lang),
-                editor_top + EDITOR_ROW_H * 3.0,
+                editor_top,
                 width,
                 appearance,
             )?;
@@ -454,84 +494,90 @@ pub fn paint(
     Ok(())
 }
 
-fn paint_toggle(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    title: &str,
-    subtitle: &str,
-    on: bool,
-    y: f32,
-    width: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    paint_row(target, formats, title, subtitle, y, width, appearance)?;
-    let pad = theme::spacing::XL;
-    let toggle = D2D1_ROUNDED_RECT {
-        rect: D2D_RECT_F {
-            left: width - pad - TOGGLE_W,
-            top: y + (ROW_H - TOGGLE_H) / 2.0,
-            right: width - pad,
-            bottom: y + (ROW_H - TOGGLE_H) / 2.0 + TOGGLE_H,
-        },
-        radiusX: TOGGLE_H / 2.0,
-        radiusY: TOGGLE_H / 2.0,
-    };
-    let fill = if on {
-        D2D1_COLOR_F {
-            r: 0.2,
-            g: 0.55,
-            b: 1.0,
-            a: 1.0,
-        }
-    } else {
-        ds::ramp_color(appearance, 0.18)
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
-    unsafe { target.FillRoundedRectangle(&toggle, &brush) };
-    Ok(())
+fn editor_label_rect(top: f32, row: usize) -> D2D_RECT_F {
+    let pad = ds::content_pad();
+    let y = top + row as f32 * EDITOR_ROW_H;
+    D2D_RECT_F {
+        left: pad,
+        top: y,
+        right: pad + theme::size::FORM_LABEL_WIDTH,
+        bottom: y + EDITOR_ROW_H,
+    }
 }
 
-fn paint_row(
+fn paint_editor_label(
     target: &ID2D1RenderTarget,
     formats: &Formats<'_>,
     title: &str,
-    subtitle: &str,
-    y: f32,
+    trailing: &str,
+    top: f32,
+    row: usize,
     width: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let pad = theme::spacing::XL;
     let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
     let title_w: Vec<u16> = title.encode_utf16().collect();
     unsafe {
         target.DrawText(
             &title_w,
             formats.body,
-            &D2D_RECT_F {
-                left: pad,
-                top: y,
-                right: width - pad - TOGGLE_W - 8.0,
-                bottom: y + 28.0,
-            },
+            &editor_label_rect(top, row),
             &brush,
             D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
-    let muted_brush =
-        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-    let sub: Vec<u16> = subtitle.encode_utf16().collect();
+    if !trailing.is_empty() {
+        let pad = ds::content_pad();
+        let field_x = pad + theme::size::FORM_LABEL_WIDTH + theme::spacing::LG;
+        let muted = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+        let t: Vec<u16> = trailing.encode_utf16().collect();
+        let y = top + row as f32 * EDITOR_ROW_H;
+        unsafe {
+            target.DrawText(
+                &t,
+                formats.caption,
+                &D2D_RECT_F {
+                    left: field_x,
+                    top: y,
+                    right: width - pad,
+                    bottom: y + EDITOR_ROW_H,
+                },
+                &muted,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn paint_editor_hint(
+    target: &ID2D1RenderTarget,
+    formats: &Formats<'_>,
+    hint: &str,
+    top: f32,
+    width: f32,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    if hint.is_empty() {
+        return Ok(());
+    }
+    let pad = ds::content_pad();
+    let y = top + EDITOR_ROWS as f32 * EDITOR_ROW_H;
+    let muted = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
+    let t: Vec<u16> = hint.encode_utf16().collect();
     unsafe {
         target.DrawText(
-            &sub,
+            &t,
             formats.caption,
             &D2D_RECT_F {
                 left: pad,
-                top: y + 28.0,
-                right: width - pad - TOGGLE_W - 8.0,
-                bottom: y + ROW_H - 4.0,
+                top: y,
+                right: width - pad,
+                bottom: y + 18.0,
             },
-            &muted_brush,
+            &muted,
             D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
@@ -611,6 +657,22 @@ mod tests {
             Some(AiHit::CycleProvider)
         );
         assert!(editor_rects(0, Some(0), width).is_some());
+    }
+
+    #[test]
+    fn editor_fields_clear_the_label_column() {
+        let width = theme::size::SETTINGS_DETAIL_MINIMUM;
+        let rects = editor_rects(0, Some(0), width).expect("editing");
+        let pad = ds::content_pad();
+        let label_right = pad + theme::size::FORM_LABEL_WIDTH;
+        assert!(rects.url.x >= label_right + theme::spacing::LG - 0.01);
+        assert!(rects.model.x >= label_right);
+        assert!(rects.key.x >= label_right);
+        assert!(rects.url.y + rects.url.h <= rects.model.y + 0.01);
+        assert!(rects.model.y + rects.model.h <= rects.key.y + 0.01);
+        assert!(rects.key.x + rects.key.w <= width - pad + 0.01);
+        let label = editor_label_rect(0.0, 1);
+        assert!(label.right <= rects.url.x + 0.01);
     }
 
     #[test]

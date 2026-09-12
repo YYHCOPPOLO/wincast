@@ -5,10 +5,8 @@ use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use tinycast_pure::visibility::VisibilityStore;
 use tinycast_pure::window_command::{WindowCommandId, WindowGroup};
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ROUNDED_RECT,
-};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
+use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
 use crate::design_system::settings as ds;
@@ -17,8 +15,6 @@ use crate::features::launcher::settings::items::Formats;
 const ROW_H: f32 = 52.0;
 const CMD_H: f32 = 40.0;
 const HEADER_H: f32 = 22.0;
-const TOGGLE_W: f32 = 40.0;
-const TOGGLE_H: f32 = 22.0;
 const RECORDER_W: f32 = theme::size::SHORTCUT_RECORDER;
 const CLEAR_W: f32 = 22.0;
 
@@ -214,50 +210,55 @@ pub fn paint(
         appearance,
     )?;
     let origin = -scroll;
-    paint_row(
+    let _ = origin_x;
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::window_enable_title(lang),
         tinycast_pure::i18n::window_enable_subtitle(lang),
-        enabled,
         toggle_row_y(0) + origin,
-        origin_x,
         width,
+        true,
         appearance,
+        ds::RowTrailing::Toggle(enabled),
     )?;
-    paint_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::show_in_launcher(lang),
         tinycast_pure::i18n::window_show_subtitle(lang),
-        show_in_launcher,
         toggle_row_y(1) + origin,
-        origin_x,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Toggle(show_in_launcher),
     )?;
-    paint_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::window_cycle_title(lang),
         tinycast_pure::i18n::window_cycle_subtitle(lang),
-        cycle,
         toggle_row_y(2) + origin,
-        origin_x,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Toggle(cycle),
     )?;
     let gap_sub = tinycast_pure::i18n::window_gap_subtitle(gap, lang);
-    paint_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::window_gap_title(lang),
         &gap_sub,
-        gap > 0,
         toggle_row_y(3) + origin,
-        origin_x,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Toggle(gap > 0),
     )?;
     let layout = catalog_layout_lang(lang);
     for (top, title) in layout.headers {
@@ -394,83 +395,6 @@ fn paint_command(
                 DWRITE_MEASURING_MODE_NATURAL,
             );
         }
-    }
-    Ok(())
-}
-
-fn paint_row(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    title: &str,
-    subtitle: &str,
-    on: bool,
-    y: f32,
-    origin_x: f32,
-    width: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let pad = theme::spacing::XL;
-    let text_w = width - pad * 3.0 - TOGGLE_W;
-    let title_rect = D2D_RECT_F {
-        left: origin_x + pad,
-        top: y,
-        right: origin_x + pad + text_w,
-        bottom: y + 28.0,
-    };
-    let sub_rect = D2D_RECT_F {
-        left: origin_x + pad,
-        top: y + 28.0,
-        right: origin_x + pad + text_w,
-        bottom: y + ROW_H - 4.0,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
-    let title_wide: Vec<u16> = title.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &title_wide,
-            formats.body,
-            &title_rect,
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    let muted_brush =
-        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-    let sub_wide: Vec<u16> = subtitle.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &sub_wide,
-            formats.caption,
-            &sub_rect,
-            &muted_brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    let toggle = D2D1_ROUNDED_RECT {
-        rect: D2D_RECT_F {
-            left: origin_x + width - pad - TOGGLE_W,
-            top: y + (ROW_H - TOGGLE_H) / 2.0,
-            right: origin_x + width - pad,
-            bottom: y + (ROW_H - TOGGLE_H) / 2.0 + TOGGLE_H,
-        },
-        radiusX: TOGGLE_H / 2.0,
-        radiusY: TOGGLE_H / 2.0,
-    };
-    let fill = if on {
-        D2D1_COLOR_F {
-            r: 0.2,
-            g: 0.55,
-            b: 1.0,
-            a: 1.0,
-        }
-    } else {
-        ds::ramp_color(appearance, 0.18)
-    };
-    let toggle_brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
-    unsafe {
-        target.FillRoundedRectangle(&toggle, &toggle_brush);
     }
     Ok(())
 }

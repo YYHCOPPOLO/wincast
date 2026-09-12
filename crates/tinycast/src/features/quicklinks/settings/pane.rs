@@ -21,8 +21,6 @@ use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
 const ITEM_H: f32 = 36.0;
-const TOGGLE_W: f32 = 40.0;
-const TOGGLE_H: f32 = 22.0;
 const BTN_W: f32 = 120.0;
 
 pub fn section_header() -> &'static str {
@@ -62,7 +60,7 @@ pub fn hit(x: f32, y: f32, scroll: f32, count: usize) -> Option<QuicklinksHit> {
         return Some(QuicklinksHit::ShowInLauncher);
     }
     row = ds::switch_section_next_y(true);
-    let pad = theme::spacing::XL;
+    let pad = ds::content_pad();
     if y >= row && y < row + ITEM_H {
         if x >= pad && x < pad + BTN_W {
             return Some(QuicklinksHit::Create);
@@ -113,29 +111,33 @@ pub fn paint(
     )?;
     let origin = -scroll;
     let mut y = ds::form_origin() + origin;
-    paint_toggle_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::quicklinks_enable_title(lang),
         tinycast_pure::i18n::quicklinks_enable_subtitle(lang),
-        enabled,
         y,
         width,
+        true,
         appearance,
+        ds::RowTrailing::Toggle(enabled),
     )?;
     y += ROW_H;
-    paint_toggle_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::show_in_launcher(lang),
         tinycast_pure::i18n::quicklinks_show_subtitle(lang),
-        show_in_launcher,
         y,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Toggle(show_in_launcher),
     )?;
     y = ds::switch_section_next_y(true) + origin;
-    let pad = theme::spacing::XL;
+    let pad = ds::content_pad();
     paint_btn(
         target,
         formats,
@@ -238,67 +240,6 @@ fn pick_json(owner: HWND, save: bool) -> Option<std::path::PathBuf> {
     Some(Path::new(&path).to_path_buf())
 }
 
-fn paint_toggle_row(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    title: &str,
-    subtitle: &str,
-    on: bool,
-    y: f32,
-    width: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let pad = theme::spacing::XL;
-    let text_w = width - pad * 3.0 - TOGGLE_W;
-    draw_text(
-        target,
-        formats.body,
-        title,
-        pad,
-        y,
-        pad + text_w,
-        y + 28.0,
-        appearance,
-        0.92,
-    )?;
-    draw_text(
-        target,
-        formats.caption,
-        subtitle,
-        pad,
-        y + 28.0,
-        pad + text_w,
-        y + ROW_H - 4.0,
-        appearance,
-        0.55,
-    )?;
-    let toggle = D2D1_ROUNDED_RECT {
-        rect: D2D_RECT_F {
-            left: width - pad - TOGGLE_W,
-            top: y + (ROW_H - TOGGLE_H) / 2.0,
-            right: width - pad,
-            bottom: y + (ROW_H - TOGGLE_H) / 2.0 + TOGGLE_H,
-        },
-        radiusX: TOGGLE_H / 2.0,
-        radiusY: TOGGLE_H / 2.0,
-    };
-    let fill = if on {
-        D2D1_COLOR_F {
-            r: 0.2,
-            g: 0.55,
-            b: 1.0,
-            a: 1.0,
-        }
-    } else {
-        ds::ramp_color(appearance, 0.18)
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
-    unsafe {
-        target.FillRoundedRectangle(&toggle, &brush);
-    }
-    Ok(())
-}
-
 fn paint_btn(
     target: &ID2D1RenderTarget,
     formats: &Formats<'_>,
@@ -388,16 +329,14 @@ mod tests {
             Some(QuicklinksHit::ShowInLauncher)
         );
         let y = ds::switch_section_next_y(true) + 4.0;
+        let pad = ds::content_pad();
+        assert_eq!(hit(pad + 4.0, y, 0.0, 0), Some(QuicklinksHit::Create));
         assert_eq!(
-            hit(theme::spacing::XL + 4.0, y, 0.0, 0),
-            Some(QuicklinksHit::Create)
-        );
-        assert_eq!(
-            hit(theme::spacing::XL + BTN_W + 12.0, y, 0.0, 0),
+            hit(pad + BTN_W + 12.0, y, 0.0, 0),
             Some(QuicklinksHit::Import)
         );
         assert_eq!(
-            hit(theme::spacing::XL + BTN_W * 2.0 + 20.0, y, 0.0, 0),
+            hit(pad + BTN_W * 2.0 + 20.0, y, 0.0, 0),
             Some(QuicklinksHit::Export)
         );
     }

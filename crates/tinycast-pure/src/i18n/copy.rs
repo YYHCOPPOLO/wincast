@@ -280,6 +280,15 @@ pub fn general_pop_to_root_subtitle(seconds: i64, lang: UiLang) -> String {
     }
 }
 
+pub fn general_pop_to_root_trailing(seconds: i64, lang: UiLang) -> String {
+    match (seconds, lang) {
+        (0, UiLang::En) => "Never".to_string(),
+        (0, UiLang::ZhHans) => "从不".to_string(),
+        (s, UiLang::En) => format!("{s}s"),
+        (s, UiLang::ZhHans) => format!("{s} 秒"),
+    }
+}
+
 pub fn general_hyper_off(lang: UiLang) -> &'static str {
     match lang {
         UiLang::En => "Off",
@@ -531,6 +540,16 @@ mod tests {
             general_row_title(GeneralRow::ShowInMenuBar, UiLang::ZhHans),
             "在托盘显示图标"
         );
+    }
+
+    #[test]
+    fn pop_to_root_trailing_stays_short() {
+        assert_eq!(general_pop_to_root_trailing(0, UiLang::En), "Never");
+        assert_eq!(general_pop_to_root_trailing(0, UiLang::ZhHans), "从不");
+        assert_eq!(general_pop_to_root_trailing(10, UiLang::En), "10s");
+        assert!(general_pop_to_root_trailing(30, UiLang::ZhHans).len() < 12);
+        let long = general_pop_to_root_subtitle(0, UiLang::ZhHans);
+        assert!(long.chars().count() > 8);
     }
 
     #[test]

@@ -19,6 +19,7 @@ pub const TOGGLE_H: f32 = 22.0;
 pub const HEADER_H: f32 = 22.0;
 #[allow(dead_code)]
 pub const FOOTER_H: f32 = 36.0;
+pub const ACCENT: (f32, f32, f32, f32) = (0.0, 0.47, 0.83, 1.0);
 
 pub fn footer_block_h(lines: u32) -> f32 {
     (18.0 * lines as f32).max(18.0)
@@ -26,6 +27,28 @@ pub fn footer_block_h(lines: u32) -> f32 {
 pub const OVERFLOW_FADE: f32 = 24.0;
 pub const CARD_INSET: f32 = theme::spacing::XXL;
 pub const CARD_PAD: f32 = theme::spacing::XL;
+
+/// Symmetric content inset: card origin plus inner pad.
+pub fn content_pad() -> f32 {
+    CARD_INSET + CARD_PAD
+}
+
+pub fn toggle_rect(width: f32, row_y: f32, pad_x: f32) -> DipRect {
+    DipRect {
+        x: width - pad_x - TOGGLE_W,
+        y: row_y + (ROW_H - TOGGLE_H) / 2.0,
+        w: TOGGLE_W,
+        h: TOGGLE_H,
+    }
+}
+
+pub fn approx_label_width(text: &str) -> f32 {
+    let mut w = 0.0f32;
+    for c in text.chars() {
+        w += if (c as u32) > 0x2E80 { 13.0 } else { 7.5 };
+    }
+    (w + theme::spacing::XS).max(theme::spacing::XL)
+}
 
 pub fn sidebar_rgb(appearance: u8) -> (f32, f32, f32) {
     if appearance == 0 {
@@ -200,6 +223,42 @@ pub enum RowTrailing<'a> {
     Label(&'a str),
 }
 
+pub fn trailing_width(trailing: RowTrailing<'_>, width: f32, pad_x: f32) -> f32 {
+    let max_trail = ((width - pad_x * 2.0) * 0.5).max(48.0);
+    match trailing {
+        RowTrailing::Toggle(_) => TOGGLE_W + theme::spacing::SM,
+        RowTrailing::Label(label) => approx_label_width(label).clamp(40.0, max_trail),
+        RowTrailing::None => 0.0,
+    }
+}
+
+pub fn paint_form_row(
+    target: &ID2D1RenderTarget,
+    title_format: &IDWriteTextFormat,
+    caption_format: &IDWriteTextFormat,
+    title: &str,
+    subtitle: &str,
+    y: f32,
+    width: f32,
+    enabled: bool,
+    appearance: u8,
+    trailing: RowTrailing<'_>,
+) -> windows::core::Result<()> {
+    paint_settings_row(
+        target,
+        title_format,
+        caption_format,
+        title,
+        subtitle,
+        y,
+        width,
+        content_pad(),
+        enabled,
+        appearance,
+        trailing,
+    )
+}
+
 pub fn paint_settings_row(
     target: &ID2D1RenderTarget,
     title_format: &IDWriteTextFormat,
@@ -224,25 +283,27 @@ pub fn paint_settings_row(
         theme::colors::TEXT_SECONDARY_ALPHA,
         theme::colors::TEXT_SECONDARY_ALPHA,
     );
-    let trail_w = match trailing {
-        RowTrailing::Toggle(_) => TOGGLE_W + theme::spacing::SM,
-        RowTrailing::Label(_) => 120.0,
-        RowTrailing::None => 0.0,
+    let trail_w = trailing_width(trailing, width, pad_x);
+    let text_right = (width - pad_x - trail_w).max(pad_x + 48.0);
+    let has_sub = !subtitle.is_empty();
+    let title_top = if has_sub {
+        y + 4.0
+    } else {
+        y + (ROW_H - 24.0) / 2.0
     };
-    let text_right = width - pad_x - trail_w;
     draw_text(
         target,
         title_format,
         title,
         D2D_RECT_F {
             left: pad_x,
-            top: y,
+            top: title_top,
             right: text_right,
-            bottom: y + 28.0,
+            bottom: title_top + 24.0,
         },
         (tr, tg, tb, ta * dim),
     )?;
-    if !subtitle.is_empty() {
+    if has_sub {
         draw_text(
             target,
             caption_format,
@@ -258,15 +319,9 @@ pub fn paint_settings_row(
     }
     match trailing {
         RowTrailing::Toggle(on) => {
-            let ty = y + (ROW_H - TOGGLE_H) / 2.0;
             paint_toggle(
                 target,
-                DipRect {
-                    x: width - pad_x - TOGGLE_W,
-                    y: ty,
-                    w: TOGGLE_W,
-                    h: TOGGLE_H,
-                },
+                toggle_rect(width, y, pad_x),
                 on,
                 enabled,
                 appearance,
@@ -275,7 +330,7 @@ pub fn paint_settings_row(
         RowTrailing::Label(label) => {
             draw_text(
                 target,
-                title_format,
+                caption_format,
                 label,
                 D2D_RECT_F {
                     left: text_right,
@@ -413,7 +468,7 @@ pub fn paint_overflow_fade(
     Ok(())
 }
 
-fn paint_toggle(
+pub fn paint_toggle(
     target: &ID2D1RenderTarget,
     rect: DipRect,
     on: bool,
@@ -422,10 +477,10 @@ fn paint_toggle(
 ) -> windows::core::Result<()> {
     let fill = if on {
         D2D1_COLOR_F {
-            r: 0.0,
-            g: 0.47,
-            b: 0.83,
-            a: if enabled { 1.0 } else { 0.45 },
+            r: ACCENT.0,
+            g: ACCENT.1,
+            b: ACCENT.2,
+            a: if enabled { ACCENT.3 } else { 0.45 },
         }
     } else {
         ramp_color(appearance, if enabled { 0.18 } else { 0.08 })
@@ -505,6 +560,7 @@ fn draw_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 
     #[test]
     fn feature_switch_rows_are_stacked_row_h() {
@@ -526,5 +582,99 @@ mod tests {
         let light = primary_ink(1);
         assert!(dark.r > 0.9);
         assert!(light.r < 0.1);
+    }
+
+    #[test]
+    fn toggle_stays_inside_card_content_inset() {
+        for width in [theme::size::SETTINGS_DETAIL_MINIMUM, 645.0] {
+            let (section, enable, show) = feature_switch_section(width, CARD_INSET, "Notes", true);
+            let card = section.card_rect();
+            let pad = content_pad();
+            let on = toggle_rect(width, enable.y, pad);
+            assert!(
+                on.x + 0.01 >= card.x + CARD_PAD,
+                "toggle x {} inside card {}+{}",
+                on.x,
+                card.x,
+                CARD_PAD
+            );
+            assert!(
+                on.x + on.w <= card.x + card.w - CARD_PAD + 0.01,
+                "toggle right {} vs card inner {}",
+                on.x + on.w,
+                card.x + card.w - CARD_PAD
+            );
+            let show = show.expect("launcher row");
+            let off = toggle_rect(width, show.y, pad);
+            assert!(off.x + off.w <= card.x + card.w - CARD_PAD + 0.01);
+            let leaked = width - theme::spacing::XL - TOGGLE_W;
+            assert!(
+                leaked + TOGGLE_W > card.x + card.w - CARD_PAD,
+                "legacy XL pad must overflow the card so the new inset is a real fix"
+            );
+        }
+    }
+
+    #[test]
+    fn long_trailing_label_does_not_eat_the_title_column() {
+        let width = theme::size::SETTINGS_DETAIL_MINIMUM;
+        let pad = content_pad();
+        let label = "空闲 0 秒后返回（0 = 从不）。";
+        let trail = trailing_width(RowTrailing::Label(label), width, pad);
+        let text_right = width - pad - trail;
+        assert!(text_right - pad >= 80.0, "title column {text_right}");
+        assert!(trail <= (width - pad * 2.0) * 0.5 + 0.01);
+        assert!(approx_label_width("Never") < approx_label_width(label));
+    }
+
+    #[test]
+    fn toggle_thumb_is_visible_on_and_off() {
+        let rect = DipRect {
+            x: 8.0,
+            y: 4.0,
+            w: TOGGLE_W,
+            h: TOGGLE_H,
+        };
+        let paint = |on: bool| {
+            crate::design_system::test_render::with_offscreen(64, 32, |target| {
+                unsafe {
+                    target.Clear(Some(&D2D1_COLOR_F {
+                        r: 0.16,
+                        g: 0.16,
+                        b: 0.16,
+                        a: 1.0,
+                    }));
+                }
+                paint_toggle(target, rect, on, true, 0)
+            })
+            .expect("toggle")
+            .2
+        };
+        let on = paint(true);
+        let off = paint(false);
+        let sample = |bits: &[u8], x: i32| {
+            let x = x.clamp(0, 63) as usize;
+            let y = 14usize;
+            let i = (y * 64 + x) * 4;
+            (bits[i] as i16, bits[i + 1] as i16, bits[i + 2] as i16)
+        };
+        let on_right = sample(&on, (rect.x + rect.w - 6.0) as i32);
+        let on_left = sample(&on, (rect.x + 6.0) as i32);
+        let off_left = sample(&off, (rect.x + 6.0) as i32);
+        assert!(
+            on_right.2 > 180 && on_right.1 > 180 && on_right.0 > 180,
+            "on thumb should be light, got {:?}",
+            on_right
+        );
+        assert!(
+            on_left.2 < 80 && on_left.1 > 60,
+            "on track should be accent, got {:?}",
+            on_left
+        );
+        assert!(
+            off_left.2 > 180 && off_left.1 > 180,
+            "off thumb should be light on the left, got {:?}",
+            off_left
+        );
     }
 }

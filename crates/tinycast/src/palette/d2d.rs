@@ -561,7 +561,7 @@ fn paint_layers(
             );
         }
         if let Some(filter) = &params.clipboard_filter {
-            let _ = paint_filter_button(target, list_fonts, filter);
+            let _ = paint_filter_button(target, list_fonts, filter, params.appearance);
         }
         let _ = menu::paint_footer(
             target,
@@ -643,17 +643,27 @@ fn paint_filter_button(
     target: &ID2D1RenderTarget,
     fonts: &ListFonts,
     filter: &FilterButtonPaint,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let rect = filter.rect;
+    let (fr, fg, fb, fa) = if filter.open {
+        theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::SELECTION_DARK_ALPHA,
+            theme::colors::SELECTION_LIGHT_ALPHA,
+        )
+    } else {
+        theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::CONTROL_SURFACE_DARK_ALPHA,
+            theme::colors::CONTROL_SURFACE_LIGHT_ALPHA,
+        )
+    };
     let fill = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: if filter.open {
-            theme::colors::SELECTION_DARK_ALPHA
-        } else {
-            0.14
-        },
+        r: fr,
+        g: fg,
+        b: fb,
+        a: fa,
     };
     let rounded = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
@@ -669,11 +679,16 @@ fn paint_filter_button(
     unsafe {
         target.FillRoundedRectangle(&rounded, &brush);
     }
+    let (ir, ig, ib, ia) = theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+    );
     let ink = D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
+        r: ir,
+        g: ig,
+        b: ib,
+        a: ia,
     };
     let text_brush = unsafe { target.CreateSolidColorBrush(&ink, None)? };
     let chevron = if filter.open { "▴" } else { "▾" };
@@ -964,6 +979,7 @@ mod tests {
                         primary_label: "",
                         actions_label: "",
                         primary_destructive: false,
+                        appearance: 0,
                     },
                     menu: None,
                     clipboard_preview: None,
@@ -1067,6 +1083,7 @@ mod tests {
                         primary_label: "",
                         actions_label: "",
                         primary_destructive: false,
+                        appearance: 0,
                     },
                     menu: None,
                     clipboard_preview: None,

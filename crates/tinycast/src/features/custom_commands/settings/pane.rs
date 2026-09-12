@@ -13,8 +13,6 @@ use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
 const ITEM_H: f32 = 36.0;
-const TOGGLE_W: f32 = 40.0;
-const TOGGLE_H: f32 = 22.0;
 
 pub fn section_header() -> &'static str {
     "Commands"
@@ -95,26 +93,30 @@ pub fn paint(
     )?;
     let origin = -scroll;
     let mut y = ds::form_origin() + origin;
-    paint_toggle_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::custom_commands_enable_title(lang),
         tinycast_pure::i18n::custom_commands_enable_subtitle(lang),
-        enabled,
         y,
         width,
+        true,
         appearance,
+        ds::RowTrailing::Toggle(enabled),
     )?;
     y += ROW_H;
-    paint_toggle_row(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::show_in_launcher(lang),
         tinycast_pure::i18n::custom_commands_show_subtitle(lang),
-        show_in_launcher,
         y,
         width,
+        enabled,
         appearance,
+        ds::RowTrailing::Toggle(show_in_launcher),
     )?;
     y = ds::switch_section_next_y(true) + origin;
     paint_button(
@@ -141,49 +143,6 @@ pub fn paint(
     Ok(())
 }
 
-fn paint_toggle_row(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    title: &str,
-    subtitle: &str,
-    on: bool,
-    y: f32,
-    width: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let pad = theme::spacing::XL;
-    let text_w = width - pad * 3.0 - TOGGLE_W;
-    draw_text(
-        target,
-        formats.body,
-        title,
-        pad,
-        y,
-        pad + text_w,
-        y + 28.0,
-        appearance,
-        0.92,
-    )?;
-    draw_text(
-        target,
-        formats.caption,
-        subtitle,
-        pad,
-        y + 28.0,
-        pad + text_w,
-        y + ROW_H - 4.0,
-        appearance,
-        0.55,
-    )?;
-    paint_toggle(
-        target,
-        width - pad - TOGGLE_W,
-        y + (ROW_H - TOGGLE_H) / 2.0,
-        on,
-        appearance,
-    )
-}
-
 fn paint_button(
     target: &ID2D1RenderTarget,
     formats: &Formats<'_>,
@@ -192,7 +151,7 @@ fn paint_button(
     width: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let pad = theme::spacing::XL;
+    let pad = ds::content_pad();
     let rect = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
             left: pad,
@@ -235,7 +194,7 @@ fn paint_item(
     width: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let pad = theme::spacing::XL;
+    let pad = ds::content_pad();
     draw_text(
         target,
         formats.body,
@@ -258,40 +217,6 @@ fn paint_item(
         appearance,
         0.5,
     )
-}
-
-fn paint_toggle(
-    target: &ID2D1RenderTarget,
-    x: f32,
-    y: f32,
-    on: bool,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let toggle = D2D1_ROUNDED_RECT {
-        rect: D2D_RECT_F {
-            left: x,
-            top: y,
-            right: x + TOGGLE_W,
-            bottom: y + TOGGLE_H,
-        },
-        radiusX: TOGGLE_H / 2.0,
-        radiusY: TOGGLE_H / 2.0,
-    };
-    let fill = if on {
-        D2D1_COLOR_F {
-            r: 0.2,
-            g: 0.55,
-            b: 1.0,
-            a: 1.0,
-        }
-    } else {
-        ds::ramp_color(appearance, 0.18)
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
-    unsafe {
-        target.FillRoundedRectangle(&toggle, &brush);
-    }
-    Ok(())
 }
 
 fn draw_text(

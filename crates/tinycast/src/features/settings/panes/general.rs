@@ -2,9 +2,9 @@
 
 use tinycast_pure::i18n::{
     general_appearance_trailing, general_hyper_caps_subtitle, general_hyper_off,
-    general_language_trailing, general_pop_to_root_subtitle, general_ranking_subtitle,
-    general_reset_label, general_row_subtitle, general_row_title, general_section_footer,
-    general_section_title, GeneralRow, GeneralSection, UiLang,
+    general_language_trailing, general_pop_to_root_subtitle, general_pop_to_root_trailing,
+    general_ranking_subtitle, general_reset_label, general_row_subtitle, general_row_title,
+    general_section_footer, general_section_title, GeneralRow, GeneralSection, UiLang,
 };
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
@@ -267,6 +267,7 @@ pub fn paint(
     let lang = state.lang;
     let ranking_sub = general_ranking_subtitle(state.ranking_empty, lang);
     let pop_sub = general_pop_to_root_subtitle(state.pop_to_root, lang);
+    let pop_trail = general_pop_to_root_trailing(state.pop_to_root, lang);
     let appearance_trail = general_appearance_trailing(state.appearance, lang);
     let language_trail = general_language_trailing(lang);
     let reset_label = general_reset_label(lang);
@@ -323,14 +324,14 @@ pub fn paint(
                     true,
                     RowTrailing::Toggle(state.show_in_menu_bar),
                 ),
-                GeneralHit::PopToRoot => (pop_sub.as_str(), true, RowTrailing::Label("")),
+                GeneralHit::PopToRoot => (
+                    pop_sub.as_str(),
+                    true,
+                    RowTrailing::Label(pop_trail.as_str()),
+                ),
                 GeneralHit::AutoSwitchInput => {
                     (static_sub, true, RowTrailing::Toggle(state.auto_switch))
                 }
-            };
-            let trailing = match hit {
-                GeneralHit::PopToRoot => RowTrailing::Label(pop_sub.as_str()),
-                _ => trailing,
             };
             ds::paint_settings_row(
                 target,

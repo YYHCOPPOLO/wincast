@@ -551,7 +551,7 @@ fn paint_scene(
                         target.FillRoundedRectangle(&pill, &sel_brush);
                     }
                     let slot = theme::size::SETTINGS_ROW_ICON;
-                    let icon = 16.0;
+                    let icon = 14.0;
                     let ink = theme::colors::ramp_rgba(
                         appearance,
                         theme::colors::TEXT_PRIMARY_ALPHA,
@@ -1386,7 +1386,7 @@ fn header_rect(row: &SidebarRow) -> D2D_RECT_F {
 
 fn tab_rect(row: &SidebarRow) -> D2D_RECT_F {
     D2D_RECT_F {
-        left: theme::spacing::XL + theme::size::SETTINGS_ROW_ICON + theme::spacing::LG,
+        left: theme::spacing::XL + theme::size::SETTINGS_ROW_ICON + theme::spacing::XL,
         top: row.y,
         right: theme::size::SETTINGS_SIDEBAR - theme::spacing::MD,
         bottom: row.y + row.height,
@@ -2700,7 +2700,7 @@ mod tests {
             w: theme::size::SETTINGS_ROW_ICON,
             h: 28.0,
         };
-        let label_left = theme::spacing::XL + theme::size::SETTINGS_ROW_ICON + theme::spacing::LG;
+        let label_left = theme::spacing::XL + theme::size::SETTINGS_ROW_ICON + theme::spacing::XL;
         assert!(icon.x + icon.w <= label_left);
     }
 
@@ -2714,8 +2714,8 @@ mod tests {
         let label = tab_rect(&row);
         let icon_right = theme::spacing::XL + theme::size::SETTINGS_ROW_ICON;
         assert!(
-            label.left >= icon_right + theme::spacing::MD - 0.01,
-            "label left {} must leave md after icon {}",
+            label.left >= icon_right + theme::spacing::XL - 0.01,
+            "label left {} must leave xl after icon {}",
             label.left,
             icon_right
         );

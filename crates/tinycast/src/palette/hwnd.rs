@@ -393,6 +393,7 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
                 primary_label: "",
                 actions_label: "",
                 primary_destructive: false,
+                appearance: 0,
             },
             menu: None,
             clipboard_preview: None,

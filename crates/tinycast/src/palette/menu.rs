@@ -47,6 +47,7 @@ pub struct FooterPaint<'a> {
     pub primary_label: &'a str,
     pub actions_label: &'a str,
     pub primary_destructive: bool,
+    pub appearance: u8,
 }
 
 pub struct MenuPaint<'a> {
@@ -67,7 +68,7 @@ pub fn paint_footer(
     if height < theme::size::COMPACT_HEIGHT + theme::size::BOTTOM_BAR_HEIGHT {
         return Ok(());
     }
-    let appearance = 0u8;
+    let appearance = footer.appearance;
     let surface = crate::design_system::appearance::color(theme::colors::ramp_rgba(
         appearance,
         theme::colors::CONTROL_SURFACE_DARK_ALPHA,
@@ -126,8 +127,18 @@ pub fn paint_footer(
         fill_round(target, group.primary, group.primary.h / 2.0, danger)?;
     }
 
-    let label = color(1.0, 1.0, 1.0, theme::colors::TEXT_PRIMARY_ALPHA);
-    let muted = color(1.0, 1.0, 1.0, theme::colors::TEXT_SECONDARY_ALPHA);
+    let (lr, lg, lb, la) = theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+    );
+    let (mr, mg, mb, ma) = theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+        theme::colors::TEXT_SECONDARY_ALPHA,
+    );
+    let label = color(lr, lg, lb, la);
+    let muted = color(mr, mg, mb, ma);
     let pad = theme::spacing::MD;
     let primary = group.primary;
     let mut right = primary.x + primary.w - pad;
@@ -453,6 +464,7 @@ mod tests {
                     primary_label: "Open Application",
                     actions_label: "Actions",
                     primary_destructive: false,
+                    appearance: 0,
                 },
             )
         })

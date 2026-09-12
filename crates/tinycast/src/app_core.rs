@@ -1868,6 +1868,7 @@ impl AppCore {
             primary_label: self.primary_label(),
             actions_label: chrome(Chrome::Actions, self.ui_lang()),
             primary_destructive: self.palette.mode == PaletteMode::Uninstall,
+            appearance: self.appearance_key(),
         }
     }
 

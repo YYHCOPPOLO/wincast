@@ -1,10 +1,7 @@
 //! Settings → Emoji & Symbols: skin tone.
 
 use tinycast_pure::emoji::EmojiSkinTone;
-use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
-use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
-use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
+use windows::Win32::Graphics::Direct2D::ID2D1RenderTarget;
 
 use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
@@ -62,74 +59,22 @@ pub fn paint(
         &section,
         appearance,
     )?;
-    let y = enable.y;
-    let pad = theme::spacing::XL;
     let tone = EmojiSkinTone::from_raw(tone_raw);
-    draw(
+    ds::paint_form_row(
         target,
         formats.body,
-        tinycast_pure::i18n::emoji_skin_tone_title(lang),
-        pad,
-        y,
-        width - pad,
-        y + 28.0,
-        appearance,
-        0.92,
-    )?;
-    draw(
-        target,
         formats.caption,
+        tinycast_pure::i18n::emoji_skin_tone_title(lang),
         tinycast_pure::i18n::emoji_skin_tone_subtitle(lang),
-        pad,
-        y + 28.0,
-        width - 140.0,
-        y + ROW_H - 4.0,
+        enable.y,
+        width,
+        true,
         appearance,
-        0.55,
+        ds::RowTrailing::Label(tinycast_pure::i18n::emoji_skin_tone_label(
+            tone.as_raw(),
+            lang,
+        )),
     )?;
-    draw(
-        target,
-        formats.body,
-        tinycast_pure::i18n::emoji_skin_tone_label(tone.as_raw(), lang),
-        width - 120.0,
-        y + 14.0,
-        width - pad,
-        y + 38.0,
-        appearance,
-        0.92,
-    )?;
-    Ok(())
-}
-
-fn draw(
-    target: &ID2D1RenderTarget,
-    format: &windows::Win32::Graphics::DirectWrite::IDWriteTextFormat,
-    text: &str,
-    left: f32,
-    top: f32,
-    right: f32,
-    bottom: f32,
-    appearance: u8,
-    alpha: f32,
-) -> windows::core::Result<()> {
-    let color = ds::ramp_color(appearance, alpha);
-    let brush = unsafe { target.CreateSolidColorBrush(&color, None)? };
-    let wide: Vec<u16> = text.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &wide,
-            format,
-            &D2D_RECT_F {
-                left,
-                top,
-                right,
-                bottom,
-            },
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
     Ok(())
 }
 

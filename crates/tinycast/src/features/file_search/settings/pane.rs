@@ -3,10 +3,8 @@
 use tinycast_pure::theme;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ROUNDED_RECT,
-};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
+use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Shell::{
@@ -28,8 +26,6 @@ use crate::platform::screens::dip_scalar_to_px;
 
 const ROW_H: f32 = 52.0;
 const ITEM_H: f32 = 36.0;
-const TOGGLE_W: f32 = 40.0;
-const TOGGLE_H: f32 = 22.0;
 
 pub fn section_header() -> &'static str {
     "File Search"
@@ -153,15 +149,17 @@ pub fn paint(
     )?;
     let origin = -scroll;
     let l = layout(scopes.len(), ignores.len());
-    paint_toggle(
+    ds::paint_form_row(
         target,
-        formats,
+        formats.body,
+        formats.caption,
         tinycast_pure::i18n::file_search_enable_title(lang),
         tinycast_pure::i18n::file_search_enable_subtitle(lang),
-        enabled,
         l.enable + origin,
         width,
+        true,
         appearance,
+        ds::RowTrailing::Toggle(enabled),
     )?;
     header(
         target,
@@ -249,80 +247,6 @@ fn header(
             D2D1_DRAW_TEXT_OPTIONS_CLIP,
             DWRITE_MEASURING_MODE_NATURAL,
         );
-    }
-    Ok(())
-}
-
-fn paint_toggle(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    title: &str,
-    subtitle: &str,
-    on: bool,
-    y: f32,
-    width: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let pad = theme::spacing::XL;
-    let text_w = width - pad * 3.0 - TOGGLE_W;
-    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
-    let title_wide: Vec<u16> = title.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &title_wide,
-            formats.body,
-            &D2D_RECT_F {
-                left: pad,
-                top: y,
-                right: pad + text_w,
-                bottom: y + 28.0,
-            },
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    let muted_brush =
-        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-    let sub_wide: Vec<u16> = subtitle.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &sub_wide,
-            formats.caption,
-            &D2D_RECT_F {
-                left: pad,
-                top: y + 28.0,
-                right: pad + text_w,
-                bottom: y + ROW_H - 4.0,
-            },
-            &muted_brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    let toggle = D2D1_ROUNDED_RECT {
-        rect: D2D_RECT_F {
-            left: width - pad - TOGGLE_W,
-            top: y + (ROW_H - TOGGLE_H) / 2.0,
-            right: width - pad,
-            bottom: y + (ROW_H - TOGGLE_H) / 2.0 + TOGGLE_H,
-        },
-        radiusX: TOGGLE_H / 2.0,
-        radiusY: TOGGLE_H / 2.0,
-    };
-    let fill = if on {
-        D2D1_COLOR_F {
-            r: 0.2,
-            g: 0.55,
-            b: 1.0,
-            a: 1.0,
-        }
-    } else {
-        ds::ramp_color(appearance, 0.18)
-    };
-    let toggle_brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
-    unsafe {
-        target.FillRoundedRectangle(&toggle, &toggle_brush);
     }
     Ok(())
 }
