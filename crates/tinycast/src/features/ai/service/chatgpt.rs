@@ -97,6 +97,7 @@ pub fn which_codex_in(path: &OsStr) -> Option<PathBuf> {
     None
 }
 
+#[cfg(test)]
 fn codex_args() -> &'static [&'static str] {
     &[
         "-c",

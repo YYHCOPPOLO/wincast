@@ -16,7 +16,6 @@ pub struct ScreenPx {
 }
 
 /// All monitors in DIP. Placement hit-tests in pixels via `cursor_target_screen`.
-#[allow(dead_code)]
 pub fn screens_dip() -> Vec<ScreenDip> {
     screens_px().into_iter().map(screen_dip_from_px).collect()
 }

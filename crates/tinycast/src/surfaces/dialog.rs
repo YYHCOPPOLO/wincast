@@ -250,7 +250,7 @@ fn content_of<'a>(
             None
         },
         volume,
-        appearance: 0,
+        appearance: crate::design_system::appearance::resolved(),
         tone: DialogTone::Neutral,
         symbol: if volume.is_some() {
             "speaker.wave.2"

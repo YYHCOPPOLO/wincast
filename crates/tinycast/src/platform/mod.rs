@@ -1,3 +1,4 @@
+pub(crate) mod appearance;
 pub(crate) mod clipboard;
 pub(crate) mod clock;
 pub(crate) mod dpapi;

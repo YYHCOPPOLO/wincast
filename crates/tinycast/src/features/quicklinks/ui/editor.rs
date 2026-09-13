@@ -1,6 +1,6 @@
 //! Quicklink editor sheet. Width is 480 DIP.
 
-use crate::features::custom_commands::ui::editor::{self, CommandDraft, EDITOR_WIDTH_DIP};
+use crate::features::custom_commands::ui::editor::{self, CommandDraft};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QuicklinkDraft {
@@ -38,6 +38,6 @@ mod tests {
 
     #[test]
     fn editor_sheet_is_480_dip() {
-        assert_eq!(EDITOR_WIDTH_DIP, 480.0);
+        assert_eq!(editor::EDITOR_WIDTH_DIP, 480.0);
     }
 }

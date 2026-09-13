@@ -35,7 +35,7 @@ pub struct SearchEdit {
 }
 
 /// Search field in DIP, after the header icon slot.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn search_field_dip() -> (f32, f32, f32, f32) {
     search_field_dip_with_trailing(0.0)
 }
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn search_field_matches_chrome_layout() {
-        let (x, y, w, h) = search_field_dip_with_trailing(0.0);
+        let (x, y, w, h) = search_field_dip();
         let r = tinycast_pure::layout::palette_chrome::search_field_rect(
             tinycast_pure::theme::size::PANEL_WIDTH,
             0.0,

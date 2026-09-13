@@ -59,10 +59,7 @@ pub fn paint_keycap(
         theme::colors::TEXT_SECONDARY_ALPHA,
     );
     let brush = unsafe { target.CreateSolidColorBrush(&appearance::color(ink), None)? };
-    let mut text_top = cap_y;
-    if text.contains('↵') {
-        text_top += 1.1;
-    }
+    let text_top = cap_y + crate::design_system::text::BUTTON_OPTICAL_NUDGE_Y;
     let layout = D2D_RECT_F {
         left: cap_x,
         top: text_top,

@@ -3,7 +3,7 @@ use tinycast_pure::palette_placement::{compact_size, expanded_size};
 use tinycast_pure::palette_state::should_draw_placeholder;
 use tinycast_pure::theme;
 use windows::core::w;
-use windows::Win32::Foundation::{COLORREF, FALSE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
+use windows::Win32::Foundation::{FALSE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMSBT_TRANSIENTWINDOW,
     DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
@@ -126,7 +126,7 @@ impl PaletteWindow {
                     return Err(err);
                 }
             };
-            let _ = apply_dwm(hwnd);
+            let _ = apply_dwm(hwnd, false);
             // HWND Direct2D presents opaque and covers the DWM backdrop;
             // per-pixel alpha via UpdateLayeredWindow keeps the 0.40 scrim
             // and 26 DIP corners without a solid gray slab.
@@ -148,6 +148,10 @@ impl PaletteWindow {
                 return;
             };
             (*inner).rest_frame = frame_px;
+            let dark = core_from_host((*inner).host)
+                .map(|c| (*c).appearance_key() == 0)
+                .unwrap_or(false);
+            let _ = apply_dwm(self.hwnd, dark);
             (*inner).anim = Some(PaletteAnim {
                 kind: PaletteAnimKind::Enter,
                 start: std::time::Instant::now(),
@@ -319,7 +323,7 @@ impl Drop for PaletteWindow {
     }
 }
 
-unsafe fn apply_dwm(hwnd: HWND) -> bool {
+unsafe fn apply_dwm(hwnd: HWND, dark: bool) -> bool {
     let backdrop = DWMSBT_TRANSIENTWINDOW;
     let acrylic = DwmSetWindowAttribute(
         hwnd,
@@ -337,12 +341,12 @@ unsafe fn apply_dwm(hwnd: HWND) -> bool {
         std::mem::size_of_val(&corners) as u32,
     );
 
-    let dark = TRUE;
+    let dark_mode = if dark { TRUE } else { FALSE };
     let _ = DwmSetWindowAttribute(
         hwnd,
         DWMWA_USE_IMMERSIVE_DARK_MODE,
-        &dark as *const _ as *const core::ffi::c_void,
-        std::mem::size_of_val(&dark) as u32,
+        &dark_mode as *const _ as *const core::ffi::c_void,
+        std::mem::size_of_val(&dark_mode) as u32,
     );
 
     let margins = MARGINS {
@@ -682,9 +686,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_CTLCOLOREDIT => {
             let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
+            let appearance = inner_from(hwnd)
+                .and_then(|inner| core_from_host((*inner).host))
+                .map(|core| (*core).appearance_key())
+                .unwrap_or(1);
             unsafe {
                 SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, COLORREF(0x00FFFFFF));
+                SetTextColor(
+                    hdc,
+                    crate::design_system::appearance::ink_colorref(appearance),
+                );
             }
             LRESULT(unsafe { GetStockObject(NULL_BRUSH) }.0 as isize)
         }

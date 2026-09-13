@@ -23,7 +23,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_CONTROL, VK_LEFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, GetForegroundWindow, GetWindowLongW, GetWindowRect,
+    AllowSetForegroundWindow, GetWindowLongW, GetWindowRect,
     GetWindowThreadProcessId, SetForegroundWindow, GWL_STYLE, WS_CAPTION,
 };
 
@@ -91,7 +91,6 @@ pub fn accept_synthetic_copy(sequence_moved: bool, text: Option<&str>) -> Option
         .map(|s| s.to_string())
 }
 
-#[allow(dead_code)]
 pub fn delete_chars(count: usize) {
     for _ in 0..count {
         send_vk(windows::Win32::UI::Input::KeyboardAndMouse::VK_BACK);
@@ -623,10 +622,5 @@ mod tests {
     #[test]
     fn invalid_hwnd_is_refused() {
         assert!(insertion_refused(HWND::default()));
-    }
-
-    #[allow(dead_code)]
-    fn _foreground_unused() {
-        let _ = GetForegroundWindow;
     }
 }

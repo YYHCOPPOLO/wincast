@@ -1867,14 +1867,16 @@ impl AppCore {
     }
 
     pub fn appearance_key(&self) -> u8 {
-        0
+        self.resolved_appearance()
     }
 
     pub fn resolved_appearance(&self) -> u8 {
-        match self.settings.appearance {
-            crate::app_settings::Appearance::Light => 1,
-            _ => 0,
-        }
+        let key = self
+            .settings
+            .appearance
+            .resolved_key(crate::platform::appearance::apps_use_light_theme());
+        crate::design_system::appearance::set_resolved(key);
+        key
     }
 
     pub fn menu_is_open(&self) -> bool {
@@ -1900,6 +1902,7 @@ impl AppCore {
             items: &self.menu_items,
             selection: self.menu_selection,
             kind: self.menu,
+            appearance: self.appearance_key(),
         })
     }
 
@@ -5388,6 +5391,7 @@ mod tests {
                 name: "Notepad".into(),
                 aumid: None,
                 target: Some(r"C:\Windows\System32\notepad.exe".into()),
+                shortcut: None,
                 executable_name: Some("notepad.exe".into()),
                 alternate_names: Vec::new(),
             }]),

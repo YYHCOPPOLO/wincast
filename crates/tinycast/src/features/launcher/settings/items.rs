@@ -9,7 +9,7 @@ use tinycast_pure::i18n::{
     launcher_search_header, launcher_search_prompt, listening_label, record_label,
     reset_ranking_action, settings_tab_title, UiLang,
 };
-use tinycast_pure::search_relevance::{score, SearchFields};
+use tinycast_pure::search_relevance::score;
 use tinycast_pure::settings_tab::SettingsTab;
 use tinycast_pure::theme;
 use tinycast_pure::visibility::VisibilityStore;
@@ -1427,6 +1427,7 @@ fn destructive_fill() -> D2D1_COLOR_F {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tinycast_pure::search_relevance::SearchFields;
 
     fn entry(kind: AppKind, id: &str, name: &str) -> AppEntry {
         AppEntry {

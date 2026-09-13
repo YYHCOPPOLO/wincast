@@ -8,7 +8,7 @@ use tinycast_pure::snippet::keyword::{classify_input, KeywordBuffer, KeywordInpu
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyState, ToUnicode, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
-    VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RWIN, VK_SHIFT, VK_TAB,
+    VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RWIN, VK_TAB,
     VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -230,12 +230,9 @@ fn fill_keyboard_state(state: &mut [u8; 256]) {
     for vk in 0..256 {
         let async_ks = unsafe { GetAsyncKeyState(vk as i32) };
         let sync_ks = unsafe { GetKeyState(vk as i32) };
-        let mut b = 0u8;
-        if async_ks < 0 || sync_ks < 0 {
+        let mut b = key_state_byte(sync_ks);
+        if async_ks < 0 {
             b |= 0x80;
-        }
-        if (sync_ks as u16) & 1 != 0 {
-            b |= 0x01;
         }
         state[vk] = b;
     }
@@ -271,6 +268,7 @@ fn to_char_with_state(vk: u16, scan: u32, state: &[u8; 256]) -> Option<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
 
     #[test]
     fn listener_starts_only_when_requested() {

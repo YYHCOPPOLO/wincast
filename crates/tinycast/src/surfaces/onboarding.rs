@@ -336,7 +336,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let prev = SetWindowLongPtrW(
                     (*inner).record_btn,
                     GWLP_WNDPROC,
-                    record_subclass as usize as isize,
+                    record_subclass as *const () as usize as isize,
                 );
                 (*inner).record_prev = Some(std::mem::transmute(prev));
             }
@@ -443,6 +443,9 @@ fn paint(hwnd: HWND) {
         let lang = core_from_host((*inner).host)
             .map(|core| (*core).ui_lang())
             .unwrap_or_default();
+        let appearance = core_from_host((*inner).host)
+            .map(|core| (*core).resolved_appearance())
+            .unwrap_or(1);
         let mut continue_rect = empty_rect();
         let mut record_rect = empty_rect();
         if let Some(painter) = (*inner).painter.as_mut() {
@@ -457,9 +460,9 @@ fn paint(hwnd: HWND) {
                         h: size.height,
                     },
                     theme::radius::PANEL,
-                    theme::colors::scrim_rgba(0),
+                    theme::colors::scrim_rgba(appearance),
                 )?;
-                paint_sheen(target, size.width, size.height, 0)?;
+                paint_sheen(target, size.width, size.height, appearance)?;
                 let pad = theme::spacing::XXL;
                 let hero = 60.0;
                 let hero_rect = DipRect {
@@ -468,7 +471,7 @@ fn paint(hwnd: HWND) {
                     w: hero,
                     h: hero,
                 };
-                fill_squircle(target, hero_rect, 16.0, text::control_surface(0))?;
+                fill_squircle(target, hero_rect, 16.0, text::control_surface(appearance))?;
                 let glyph = match step {
                     1 => "lock.shield",
                     2 => "wand.and.sparkles",
@@ -485,7 +488,7 @@ fn paint(hwnd: HWND) {
                         w: 32.0,
                         h: 32.0,
                     },
-                    text::primary_ink(0),
+                    text::primary_ink(appearance),
                 )?;
                 text::draw(
                     target,
@@ -497,7 +500,7 @@ fn paint(hwnd: HWND) {
                         w: size.width - pad * 2.0,
                         h: 24.0,
                     },
-                    text::primary_ink(0),
+                    text::primary_ink(appearance),
                 )?;
                 text::draw(
                     target,
@@ -509,7 +512,7 @@ fn paint(hwnd: HWND) {
                         w: size.width - pad * 2.0,
                         h: 48.0,
                     },
-                    text::secondary_ink(0),
+                    text::secondary_ink(appearance),
                 )?;
                 let (laid_record, laid_continue) = step_rects(size.width, size.height, step);
                 record_rect = laid_record;
@@ -519,34 +522,34 @@ fn paint(hwnd: HWND) {
                         target,
                         record_rect,
                         theme::radius::MENU,
-                        text::control_surface(0),
+                        text::control_surface(appearance),
                     )?;
                     let caption = recorder::well_caption_lang(None, recording, lang);
-                    text::draw(
+                    text::draw_button_label(
                         target,
-                        &fonts.bar,
+                        fonts,
                         &caption,
                         record_rect,
-                        text::secondary_ink(0),
+                        text::secondary_ink(appearance),
                     )?;
                 }
                 fill_squircle(
                     target,
                     continue_rect,
                     continue_rect.h / 2.0,
-                    text::control_surface(0),
+                    text::control_surface(appearance),
                 )?;
                 let label = if step + 1 == STEP_COUNT {
                     tinycast_pure::i18n::onboarding_get_started(lang)
                 } else {
                     tinycast_pure::i18n::onboarding_continue(lang)
                 };
-                text::draw(
+                text::draw_button_label(
                     target,
-                    &fonts.bar,
+                    fonts,
                     label,
                     continue_rect,
-                    text::primary_ink(0),
+                    text::primary_ink(appearance),
                 )?;
                 let mut dot_x = size.width / 2.0 - 18.0;
                 let dot_y = continue_rect.y - 18.0;
@@ -562,9 +565,9 @@ fn paint(hwnd: HWND) {
                         },
                         3.5,
                         if on {
-                            text::primary_ink(0)
+                            text::primary_ink(appearance)
                         } else {
-                            text::tertiary_ink(0)
+                            text::tertiary_ink(appearance)
                         },
                     )?;
                     dot_x += 12.0;

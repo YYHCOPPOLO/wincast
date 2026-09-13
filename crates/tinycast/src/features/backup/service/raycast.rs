@@ -1,6 +1,6 @@
 //! `.rayconfig` v1/v2 decode. A wrong passphrase is never reported as bad format.
 
-use std::io::{Read, Write};
+use std::io::Read;
 
 use aes::Aes256;
 use aes_gcm::aead::generic_array::typenum::U16;
@@ -8,10 +8,8 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{AesGcm, Nonce};
 
 type Aes256Gcm16 = AesGcm<Aes256, U16>;
-use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use flate2::read::{GzDecoder, ZlibDecoder};
-use flate2::write::GzEncoder;
-use flate2::Compression;
 use scrypt::{scrypt, Params};
 use sha2::{Digest, Sha256};
 
@@ -148,16 +146,6 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn gzip(data: &[u8]) -> Vec<u8> {
-    let mut enc = GzEncoder::new(Vec::new(), Compression::default());
-    let _ = enc.write_all(data);
-    enc.finish().unwrap_or_default()
-}
-
 fn map_to_tinycast(value: serde_json::Value) -> serde_json::Value {
     let mut out = serde_json::Map::new();
     collect_keys(&value, &mut out);
@@ -244,6 +232,20 @@ pub fn apply_raycast_snippets_never_enables(
 mod tests {
     use super::*;
     use crate::app_settings::AppSettings;
+    use cbc::cipher::BlockEncryptMut;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    fn hex_encode(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    fn gzip(data: &[u8]) -> Vec<u8> {
+        let mut enc = GzEncoder::new(Vec::new(), Compression::default());
+        let _ = enc.write_all(data);
+        enc.finish().unwrap_or_default()
+    }
 
     fn encrypt_v1(json: &[u8], pass: &str) -> Vec<u8> {
         let gz = gzip(json);

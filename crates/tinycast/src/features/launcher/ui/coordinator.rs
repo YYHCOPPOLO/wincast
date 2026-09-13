@@ -1,3 +1,6 @@
+use std::os::windows::ffi::OsStrExt;
+use std::path::Path;
+
 use tinycast_pure::app_entry::{AppEntry, AppKind};
 use tinycast_pure::launcher_ranking::{should_record_ranking, LauncherRankingStore};
 
@@ -270,15 +273,38 @@ fn activate_aumid(aumid: &str) -> windows::core::Result<()> {
 
 fn shell_open(file: &str, hwnd: HWND) -> windows::core::Result<()> {
     let wide: Vec<u16> = file.encode_utf16().chain(std::iter::once(0)).collect();
+    let dir = exe_working_dir(file);
     let mut info = SHELLEXECUTEINFOW {
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
         fMask: SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC,
         hwnd,
         lpFile: PCWSTR(wide.as_ptr()),
+        lpDirectory: dir
+            .as_ref()
+            .map(|d| PCWSTR(d.as_ptr()))
+            .unwrap_or_else(PCWSTR::null),
         nShow: SW_SHOWNORMAL.0 as i32,
         ..Default::default()
     };
     unsafe { ShellExecuteExW(&mut info) }
+}
+
+fn exe_working_dir(file: &str) -> Option<Vec<u16>> {
+    let path = Path::new(file);
+    let is_exe = path
+        .extension()
+        .map(|e| e.eq_ignore_ascii_case("exe"))
+        .unwrap_or(false);
+    if !is_exe {
+        return None;
+    }
+    let dir = path.parent().filter(|p| !p.as_os_str().is_empty())?;
+    Some(
+        dir.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -357,6 +383,27 @@ mod tests {
             reveal_path(&aumid).as_deref(),
             Some(r"shell:AppsFolder\Microsoft.WindowsNotepad_8wekyb3d8bbwe!App")
         );
+
+        let lnk = app(r"app:C:\Users\Z\Desktop\Tool.lnk", "Tool");
+        assert_eq!(
+            launch_spec(&lnk),
+            LaunchSpec::Path(r"C:\Users\Z\Desktop\Tool.lnk".into())
+        );
+    }
+
+    #[test]
+    fn exe_working_dir_is_parent_only_for_exe() {
+        assert_eq!(
+            String::from_utf16_lossy(
+                &super::exe_working_dir(r"D:\Apps\Tool\tool.exe").expect("dir")[..]
+                    .iter()
+                    .copied()
+                    .take_while(|&c| c != 0)
+                    .collect::<Vec<_>>()
+            ),
+            r"D:\Apps\Tool"
+        );
+        assert!(super::exe_working_dir(r"C:\Users\Z\Desktop\Tool.lnk").is_none());
     }
 
     #[test]

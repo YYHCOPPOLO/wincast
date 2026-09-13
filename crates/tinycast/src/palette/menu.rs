@@ -55,6 +55,7 @@ pub struct MenuPaint<'a> {
     pub items: &'a [MenuItem],
     pub selection: usize,
     pub kind: OpenMenu,
+    pub appearance: u8,
 }
 
 pub fn paint_footer(
@@ -226,13 +227,28 @@ pub fn paint_menu(
     if menu.items.is_empty() {
         return Ok(());
     }
+    let appearance = menu.appearance;
     let has_header = !menu.header.is_empty();
     let frame = menu_frame(menu.kind, panel_w, panel_h, menu.items.len(), has_header);
-    let glass = color(0.08, 0.08, 0.08, 0.94);
+    let glass = if appearance == 0 {
+        color(0.08, 0.08, 0.08, 0.94)
+    } else {
+        color(0.98, 0.98, 0.98, 0.96)
+    };
     fill_round(target, frame, theme::radius::MENU_PANEL, glass)?;
-    let frost = color(1.0, 1.0, 1.0, 0.05);
+    let frost =
+        crate::design_system::appearance::color(theme::colors::ramp_rgba(appearance, 0.05, 0.03));
     fill_round(target, frame, theme::radius::MENU_PANEL, frost)?;
-    let border = unsafe { target.CreateSolidColorBrush(&color(1.0, 1.0, 1.0, 0.20), None)? };
+    let border = unsafe {
+        target.CreateSolidColorBrush(
+            &crate::design_system::appearance::color(theme::colors::ramp_rgba(
+                appearance,
+                theme::colors::BORDER_DARK_ALPHA,
+                theme::colors::BORDER_LIGHT_ALPHA,
+            )),
+            None,
+        )?
+    };
     unsafe {
         target.DrawRoundedRectangle(
             &D2D1_ROUNDED_RECT {
@@ -248,10 +264,15 @@ pub fn paint_menu(
 
     if has_header {
         let header = menu_header_rect(frame);
+        let (hr, hg, hb, ha) = theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::TEXT_TERTIARY_DARK_ALPHA,
+            theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
+        );
         draw_text(
             target,
             &fonts.header,
-            color(1.0, 1.0, 1.0, 0.45),
+            color(hr, hg, hb, ha),
             rect_of(header),
             menu.header,
         )?;
@@ -260,23 +281,26 @@ pub fn paint_menu(
     for (index, item) in menu.items.iter().enumerate() {
         let row = menu_row_rect(frame, has_header, index);
         if index == menu.selection {
-            fill_round(
-                target,
-                row,
-                theme::radius::MENU_ROW,
-                color(1.0, 1.0, 1.0, theme::colors::SELECTION_DARK_ALPHA),
-            )?;
+            let (sr, sg, sb, sa) = theme::colors::ramp_rgba(
+                appearance,
+                theme::colors::SELECTION_DARK_ALPHA,
+                theme::colors::SELECTION_LIGHT_ALPHA,
+            );
+            fill_round(target, row, theme::radius::MENU_ROW, color(sr, sg, sb, sa))?;
         }
         let ink = if item.is_destructive() {
-            color(1.0, 0.32, 0.32, 0.95)
+            color(0.86, 0.22, 0.22, 0.95)
         } else {
-            color(1.0, 1.0, 1.0, 0.92)
+            let (r, g, b, a) = theme::colors::ramp_rgba(appearance, 0.92, 0.92);
+            color(r, g, b, a)
         };
         let pad = theme::spacing::MD;
         let mut right = row.x + row.w - pad;
         if let Some(shortcut) = item.shortcut {
             for token in shortcut.split('+').rev() {
-                right -= paint_keycap(target, dwrite, fonts, token, right, row.y, row.h)?;
+                right -= paint_keycap(
+                    target, dwrite, fonts, token, right, row.y, row.h, appearance,
+                )?;
                 right -= theme::spacing::XXS;
             }
         }
@@ -296,7 +320,9 @@ pub fn paint_menu(
                 h: icon,
             },
             theme::radius::MENU,
-            color(1.0, 1.0, 1.0, 0.08),
+            crate::design_system::appearance::color(theme::colors::ramp_rgba(
+                appearance, 0.08, 0.06,
+            )),
         )?;
         let text_left = icon_rect.right + theme::spacing::SM;
         draw_text(
@@ -323,6 +349,7 @@ fn paint_keycap(
     right: f32,
     row_y: f32,
     row_h: f32,
+    appearance: u8,
 ) -> windows::core::Result<f32> {
     let cap_h = theme::size::KEY_CAP;
     let text_w =
@@ -330,6 +357,7 @@ fn paint_keycap(
     let cap_w = text_w + theme::spacing::SM * 2.0;
     let cap_x = right - cap_w;
     let cap_y = row_y + (row_h - cap_h) / 2.0;
+    let (fr, fg, fb, fa) = theme::colors::ramp_rgba(appearance, 0.12, 0.08);
     fill_round(
         target,
         DipRect {
@@ -339,15 +367,16 @@ fn paint_keycap(
             h: cap_h,
         },
         theme::radius::KEY_CAP,
-        color(1.0, 1.0, 1.0, 0.12),
+        color(fr, fg, fb, fa),
     )?;
+    let (tr, tg, tb, ta) = theme::colors::ramp_rgba(appearance, 0.70, 0.70);
     draw_text(
         target,
         &fonts.keycap,
-        color(1.0, 1.0, 1.0, 0.70),
+        color(tr, tg, tb, ta),
         D2D_RECT_F {
             left: cap_x,
-            top: cap_y,
+            top: cap_y + crate::design_system::text::BUTTON_OPTICAL_NUDGE_Y,
             right: cap_x + cap_w,
             bottom: cap_y + cap_h,
         },

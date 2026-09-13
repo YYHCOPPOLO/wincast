@@ -52,7 +52,6 @@ fn shell_open(target: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn uses_selection_token(link: &Quicklink) -> bool {
     tinycast_pure::template::uses_selection(&link.destination)
 }

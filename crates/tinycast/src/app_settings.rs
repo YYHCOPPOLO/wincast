@@ -9,10 +9,21 @@ use crate::platform::paths;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Appearance {
-    #[default]
     System,
+    #[default]
     Light,
     Dark,
+}
+
+impl Appearance {
+    /// 0 = Dark, 1 = Light. `System` follows Windows app theme.
+    pub fn resolved_key(self, system_is_light: bool) -> u8 {
+        match self {
+            Appearance::Light => 1,
+            Appearance::Dark => 0,
+            Appearance::System => u8::from(system_is_light),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -141,7 +152,7 @@ impl Default for AppSettings {
         Self {
             compact_mode: true,
             open_on_cursor_screen: true,
-            appearance: Appearance::System,
+            appearance: Appearance::Light,
             emoji_skin_tone: default_skin(),
             launch_at_login: false,
             hyper_key: default_hyper(),
@@ -270,6 +281,8 @@ fn default_search_scopes() -> Vec<String> {
         r"%APPDATA%\Microsoft\Windows\Start Menu\Programs".into(),
         r"%ProgramFiles%".into(),
         r"%ProgramFiles(x86)%".into(),
+        r"%USERPROFILE%\Desktop".into(),
+        r"%PUBLIC%\Desktop".into(),
     ]
 }
 
@@ -278,13 +291,11 @@ impl AppSettings {
         Self::load_from(&settings_path())
     }
 
-    #[allow(dead_code)]
     pub fn save(&self) -> std::io::Result<()> {
         self.write_json(&paths::roaming_dir(), &paths::local_dir())?;
         launch_at_login::apply(self.launch_at_login)
     }
 
-    #[allow(dead_code)]
     fn write_json(&self, roaming: &Path, local: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(roaming)?;
         std::fs::create_dir_all(local)?;
@@ -399,7 +410,7 @@ mod tests {
         assert_eq!(s, AppSettings::default());
         assert!(s.compact_mode);
         assert!(s.open_on_cursor_screen);
-        assert_eq!(s.appearance, Appearance::System);
+        assert_eq!(s.appearance, Appearance::Light);
         assert!(!s.launch_at_login);
         assert_eq!(s.launcher_search_scopes, default_search_scopes());
         assert!(!s.file_search_enabled);
@@ -457,6 +468,18 @@ mod tests {
         assert!(text.contains("\"openOnCursorScreen\": false"));
         assert!(text.contains("\"appearance\": \"light\""));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn appearance_defaults_to_light() {
+        assert_eq!(Appearance::default(), Appearance::Light);
+        assert_eq!(AppSettings::default().appearance, Appearance::Light);
+        let s: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.appearance, Appearance::Light);
+        assert_eq!(Appearance::Light.resolved_key(false), 1);
+        assert_eq!(Appearance::Dark.resolved_key(true), 0);
+        assert_eq!(Appearance::System.resolved_key(true), 1);
+        assert_eq!(Appearance::System.resolved_key(false), 0);
     }
 
     #[test]

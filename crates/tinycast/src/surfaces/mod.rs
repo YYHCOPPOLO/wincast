@@ -11,7 +11,7 @@ pub use notes::NotesWindow;
 pub use onboarding::OnboardingWindow;
 pub use settings::SettingsWindow;
 pub use stub::StubWindow;
-pub use support::{AboutWindow, SupportWindow, CHECKOUT};
+pub use support::{AboutWindow, SupportWindow};
 
 #[cfg(test)]
 mod i18n_scan {

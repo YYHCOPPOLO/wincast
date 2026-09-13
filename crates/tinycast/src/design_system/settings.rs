@@ -7,7 +7,10 @@ use windows::Win32::Graphics::Direct2D::{
     ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2,
     D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT,
 };
-use windows::Win32::Graphics::DirectWrite::{IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL};
+use windows::Win32::Graphics::DirectWrite::{
+    IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_ALIGNMENT_LEADING,
+    DWRITE_TEXT_ALIGNMENT_TRAILING,
+};
 
 use super::appearance;
 use super::fill_squircle;
@@ -17,7 +20,6 @@ pub const ROW_H: f32 = 52.0;
 pub const TOGGLE_W: f32 = 40.0;
 pub const TOGGLE_H: f32 = 22.0;
 pub const HEADER_H: f32 = 22.0;
-#[allow(dead_code)]
 pub const FOOTER_H: f32 = 36.0;
 pub const ACCENT: (f32, f32, f32, f32) = (0.0, 0.47, 0.83, 1.0);
 
@@ -67,19 +69,19 @@ pub fn detail_rgb(appearance: u8) -> (f32, f32, f32) {
 }
 
 pub fn card_fill(appearance: u8) -> (f32, f32, f32, f32) {
-    theme::colors::ramp_rgba(
-        appearance,
-        theme::colors::CARD_FILL_DARK_ALPHA,
-        theme::colors::CARD_FILL_LIGHT_ALPHA,
-    )
+    if appearance == 0 {
+        theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::CARD_FILL_DARK_ALPHA,
+            theme::colors::CARD_FILL_LIGHT_ALPHA,
+        )
+    } else {
+        (1.0, 1.0, 1.0, 1.0)
+    }
 }
 
 pub fn card_stroke(appearance: u8) -> (f32, f32, f32, f32) {
-    theme::colors::ramp_rgba(
-        appearance,
-        theme::colors::CARD_STROKE_ALPHA,
-        theme::colors::CARD_STROKE_ALPHA,
-    )
+    theme::colors::ramp_rgba(appearance, theme::colors::CARD_STROKE_ALPHA, 0.12)
 }
 
 pub fn paint_window_background(
@@ -328,9 +330,12 @@ pub fn paint_settings_row(
             )?;
         }
         RowTrailing::Label(label) => {
-            draw_text(
+            unsafe {
+                let _ = title_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+            }
+            let result = draw_text(
                 target,
-                caption_format,
+                title_format,
                 label,
                 D2D_RECT_F {
                     left: text_right,
@@ -339,7 +344,11 @@ pub fn paint_settings_row(
                     bottom: y + ROW_H,
                 },
                 (cr, cg, cb, ca * dim),
-            )?;
+            );
+            unsafe {
+                let _ = title_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            }
+            result?;
         }
         RowTrailing::None => {}
     }
@@ -582,6 +591,14 @@ mod tests {
         let light = primary_ink(1);
         assert!(dark.r > 0.9);
         assert!(light.r < 0.1);
+    }
+
+    #[test]
+    fn light_cards_are_opaque_white() {
+        let fill = card_fill(1);
+        assert_eq!(fill, (1.0, 1.0, 1.0, 1.0));
+        let dark = card_fill(0);
+        assert_eq!(dark.3, theme::colors::CARD_FILL_DARK_ALPHA);
     }
 
     #[test]

@@ -20,6 +20,7 @@ pub fn set_host(host: HWND) {
     HOST.store(host.0 as isize, Ordering::SeqCst);
 }
 
+#[allow(dead_code)]
 pub fn host() -> HWND {
     HWND(HOST.load(Ordering::SeqCst) as *mut core::ffi::c_void)
 }
@@ -66,7 +67,7 @@ fn uninstall() {
 unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
         let info = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
-        let needed = NEEDED.load(Ordering::SeqCst);
+        let needed = needed();
         if needed & HYPER != 0 && crate::features::hotkeys::service::hyper::on_ll(wparam, info) {
             return LRESULT(1);
         }

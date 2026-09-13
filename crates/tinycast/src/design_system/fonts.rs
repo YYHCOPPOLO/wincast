@@ -53,13 +53,13 @@ pub fn create_gdi_ui_font(height: i32) -> HFONT {
     HFONT::default()
 }
 
-#[allow(dead_code)]
 pub struct Fonts {
     pub search: IDWriteTextFormat,
     pub row_title: IDWriteTextFormat,
     pub trailing: IDWriteTextFormat,
     pub section: IDWriteTextFormat,
     pub bar: IDWriteTextFormat,
+    pub bar_center: IDWriteTextFormat,
     pub keycap: IDWriteTextFormat,
     pub headline: IDWriteTextFormat,
     pub headline_center: IDWriteTextFormat,
@@ -108,6 +108,13 @@ impl Fonts {
                 theme::typography::BAR,
                 DWRITE_FONT_WEIGHT_MEDIUM,
                 false,
+                locale,
+            )?,
+            bar_center: make(
+                dwrite,
+                theme::typography::BAR,
+                DWRITE_FONT_WEIGHT_MEDIUM,
+                true,
                 locale,
             )?,
             keycap: make(
@@ -256,5 +263,6 @@ mod tests {
         assert!(src.contains(&format!("w!(\"{family}\")")));
         assert!(!src.contains("w!(\"Noto"));
         assert!(!src.contains("w!(\"Segoe UI\")"));
+        assert!(src.contains("bar_center"));
     }
 }

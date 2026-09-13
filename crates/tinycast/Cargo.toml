@@ -3,6 +3,9 @@ name = "tinycast"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 tinycast-pure = { path = "../tinycast-pure" }
 serde = { version = "1", features = ["derive"] }

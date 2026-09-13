@@ -68,7 +68,7 @@ use crate::platform::screens::{dip_scalar_to_px, screens_px, target_screen_from_
 
 const CLASS: windows::core::PCWSTR = w!("TinycastSettings");
 const SECTION_HEADER_HEIGHT: f32 = 22.0;
-const TAB_ROW_HEIGHT: f32 = 28.0;
+const TAB_ROW_HEIGHT: f32 = 32.0;
 const HEADER_FONT_DIP: f32 = 11.0;
 const TAB_FONT_DIP: f32 = 13.0;
 
@@ -578,7 +578,7 @@ fn paint_scene(
                         target.FillRoundedRectangle(&pill, &sel_brush);
                     }
                     let slot = theme::size::SETTINGS_ROW_ICON;
-                    let icon = 14.0;
+                    let icon = 16.0;
                     let ink = theme::colors::ramp_rgba(
                         appearance,
                         theme::colors::TEXT_PRIMARY_ALPHA,
@@ -2399,11 +2399,8 @@ unsafe fn ensure_edit_brush(hwnd: HWND, appearance: u8) -> HBRUSH {
 fn settings_appearance(inner: *mut SettingsInner) -> u8 {
     unsafe {
         core_from_host((*inner).host)
-            .map(|core| match (*core).settings.appearance {
-                crate::app_settings::Appearance::Light => 1,
-                _ => 0,
-            })
-            .unwrap_or(0)
+            .map(|core| (*core).resolved_appearance())
+            .unwrap_or(1)
     }
 }
 
@@ -3765,11 +3762,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 SetBkColor(hdc, colorref);
                 SetTextColor(
                     hdc,
-                    if appearance == 0 {
-                        COLORREF(0x00FFFFFF)
-                    } else {
-                        COLORREF(0x00000000)
-                    },
+                    crate::design_system::appearance::ink_colorref(appearance),
                 );
             }
             LRESULT(brush.0 as isize)

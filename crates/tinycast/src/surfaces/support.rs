@@ -138,6 +138,7 @@ fn destroy(hwnd: HWND) {
 
 struct SupportChrome {
     support: DipRect,
+    #[cfg_attr(not(test), allow(dead_code))]
     polar_bottom: f32,
     remind: DipRect,
 }
@@ -173,6 +174,7 @@ fn paint_remind_row(
     row: DipRect,
     on: bool,
     lang: tinycast_pure::i18n::UiLang,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let box_s = theme::size::CHECKBOX;
     let box_rect = DipRect {
@@ -184,7 +186,7 @@ fn paint_remind_row(
     let fill = if on {
         text::BRAND
     } else {
-        text::control_surface(0)
+        text::control_surface(appearance)
     };
     fill_squircle(target, box_rect, theme::radius::RECORDER_KEY_CAP, fill)?;
     stroke_squircle(
@@ -192,7 +194,7 @@ fn paint_remind_row(
         box_rect,
         theme::radius::RECORDER_KEY_CAP,
         theme::colors::ramp_rgba(
-            0,
+            appearance,
             theme::colors::BORDER_DARK_ALPHA,
             theme::colors::BORDER_LIGHT_ALPHA,
         ),
@@ -222,7 +224,7 @@ fn paint_remind_row(
             w: (row.w - box_s - theme::spacing::MD).max(8.0),
             h: row.h,
         },
-        text::primary_ink(0),
+        text::primary_ink(appearance),
     )?;
     Ok(())
 }
@@ -550,6 +552,9 @@ fn paint(hwnd: HWND) {
         let reminders_on = core_from_host((*inner).host)
             .map(|c| (*c).settings.support_reminders)
             .unwrap_or(true);
+        let appearance = core_from_host((*inner).host)
+            .map(|c| (*c).resolved_appearance())
+            .unwrap_or(1);
         if let Some(painter) = (*inner).painter.as_mut() {
             painter.set_locale(lang.dwrite_locale());
             let _ = painter.paint(hwnd, |target, fonts| {
@@ -563,9 +568,9 @@ fn paint(hwnd: HWND) {
                         h: size.height,
                     },
                     theme::radius::PANEL,
-                    theme::colors::scrim_rgba(0),
+                    theme::colors::scrim_rgba(appearance),
                 )?;
-                paint_sheen(target, size.width, size.height, 0)?;
+                paint_sheen(target, size.width, size.height, appearance)?;
                 let pad = theme::spacing::XXL;
                 let icon = ICON;
                 let chrome = support_chrome(size.width, size.height);
@@ -609,7 +614,7 @@ fn paint(hwnd: HWND) {
                         w: size.width - pad * 2.0,
                         h: 28.0,
                     },
-                    text::primary_ink(0),
+                    text::primary_ink(appearance),
                 )?;
                 text::draw(
                     target,
@@ -621,14 +626,14 @@ fn paint(hwnd: HWND) {
                         w: size.width - pad * 2.0,
                         h: 40.0,
                     },
-                    text::secondary_ink(0),
+                    text::secondary_ink(appearance),
                 )?;
                 let btn_h = chrome.support.h;
                 support_rect = chrome.support;
                 fill_squircle(target, support_rect, 12.0, text::BRAND)?;
-                text::draw(
+                text::draw_button_label(
                     target,
-                    &fonts.bar,
+                    fonts,
                     tinycast_pure::i18n::support_title(lang),
                     support_rect,
                     (1.0, 1.0, 1.0, 1.0),
@@ -643,11 +648,11 @@ fn paint(hwnd: HWND) {
                         w: size.width - pad * 2.0,
                         h: 18.0,
                     },
-                    text::tertiary_ink(0),
+                    text::tertiary_ink(appearance),
                 )?;
                 if matches!(kind, Kind::Support) {
                     remind_rect = chrome.remind;
-                    paint_remind_row(target, fonts, remind_rect, reminders_on, lang)?;
+                    paint_remind_row(target, fonts, remind_rect, reminders_on, lang, appearance)?;
                 }
                 Ok(())
             });

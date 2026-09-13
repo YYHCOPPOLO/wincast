@@ -486,25 +486,29 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
             if let Some(inner) = inner_from(hwnd) {
                 let prev =
-                    SetWindowLongPtrW((*inner).edit, GWLP_WNDPROC, edit_subclass as usize as isize);
+                    SetWindowLongPtrW(
+                        (*inner).edit,
+                        GWLP_WNDPROC,
+                        edit_subclass as *const () as usize as isize,
+                    );
                 (*inner).edit_prev = Some(std::mem::transmute(prev));
                 let prev = SetWindowLongPtrW(
                     (*inner).switcher_edit,
                     GWLP_WNDPROC,
-                    switcher_edit_subclass as usize as isize,
+                    switcher_edit_subclass as *const () as usize as isize,
                 );
                 (*inner).switcher_prev = Some(std::mem::transmute(prev));
                 let prev = SetWindowLongPtrW(
                     (*inner).switcher_list,
                     GWLP_WNDPROC,
-                    switcher_list_subclass as usize as isize,
+                    switcher_list_subclass as *const () as usize as isize,
                 );
                 (*inner).list_prev = Some(std::mem::transmute(prev));
                 if !(*inner).cue.is_invalid() {
                     let prev = SetWindowLongPtrW(
                         (*inner).cue,
                         GWLP_WNDPROC,
-                        cue_subclass as usize as isize,
+                        cue_subclass as *const () as usize as isize,
                     );
                     (*inner).cue_prev = Some(std::mem::transmute(prev));
                 }
@@ -543,8 +547,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if let Some(inner) = inner_from(hwnd) {
                 if child == (*inner).cue {
                     let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
-                    SetTextColor(hdc, note_cue_colorref(0));
-                    SetBkColor(hdc, note_bg_colorref(0));
+                    let appearance = core_from_host((*inner).host)
+                        .map(|c| (*c).resolved_appearance())
+                        .unwrap_or(1);
+                    SetTextColor(hdc, note_cue_colorref(appearance));
+                    SetBkColor(hdc, note_bg_colorref(appearance));
                     return LRESULT((*inner).cue_brush.0 as isize);
                 }
             }
@@ -1005,6 +1012,9 @@ fn paint_notes(hwnd: HWND) {
         let title = window_title(hwnd);
         let count = GetWindowTextLengthW((*inner).edit) as usize;
         let footer = format!("{count}");
+        let appearance = core_from_host((*inner).host)
+            .map(|c| (*c).resolved_appearance())
+            .unwrap_or(1);
         if let Some(painter) = (*inner).painter.as_mut() {
             let mut create = empty_rect();
             let mut browse = empty_rect();
@@ -1021,7 +1031,7 @@ fn paint_notes(hwnd: HWND) {
                         h: size.height,
                     },
                     theme::radius::PANEL,
-                    theme::colors::scrim_rgba(0),
+                    theme::colors::scrim_rgba(appearance),
                 )?;
                 let bar_h = theme::size::NOTE_TITLEBAR;
                 let inset = theme::size::NOTE_TITLE_INSET;
@@ -1036,7 +1046,7 @@ fn paint_notes(hwnd: HWND) {
                     &fonts.headline_center,
                     &title,
                     title_rect,
-                    text::primary_ink(0),
+                    text::primary_ink(appearance),
                 )?;
                 let glyph = theme::size::NOTE_GLYPH;
                 let cap_h = theme::size::BAR_BUTTON_HEIGHT;
@@ -1048,7 +1058,7 @@ fn paint_notes(hwnd: HWND) {
                     w: cap_w,
                     h: cap_h,
                 };
-                fill_squircle(target, cap, cap.h / 2.0, text::control_surface(0))?;
+                fill_squircle(target, cap, cap.h / 2.0, text::control_surface(appearance))?;
                 create = DipRect {
                     x: cap.x,
                     y: cap.y,
@@ -1083,7 +1093,7 @@ fn paint_notes(hwnd: HWND) {
                             w: glyph,
                             h: glyph,
                         },
-                        text::secondary_ink(0),
+                        text::secondary_ink(appearance),
                     )?;
                 }
                 let footer_h = theme::size::NOTE_FOOTER_HEIGHT;
@@ -1097,7 +1107,7 @@ fn paint_notes(hwnd: HWND) {
                         w: size.width,
                         h: footer_h,
                     },
-                    text::tertiary_ink(0),
+                    text::tertiary_ink(appearance),
                 )?;
                 Ok(())
             });
@@ -1119,6 +1129,9 @@ fn paint_switcher(hwnd: HWND) {
         }
         let notes = parent_of(hwnd);
         if let Some(inner) = inner_from(notes) {
+            let appearance = core_from_host((*inner).host)
+                .map(|c| (*c).resolved_appearance())
+                .unwrap_or(1);
             if let Some(painter) = (*inner).switcher_painter.as_mut() {
                 let _ = painter.paint(hwnd, |target, _fonts| {
                     let size = target.GetSize();
@@ -1131,7 +1144,7 @@ fn paint_switcher(hwnd: HWND) {
                             h: size.height,
                         },
                         theme::radius::MENU_PANEL,
-                        text::control_surface(0),
+                        text::control_surface(appearance),
                     )?;
                     Ok(())
                 });

@@ -82,7 +82,6 @@ impl OverlayPainter {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is_layered(&self) -> bool {
         self.layered
     }

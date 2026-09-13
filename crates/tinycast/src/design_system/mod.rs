@@ -14,7 +14,6 @@ pub mod text;
 
 pub use fonts::Fonts;
 pub use keycap::paint_keycap;
-pub use panel::paint_panel_scrim;
 pub use row::paint_row_fill;
 pub use squircle::fill_squircle;
 
@@ -42,7 +41,7 @@ pub mod test_render {
         appearance: u8,
     ) -> windows::core::Result<(usize, usize, Vec<u8>)> {
         with_offscreen(w, h, |target| {
-            crate::design_system::paint_panel_scrim(target, w as f32, h as f32, appearance)
+            crate::design_system::panel::paint_panel_scrim(target, w as f32, h as f32, appearance)
         })
     }
 

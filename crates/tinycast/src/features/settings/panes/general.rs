@@ -10,6 +10,9 @@ use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_ROUNDED_RECT};
+use windows::Win32::Graphics::DirectWrite::{
+    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
+};
 
 use crate::design_system::settings::{self as ds, GroupedSection, RowTrailing, CARD_PAD, ROW_H};
 use crate::features::hotkeys::service::hyper::HyperKey;
@@ -476,19 +479,21 @@ fn paint_recorder_well(
     let brush = unsafe { target.CreateSolidColorBrush(&ink, None)? };
     let wide: Vec<u16> = label.encode_utf16().collect();
     unsafe {
+        let _ = formats.body.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
         target.DrawText(
             &wide,
-            formats.caption,
+            formats.body,
             &D2D_RECT_F {
-                left: well.x + theme::spacing::SM,
-                top: well.y,
-                right: well.x + well.w - theme::spacing::SM,
+                left: well.x + theme::spacing::XS,
+                top: well.y + crate::design_system::text::BUTTON_OPTICAL_NUDGE_Y,
+                right: well.x + well.w - theme::spacing::XS,
                 bottom: well.y + well.h,
             },
             &brush,
             windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_CLIP,
             windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL,
         );
+        let _ = formats.body.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     }
     Ok(())
 }

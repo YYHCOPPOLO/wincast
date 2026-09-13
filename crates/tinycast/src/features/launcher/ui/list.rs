@@ -545,7 +545,7 @@ pub fn paint(
             PaintItem::Header { title } => {
                 let h = SECTION_HEADER_HEIGHT;
                 if y + h > clip_top && y < bottom {
-                    paint_header(target, fonts, title, y, panel_w, h)?;
+                    paint_header(target, fonts, title, y, panel_w, h, appearance)?;
                 }
                 y += h;
             }
@@ -617,6 +617,7 @@ pub fn paint(
                 if y + h > clip_top && y < bottom {
                     paint_emoji_row(
                         target, fonts, glyphs, *columns, *start, *selected, y, panel_w, h,
+                        appearance,
                     )?;
                 }
                 y += h;
@@ -719,6 +720,7 @@ fn paint_emoji_row(
     y: f32,
     panel_w: f32,
     h: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let cols = columns.max(1);
     let cell_w = panel_w / cols as f32;
@@ -736,7 +738,8 @@ fn paint_emoji_row(
                 radiusX: theme::radius::ROW,
                 radiusY: theme::radius::ROW,
             };
-            let brush = unsafe { target.CreateSolidColorBrush(&selection_color(), None)? };
+            let brush =
+                unsafe { target.CreateSolidColorBrush(&selection_color(appearance), None)? };
             unsafe {
                 target.FillRoundedRectangle(&pill, &brush);
             }
@@ -780,9 +783,13 @@ fn paint_header(
     y: f32,
     panel_w: f32,
     h: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let brush = unsafe {
-        target.CreateSolidColorBrush(&muted_color(theme::colors::TEXT_SECONDARY_ALPHA), None)?
+        target.CreateSolidColorBrush(
+            &muted_color(appearance, theme::colors::TEXT_SECONDARY_ALPHA),
+            None,
+        )?
     };
     let rect = D2D_RECT_F {
         left: theme::spacing::MD,
@@ -823,15 +830,28 @@ fn paint_row(
         if let Some(pixels) = cache.get_or_load(source, dpi.round() as u32, appearance) {
             let _ = draw_icon(target, pixels, icon_x, icon_y, icon_size);
         } else {
-            paint_icon_placeholder(target, icon_x, icon_y, icon_size)?;
+            paint_icon_placeholder(target, icon_x, icon_y, icon_size, appearance)?;
         }
     } else {
-        paint_icon_placeholder(target, icon_x, icon_y, icon_size)?;
+        paint_icon_placeholder(target, icon_x, icon_y, icon_size, appearance)?;
     }
 
     let mut right = panel_w - inset;
     let chrome = unsafe {
-        target.CreateSolidColorBrush(&muted_color(theme::colors::TEXT_SECONDARY_ALPHA), None)?
+        target.CreateSolidColorBrush(
+            &muted_color(appearance, theme::colors::TEXT_SECONDARY_ALPHA),
+            None,
+        )?
+    };
+    let chip_fill = unsafe {
+        target.CreateSolidColorBrush(
+            &crate::design_system::appearance::color(theme::colors::ramp_rgba(
+                appearance,
+                theme::colors::CONTROL_SURFACE_DARK_ALPHA,
+                theme::colors::CONTROL_SURFACE_LIGHT_ALPHA,
+            )),
+            None,
+        )?
     };
     if let Some(cap) = keycap {
         let ds = crate::design_system::Fonts::new(dwrite)?;
@@ -853,7 +873,7 @@ fn paint_row(
     }
 
     let mut text_left = icon_x + icon_size + theme::spacing::LG;
-    let title_brush = unsafe { target.CreateSolidColorBrush(&title_color(), None)? };
+    let title_brush = unsafe { target.CreateSolidColorBrush(&title_color(appearance), None)? };
     let chip_w = alias
         .map(|a| text_width(dwrite, &fonts.chip, a, 160.0, h) + theme::spacing::MD * 2.0)
         .unwrap_or(0.0);
@@ -889,7 +909,7 @@ fn paint_row(
                 radiusY: theme::radius::MENU,
             };
             unsafe {
-                target.FillRoundedRectangle(&rounded, &chrome);
+                target.FillRoundedRectangle(&rounded, &chip_fill);
             }
             draw_text(target, &fonts.chip, &title_brush, rounded.rect, alias)?;
         }
@@ -913,7 +933,7 @@ pub fn paint_icon_at(
             return Ok(());
         }
     }
-    paint_icon_placeholder(target, x, y, size)
+    paint_icon_placeholder(target, x, y, size, appearance)
 }
 
 fn paint_icon_placeholder(
@@ -921,8 +941,9 @@ fn paint_icon_placeholder(
     x: f32,
     y: f32,
     size: f32,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&muted_color(0.18), None)? };
+    let brush = unsafe { target.CreateSolidColorBrush(&muted_color(appearance, 0.18), None)? };
     let rounded = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
             left: x,
@@ -1154,31 +1175,24 @@ fn text_width(
     }
 }
 
-fn selection_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: theme::colors::SELECTION_DARK_ALPHA,
-    }
+fn selection_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::SELECTION_DARK_ALPHA,
+        theme::colors::SELECTION_LIGHT_ALPHA,
+    ))
 }
 
-fn title_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 0.92,
-    }
+fn title_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+        theme::colors::TEXT_PRIMARY_ALPHA,
+    ))
 }
 
-fn muted_color(a: f32) -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a,
-    }
+fn muted_color(appearance: u8, a: f32) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(theme::colors::ramp_rgba(appearance, a, a))
 }
 
 pub fn client_point_to_dip(x: i32, y: i32, dpi: u32) -> (f32, f32) {
@@ -1213,6 +1227,21 @@ mod tests {
         assert_eq!(theme::size::ROW_ICON, 24.0);
         assert_eq!(theme::radius::ROW, 10.0);
         assert_eq!(ROW_HEIGHT, 36.0);
+    }
+
+    #[test]
+    fn row_ink_inverts_with_appearance() {
+        let dark_title = title_color(0);
+        let light_title = title_color(1);
+        assert!(dark_title.r > 0.9 && dark_title.g > 0.9 && dark_title.b > 0.9);
+        assert!(light_title.r < 0.1 && light_title.g < 0.1 && light_title.b < 0.1);
+        assert!(dark_title.a > 0.9 && light_title.a > 0.9);
+        let dark_muted = muted_color(0, theme::colors::TEXT_SECONDARY_ALPHA);
+        let light_muted = muted_color(1, theme::colors::TEXT_SECONDARY_ALPHA);
+        assert!(dark_muted.r > 0.9);
+        assert!(light_muted.r < 0.1);
+        assert!((dark_muted.a - theme::colors::TEXT_SECONDARY_ALPHA).abs() < 0.001);
+        assert!((light_muted.a - theme::colors::TEXT_SECONDARY_ALPHA).abs() < 0.001);
     }
 
     #[test]

@@ -13,7 +13,7 @@ use windows::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, WIN32_FIND_DATAW,
 };
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+    CoCreateInstance, CoInitializeEx, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
     STGM_READ,
 };
 use windows::Win32::System::Registry::{
@@ -21,7 +21,7 @@ use windows::Win32::System::Registry::{
     HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, KEY_WOW64_64KEY, RRF_RT_REG_EXPAND_SZ,
     RRF_RT_REG_SZ,
 };
-use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_SINGLETHREADED};
 use windows::Win32::UI::Shell::PropertiesSystem::{
     IPropertyStore, SHGetPropertyStoreFromParsingName, GPS_DEFAULT, PROPERTYKEY,
 };
@@ -43,6 +43,7 @@ pub(crate) struct ResolvedApp {
     pub name: String,
     pub aumid: Option<String>,
     pub target: Option<String>,
+    pub shortcut: Option<String>,
     pub executable_name: Option<String>,
     pub alternate_names: Vec<String>,
 }
@@ -76,7 +77,7 @@ impl AppIndex {
         let _ = std::thread::Builder::new()
             .name("tinycast-app-index".into())
             .spawn(move || {
-                let entries = scan_catalog();
+                let entries = std::panic::catch_unwind(scan_catalog).unwrap_or_default();
                 publish_pending(&pending, generation, entries);
                 let host = HWND(host_bits as *mut core::ffi::c_void);
                 let _ = unsafe {
@@ -135,6 +136,7 @@ pub(crate) fn scan_catalog() -> Vec<AppEntry> {
     catalog.finish()
 }
 
+#[cfg(test)]
 pub(crate) fn fold_apps(apps: Vec<ResolvedApp>) -> Vec<AppEntry> {
     let mut catalog = Catalog::default();
     for app in apps {
@@ -163,6 +165,9 @@ impl Catalog {
                 for alt in app.alternate_names {
                     push_alternate(&mut existing.fields.alternate_names, &existing.name, &alt);
                 }
+                if let Some(shortcut) = app.shortcut {
+                    prefer_shortcut_id(existing, &shortcut);
+                }
                 return;
             }
         }
@@ -179,10 +184,21 @@ impl Catalog {
     }
 }
 
+fn prefer_shortcut_id(entry: &mut AppEntry, shortcut: &str) {
+    if entry.fields.bundle_id.is_some() {
+        return;
+    }
+    if entry.id.to_ascii_lowercase().ends_with(".lnk") {
+        return;
+    }
+    entry.id = format!("app:{shortcut}");
+}
+
 fn application_entry(app: &ResolvedApp) -> AppEntry {
     let rest = app
         .aumid
         .as_deref()
+        .or(app.shortcut.as_deref())
         .or(app.target.as_deref())
         .unwrap_or(app.name.as_str());
     let mut alternate_names = Vec::new();
@@ -205,12 +221,21 @@ fn application_entry(app: &ResolvedApp) -> AppEntry {
 }
 
 fn resolve_leaf(path: &Path) -> Option<ResolvedApp> {
+    if is_self_exe(path) {
+        return None;
+    }
     let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
     match ext.as_str() {
         "lnk" => resolve_lnk(path),
         "exe" => resolve_exe(path),
         _ => None,
     }
+}
+
+fn is_self_exe(path: &Path) -> bool {
+    path.file_name()
+        .map(|n| n.eq_ignore_ascii_case("tinycast.exe"))
+        .unwrap_or(false)
 }
 
 fn resolve_exe(path: &Path) -> Option<ResolvedApp> {
@@ -230,6 +255,7 @@ fn resolve_exe(path: &Path) -> Option<ResolvedApp> {
         name,
         aumid: None,
         target: Some(target),
+        shortcut: None,
         executable_name: Some(exe_name),
         alternate_names,
     })
@@ -243,6 +269,9 @@ fn resolve_lnk(path: &Path) -> Option<ResolvedApp> {
     let aumid = shortcut_aumid(path);
     let (target, arguments) = shortcut_target(path);
     if aumid.is_none() && target.as_ref().is_none_or(|t| Path::new(t).is_dir()) {
+        return None;
+    }
+    if target.as_deref().is_some_and(|t| is_self_exe(Path::new(t))) {
         return None;
     }
     let mut alternate_names = Vec::new();
@@ -263,6 +292,7 @@ fn resolve_lnk(path: &Path) -> Option<ResolvedApp> {
         name,
         aumid,
         target,
+        shortcut: Some(canonicalize_text(path)),
         executable_name,
         alternate_names,
     })
@@ -374,6 +404,7 @@ fn scan_appx(catalog: &mut Catalog) {
                 name,
                 aumid: Some(aumid),
                 target: None,
+                shortcut: None,
                 executable_name: None,
                 alternate_names,
             });
@@ -520,8 +551,8 @@ fn canonicalize_text(path: &Path) -> String {
 
 fn ensure_com() {
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let _ = RoInitialize(RO_INIT_MULTITHREADED);
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let _ = RoInitialize(RO_INIT_SINGLETHREADED);
     }
 }
 
@@ -553,6 +584,7 @@ mod tests {
             name: name.into(),
             aumid: aumid.map(str::to_string),
             target: target.map(str::to_string),
+            shortcut: None,
             executable_name: target.and_then(|t| {
                 Path::new(t)
                     .file_name()
@@ -604,6 +636,7 @@ mod tests {
                 name: "Windows Notepad".into(),
                 aumid: Some("Microsoft.WindowsNotepad_8wekyb3d8bbwe!App".into()),
                 target: None,
+                shortcut: None,
                 executable_name: None,
                 alternate_names: vec!["app".into(), "Notepad".into()],
             },
@@ -630,6 +663,33 @@ mod tests {
             .iter()
             .any(|e| e.kind == AppKind::SystemSettings && e.name == "Display"));
         assert!(entries.iter().any(|e| e.id == "app:ms-settings:display"));
+    }
+
+    #[test]
+    fn shortcut_is_preferred_launch_path() {
+        let from_lnk = application_entry(&ResolvedApp {
+            name: "Tool".into(),
+            aumid: None,
+            target: Some(r"D:\Apps\Tool\tool.exe".into()),
+            shortcut: Some(r"C:\Users\Z\Desktop\Tool.lnk".into()),
+            executable_name: Some("tool.exe".into()),
+            alternate_names: Vec::new(),
+        });
+        assert_eq!(from_lnk.id, r"app:C:\Users\Z\Desktop\Tool.lnk");
+
+        let entries = fold_apps(vec![
+            app("Tool", None, Some(r"D:\Apps\Tool\tool.exe")),
+            ResolvedApp {
+                name: "Tool".into(),
+                aumid: None,
+                target: Some(r"D:\Apps\Tool\tool.exe".into()),
+                shortcut: Some(r"C:\Users\Z\Desktop\Tool.lnk".into()),
+                executable_name: Some("tool.exe".into()),
+                alternate_names: Vec::new(),
+            },
+        ]);
+        let tool = entries.iter().find(|e| e.name == "Tool").expect("tool");
+        assert_eq!(tool.id, r"app:C:\Users\Z\Desktop\Tool.lnk");
     }
 
     #[test]

@@ -236,7 +236,7 @@ fn paint_button(
         DialogRole::Destructive => text::DESTRUCTIVE,
         DialogRole::Standard => text::primary_ink(appearance),
     };
-    text::draw(target, &fonts.bar, label, rect, ink)
+    text::draw_button_label(target, fonts, label, rect, ink)
 }
 
 fn paint_volume(
@@ -388,5 +388,14 @@ mod tests {
         let a = bits[i + 3] as f32 / 255.0;
         assert!(a > 0.30 && a < 0.50, "alpha {a}");
         assert_eq!(bits[3], 0, "outside squircle must be transparent");
+    }
+
+    #[test]
+    fn dialog_buttons_center_the_label() {
+        let src = include_str!("dialog.rs");
+        assert!(src.contains("draw_button_label"));
+        let paint = src.split("fn paint_button").nth(1).unwrap_or("");
+        assert!(paint.contains("draw_button_label"));
+        assert!(!paint.contains("fonts.bar,"));
     }
 }

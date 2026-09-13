@@ -1,10 +1,16 @@
+use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 use tinycast_pure::search_scopes::{visible_leaves, DirEnt};
 use windows::core::PCWSTR;
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
+use windows::Win32::UI::Shell::{
+    FOLDERID_Desktop, FOLDERID_PublicDesktop, SHGetKnownFolderPath, KF_FLAG_DEFAULT,
+};
 
 use crate::app_settings::AppSettings;
 
@@ -29,12 +35,67 @@ impl SearchScopes {
     }
 
     pub fn expanded(&self) -> Vec<PathBuf> {
-        self.roots
+        let mut out = Vec::new();
+        let mut seen = HashSet::new();
+        for path in self
+            .roots
             .iter()
             .map(|root| expand_env(root))
-            .filter(|path| path.is_dir())
-            .collect()
+            .chain(desktop_roots())
+        {
+            if !path.is_dir() {
+                continue;
+            }
+            if !seen.insert(path_key(&path)) {
+                continue;
+            }
+            out.push(path);
+        }
+        out
     }
+}
+
+/// User and Public Desktop, including OneDrive-redirected Desktop.
+pub fn desktop_roots() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for path in [
+        known_folder(&FOLDERID_Desktop),
+        known_folder(&FOLDERID_PublicDesktop),
+        Some(expand_env(r"%USERPROFILE%\Desktop")),
+        Some(expand_env(r"%PUBLIC%\Desktop")),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !path.is_dir() {
+            continue;
+        }
+        if !seen.insert(path_key(&path)) {
+            continue;
+        }
+        out.push(path);
+    }
+    out
+}
+
+fn known_folder(id: &windows::core::GUID) -> Option<PathBuf> {
+    unsafe {
+        let pwstr = SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, HANDLE::default()).ok()?;
+        if pwstr.is_null() {
+            return None;
+        }
+        let path = pwstr.to_string().ok().map(PathBuf::from);
+        CoTaskMemFree(Some(pwstr.0.cast()));
+        path
+    }
+}
+
+fn path_key(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .to_ascii_lowercase()
 }
 
 pub fn collect_leaf_paths(root: &Path) -> Vec<PathBuf> {
@@ -121,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn default_scopes_include_start_menu_and_program_files() {
+    fn default_scopes_include_start_menu_program_files_and_desktop() {
         let scopes = SearchScopes::defaults();
         assert_eq!(
             scopes.roots,
@@ -130,12 +191,43 @@ mod tests {
                 r"%APPDATA%\Microsoft\Windows\Start Menu\Programs",
                 r"%ProgramFiles%",
                 r"%ProgramFiles(x86)%",
+                r"%USERPROFILE%\Desktop",
+                r"%PUBLIC%\Desktop",
             ]
         );
         assert_eq!(
             AppSettingsKey::SearchScopes.as_str(),
             "launcherSearchScopes"
         );
+    }
+
+    #[test]
+    fn expanded_always_includes_desktop() {
+        let scopes = SearchScopes {
+            roots: vec![r"%ProgramFiles%".into()],
+        };
+        let expanded = scopes.expanded();
+        assert!(
+            expanded.iter().any(|p| is_desktop_dir(p)),
+            "expected a Desktop folder in {expanded:?}"
+        );
+        let desktops = desktop_roots();
+        assert!(
+            !desktops.is_empty(),
+            "this machine should have a Desktop directory"
+        );
+        for desktop in &desktops {
+            assert!(
+                expanded.iter().any(|p| path_key(p) == path_key(desktop)),
+                "missing {desktop:?} in {expanded:?}"
+            );
+        }
+    }
+
+    fn is_desktop_dir(path: &Path) -> bool {
+        path.file_name()
+            .map(|n| n.to_string_lossy().eq_ignore_ascii_case("Desktop"))
+            .unwrap_or(false)
     }
 
     #[test]

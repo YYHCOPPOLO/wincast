@@ -475,7 +475,7 @@ fn paint_layers(
             radiusX: radius,
             radiusY: radius,
         };
-        let color = scrim_color();
+        let color = scrim_color(params.appearance);
         let brush = target.CreateSolidColorBrush(&color, None)?;
         target.FillRoundedRectangle(&rounded, &brush);
         if let Some(chat) = &params.chat {
@@ -894,13 +894,8 @@ fn search_caret_x(
 /// Brush alpha is the frozen dark scrim; later D2D content stays fully opaque.
 pub(crate) const LAYERED_SOURCE_CONSTANT_ALPHA: u8 = 255;
 
-pub(crate) fn scrim_color() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: theme::colors::PANEL_SCRIM_DARK_ALPHA,
-    }
+pub(crate) fn scrim_color(appearance: u8) -> D2D1_COLOR_F {
+    crate::design_system::appearance::color(theme::colors::scrim_rgba(appearance))
 }
 
 #[cfg(test)]
@@ -1012,11 +1007,16 @@ mod tests {
 
     #[test]
     fn scrim_alpha_is_baked_into_brush_not_source_constant() {
-        let c = scrim_color();
+        let c = scrim_color(0);
         assert_eq!(c.r, 0.0);
         assert_eq!(c.g, 0.0);
         assert_eq!(c.b, 0.0);
         assert_eq!(c.a, theme::colors::PANEL_SCRIM_DARK_ALPHA);
+        let light = scrim_color(1);
+        assert_eq!(light.r, 1.0);
+        assert_eq!(light.g, 1.0);
+        assert_eq!(light.b, 1.0);
+        assert_eq!(light.a, theme::colors::PANEL_SCRIM_LIGHT_ALPHA);
         assert_eq!(LAYERED_SOURCE_CONSTANT_ALPHA, 255);
     }
 

@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use tinycast_pure::calc::{lookup, merge_feeds, prices_coins, CurrencyRates};
+use tinycast_pure::calc::{merge_feeds, prices_coins, CurrencyRates};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Globalization::GetUserDefaultLocaleName;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
@@ -260,6 +260,7 @@ fn post_ready(host_bits: isize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tinycast_pure::calc::lookup;
 
     #[test]
     fn frankfurter_rebase_and_coin_invert() {
