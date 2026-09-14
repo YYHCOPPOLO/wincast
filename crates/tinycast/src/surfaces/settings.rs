@@ -3,8 +3,11 @@ use tinycast_pure::i18n::{
     chrome, clipboard_confirm_action, clipboard_confirm_message, clipboard_confirm_title,
     settings_section_title, settings_tab_title, Chrome, UiLang,
 };
+use tinycast_pure::layout::settings::{
+    clamp_sidebar_scroll, sidebar_rows, tab_at, wheel_targets_sidebar, SidebarRow, SidebarRowKind,
+};
 use tinycast_pure::palette_placement::DipRect;
-use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
+use tinycast_pure::settings_tab::SettingsTab;
 use tinycast_pure::theme;
 use windows::core::{w, PCWSTR};
 use windows::Foundation::Numerics::Matrix3x2;
@@ -17,10 +20,10 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1RenderTarget,
-    ID2D1SolidColorBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
-    D2D1_ROUNDED_RECT,
+    ID2D1SolidColorBrush, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
+    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
+    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
@@ -31,7 +34,7 @@ use windows::Win32::Graphics::DirectWrite::{
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, GetStockObject, InvalidateRect,
-    SetBkColor, SetBkMode, SetTextColor, BLACK_BRUSH, HBRUSH, HDC, OPAQUE,
+    ScreenToClient, SetBkColor, SetBkMode, SetTextColor, BLACK_BRUSH, HBRUSH, HDC, OPAQUE,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
@@ -67,8 +70,6 @@ use crate::features::launcher::settings::items::{
 use crate::platform::screens::{dip_scalar_to_px, screens_px, target_screen_from_cursor_px};
 
 const CLASS: windows::core::PCWSTR = w!("TinycastSettings");
-const SECTION_HEADER_HEIGHT: f32 = 22.0;
-const TAB_ROW_HEIGHT: f32 = 32.0;
 const HEADER_FONT_DIP: f32 = 11.0;
 const TAB_FONT_DIP: f32 = 13.0;
 
@@ -83,58 +84,6 @@ fn settings_ex_style() -> WINDOW_EX_STYLE {
     let ex = WS_EX_APPWINDOW;
     debug_assert_eq!(ex.0 & WS_EX_TOOLWINDOW.0, 0);
     ex
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RowKind {
-    Header(SettingsSection),
-    Tab(SettingsTab),
-}
-
-struct SidebarRow {
-    y: f32,
-    height: f32,
-    kind: RowKind,
-}
-
-fn sidebar_rows() -> Vec<SidebarRow> {
-    let mut y = theme::spacing::XL;
-    let mut rows = Vec::new();
-    for (i, section) in SettingsSection::all().into_iter().enumerate() {
-        if i > 0 {
-            y += theme::spacing::SECTION_SPACING;
-        }
-        rows.push(SidebarRow {
-            y,
-            height: SECTION_HEADER_HEIGHT,
-            kind: RowKind::Header(section),
-        });
-        y += SECTION_HEADER_HEIGHT;
-        for &tab in section.tabs() {
-            rows.push(SidebarRow {
-                y,
-                height: TAB_ROW_HEIGHT,
-                kind: RowKind::Tab(tab),
-            });
-            y += TAB_ROW_HEIGHT;
-        }
-    }
-    rows
-}
-
-fn tab_at(x: f32, y: f32) -> Option<SettingsTab> {
-    if x < 0.0 || x >= theme::size::SETTINGS_SIDEBAR {
-        return None;
-    }
-    for row in sidebar_rows() {
-        if y >= row.y && y < row.y + row.height {
-            return match row.kind {
-                RowKind::Tab(tab) => Some(tab),
-                RowKind::Header(_) => None,
-            };
-        }
-    }
-    None
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,6 +104,7 @@ struct SettingsInner {
     renderer: Renderer,
     placing: bool,
     scroll: f32,
+    sidebar_scroll: f32,
     filter_query: String,
     filter: Option<FieldEdit>,
     alias: Option<FieldEdit>,
@@ -213,6 +163,7 @@ impl SettingsWindow {
                 renderer: Renderer::new()?,
                 placing: false,
                 scroll: 0.0,
+                sidebar_scroll: 0.0,
                 filter_query: String::new(),
                 filter: None,
                 alias: None,
@@ -556,57 +507,76 @@ fn paint_scene(
         let sel_brush = target.CreateSolidColorBrush(&selection_color(appearance), None)?;
         let header_brush = target.CreateSolidColorBrush(&header_text_color(appearance), None)?;
         let tab_brush = target.CreateSolidColorBrush(&tab_text_color(appearance), None)?;
-        for row in sidebar_rows() {
-            match row.kind {
-                RowKind::Header(section) => {
-                    draw_label(
-                        target,
-                        dwrite,
-                        header_format,
-                        &header_brush,
-                        header_rect(&row),
-                        settings_section_title(section, lang),
-                    )?;
-                }
-                RowKind::Tab(tab) => {
-                    if tab == selected {
-                        let pill = D2D1_ROUNDED_RECT {
-                            rect: pill_rect(&row),
-                            radiusX: theme::radius::MENU_ROW,
-                            radiusY: theme::radius::MENU_ROW,
-                        };
-                        target.FillRoundedRectangle(&pill, &sel_brush);
+        let sidebar_scroll = (*inner).sidebar_scroll;
+        target.PushAxisAlignedClip(
+            &D2D_RECT_F {
+                left: 0.0,
+                top: 0.0,
+                right: sidebar_w,
+                bottom: size.height,
+            },
+            D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+        );
+        let sidebar_paint: windows::core::Result<()> = (|| {
+            for row in sidebar_rows() {
+                let row = SidebarRow {
+                    y: row.y - sidebar_scroll,
+                    ..row
+                };
+                match row.kind {
+                    SidebarRowKind::Header(section) => {
+                        draw_label(
+                            target,
+                            dwrite,
+                            header_format,
+                            &header_brush,
+                            header_rect(&row),
+                            settings_section_title(section, lang),
+                        )?;
                     }
-                    let slot = theme::size::SETTINGS_ROW_ICON;
-                    let icon = 16.0;
-                    let ink = theme::colors::ramp_rgba(
-                        appearance,
-                        theme::colors::TEXT_PRIMARY_ALPHA,
-                        theme::colors::TEXT_PRIMARY_ALPHA,
-                    );
-                    let _ = crate::design_system::symbols::paint_fluent_in(
-                        target,
-                        dwrite,
-                        tab.system_image(),
-                        DipRect {
-                            x: theme::spacing::XL + (slot - icon) / 2.0,
-                            y: row.y + (row.height - icon) / 2.0,
-                            w: icon,
-                            h: icon,
-                        },
-                        ink,
-                    );
-                    draw_label(
-                        target,
-                        dwrite,
-                        tab_format,
-                        &tab_brush,
-                        tab_rect(&row),
-                        settings_tab_title(tab, lang),
-                    )?;
+                    SidebarRowKind::Tab(tab) => {
+                        if tab == selected {
+                            let pill = D2D1_ROUNDED_RECT {
+                                rect: pill_rect(&row),
+                                radiusX: theme::radius::MENU_ROW,
+                                radiusY: theme::radius::MENU_ROW,
+                            };
+                            target.FillRoundedRectangle(&pill, &sel_brush);
+                        }
+                        let slot = theme::size::SETTINGS_ROW_ICON;
+                        let icon = 16.0;
+                        let ink = theme::colors::ramp_rgba(
+                            appearance,
+                            theme::colors::TEXT_PRIMARY_ALPHA,
+                            theme::colors::TEXT_PRIMARY_ALPHA,
+                        );
+                        let _ = crate::design_system::symbols::paint_fluent_in(
+                            target,
+                            dwrite,
+                            tab.system_image(),
+                            DipRect {
+                                x: theme::spacing::XL + (slot - icon) / 2.0,
+                                y: row.y + (row.height - icon) / 2.0,
+                                w: icon,
+                                h: icon,
+                            },
+                            ink,
+                        );
+                        draw_label(
+                            target,
+                            dwrite,
+                            tab_format,
+                            &tab_brush,
+                            tab_rect(&row),
+                            settings_tab_title(tab, lang),
+                        )?;
+                    }
                 }
             }
-        }
+            Ok(())
+        })();
+        target.PopAxisAlignedClip();
+        sidebar_paint?;
         if let Some(idx) = (*inner).focus {
             let items = focus_items(hwnd, inner);
             if let Some(item) = items.get(idx) {
@@ -730,6 +700,7 @@ unsafe fn paint_detail(
                 }
             })?;
             let layout = layout_confirm(width, height);
+            let appearance = settings_appearance(inner);
             if (*inner).confirming_snippets {
                 paint_confirm_copy(
                     target,
@@ -737,6 +708,7 @@ unsafe fn paint_detail(
                     &layout,
                     (width, height),
                     crate::features::snippets::settings::pane::enable_copy_lang(core.ui_lang()),
+                    appearance,
                 )?;
             } else if let Some(id) = (*inner).confirming_ai_remove.as_deref() {
                 let name = core
@@ -761,6 +733,7 @@ unsafe fn paint_detail(
                             core.ui_lang(),
                         ),
                     },
+                    appearance,
                 )?;
             } else if (*inner).confirming_clear {
                 paint_confirm_copy(
@@ -777,9 +750,10 @@ unsafe fn paint_detail(
                             core.ui_lang(),
                         ),
                     },
+                    appearance,
                 )?;
             } else {
-                paint_confirm(target, formats, &layout, (width, height))?;
+                paint_confirm(target, formats, &layout, (width, height), appearance)?;
             }
         }
         return Ok(());
@@ -1401,7 +1375,8 @@ fn focus_items(
         }
         let tab = selected_tab(inner);
         let lang = ui_lang(inner);
-        let mut items = crate::features::settings::focus::sidebar_items(tab, lang);
+        let mut items =
+            crate::features::settings::focus::sidebar_items(tab, lang, (*inner).sidebar_scroll);
         let detail_w = (width - theme::size::SETTINGS_SIDEBAR).max(0.0);
         items.extend(content_focus_items(hwnd, inner, tab, lang, detail_w));
         items
@@ -2724,15 +2699,26 @@ unsafe fn commit_ai_connection(inner: *mut SettingsInner) -> bool {
     }
 }
 
-unsafe fn handle_wheel(hwnd: HWND, wparam: WPARAM) {
+unsafe fn handle_wheel(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) {
     let delta = ((wparam.0 as u32) >> 16) as i16;
     let Some(inner) = inner_from(hwnd) else {
         return;
     };
     let (width, height) = client_dip_size(hwnd);
-    (*inner).scroll -= (delta as f32 / 120.0) * ITEM_H;
-    let max = (pane_content_height(inner, width) - height).max(0.0);
-    (*inner).scroll = (*inner).scroll.clamp(0.0, max);
+    let step = delta as f32 / 120.0;
+    let dpi = GetDpiForWindow(hwnd);
+    let (sx, sy) = point_from_lparam(lparam);
+    let mut pt = POINT { x: sx, y: sy };
+    let _ = ScreenToClient(hwnd, &mut pt);
+    let x = px_to_dip(pt.x, dpi);
+    if wheel_targets_sidebar(x) {
+        (*inner).sidebar_scroll -= step * tinycast_pure::layout::settings::SIDEBAR_TAB_ROW_HEIGHT;
+        (*inner).sidebar_scroll = clamp_sidebar_scroll((*inner).sidebar_scroll, height);
+    } else {
+        (*inner).scroll -= step * ITEM_H;
+        let max = (pane_content_height(inner, width) - height).max(0.0);
+        (*inner).scroll = (*inner).scroll.clamp(0.0, max);
+    }
     let _ = InvalidateRect(hwnd, None, FALSE);
 }
 
@@ -2890,10 +2876,19 @@ unsafe fn scroll_item_into_view(
     inner: *mut SettingsInner,
     item: &crate::features::settings::focus::FocusItem,
 ) {
+    let view_h = client_dip_size(hwnd).1;
+    if item.tab.is_some() {
+        if item.rect.y < 0.0 {
+            (*inner).sidebar_scroll = ((*inner).sidebar_scroll + item.rect.y).max(0.0);
+        } else if item.rect.y + item.rect.h > view_h {
+            (*inner).sidebar_scroll += item.rect.y + item.rect.h - view_h;
+        }
+        (*inner).sidebar_scroll = clamp_sidebar_scroll((*inner).sidebar_scroll, view_h);
+        return;
+    }
     if !item.scrolls {
         return;
     }
-    let view_h = client_dip_size(hwnd).1;
     if item.rect.y < 0.0 {
         (*inner).scroll = ((*inner).scroll + item.rect.y).max(0.0);
     } else if item.rect.y + item.rect.h > view_h {
@@ -3128,7 +3123,7 @@ unsafe fn handle_lbutton(hwnd: HWND, lparam: LPARAM) {
         return;
     }
     let Some(detail_x) = tinycast_pure::layout::settings::x_to_detail_local(x) else {
-        if let Some(tab) = tab_at(x, y) {
+        if let Some(tab) = tab_at(x, y, (*inner).sidebar_scroll) {
             if (*inner).recorder.is_recording() {
                 (*inner).recorder.cancel();
                 if let Some(core) = core_from_host((*inner).host) {
@@ -3735,6 +3730,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let width = (lparam.0 as u32) & 0xffff;
                 let height = ((lparam.0 as u32) >> 16) & 0xffff;
                 (*inner).renderer.resize(hwnd, width, height);
+                let (w, h) = client_dip_size(hwnd);
+                (*inner).sidebar_scroll = clamp_sidebar_scroll((*inner).sidebar_scroll, h);
+                let max = (pane_content_height(inner, w) - h).max(0.0);
+                (*inner).scroll = (*inner).scroll.clamp(0.0, max);
             }
             LRESULT(0)
         }
@@ -3772,7 +3771,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_MOUSEWHEEL => {
-            handle_wheel(hwnd, wparam);
+            handle_wheel(hwnd, wparam, lparam);
             LRESULT(0)
         }
         WM_KEYDOWN | WM_SYSKEYDOWN => {
@@ -3870,6 +3869,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tinycast_pure::settings_tab::SettingsSection;
 
     #[test]
     fn sidebar_icon_and_label_do_not_overlap() {
@@ -3887,8 +3887,8 @@ mod tests {
     fn sidebar_tab_label_clears_the_icon_slot() {
         let row = SidebarRow {
             y: 40.0,
-            height: TAB_ROW_HEIGHT,
-            kind: RowKind::Tab(SettingsTab::General),
+            height: tinycast_pure::layout::settings::SIDEBAR_TAB_ROW_HEIGHT,
+            kind: SidebarRowKind::Tab(SettingsTab::General),
         };
         let label = tab_rect(&row);
         let icon_right = theme::spacing::XL + theme::size::SETTINGS_ROW_ICON;
@@ -3905,29 +3905,29 @@ mod tests {
         let rows = sidebar_rows();
         let general = rows
             .iter()
-            .find(|r| r.kind == RowKind::Tab(SettingsTab::General))
+            .find(|r| r.kind == SidebarRowKind::Tab(SettingsTab::General))
             .unwrap();
         assert_eq!(
-            tab_at(theme::spacing::MD, general.y + 1.0),
+            tab_at(theme::spacing::MD, general.y + 1.0, 0.0),
             Some(SettingsTab::General)
         );
         let ai = rows
             .iter()
-            .find(|r| r.kind == RowKind::Tab(SettingsTab::Ai))
+            .find(|r| r.kind == SidebarRowKind::Tab(SettingsTab::Ai))
             .unwrap();
         assert_eq!(
-            tab_at(theme::spacing::MD, ai.y + 1.0),
+            tab_at(theme::spacing::MD, ai.y + 1.0, 0.0),
             Some(SettingsTab::Ai)
         );
         assert_eq!(
-            tab_at(theme::size::SETTINGS_SIDEBAR + 8.0, general.y + 1.0),
+            tab_at(theme::size::SETTINGS_SIDEBAR + 8.0, general.y + 1.0, 0.0),
             None
         );
         let header = rows
             .iter()
-            .find(|r| r.kind == RowKind::Header(SettingsSection::Features))
+            .find(|r| r.kind == SidebarRowKind::Header(SettingsSection::Features))
             .unwrap();
-        assert_eq!(tab_at(theme::spacing::MD, header.y + 1.0), None);
+        assert_eq!(tab_at(theme::spacing::MD, header.y + 1.0, 0.0), None);
     }
 
     #[test]
@@ -3935,16 +3935,16 @@ mod tests {
         let headers: Vec<_> = sidebar_rows()
             .into_iter()
             .filter_map(|r| match r.kind {
-                RowKind::Header(section) => Some(section),
-                RowKind::Tab(_) => None,
+                SidebarRowKind::Header(section) => Some(section),
+                SidebarRowKind::Tab(_) => None,
             })
             .collect();
         assert_eq!(headers, Vec::from(SettingsSection::all()));
         let tabs: Vec<_> = sidebar_rows()
             .into_iter()
             .filter_map(|r| match r.kind {
-                RowKind::Tab(tab) => Some(tab),
-                RowKind::Header(_) => None,
+                SidebarRowKind::Tab(tab) => Some(tab),
+                SidebarRowKind::Header(_) => None,
             })
             .collect();
         assert_eq!(tabs[0], SettingsTab::General);
@@ -3971,7 +3971,7 @@ mod tests {
         assert!(acc.contains("accDoDefaultAction"));
         assert!(acc.contains("UiaReturnRawElementProvider"));
         let items =
-            crate::features::settings::focus::sidebar_items(SettingsTab::General, UiLang::En);
+            crate::features::settings::focus::sidebar_items(SettingsTab::General, UiLang::En, 0.0);
         assert!(items.iter().any(|i| i.name == "General"));
         assert!(items.iter().all(|i| !i.secret));
         assert!(crate::features::settings::focus::acc_value(&items[0]).is_some());

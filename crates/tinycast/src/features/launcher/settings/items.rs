@@ -1044,6 +1044,7 @@ pub fn paint_confirm(
     formats: &Formats<'_>,
     layout: &ConfirmLayout,
     window: (f32, f32),
+    appearance: u8,
 ) -> windows::core::Result<()> {
     paint_confirm_copy(
         target,
@@ -1051,6 +1052,7 @@ pub fn paint_confirm(
         layout,
         window,
         ConfirmCopy::reset_ranking_lang(formats.lang),
+        appearance,
     )
 }
 
@@ -1060,6 +1062,7 @@ pub fn paint_confirm_copy(
     layout: &ConfirmLayout,
     window: (f32, f32),
     copy: ConfirmCopy,
+    appearance: u8,
 ) -> windows::core::Result<()> {
     let scrim = solid(target, scrim_color())?;
     unsafe {
@@ -1073,10 +1076,10 @@ pub fn paint_confirm_copy(
             &scrim,
         );
     }
-    let card_brush = solid(target, card_fill(0))?;
-    fill_card(target, &card_brush, layout.card, 0)?;
-    let body_brush = solid(target, tab_text_color(0))?;
-    let caption_brush = solid(target, header_text_color(0))?;
+    let card_brush = solid(target, card_fill(appearance))?;
+    fill_card(target, &card_brush, layout.card, appearance)?;
+    let body_brush = solid(target, tab_text_color(appearance))?;
+    let caption_brush = solid(target, header_text_color(appearance))?;
     draw_label(
         target,
         formats.body,
@@ -1108,7 +1111,7 @@ pub fn paint_confirm_copy(
         copy.cancel,
         false,
         true,
-        0,
+        appearance,
     )?;
     paint_button(
         target,
@@ -1117,7 +1120,7 @@ pub fn paint_confirm_copy(
         copy.accept,
         true,
         true,
-        0,
+        appearance,
     )?;
     Ok(())
 }
@@ -1154,44 +1157,18 @@ fn paint_toggle(
     on: bool,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let fill = solid(
+    crate::design_system::settings::paint_toggle(
         target,
-        if on {
-            accent_color()
-        } else {
-            toggle_off(appearance)
+        tinycast_pure::palette_placement::DipRect {
+            x: rect.x,
+            y: rect.y,
+            w: rect.w,
+            h: rect.h,
         },
-    )?;
-    let knob = solid(target, tab_text_color(appearance))?;
-    let rounded = D2D1_ROUNDED_RECT {
-        rect: rect.d2d(),
-        radiusX: rect.h / 2.0,
-        radiusY: rect.h / 2.0,
-    };
-    unsafe {
-        target.FillRoundedRectangle(&rounded, &fill);
-    }
-    let pad = 2.0;
-    let kn = rect.h - pad * 2.0;
-    let kx = if on {
-        rect.x + rect.w - pad - kn
-    } else {
-        rect.x + pad
-    };
-    let knob_r = D2D1_ROUNDED_RECT {
-        rect: D2D_RECT_F {
-            left: kx,
-            top: rect.y + pad,
-            right: kx + kn,
-            bottom: rect.y + pad + kn,
-        },
-        radiusX: kn / 2.0,
-        radiusY: kn / 2.0,
-    };
-    unsafe {
-        target.FillRoundedRectangle(&knob_r, &knob);
-    }
-    Ok(())
+        on,
+        true,
+        appearance,
+    )
 }
 
 fn paint_checkbox(
@@ -1200,51 +1177,18 @@ fn paint_checkbox(
     on: bool,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let stroke = solid(target, hairline_color(appearance))?;
-    let rounded = D2D1_ROUNDED_RECT {
-        rect: rect.d2d(),
-        radiusX: 3.0,
-        radiusY: 3.0,
-    };
-    unsafe {
-        target.DrawRoundedRectangle(&rounded, &stroke, theme::size::HAIRLINE, None);
-    }
-    if on {
-        let fill = solid(target, accent_color())?;
-        unsafe {
-            target.FillRoundedRectangle(&rounded, &fill);
-        }
-        let mark = solid(target, tab_text_color(appearance))?;
-        unsafe {
-            target.DrawLine(
-                D2D_POINT_2F {
-                    x: rect.x + 3.0,
-                    y: rect.y + rect.h * 0.55,
-                },
-                D2D_POINT_2F {
-                    x: rect.x + rect.w * 0.42,
-                    y: rect.y + rect.h - 4.0,
-                },
-                &mark,
-                1.5,
-                None,
-            );
-            target.DrawLine(
-                D2D_POINT_2F {
-                    x: rect.x + rect.w * 0.42,
-                    y: rect.y + rect.h - 4.0,
-                },
-                D2D_POINT_2F {
-                    x: rect.x + rect.w - 3.0,
-                    y: rect.y + 4.0,
-                },
-                &mark,
-                1.5,
-                None,
-            );
-        }
-    }
-    Ok(())
+    crate::design_system::settings::paint_checkbox(
+        target,
+        tinycast_pure::palette_placement::DipRect {
+            x: rect.x,
+            y: rect.y,
+            w: rect.w,
+            h: rect.h,
+        },
+        on,
+        true,
+        appearance,
+    )
 }
 
 fn paint_well(
@@ -1300,31 +1244,24 @@ fn paint_button(
     enabled: bool,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let fill = solid(
+    crate::design_system::settings::paint_action_button(
         target,
-        if destructive && enabled {
-            destructive_fill()
-        } else {
-            well_fill(appearance)
+        format,
+        tinycast_pure::palette_placement::DipRect {
+            x: rect.x,
+            y: rect.y,
+            w: rect.w,
+            h: rect.h,
         },
-    )?;
-    let rounded = D2D1_ROUNDED_RECT {
-        rect: rect.d2d(),
-        radiusX: theme::radius::MENU,
-        radiusY: theme::radius::MENU,
-    };
-    unsafe {
-        target.FillRoundedRectangle(&rounded, &fill);
-    }
-    let brush = solid(
-        target,
-        if enabled {
-            tab_text_color(appearance)
+        text,
+        appearance,
+        if destructive {
+            crate::design_system::settings::ButtonKind::Destructive
         } else {
-            header_text_color(appearance)
+            crate::design_system::settings::ButtonKind::Standard
         },
-    )?;
-    draw_label(target, format, &brush, rect, text)
+        enabled,
+    )
 }
 
 fn draw_label(
@@ -1384,10 +1321,6 @@ fn accent_color() -> D2D1_COLOR_F {
     }
 }
 
-fn toggle_off(appearance: u8) -> D2D1_COLOR_F {
-    crate::design_system::settings::ramp_color(appearance, 0.18)
-}
-
 fn dim_fill(appearance: u8) -> D2D1_COLOR_F {
     if appearance == 0 {
         D2D1_COLOR_F {
@@ -1412,15 +1345,6 @@ fn scrim_color() -> D2D1_COLOR_F {
         g: 0.0,
         b: 0.0,
         a: 0.45,
-    }
-}
-
-fn destructive_fill() -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: 0.72,
-        g: 0.20,
-        b: 0.18,
-        a: 1.0,
     }
 }
 
@@ -1601,6 +1525,36 @@ mod tests {
             hotkey_action_key(&pane).as_deref(),
             Some("hotkey.pane.ms-settings:display")
         );
+    }
+
+    #[test]
+    fn launcher_toggles_use_design_system_controls() {
+        let src = include_str!("items.rs");
+        let toggle = src
+            .split("fn paint_toggle")
+            .nth(1)
+            .unwrap()
+            .split("fn paint_checkbox")
+            .next()
+            .unwrap();
+        assert!(toggle.contains("settings::paint_toggle"));
+        let check = src
+            .split("fn paint_checkbox")
+            .nth(1)
+            .unwrap()
+            .split("fn paint_well")
+            .next()
+            .unwrap();
+        assert!(check.contains("settings::paint_checkbox"));
+        assert!(!check.contains("tab_text_color"));
+    }
+
+    #[test]
+    fn settings_buttons_use_centered_control_surface() {
+        let src = include_str!("items.rs");
+        let paint = src.split("fn paint_button").nth(1).unwrap();
+        assert!(paint.contains("paint_action_button"));
+        assert!(!paint.contains("destructive_fill"));
     }
 
     #[test]

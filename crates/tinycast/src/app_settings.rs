@@ -293,7 +293,8 @@ impl AppSettings {
 
     pub fn save(&self) -> std::io::Result<()> {
         self.write_json(&paths::roaming_dir(), &paths::local_dir())?;
-        launch_at_login::apply(self.launch_at_login)
+        let _ = launch_at_login::apply(self.launch_at_login);
+        Ok(())
     }
 
     fn write_json(&self, roaming: &Path, local: &Path) -> std::io::Result<()> {

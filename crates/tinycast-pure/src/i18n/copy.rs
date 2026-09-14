@@ -235,6 +235,16 @@ pub fn general_row_subtitle(row: GeneralRow, lang: UiLang) -> Option<&'static st
     }
 }
 
+pub fn launch_at_login_failed(lang: UiLang) -> (&'static str, &'static str) {
+    match lang {
+        UiLang::En => (
+            "Launch at login",
+            "Tinycast could not update the Windows startup entry.",
+        ),
+        UiLang::ZhHans => ("登录时启动", "无法写入 Windows 开机启动项。"),
+    }
+}
+
 pub fn general_reset_label(lang: UiLang) -> &'static str {
     match lang {
         UiLang::En => "Reset…",
@@ -540,6 +550,15 @@ mod tests {
             general_row_title(GeneralRow::ShowInMenuBar, UiLang::ZhHans),
             "在托盘显示图标"
         );
+    }
+
+    #[test]
+    fn launch_at_login_failed_copy() {
+        assert_eq!(
+            launch_at_login_failed(UiLang::ZhHans),
+            ("登录时启动", "无法写入 Windows 开机启动项。")
+        );
+        assert_eq!(launch_at_login_failed(UiLang::En).0, "Launch at login");
     }
 
     #[test]

@@ -31,36 +31,32 @@ impl FocusItem {
     }
 }
 
-pub fn sidebar_items(selected: SettingsTab, lang: tinycast_pure::i18n::UiLang) -> Vec<FocusItem> {
-    let mut y = theme::spacing::XL;
+pub fn sidebar_items(
+    selected: SettingsTab,
+    lang: tinycast_pure::i18n::UiLang,
+    scroll: f32,
+) -> Vec<FocusItem> {
     let mut items = Vec::new();
-    for (i, section) in tinycast_pure::settings_tab::SettingsSection::all()
-        .into_iter()
-        .enumerate()
-    {
-        if i > 0 {
-            y += theme::spacing::SECTION_SPACING;
-        }
-        y += 22.0;
-        for &tab in section.tabs() {
-            items.push(FocusItem {
-                tab: Some(tab),
-                name: tinycast_pure::i18n::settings_tab_title(tab, lang).to_string(),
-                role: FocusRole::Tab,
-                enabled: true,
-                checked: Some(tab == selected),
-                secret: false,
-                rect: DipRect {
-                    x: theme::spacing::SM,
-                    y,
-                    w: theme::size::SETTINGS_SIDEBAR - theme::spacing::SM * 2.0,
-                    h: 28.0,
-                },
-                edit_id: None,
-                scrolls: false,
-            });
-            y += 28.0;
-        }
+    for row in tinycast_pure::layout::settings::sidebar_rows() {
+        let tinycast_pure::layout::settings::SidebarRowKind::Tab(tab) = row.kind else {
+            continue;
+        };
+        items.push(FocusItem {
+            tab: Some(tab),
+            name: tinycast_pure::i18n::settings_tab_title(tab, lang).to_string(),
+            role: FocusRole::Tab,
+            enabled: true,
+            checked: Some(tab == selected),
+            secret: false,
+            rect: DipRect {
+                x: theme::spacing::SM,
+                y: row.y - scroll,
+                w: theme::size::SETTINGS_SIDEBAR - theme::spacing::SM * 2.0,
+                h: row.height,
+            },
+            edit_id: None,
+            scrolls: false,
+        });
     }
     items
 }
@@ -194,7 +190,7 @@ mod tests {
 
     #[test]
     fn tab_wraps_forward_and_back() {
-        let items = sidebar_items(SettingsTab::General, tinycast_pure::i18n::UiLang::En);
+        let items = sidebar_items(SettingsTab::General, tinycast_pure::i18n::UiLang::En, 0.0);
         assert!(items.len() > 4);
         let first = traverse(&items, None, false).unwrap();
         assert_eq!(items[first].tab, Some(SettingsTab::General));
@@ -204,6 +200,9 @@ mod tests {
         assert_eq!(after_last, first);
         let before_first = traverse(&items, Some(first), true).unwrap();
         assert_eq!(before_first, last);
+        let scrolled = sidebar_items(SettingsTab::General, tinycast_pure::i18n::UiLang::En, 40.0);
+        assert_eq!(scrolled[0].rect.y, items[0].rect.y - 40.0);
+        assert_eq!(scrolled.last().unwrap().tab, Some(SettingsTab::About));
     }
 
     #[test]

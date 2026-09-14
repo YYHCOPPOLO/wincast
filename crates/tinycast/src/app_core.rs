@@ -219,6 +219,7 @@ impl AppCore {
         }
         self.list_scroll = 0.0;
         self.close_menu();
+        let _ = crate::platform::launch_at_login::apply(self.settings.launch_at_login);
         self.app_index.start();
         self.currency_rates.start(self.host);
         clip_manager::listen(self.host);
@@ -2837,7 +2838,15 @@ impl AppCore {
                 self.settings.palette_draggable = !self.settings.palette_draggable
             }
             GeneralToggle::LaunchAtLogin => {
-                self.settings.launch_at_login = !self.settings.launch_at_login
+                let next = !self.settings.launch_at_login;
+                if crate::platform::launch_at_login::apply(next).is_err() {
+                    let (title, message) =
+                        tinycast_pure::i18n::launch_at_login_failed(self.ui_lang());
+                    self.show_alert(title, message);
+                    self.invalidate_settings();
+                    return;
+                }
+                self.settings.launch_at_login = next;
             }
             GeneralToggle::ShowInMenuBar => {
                 self.settings.show_in_menu_bar = !self.settings.show_in_menu_bar;

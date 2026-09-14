@@ -2,14 +2,13 @@
 
 use std::path::Path;
 
+use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::quicklink::Quicklink;
 use tinycast_pure::theme;
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ROUNDED_RECT,
-};
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
+use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
 use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 use windows::Win32::UI::Controls::Dialogs::{
     GetOpenFileNameW, GetSaveFileNameW, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT,
@@ -248,36 +247,19 @@ fn paint_btn(
     y: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let rect = D2D1_ROUNDED_RECT {
-        rect: D2D_RECT_F {
-            left: x,
-            top: y,
-            right: x + BTN_W,
-            bottom: y + ITEM_H,
-        },
-        radiusX: 6.0,
-        radiusY: 6.0,
-    };
-    let fill = D2D1_COLOR_F {
-        r: 0.2,
-        g: 0.55,
-        b: 1.0,
-        a: 1.0,
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
-    unsafe {
-        target.FillRoundedRectangle(&rect, &brush);
-    }
-    draw_text(
+    ds::paint_action_button(
         target,
         formats.caption,
+        DipRect {
+            x,
+            y,
+            w: BTN_W,
+            h: ITEM_H,
+        },
         label,
-        x + 12.0,
-        y,
-        x + BTN_W - 12.0,
-        y + ITEM_H,
         appearance,
-        1.0,
+        ds::ButtonKind::Standard,
+        true,
     )
 }
 
@@ -316,6 +298,14 @@ fn draw_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quicklinks_buttons_use_design_system() {
+        let src = include_str!("pane.rs");
+        let impl_src = src.split("#[cfg(test)]").next().unwrap();
+        assert!(impl_src.contains("paint_action_button"));
+        assert!(!impl_src.contains("r: 0.2"));
+    }
 
     #[test]
     fn quicklinks_settings_exposes_feature_switch() {

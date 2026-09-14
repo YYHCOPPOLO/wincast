@@ -8,7 +8,8 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_ALIGNMENT_LEADING,
+    IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
     DWRITE_TEXT_ALIGNMENT_TRAILING,
 };
 
@@ -492,7 +493,11 @@ pub fn paint_toggle(
             a: if enabled { ACCENT.3 } else { 0.45 },
         }
     } else {
-        ramp_color(appearance, if enabled { 0.18 } else { 0.08 })
+        appearance::color(theme::colors::ramp_rgba(
+            appearance,
+            if enabled { 0.22 } else { 0.10 },
+            if enabled { 0.32 } else { 0.14 },
+        ))
     };
     let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     let rounded = D2D1_ROUNDED_RECT {
@@ -508,6 +513,18 @@ pub fn paint_toggle(
     unsafe {
         target.FillRoundedRectangle(&rounded, &brush);
     }
+    if !on {
+        let stroke = theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::BORDER_DARK_ALPHA,
+            theme::colors::BORDER_LIGHT_ALPHA,
+        );
+        let stroke_brush =
+            unsafe { target.CreateSolidColorBrush(&appearance::color(stroke), None)? };
+        unsafe {
+            target.DrawRoundedRectangle(&rounded, &stroke_brush, theme::size::HAIRLINE, None);
+        }
+    }
     let pad = 2.0;
     let kn = rect.h - pad * 2.0;
     let kx = if on {
@@ -515,33 +532,221 @@ pub fn paint_toggle(
     } else {
         rect.x + pad
     };
+    let knob_rect = D2D1_ROUNDED_RECT {
+        rect: D2D_RECT_F {
+            left: kx,
+            top: rect.y + pad,
+            right: kx + kn,
+            bottom: rect.y + pad + kn,
+        },
+        radiusX: kn / 2.0,
+        radiusY: kn / 2.0,
+    };
     let knob = unsafe {
         target.CreateSolidColorBrush(
             &D2D1_COLOR_F {
                 r: 1.0,
                 g: 1.0,
                 b: 1.0,
-                a: 0.92,
+                a: 1.0,
             },
             None,
         )?
     };
     unsafe {
-        target.FillRoundedRectangle(
-            &D2D1_ROUNDED_RECT {
-                rect: D2D_RECT_F {
-                    left: kx,
-                    top: rect.y + pad,
-                    right: kx + kn,
-                    bottom: rect.y + pad + kn,
-                },
-                radiusX: kn / 2.0,
-                radiusY: kn / 2.0,
-            },
-            &knob,
+        target.FillRoundedRectangle(&knob_rect, &knob);
+    }
+    if appearance != 0 {
+        let rim = theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::BORDER_DARK_ALPHA,
+            theme::colors::BORDER_LIGHT_ALPHA,
         );
+        let rim_brush = unsafe { target.CreateSolidColorBrush(&appearance::color(rim), None)? };
+        unsafe {
+            target.DrawRoundedRectangle(&knob_rect, &rim_brush, theme::size::HAIRLINE, None);
+        }
     }
     Ok(())
+}
+
+pub fn paint_checkbox(
+    target: &ID2D1RenderTarget,
+    rect: DipRect,
+    on: bool,
+    enabled: bool,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    let rounded = D2D1_ROUNDED_RECT {
+        rect: D2D_RECT_F {
+            left: rect.x,
+            top: rect.y,
+            right: rect.x + rect.w,
+            bottom: rect.y + rect.h,
+        },
+        radiusX: 3.0,
+        radiusY: 3.0,
+    };
+    if on {
+        let mut fill = ACCENT;
+        if !enabled {
+            fill.3 = 0.45;
+        }
+        let brush = unsafe {
+            target.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: fill.0,
+                    g: fill.1,
+                    b: fill.2,
+                    a: fill.3,
+                },
+                None,
+            )?
+        };
+        unsafe {
+            target.FillRoundedRectangle(&rounded, &brush);
+        }
+        let mark = unsafe {
+            target.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: if enabled { 1.0 } else { 0.55 },
+                },
+                None,
+            )?
+        };
+        unsafe {
+            target.DrawLine(
+                D2D_POINT_2F {
+                    x: rect.x + 3.0,
+                    y: rect.y + rect.h * 0.55,
+                },
+                D2D_POINT_2F {
+                    x: rect.x + rect.w * 0.42,
+                    y: rect.y + rect.h - 4.0,
+                },
+                &mark,
+                1.5,
+                None,
+            );
+            target.DrawLine(
+                D2D_POINT_2F {
+                    x: rect.x + rect.w * 0.42,
+                    y: rect.y + rect.h - 4.0,
+                },
+                D2D_POINT_2F {
+                    x: rect.x + rect.w - 3.0,
+                    y: rect.y + 4.0,
+                },
+                &mark,
+                1.5,
+                None,
+            );
+        }
+    } else {
+        let well = super::text::control_surface(appearance);
+        let well_brush = unsafe { target.CreateSolidColorBrush(&appearance::color(well), None)? };
+        unsafe {
+            target.FillRoundedRectangle(&rounded, &well_brush);
+        }
+        let stroke = theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::BORDER_DARK_ALPHA,
+            theme::colors::BORDER_LIGHT_ALPHA,
+        );
+        let stroke_brush =
+            unsafe { target.CreateSolidColorBrush(&appearance::color(stroke), None)? };
+        unsafe {
+            target.DrawRoundedRectangle(&rounded, &stroke_brush, theme::size::HAIRLINE, None);
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ButtonKind {
+    Standard,
+    Destructive,
+}
+
+pub fn paint_action_button(
+    target: &ID2D1RenderTarget,
+    format: &IDWriteTextFormat,
+    rect: DipRect,
+    label: &str,
+    appearance: u8,
+    kind: ButtonKind,
+    enabled: bool,
+) -> windows::core::Result<()> {
+    let mut fill = super::text::control_surface(appearance);
+    if !enabled {
+        fill.3 *= 0.55;
+    }
+    let rounded = D2D1_ROUNDED_RECT {
+        rect: D2D_RECT_F {
+            left: rect.x,
+            top: rect.y,
+            right: rect.x + rect.w,
+            bottom: rect.y + rect.h,
+        },
+        radiusX: theme::radius::MENU,
+        radiusY: theme::radius::MENU,
+    };
+    let fill_brush = unsafe { target.CreateSolidColorBrush(&appearance::color(fill), None)? };
+    unsafe {
+        target.FillRoundedRectangle(&rounded, &fill_brush);
+    }
+    let stroke = theme::colors::ramp_rgba(
+        appearance,
+        theme::colors::BORDER_DARK_ALPHA,
+        theme::colors::BORDER_LIGHT_ALPHA,
+    );
+    let stroke_brush = unsafe { target.CreateSolidColorBrush(&appearance::color(stroke), None)? };
+    unsafe {
+        target.DrawRoundedRectangle(&rounded, &stroke_brush, theme::size::HAIRLINE, None);
+    }
+    let ink = match (kind, enabled) {
+        (ButtonKind::Destructive, true) => super::text::DESTRUCTIVE,
+        (ButtonKind::Destructive, false) => {
+            let mut c = super::text::DESTRUCTIVE;
+            c.3 *= 0.45;
+            c
+        }
+        (ButtonKind::Standard, true) => theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::TEXT_PRIMARY_ALPHA,
+            theme::colors::TEXT_PRIMARY_ALPHA,
+        ),
+        (ButtonKind::Standard, false) => theme::colors::ramp_rgba(
+            appearance,
+            theme::colors::TEXT_TERTIARY_DARK_ALPHA,
+            theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
+        ),
+    };
+    let nudge = super::text::BUTTON_OPTICAL_NUDGE_Y;
+    unsafe {
+        let _ = format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        let _ = format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    }
+    let result = draw_text(
+        target,
+        format,
+        label,
+        D2D_RECT_F {
+            left: rect.x,
+            top: rect.y + nudge,
+            right: rect.x + rect.w,
+            bottom: rect.y + rect.h,
+        },
+        ink,
+    );
+    unsafe {
+        let _ = format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+        let _ = format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+    }
+    result
 }
 
 fn draw_text(
@@ -633,6 +838,27 @@ mod tests {
     }
 
     #[test]
+    fn action_button_uses_control_surface_and_centers_label() {
+        let src = include_str!("settings.rs");
+        let paint = src.split("fn paint_action_button").nth(1).unwrap();
+        assert!(paint.contains("control_surface"));
+        assert!(paint.contains("DWRITE_TEXT_ALIGNMENT_CENTER"));
+        assert!(paint.contains("DWRITE_PARAGRAPH_ALIGNMENT_CENTER"));
+        assert!(
+            !paint.contains("0.47"),
+            "settings buttons must not fill with accent blue"
+        );
+        assert_eq!(
+            crate::design_system::text::control_surface(1),
+            (0.0, 0.0, 0.0, theme::colors::CONTROL_SURFACE_LIGHT_ALPHA)
+        );
+        assert_eq!(
+            crate::design_system::text::control_surface(0),
+            (1.0, 1.0, 1.0, theme::colors::CONTROL_SURFACE_DARK_ALPHA)
+        );
+    }
+
+    #[test]
     fn long_trailing_label_does_not_eat_the_title_column() {
         let width = theme::size::SETTINGS_DETAIL_MINIMUM;
         let pad = content_pad();
@@ -642,6 +868,34 @@ mod tests {
         assert!(text_right - pad >= 80.0, "title column {text_right}");
         assert!(trail <= (width - pad * 2.0) * 0.5 + 0.01);
         assert!(approx_label_width("Never") < approx_label_width(label));
+    }
+
+    #[test]
+    fn toggle_and_checkbox_follow_light_appearance() {
+        let src = include_str!("settings.rs");
+        let toggle = src
+            .split("pub fn paint_toggle")
+            .nth(1)
+            .unwrap()
+            .split("pub fn paint_checkbox")
+            .next()
+            .unwrap();
+        assert!(
+            toggle.contains("BORDER_LIGHT_ALPHA"),
+            "light switches need a hairline so the thumb reads on a pale card"
+        );
+        let check = src
+            .split("pub fn paint_checkbox")
+            .nth(1)
+            .unwrap()
+            .split("pub enum ButtonKind")
+            .next()
+            .unwrap();
+        assert!(
+            check.contains("r: 1.0") && check.contains("g: 1.0") && check.contains("b: 1.0"),
+            "checkbox mark must stay light on accent, not primary ink"
+        );
+        assert!(!check.contains("primary_ink"));
     }
 
     #[test]
@@ -692,6 +946,56 @@ mod tests {
             off_left.2 > 180 && off_left.1 > 180,
             "off thumb should be light on the left, got {:?}",
             off_left
+        );
+    }
+
+    #[test]
+    fn toggle_thumb_reads_on_a_light_card() {
+        let rect = DipRect {
+            x: 8.0,
+            y: 4.0,
+            w: TOGGLE_W,
+            h: TOGGLE_H,
+        };
+        let paint = |on: bool| {
+            crate::design_system::test_render::with_offscreen(64, 32, |target| {
+                unsafe {
+                    target.Clear(Some(&D2D1_COLOR_F {
+                        r: theme::settings_chrome::DETAIL_LIGHT.0,
+                        g: theme::settings_chrome::DETAIL_LIGHT.1,
+                        b: theme::settings_chrome::DETAIL_LIGHT.2,
+                        a: 1.0,
+                    }));
+                }
+                paint_toggle(target, rect, on, true, 1)
+            })
+            .expect("light toggle")
+            .2
+        };
+        let on = paint(true);
+        let off = paint(false);
+        let sample = |bits: &[u8], x: i32| {
+            let x = x.clamp(0, 63) as usize;
+            let y = 14usize;
+            let i = (y * 64 + x) * 4;
+            (bits[i] as i16, bits[i + 1] as i16, bits[i + 2] as i16)
+        };
+        let lum = |c: (i16, i16, i16)| c.0 + c.1 + c.2;
+        let off_thumb = sample(&off, (rect.x + 6.0) as i32);
+        let off_track = sample(&off, (rect.x + rect.w - 8.0) as i32);
+        assert!(
+            lum(off_thumb) > lum(off_track) + 80,
+            "light off thumb {off_thumb:?} must out-contrast the track {off_track:?}"
+        );
+        let on_track = sample(&on, (rect.x + 6.0) as i32);
+        let on_thumb = sample(&on, (rect.x + rect.w - 6.0) as i32);
+        assert!(
+            on_track.0 > on_track.2 + 40,
+            "light on track should stay accent blue, got {on_track:?}"
+        );
+        assert!(
+            on_thumb.2 > 180 && on_thumb.1 > 180 && on_thumb.0 > 180,
+            "light on thumb should stay light, got {on_thumb:?}"
         );
     }
 }

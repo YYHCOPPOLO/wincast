@@ -6,3 +6,4 @@ worktrees/
 .agents/
 AGENTS.md
 docs/
+tools/update-local.ps1
