@@ -127,8 +127,39 @@ pub mod typography {
 }
 
 pub mod duration {
+    /// `Theme.Duration.enter`. Window fade-in and `PanelEntrance` scale.
     pub const ENTER_SECS: f32 = 0.18;
+    /// `Theme.Duration.exit`. Window fade-out, shorter than the entrance.
     pub const EXIT_SECS: f32 = 0.12;
+    /// `Theme.Duration.tooltip`.
+    pub const TOOLTIP_SECS: f32 = 0.15;
+    /// `Theme.Duration.copyFeedback`. How long a copied check stays up.
+    pub const COPY_FEEDBACK_SECS: f32 = 1.2;
+    /// `Theme.Duration.chatFooter`.
+    pub const CHAT_FOOTER_SECS: f32 = 0.12;
+    /// Palette menu `easeOut(duration: 0.14)`.
+    pub const MENU_SECS: f32 = 0.14;
+    /// Thin scrollbar fade, `easeOut(duration: 0.18)`.
+    pub const SCROLLBAR_FADE_SECS: f32 = 0.18;
+    /// Scroll thumb stays up this long after the wheel stops.
+    pub const SCROLLBAR_IDLE_SECS: f32 = 0.8;
+    /// Hover has to leave the track this long before the rail collapses.
+    pub const SCROLLBAR_HOVER_EXIT_SECS: f32 = 0.2;
+    /// `ThinScrollbar.morphCurve`: `spring(response: 0.28, dampingFraction: 0.85)`.
+    pub const SCROLLBAR_SPRING_RESPONSE: f32 = 0.28;
+    pub const SCROLLBAR_SPRING_DAMPING: f32 = 0.85;
+    /// Onboarding step change, `easeInOut(duration: 0.2)`.
+    pub const ONBOARDING_SECS: f32 = 0.2;
+    /// Shortcut recorder hover fill, `easeOut(duration: 0.12)`.
+    pub const SHORTCUT_HOVER_SECS: f32 = 0.12;
+    /// Shortcut recorder callout, `easeOut(duration: 0.14)`.
+    pub const SHORTCUT_POPOVER_SECS: f32 = 0.14;
+    /// Extension toast, `easeOut(duration: 0.16)`.
+    pub const TOAST_SECS: f32 = 0.16;
+    /// System `Toggle` thumb. The original does not name a duration; this is the
+    /// control spring the switch actually plays (`response` 0.32, damping 0.86).
+    pub const TOGGLE_SPRING_RESPONSE: f32 = 0.32;
+    pub const TOGGLE_SPRING_DAMPING: f32 = 0.86;
     pub const MESSAGE_HUD_SECS: f32 = 2.4;
     pub const VOLUME_HUD_SECS: f32 = 1.6;
 }
@@ -206,6 +237,23 @@ mod tests {
     fn hud_durations_are_split() {
         assert_eq!(duration::MESSAGE_HUD_SECS, 2.4);
         assert_eq!(duration::VOLUME_HUD_SECS, 1.6);
+    }
+
+    #[test]
+    fn durations_match_v0102() {
+        assert!((duration::ENTER_SECS - 0.18).abs() < 0.0001);
+        assert!((duration::EXIT_SECS - 0.12).abs() < 0.0001);
+        assert!(duration::ENTER_SECS > duration::EXIT_SECS);
+        assert!((duration::TOOLTIP_SECS - 0.15).abs() < 0.0001);
+        assert!((duration::COPY_FEEDBACK_SECS - 1.2).abs() < 0.0001);
+        assert!((duration::CHAT_FOOTER_SECS - 0.12).abs() < 0.0001);
+        assert!((duration::MENU_SECS - 0.14).abs() < 0.0001);
+        assert!((duration::ONBOARDING_SECS - 0.2).abs() < 0.0001);
+        assert!((duration::SHORTCUT_HOVER_SECS - 0.12).abs() < 0.0001);
+        assert!((duration::SHORTCUT_POPOVER_SECS - 0.14).abs() < 0.0001);
+        assert!((duration::TOAST_SECS - 0.16).abs() < 0.0001);
+        assert!((duration::SCROLLBAR_FADE_SECS - 0.18).abs() < 0.0001);
+        assert!((duration::SCROLLBAR_IDLE_SECS - 0.8).abs() < 0.0001);
     }
 
     #[test]

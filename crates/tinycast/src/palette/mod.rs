@@ -1,3 +1,4 @@
+mod chrome;
 pub(crate) mod d2d;
 pub(crate) mod edit;
 mod hwnd;

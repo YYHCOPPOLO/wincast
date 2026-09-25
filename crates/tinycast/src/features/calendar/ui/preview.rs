@@ -14,11 +14,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, IsWindow, LoadCursorW, PeekMessageW, RegisterClassW, SetForegroundWindow,
     SetWindowLongPtrW, SetWindowPos, ShowWindow, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA,
     HWND_TOPMOST, IDC_ARROW, MSG, PM_REMOVE, SWP_NOACTIVATE, SW_SHOW, WM_CLOSE, WM_DESTROY,
-    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_NCDESTROY, WM_PAINT, WM_TIMER, WNDCLASSW,
+    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::design_system::host::OverlayPainter;
+use crate::design_system::motion::{self, OverlayAnim};
 use crate::design_system::panel::paint_scrim;
 use crate::design_system::squircle::fill_squircle;
 use crate::design_system::text;
@@ -35,6 +36,7 @@ struct Inner {
     cancel: DipRect,
     result: bool,
     painter: OverlayPainter,
+    anim: OverlayAnim,
 }
 
 pub fn probe_camera_nonfatal() -> bool {
@@ -52,6 +54,7 @@ pub fn present(title: &str, lang: UiLang) -> bool {
         Err(_) => return true,
     };
     unsafe {
+        start_enter(hwnd);
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
         let _ = SetFocus(hwnd);
@@ -64,13 +67,11 @@ pub fn present(title: &str, lang: UiLang) -> bool {
             if msg.message == WM_KEYDOWN {
                 let vk = msg.wParam.0 as u16;
                 if vk == 0x1B {
-                    set_result(hwnd, false);
-                    let _ = DestroyWindow(hwnd);
+                    begin_close(hwnd, false);
                     continue;
                 }
                 if vk == 0x0D {
-                    set_result(hwnd, true);
-                    let _ = DestroyWindow(hwnd);
+                    begin_close(hwnd, true);
                     continue;
                 }
             }
@@ -103,6 +104,58 @@ fn set_result(hwnd: HWND, value: bool) {
             if value { 1 } else { 0 },
             std::sync::atomic::Ordering::SeqCst,
         );
+    }
+}
+
+fn start_enter(hwnd: HWND) {
+    unsafe {
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+        if ptr.is_null() {
+            return;
+        }
+        (*ptr).anim.present(false);
+        paint_d2d(hwnd);
+        if !motion::arm_timer(hwnd, motion::TIMER_ID) {
+            (*ptr).anim.snap_end();
+            paint_d2d(hwnd);
+        }
+    }
+}
+
+fn begin_close(hwnd: HWND, value: bool) {
+    unsafe {
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+        if ptr.is_null() {
+            let _ = DestroyWindow(hwnd);
+            return;
+        }
+        if (*ptr).anim.is_hiding() && (*ptr).anim.is_running() {
+            return;
+        }
+        set_result(hwnd, value);
+        (*ptr).anim.dismiss();
+        paint_d2d(hwnd);
+        if !motion::arm_timer(hwnd, motion::TIMER_ID) {
+            let _ = DestroyWindow(hwnd);
+        }
+    }
+}
+
+unsafe fn tick_preview(hwnd: HWND) {
+    let _frame = motion::frame_guard(hwnd);
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+    if ptr.is_null() {
+        return;
+    }
+    let tick = (*ptr).anim.tick();
+    if tick.hide {
+        motion::kill_timer(hwnd, motion::TIMER_ID);
+        let _ = DestroyWindow(hwnd);
+        return;
+    }
+    paint_d2d(hwnd);
+    if !tick.running {
+        motion::kill_timer(hwnd, motion::TIMER_ID);
     }
 }
 
@@ -140,12 +193,18 @@ fn paint_preview_button(
     rect: DipRect,
     label: &str,
     cancel: bool,
+    appearance: u8,
 ) -> windows::core::Result<()> {
-    fill_squircle(target, rect, rect.h / 2.0, text::control_surface(0))?;
+    fill_squircle(
+        target,
+        rect,
+        rect.h / 2.0,
+        text::control_surface(appearance),
+    )?;
     let ink = if cancel {
-        text::secondary_ink(0)
+        text::secondary_ink(appearance)
     } else {
-        text::primary_ink(0)
+        text::primary_ink(appearance)
     };
     text::draw(target, &fonts.bar, label, rect, ink)
 }
@@ -177,6 +236,7 @@ fn create(title: &str, camera_ok: bool, lang: UiLang) -> windows::core::Result<H
             cancel: empty_rect(),
             result: false,
             painter,
+            anim: OverlayAnim::default(),
         });
         let ptr = Box::into_raw(inner);
         let hwnd = match CreateWindowExW(
@@ -237,6 +297,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_ERASEBKGND => LRESULT(1),
+        WM_TIMER => {
+            if wparam.0 == motion::TIMER_ID {
+                tick_preview(hwnd);
+            }
+            LRESULT(0)
+        }
         WM_PAINT => {
             let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
             let hdc = windows::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut ps);
@@ -251,11 +317,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
             if !ptr.is_null() {
                 if contains((*ptr).join, x, y) {
-                    set_result(hwnd, true);
-                    let _ = DestroyWindow(hwnd);
+                    begin_close(hwnd, true);
                 } else if contains((*ptr).cancel, x, y) {
-                    set_result(hwnd, false);
-                    let _ = DestroyWindow(hwnd);
+                    begin_close(hwnd, false);
                 }
             }
             LRESULT(0)
@@ -263,20 +327,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_KEYDOWN => {
             let vk = wparam.0 as u16;
             if vk == 0x1B {
-                set_result(hwnd, false);
-                let _ = DestroyWindow(hwnd);
+                begin_close(hwnd, false);
             } else if vk == 0x0D {
-                set_result(hwnd, true);
-                let _ = DestroyWindow(hwnd);
+                begin_close(hwnd, true);
             }
             LRESULT(0)
         }
         WM_CLOSE => {
-            set_result(hwnd, false);
-            let _ = DestroyWindow(hwnd);
+            begin_close(hwnd, false);
             LRESULT(0)
         }
-        WM_DESTROY => LRESULT(0),
+        WM_DESTROY => {
+            motion::kill_timer(hwnd, motion::TIMER_ID);
+            LRESULT(0)
+        }
         WM_NCDESTROY => {
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -311,9 +375,11 @@ fn paint_d2d(hwnd: HWND) {
         let cancel_label = chrome(Chrome::Cancel, lang);
         let mut join = empty_rect();
         let mut cancel = empty_rect();
-        let _ = inner.painter.paint(hwnd, |target, fonts| {
+        let visual = inner.anim.visual();
+        let appearance = crate::design_system::appearance::resolved();
+        let _ = inner.painter.paint_visual(hwnd, visual, |target, fonts| {
             let (width, height) = theme::size::CAMERA_PREVIEW;
-            paint_scrim(target, width, height, theme::radius::DIALOG, 0)?;
+            paint_scrim(target, width, height, theme::radius::DIALOG, appearance)?;
             let pad = theme::spacing::XXL;
             let btn_h = theme::size::MENU_BUTTON;
             text::draw(
@@ -326,7 +392,7 @@ fn paint_d2d(hwnd: HWND) {
                     w: width - pad * 2.0,
                     h: 22.0,
                 },
-                text::primary_ink(0),
+                text::primary_ink(appearance),
             )?;
             text::draw(
                 target,
@@ -338,7 +404,7 @@ fn paint_d2d(hwnd: HWND) {
                     w: width - pad * 2.0,
                     h: 40.0,
                 },
-                text::secondary_ink(0),
+                text::secondary_ink(appearance),
             )?;
             let join_w = button_width(fonts, join_label);
             let cancel_w = button_width(fonts, cancel_label);
@@ -355,8 +421,8 @@ fn paint_d2d(hwnd: HWND) {
                 w: cancel_w,
                 h: btn_h,
             };
-            paint_preview_button(target, fonts, cancel, cancel_label, true)?;
-            paint_preview_button(target, fonts, join, join_label, false)?;
+            paint_preview_button(target, fonts, cancel, cancel_label, true, appearance)?;
+            paint_preview_button(target, fonts, join, join_label, false, appearance)?;
             Ok(())
         });
         inner.join = join;

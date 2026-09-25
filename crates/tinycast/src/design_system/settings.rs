@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::Instant;
+
+use tinycast_pure::motion::{lerp, spring_unit};
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -322,9 +327,10 @@ pub fn paint_settings_row(
     }
     match trailing {
         RowTrailing::Toggle(on) => {
-            paint_toggle(
+            paint_animated_toggle(
                 target,
                 toggle_rect(width, y, pad_x),
+                &format!("{title}\u{1f}{subtitle}"),
                 on,
                 enabled,
                 appearance,
@@ -485,19 +491,103 @@ pub fn paint_toggle(
     enabled: bool,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let fill = if on {
-        D2D1_COLOR_F {
-            r: ACCENT.0,
-            g: ACCENT.1,
-            b: ACCENT.2,
-            a: if enabled { ACCENT.3 } else { 0.45 },
+    paint_toggle_knob(
+        target,
+        rect,
+        if on { 1.0 } else { 0.0 },
+        enabled,
+        appearance,
+    )
+}
+
+pub fn paint_animated_toggle(
+    target: &ID2D1RenderTarget,
+    rect: DipRect,
+    id: &str,
+    on: bool,
+    enabled: bool,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    paint_toggle_knob(target, rect, sample_knob(id, on), enabled, appearance)
+}
+
+pub fn knobs_settling() -> bool {
+    knob_bank()
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .values()
+        .any(|knob| knob.active)
+}
+
+struct Knob {
+    shown: f32,
+    from: f32,
+    to: f32,
+    start: Instant,
+    active: bool,
+}
+
+fn knob_bank() -> &'static Mutex<HashMap<String, Knob>> {
+    static BANK: std::sync::OnceLock<Mutex<HashMap<String, Knob>>> = std::sync::OnceLock::new();
+    BANK.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn sample_knob(id: &str, on: bool) -> f32 {
+    let to = if on { 1.0 } else { 0.0 };
+    let mut bank = knob_bank().lock().unwrap_or_else(|err| err.into_inner());
+    let knob = bank.entry(id.to_string()).or_insert(Knob {
+        shown: to,
+        from: to,
+        to,
+        start: Instant::now(),
+        active: false,
+    });
+    if (knob.to - to).abs() > 0.001 {
+        knob.from = knob.shown;
+        knob.to = to;
+        knob.start = Instant::now();
+        knob.active = true;
+    }
+    if knob.active {
+        let t = knob.start.elapsed().as_secs_f32();
+        let eased = spring_unit(
+            t,
+            theme::duration::TOGGLE_SPRING_RESPONSE,
+            theme::duration::TOGGLE_SPRING_DAMPING,
+        );
+        knob.shown = lerp(knob.from, knob.to, eased.clamp(0.0, 1.0));
+        if eased > 0.995 || t > 0.8 {
+            knob.shown = knob.to;
+            knob.active = false;
         }
-    } else {
-        appearance::color(theme::colors::ramp_rgba(
-            appearance,
-            if enabled { 0.22 } else { 0.10 },
-            if enabled { 0.32 } else { 0.14 },
-        ))
+    }
+    knob.shown
+}
+
+fn paint_toggle_knob(
+    target: &ID2D1RenderTarget,
+    rect: DipRect,
+    knob: f32,
+    enabled: bool,
+    appearance: u8,
+) -> windows::core::Result<()> {
+    let knob = knob.clamp(0.0, 1.0);
+    let off = appearance::color(theme::colors::ramp_rgba(
+        appearance,
+        if enabled { 0.22 } else { 0.10 },
+        if enabled { 0.32 } else { 0.14 },
+    ));
+    let on = D2D1_COLOR_F {
+        r: ACCENT.0,
+        g: ACCENT.1,
+        b: ACCENT.2,
+        a: if enabled { ACCENT.3 } else { 0.45 },
+    };
+    let fill = D2D1_COLOR_F {
+        r: lerp(off.r, on.r, knob),
+        g: lerp(off.g, on.g, knob),
+        b: lerp(off.b, on.b, knob),
+        a: lerp(off.a, on.a, knob),
     };
     let brush = unsafe { target.CreateSolidColorBrush(&fill, None)? };
     let rounded = D2D1_ROUNDED_RECT {
@@ -513,7 +603,7 @@ pub fn paint_toggle(
     unsafe {
         target.FillRoundedRectangle(&rounded, &brush);
     }
-    if !on {
+    if knob < 0.98 {
         let stroke = theme::colors::ramp_rgba(
             appearance,
             theme::colors::BORDER_DARK_ALPHA,
@@ -527,11 +617,7 @@ pub fn paint_toggle(
     }
     let pad = 2.0;
     let kn = rect.h - pad * 2.0;
-    let kx = if on {
-        rect.x + rect.w - pad - kn
-    } else {
-        rect.x + pad
-    };
+    let kx = lerp(rect.x + pad, rect.x + rect.w - pad - kn, knob);
     let knob_rect = D2D1_ROUNDED_RECT {
         rect: D2D_RECT_F {
             left: kx,

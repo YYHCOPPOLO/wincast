@@ -1,13 +1,11 @@
 use tinycast_pure::theme;
 use windows::core::w;
-use windows::Win32::Foundation::{
-    COLORREF, D2DERR_RECREATE_TARGET, HANDLE, HWND, POINT, RECT, SIZE,
-};
+use windows::Win32::Foundation::{D2DERR_RECREATE_TARGET, HWND, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_U,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1RenderTarget,
+    D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1RenderTarget,
     D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
     D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
     D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_ROUNDED_RECT,
@@ -20,17 +18,13 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_WORD_WRAPPING_NO_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
-use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, AC_SRC_ALPHA,
-    AC_SRC_OVER, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS, HDC,
-};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetWindowLongPtrW, SetWindowLongPtrW, UpdateLayeredWindow, GWL_EXSTYLE,
-    ULW_ALPHA, WS_EX_LAYERED,
+    GetClientRect, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_LAYERED,
 };
 
 use super::menu::{self, FooterPaint, MenuPaint};
+use crate::design_system::motion::{identity_transform, scale_about_center};
 use crate::features::launcher::ui::list::{self, IconCache, ListFonts, PaintItem};
 
 pub struct Renderer {
@@ -39,6 +33,7 @@ pub struct Renderer {
     text_format: IDWriteTextFormat,
     list_fonts: ListFonts,
     hwnd_target: Option<ID2D1HwndRenderTarget>,
+    layered_surface: Option<crate::design_system::host::LayeredSurface>,
     layered: bool,
     locale: String,
 }
@@ -57,6 +52,12 @@ pub struct PaintParams<'a> {
     pub appearance: u8,
     pub footer: FooterPaint<'a>,
     pub menu: Option<MenuPaint<'a>>,
+    pub menu_opacity: f32,
+    pub menu_scale: f32,
+    pub scroll_opacity: f32,
+    pub scroll_width: f32,
+    pub scroll_content: f32,
+    pub scroll_view: f32,
     pub clipboard_preview: Option<&'a str>,
     pub tab_hint: Option<&'a str>,
     pub clipboard_filter: Option<FilterButtonPaint>,
@@ -91,6 +92,7 @@ impl Renderer {
             text_format,
             list_fonts,
             hwnd_target: None,
+            layered_surface: None,
             layered: false,
             locale: "zh-CN".into(),
         })
@@ -133,6 +135,7 @@ impl Renderer {
 
     pub fn discard_target(&mut self) {
         self.hwnd_target = None;
+        self.layered_surface = None;
     }
 
     pub fn resize(&mut self, hwnd: HWND, width: u32, height: u32) {
@@ -156,9 +159,9 @@ impl Renderer {
         }
     }
 
-    pub fn paint(&mut self, hwnd: HWND, params: PaintParams<'_>, source_alpha: u8) {
+    pub fn paint(&mut self, hwnd: HWND, params: PaintParams<'_>, source_alpha: u8, scale: f32) {
         if self.layered {
-            let _ = self.paint_layered(hwnd, params, source_alpha);
+            let _ = self.paint_layered(hwnd, params, source_alpha, scale);
             return;
         }
         if self.hwnd_target.is_none() {
@@ -166,7 +169,7 @@ impl Renderer {
             self.resize(hwnd, w, h);
         }
         let Some(target) = &self.hwnd_target else {
-            let _ = self.paint_layered(hwnd, params, source_alpha);
+            let _ = self.paint_layered(hwnd, params, source_alpha, scale);
             return;
         };
         if let Err(err) = paint_scene(
@@ -176,6 +179,7 @@ impl Renderer {
             &self.list_fonts,
             params,
             dpi_of(hwnd),
+            scale,
         ) {
             if err.code() == D2DERR_RECREATE_TARGET {
                 self.hwnd_target = None;
@@ -188,6 +192,7 @@ impl Renderer {
         hwnd: HWND,
         params: PaintParams<'_>,
         source_alpha: u8,
+        scale: f32,
     ) -> windows::core::Result<()> {
         if !self.layered {
             self.set_layered(hwnd, true);
@@ -197,77 +202,21 @@ impl Renderer {
             return Ok(());
         }
         let dpi = dpi_of(hwnd);
-        unsafe {
-            let mem_dc = CreateCompatibleDC(HDC::default());
-            if mem_dc.is_invalid() {
-                return Err(windows::core::Error::from_win32());
-            }
-            let mut bits = std::ptr::null_mut();
-            let mut bmi: BITMAPINFO = std::mem::zeroed();
-            bmi.bmiHeader = BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width as i32,
-                biHeight: -(height as i32),
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0 as u32,
-                ..Default::default()
-            };
-            let dib = CreateDIBSection(
-                mem_dc,
-                &bmi,
-                DIB_RGB_COLORS,
-                &mut bits,
-                HANDLE::default(),
-                0,
-            )?;
-            let prev = SelectObject(mem_dc, dib);
-            let result = (|| {
-                let target: ID2D1DCRenderTarget =
-                    self.factory.CreateDCRenderTarget(&target_properties(dpi))?;
-                let bind = RECT {
-                    left: 0,
-                    top: 0,
-                    right: width as i32,
-                    bottom: height as i32,
-                };
-                target.BindDC(mem_dc, &bind)?;
-                paint_scene(
-                    &target,
-                    &self.dwrite,
-                    &self.text_format,
-                    &self.list_fonts,
-                    params,
-                    dpi,
-                )?;
-                let src = POINT { x: 0, y: 0 };
-                let size = SIZE {
-                    cx: width as i32,
-                    cy: height as i32,
-                };
-                let blend = BLENDFUNCTION {
-                    BlendOp: AC_SRC_OVER as u8,
-                    BlendFlags: 0,
-                    SourceConstantAlpha: source_alpha,
-                    AlphaFormat: AC_SRC_ALPHA as u8,
-                };
-                UpdateLayeredWindow(
-                    hwnd,
-                    HDC::default(),
-                    None,
-                    Some(&size),
-                    mem_dc,
-                    Some(&src),
-                    COLORREF(0),
-                    Some(&blend),
-                    ULW_ALPHA,
-                )
-            })();
-            SelectObject(mem_dc, prev);
-            let _ = DeleteObject(dib);
-            let _ = DeleteDC(mem_dc);
-            result
-        }
+        let Renderer {
+            factory,
+            dwrite,
+            text_format,
+            list_fonts,
+            layered_surface,
+            ..
+        } = self;
+        crate::design_system::host::present_layered(
+            layered_surface,
+            factory,
+            hwnd,
+            source_alpha,
+            |target| paint_scene(target, dwrite, text_format, list_fonts, params, dpi, scale),
+        )
     }
 }
 
@@ -439,6 +388,7 @@ fn paint_scene(
     list_fonts: &ListFonts,
     params: PaintParams<'_>,
     dpi: f32,
+    scale: f32,
 ) -> windows::core::Result<()> {
     unsafe {
         target.BeginDraw();
@@ -449,8 +399,17 @@ fn paint_scene(
             a: 0.0,
         };
         target.Clear(Some(&clear));
-        paint_layers(target, dwrite, text_format, list_fonts, params, dpi)?;
-        target.EndDraw(None, None)
+        let scaled = (scale - 1.0).abs() > 0.0005;
+        if scaled {
+            let size = target.GetSize();
+            target.SetTransform(&scale_about_center(scale, size.width, size.height));
+        }
+        let result = paint_layers(target, dwrite, text_format, list_fonts, params, dpi);
+        if scaled {
+            target.SetTransform(&identity_transform());
+        }
+        target.EndDraw(None, None)?;
+        result
     }
 }
 
@@ -571,8 +530,31 @@ fn paint_layers(
             size.height,
             &params.footer,
         );
+        if params.scroll_opacity > 0.01 && params.scroll_view > 8.0 {
+            let track_y = tinycast_pure::layout::list::content_top() + 3.0;
+            let track_h = (params.scroll_view - 6.0).max(0.0);
+            let _ = crate::design_system::scrollbar::paint(
+                target,
+                size.width,
+                track_y,
+                track_h,
+                params.scroll,
+                params.scroll_content,
+                params.scroll_view,
+                params.scroll_width,
+                params.scroll_opacity,
+                params.appearance,
+            );
+        }
         if let Some(open) = &params.menu {
-            let _ = menu::paint_menu(target, dwrite, list_fonts, size.width, size.height, open);
+            let (ax, ay) = super::chrome::menu_anchor(open.kind, size.width, size.height);
+            let local = crate::design_system::motion::scale_about(params.menu_scale, ax, ay);
+            let _ = crate::design_system::motion::paint_in_layer(
+                target,
+                params.menu_opacity,
+                local,
+                || menu::paint_menu(target, dwrite, list_fonts, size.width, size.height, open),
+            );
         }
         Ok(())
     }
@@ -977,6 +959,12 @@ mod tests {
                         appearance: 0,
                     },
                     menu: None,
+                    menu_opacity: 0.0,
+                    menu_scale: 1.0,
+                    scroll_opacity: 0.0,
+                    scroll_width: 6.0,
+                    scroll_content: 0.0,
+                    scroll_view: 0.0,
                     clipboard_preview: None,
                     tab_hint: None,
                     clipboard_filter: None,
@@ -1086,6 +1074,12 @@ mod tests {
                         appearance: 0,
                     },
                     menu: None,
+                    menu_opacity: 0.0,
+                    menu_scale: 1.0,
+                    scroll_opacity: 0.0,
+                    scroll_width: 6.0,
+                    scroll_content: 0.0,
+                    scroll_view: 0.0,
                     clipboard_preview: None,
                     tab_hint: None,
                     clipboard_filter: None,

@@ -858,7 +858,13 @@ pub fn paint_launcher_items(
         ),
         launcher_enable_subtitle(formats.lang),
     )?;
-    paint_toggle(target, shifted(layout.toggle, scroll), kind_on, appearance)?;
+    paint_toggle(
+        target,
+        shifted(layout.toggle, scroll),
+        "launcher-enable",
+        kind_on,
+        appearance,
+    )?;
     fill_card(
         target,
         &card_brush,
@@ -1154,10 +1160,11 @@ fn fill_card(
 fn paint_toggle(
     target: &ID2D1RenderTarget,
     rect: Rect,
+    id: &str,
     on: bool,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    crate::design_system::settings::paint_toggle(
+    crate::design_system::settings::paint_animated_toggle(
         target,
         tinycast_pure::palette_placement::DipRect {
             x: rect.x,
@@ -1165,6 +1172,7 @@ fn paint_toggle(
             w: rect.w,
             h: rect.h,
         },
+        id,
         on,
         true,
         appearance,
@@ -1537,7 +1545,7 @@ mod tests {
             .split("fn paint_checkbox")
             .next()
             .unwrap();
-        assert!(toggle.contains("settings::paint_toggle"));
+        assert!(toggle.contains("settings::paint_animated_toggle"));
         let check = src
             .split("fn paint_checkbox")
             .nth(1)

@@ -16,11 +16,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowLongPtrW, SetWindowPos, ShowWindow, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA,
     HWND_TOPMOST, IDC_ARROW, MSG, PM_REMOVE, SWP_NOACTIVATE, SW_SHOW, WM_ACTIVATE, WM_CLOSE,
     WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WM_NCDESTROY, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_POPUP,
 };
 
 use crate::design_system::dialog::{self as ds, DialogContent, DialogHits};
 use crate::design_system::host::OverlayPainter;
+use crate::design_system::motion::{self, OverlayAnim};
 use crate::platform::screens::dip_scalar_to_px;
 
 const CLASS: windows::core::PCWSTR = w!("TinycastDialog");
@@ -110,6 +112,7 @@ fn run_volume(prompt: &ConfirmPrompt, current: f32) -> bool {
 
 fn pump(hwnd: HWND) -> bool {
     unsafe {
+        start_enter(hwnd);
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
         let _ = SetFocus(hwnd);
@@ -123,13 +126,11 @@ fn pump(hwnd: HWND) -> bool {
             if msg.message == WM_KEYDOWN {
                 let vk = msg.wParam.0 as u16;
                 if vk == 0x1B {
-                    set_result(hwnd, false);
-                    let _ = DestroyWindow(hwnd);
+                    begin_close(hwnd, false);
                     continue;
                 }
                 if vk == 0x0D {
-                    set_result(hwnd, true);
-                    let _ = DestroyWindow(hwnd);
+                    begin_close(hwnd, true);
                     continue;
                 }
                 if vk == 0x25 || vk == 0x27 {
@@ -162,6 +163,7 @@ struct Inner {
     volume: Option<f32>,
     dragging: bool,
     painter: OverlayPainter,
+    anim: OverlayAnim,
 }
 
 fn create_window(
@@ -206,6 +208,7 @@ fn create_window(
             volume,
             dragging: false,
             painter,
+            anim: OverlayAnim::default(),
         });
         let ptr = Box::into_raw(inner);
         let hwnd = match CreateWindowExW(
@@ -345,6 +348,58 @@ fn arm(hwnd: HWND) {
     }
 }
 
+fn start_enter(hwnd: HWND) {
+    unsafe {
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+        if ptr.is_null() {
+            return;
+        }
+        (*ptr).anim.present(false);
+        paint_d2d(hwnd);
+        if !motion::arm_timer(hwnd, motion::TIMER_ID) {
+            (*ptr).anim.snap_end();
+            paint_d2d(hwnd);
+        }
+    }
+}
+
+fn begin_close(hwnd: HWND, value: bool) {
+    unsafe {
+        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+        if ptr.is_null() {
+            let _ = DestroyWindow(hwnd);
+            return;
+        }
+        if (*ptr).anim.is_hiding() && (*ptr).anim.is_running() {
+            return;
+        }
+        set_result(hwnd, value);
+        (*ptr).anim.dismiss();
+        paint_d2d(hwnd);
+        if !motion::arm_timer(hwnd, motion::TIMER_ID) {
+            let _ = DestroyWindow(hwnd);
+        }
+    }
+}
+
+unsafe fn tick_dialog(hwnd: HWND) {
+    let _frame = motion::frame_guard(hwnd);
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
+    if ptr.is_null() {
+        return;
+    }
+    let tick = (*ptr).anim.tick();
+    if tick.hide {
+        motion::kill_timer(hwnd, motion::TIMER_ID);
+        let _ = DestroyWindow(hwnd);
+        return;
+    }
+    paint_d2d(hwnd);
+    if !tick.running {
+        motion::kill_timer(hwnd, motion::TIMER_ID);
+    }
+}
+
 fn client_dip(hwnd: HWND, lparam: LPARAM) -> (f32, f32) {
     let dpi = unsafe { GetDpiForWindow(hwnd) };
     let dpi = if dpi == 0 { 96.0 } else { dpi as f32 };
@@ -363,6 +418,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_ERASEBKGND => LRESULT(1),
+        WM_TIMER => {
+            if wparam.0 == motion::TIMER_ID {
+                tick_dialog(hwnd);
+            }
+            LRESULT(0)
+        }
         WM_PAINT => {
             let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
             let hdc = windows::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut ps);
@@ -394,8 +455,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if (wparam.0 as u16) == 0 {
                 let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
                 if !ptr.is_null() && (*ptr).armed && !(*ptr).chosen {
-                    set_result(hwnd, false);
-                    let _ = DestroyWindow(hwnd);
+                    begin_close(hwnd, false);
                 }
             }
             LRESULT(0)
@@ -403,22 +463,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_KEYDOWN => {
             let vk = wparam.0 as u16;
             if vk == 0x1B {
-                set_result(hwnd, false);
-                let _ = DestroyWindow(hwnd);
+                begin_close(hwnd, false);
             } else if vk == 0x0D {
-                set_result(hwnd, true);
-                let _ = DestroyWindow(hwnd);
+                begin_close(hwnd, true);
             } else if vk == 0x25 || vk == 0x27 {
                 nudge_volume(hwnd, vk == 0x27);
             }
             LRESULT(0)
         }
         WM_CLOSE => {
-            set_result(hwnd, false);
-            let _ = DestroyWindow(hwnd);
+            begin_close(hwnd, false);
             LRESULT(0)
         }
-        WM_DESTROY => LRESULT(0),
+        WM_DESTROY => {
+            motion::kill_timer(hwnd, motion::TIMER_ID);
+            LRESULT(0)
+        }
         WM_NCDESTROY => {
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -455,7 +515,8 @@ fn paint_d2d(hwnd: HWND) {
         let volume = inner.volume;
         let content = content_of(&prompt, has_cancel, volume);
         let mut hits: Option<DialogHits> = None;
-        let _ = inner.painter.paint(hwnd, |target, fonts| {
+        let visual = inner.anim.visual();
+        let _ = inner.painter.paint_visual(hwnd, visual, |target, fonts| {
             hits = Some(ds::paint(target, fonts, &content)?);
             Ok(())
         });
@@ -476,14 +537,12 @@ fn hit(hwnd: HWND, lparam: LPARAM) {
         }
         let inner = &*ptr;
         if ds::contains(inner.continue_rect, x, y) {
-            set_result(hwnd, true);
-            let _ = DestroyWindow(hwnd);
+            begin_close(hwnd, true);
             return;
         }
         if let Some(cancel) = inner.cancel_rect {
             if ds::contains(cancel, x, y) {
-                set_result(hwnd, false);
-                let _ = DestroyWindow(hwnd);
+                begin_close(hwnd, false);
                 return;
             }
         }

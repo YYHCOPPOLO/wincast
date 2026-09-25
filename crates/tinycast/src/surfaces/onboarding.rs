@@ -17,12 +17,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     LoadCursorW, RegisterClassW, SetWindowLongPtrW, ShowWindow, CREATESTRUCTW, CS_HREDRAW,
     CS_VREDRAW, GWLP_USERDATA, GWLP_WNDPROC, IDC_ARROW, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE,
     WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_KEYUP, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_CAPTION, WS_CHILD,
-    WS_OVERLAPPED, WS_SYSMENU,
+    WM_KEYUP, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_TIMER, WNDCLASSW, WS_CAPTION,
+    WS_CHILD, WS_OVERLAPPED, WS_SYSMENU,
 };
 
 use crate::app_core::AppCore;
 use crate::design_system::host::OverlayPainter;
+use crate::design_system::motion::{self, identity_transform};
 use crate::design_system::panel::paint_sheen;
 use crate::design_system::squircle::fill_squircle;
 use crate::design_system::text;
@@ -43,6 +44,7 @@ const ID_RECORD: usize = 2;
 pub const WINDOW: (f32, f32) = (520.0, 400.0);
 
 const STEP_COUNT: usize = 4;
+const STEP_ANIM: usize = 9;
 
 pub struct OnboardingWindow {
     pub hwnd: HWND,
@@ -54,6 +56,7 @@ struct Inner {
     record_btn: HWND,
     record_prev: Option<windows::Win32::UI::WindowsAndMessaging::WNDPROC>,
     step: usize,
+    content: tinycast_pure::motion::Reveal,
     painter: Option<OverlayPainter>,
     continue_rect: DipRect,
     record_rect: DipRect,
@@ -167,6 +170,12 @@ fn current_modifiers() -> Modifiers {
     }
 }
 
+fn subtitle_bottom() -> f32 {
+    let pad = theme::spacing::XXL;
+    let hero = 60.0;
+    pad + hero + 36.0 + 48.0
+}
+
 fn step_rects(width: f32, height: f32, step: usize) -> (DipRect, DipRect) {
     let pad = theme::spacing::XXL;
     let btn_h = theme::size::MENU_BUTTON;
@@ -179,10 +188,11 @@ fn step_rects(width: f32, height: f32, step: usize) -> (DipRect, DipRect) {
     let record_rect = if step == 0 {
         let well_w = theme::size::SHORTCUT_RECORDER;
         let well_h = 28.0;
-        let dots_y = continue_rect.y - 18.0;
+        let preferred = subtitle_bottom() + theme::spacing::LG;
+        let max_y = (continue_rect.y - theme::spacing::LG - well_h).max(pad);
         DipRect {
             x: (width - well_w) / 2.0,
-            y: (dots_y - theme::spacing::LG - well_h).max(pad),
+            y: preferred.min(max_y),
             w: well_w,
             h: well_h,
         }
@@ -252,6 +262,13 @@ fn continue_clicked(hwnd: HWND) {
         };
         if (*inner).step + 1 < STEP_COUNT {
             (*inner).step += 1;
+            (*inner).content = tinycast_pure::motion::Reveal::at(0.0);
+            let _ = (*inner).content.go(
+                1.0,
+                tinycast_pure::theme::duration::ONBOARDING_SECS,
+                tinycast_pure::motion::Ease::InOut,
+            );
+            let _ = motion::arm_timer(hwnd, STEP_ANIM);
             let _ = windows::Win32::Graphics::Gdi::InvalidateRect(
                 hwnd,
                 None,
@@ -327,6 +344,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 record_btn,
                 record_prev: None,
                 step: 0,
+                content: tinycast_pure::motion::Reveal::at(1.0),
                 painter: OverlayPainter::new().ok(),
                 continue_rect: empty_rect(),
                 record_rect: empty_rect(),
@@ -357,6 +375,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_PAINT => {
             paint(hwnd);
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            if wparam.0 == STEP_ANIM {
+                let _frame = motion::frame_guard(hwnd);
+                if let Some(inner) = inner_from(hwnd) {
+                    let _ = (*inner).content.sample_now();
+                    let _ = windows::Win32::Graphics::Gdi::InvalidateRect(
+                        hwnd,
+                        None,
+                        windows::Win32::Foundation::FALSE,
+                    );
+                    if !(*inner).content.is_running() {
+                        motion::kill_timer(hwnd, STEP_ANIM);
+                    }
+                }
+            }
             LRESULT(0)
         }
         WM_LBUTTONDOWN => {
@@ -463,115 +498,122 @@ fn paint(hwnd: HWND) {
                     theme::colors::scrim_rgba(appearance),
                 )?;
                 paint_sheen(target, size.width, size.height, appearance)?;
-                let pad = theme::spacing::XXL;
-                let hero = 60.0;
-                let hero_rect = DipRect {
-                    x: (size.width - hero) / 2.0,
-                    y: pad,
-                    w: hero,
-                    h: hero,
-                };
-                fill_squircle(target, hero_rect, 16.0, text::control_surface(appearance))?;
-                let glyph = match step {
-                    1 => "lock.shield",
-                    2 => "wand.and.sparkles",
-                    3 => "checkmark",
-                    _ => "magnifyingglass",
-                };
-                crate::design_system::symbols::paint_fluent_in(
-                    target,
-                    &fonts.dwrite,
-                    glyph,
-                    DipRect {
-                        x: hero_rect.x + 14.0,
-                        y: hero_rect.y + 14.0,
-                        w: 32.0,
-                        h: 32.0,
-                    },
-                    text::primary_ink(appearance),
-                )?;
-                text::draw(
-                    target,
-                    &fonts.headline_center,
-                    tinycast_pure::i18n::onboarding_title(step, lang),
-                    DipRect {
-                        x: pad,
-                        y: pad + hero + theme::spacing::MD,
-                        w: size.width - pad * 2.0,
-                        h: 24.0,
-                    },
-                    text::primary_ink(appearance),
-                )?;
-                text::draw(
-                    target,
-                    &fonts.wrap_callout,
-                    tinycast_pure::i18n::onboarding_subtitle(step, lang),
-                    DipRect {
-                        x: pad,
-                        y: pad + hero + 36.0,
-                        w: size.width - pad * 2.0,
-                        h: 48.0,
-                    },
-                    text::secondary_ink(appearance),
-                )?;
-                let (laid_record, laid_continue) = step_rects(size.width, size.height, step);
-                record_rect = laid_record;
-                continue_rect = laid_continue;
-                if step == 0 {
+                let fade = (*inner).content.sample_now();
+                if (*inner).content.is_running() {
+                    let _ = motion::arm_timer(hwnd, STEP_ANIM);
+                }
+                motion::paint_in_layer(target, fade, identity_transform(), || {
+                    let pad = theme::spacing::XXL;
+                    let hero = 60.0;
+                    let hero_rect = DipRect {
+                        x: (size.width - hero) / 2.0,
+                        y: pad,
+                        w: hero,
+                        h: hero,
+                    };
+                    fill_squircle(target, hero_rect, 16.0, text::control_surface(appearance))?;
+                    let glyph = match step {
+                        1 => "lock.shield",
+                        2 => "wand.and.sparkles",
+                        3 => "checkmark",
+                        _ => "magnifyingglass",
+                    };
+                    crate::design_system::symbols::paint_fluent_in(
+                        target,
+                        &fonts.dwrite,
+                        glyph,
+                        DipRect {
+                            x: hero_rect.x + 14.0,
+                            y: hero_rect.y + 14.0,
+                            w: 32.0,
+                            h: 32.0,
+                        },
+                        text::primary_ink(appearance),
+                    )?;
+                    text::draw(
+                        target,
+                        &fonts.headline_center,
+                        tinycast_pure::i18n::onboarding_title(step, lang),
+                        DipRect {
+                            x: pad,
+                            y: pad + hero + theme::spacing::MD,
+                            w: size.width - pad * 2.0,
+                            h: 24.0,
+                        },
+                        text::primary_ink(appearance),
+                    )?;
+                    text::draw(
+                        target,
+                        &fonts.wrap_callout,
+                        tinycast_pure::i18n::onboarding_subtitle(step, lang),
+                        DipRect {
+                            x: pad,
+                            y: pad + hero + 36.0,
+                            w: size.width - pad * 2.0,
+                            h: 48.0,
+                        },
+                        text::secondary_ink(appearance),
+                    )?;
+                    let (laid_record, laid_continue) = step_rects(size.width, size.height, step);
+                    record_rect = laid_record;
+                    continue_rect = laid_continue;
+                    if step == 0 {
+                        fill_squircle(
+                            target,
+                            record_rect,
+                            theme::radius::MENU,
+                            text::control_surface(appearance),
+                        )?;
+                        let caption = recorder::well_caption_lang(None, recording, lang);
+                        text::draw_button_label(
+                            target,
+                            fonts,
+                            &caption,
+                            record_rect,
+                            text::secondary_ink(appearance),
+                        )?;
+                    }
                     fill_squircle(
                         target,
-                        record_rect,
-                        theme::radius::MENU,
+                        continue_rect,
+                        continue_rect.h / 2.0,
                         text::control_surface(appearance),
                     )?;
-                    let caption = recorder::well_caption_lang(None, recording, lang);
+                    let label = if step + 1 == STEP_COUNT {
+                        tinycast_pure::i18n::onboarding_get_started(lang)
+                    } else {
+                        tinycast_pure::i18n::onboarding_continue(lang)
+                    };
                     text::draw_button_label(
                         target,
                         fonts,
-                        &caption,
-                        record_rect,
-                        text::secondary_ink(appearance),
+                        label,
+                        continue_rect,
+                        text::primary_ink(appearance),
                     )?;
-                }
-                fill_squircle(
-                    target,
-                    continue_rect,
-                    continue_rect.h / 2.0,
-                    text::control_surface(appearance),
-                )?;
-                let label = if step + 1 == STEP_COUNT {
-                    tinycast_pure::i18n::onboarding_get_started(lang)
-                } else {
-                    tinycast_pure::i18n::onboarding_continue(lang)
-                };
-                text::draw_button_label(
-                    target,
-                    fonts,
-                    label,
-                    continue_rect,
-                    text::primary_ink(appearance),
-                )?;
-                let mut dot_x = size.width / 2.0 - 18.0;
-                let dot_y = continue_rect.y - 18.0;
-                for i in 0..STEP_COUNT {
-                    let on = i == step;
-                    fill_squircle(
-                        target,
-                        DipRect {
-                            x: dot_x,
-                            y: dot_y,
-                            w: 7.0,
-                            h: 7.0,
-                        },
-                        3.5,
-                        if on {
-                            text::primary_ink(appearance)
-                        } else {
-                            text::tertiary_ink(appearance)
-                        },
-                    )?;
-                    dot_x += 12.0;
-                }
+                    let mut dot_x = size.width / 2.0 - 18.0;
+                    let dot_y = continue_rect.y - 18.0;
+                    for i in 0..STEP_COUNT {
+                        let on = i == step;
+                        fill_squircle(
+                            target,
+                            DipRect {
+                                x: dot_x,
+                                y: dot_y,
+                                w: 7.0,
+                                h: 7.0,
+                            },
+                            3.5,
+                            if on {
+                                text::primary_ink(appearance)
+                            } else {
+                                text::tertiary_ink(appearance)
+                            },
+                        )?;
+                        dot_x += 12.0;
+                    }
+                    Ok(())
+                })?;
                 Ok(())
             });
             (*inner).continue_rect = continue_rect;
@@ -642,6 +684,11 @@ mod tests {
         );
         let (record_full, cont_full) = step_rects(WINDOW.0, WINDOW.1, 0);
         assert!(record_full.y + record_full.h + 8.0 <= cont_full.y);
+        assert!(
+            record_full.y < subtitle_bottom() + 24.0,
+            "recorder should sit under the subtitle, not on the footer"
+        );
+        assert!(cont_full.y - (record_full.y + record_full.h) > 40.0);
     }
 
     #[test]

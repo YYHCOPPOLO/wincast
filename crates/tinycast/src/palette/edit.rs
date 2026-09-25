@@ -13,11 +13,12 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HideCaret, IsWindow,
-    SendMessageW, SetWindowPos, SetWindowTextW, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL,
-    ES_LEFT, GWLP_USERDATA, HWND_TOP, SWP_NOACTIVATE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR,
-    WM_ERASEBKGND, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
-    WM_KILLFOCUS, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT,
-    WM_SETFOCUS, WM_SETFONT, WS_CHILD, WS_VISIBLE,
+    SendMessageW, SetWindowPos, SetWindowTextW, ShowWindow, EC_LEFTMARGIN, EC_RIGHTMARGIN,
+    ES_AUTOHSCROLL, ES_LEFT, GWLP_USERDATA, HWND_TOP, SWP_NOACTIVATE, SW_HIDE, SW_SHOWNA,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR, WM_ERASEBKGND, WM_IME_COMPOSITION,
+    WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SETFOCUS, WM_SETFONT, WS_CHILD,
+    WS_VISIBLE,
 };
 
 use crate::app_core::AppCore;
@@ -119,6 +120,12 @@ impl SearchEdit {
     pub fn focus(&self) {
         unsafe {
             let _ = SetFocus(self.hwnd);
+        }
+    }
+
+    pub fn set_visible(&self, visible: bool) {
+        unsafe {
+            let _ = ShowWindow(self.hwnd, if visible { SW_SHOWNA } else { SW_HIDE });
         }
     }
 

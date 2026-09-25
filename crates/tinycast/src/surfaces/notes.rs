@@ -485,12 +485,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
             if let Some(inner) = inner_from(hwnd) {
-                let prev =
-                    SetWindowLongPtrW(
-                        (*inner).edit,
-                        GWLP_WNDPROC,
-                        edit_subclass as *const () as usize as isize,
-                    );
+                let prev = SetWindowLongPtrW(
+                    (*inner).edit,
+                    GWLP_WNDPROC,
+                    edit_subclass as *const () as usize as isize,
+                );
                 (*inner).edit_prev = Some(std::mem::transmute(prev));
                 let prev = SetWindowLongPtrW(
                     (*inner).switcher_edit,

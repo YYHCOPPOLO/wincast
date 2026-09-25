@@ -1,7 +1,6 @@
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
 use tinycast_pure::palette_state::should_draw_placeholder;
-use tinycast_pure::theme;
 use windows::core::w;
 use windows::Win32::Foundation::{FALSE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
 use windows::Win32::Graphics::Dwm::{
@@ -22,17 +21,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowLongPtrW, HideCaret, IsWindow, IsWindowVisible, KillTimer,
     LoadCursorW, PostMessageW, RegisterClassW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
     SetWindowPos, ShowCaret, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, EN_CHANGE, GA_ROOT,
-    GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MA_NOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE,
-    WA_INACTIVE, WM_ACTIVATE, WM_CHAR, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSW,
-    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MA_NOACTIVATE, SWP_NOACTIVATE, SWP_NOCOPYBITS,
+    SWP_NOZORDER, SW_HIDE, SW_SHOW, WA_INACTIVE, WM_ACTIVATE, WM_CHAR, WM_COMMAND, WM_CTLCOLOREDIT,
+    WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE,
+    WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
+use super::chrome::{MenuMotion, OwnedMenu};
 use super::d2d::{PaintParams, Renderer, LAYERED_SOURCE_CONSTANT_ALPHA};
 use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
+use crate::design_system::motion;
+use crate::design_system::scrollbar::ScrollChrome;
 use crate::features::launcher::ui::list::{client_point_to_dip, IconCache};
 use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
@@ -41,9 +43,8 @@ const CLASS: windows::core::PCWSTR = w!("TinycastPalette");
 const ANIM_TIMER_ID: usize = 1;
 const RESIGN_TIMER_ID: usize = 2;
 const CARET_TIMER_ID: usize = 3;
-const ANIM_TICK_MS: u32 = 16;
 const CARET_MS: u32 = 530;
-const ENTER_SCALE: f32 = 0.94;
+const SIZE_POS: windows::Win32::UI::WindowsAndMessaging::SET_WINDOW_POS_FLAGS = SWP_NOACTIVATE;
 
 pub struct PaletteWindow {
     pub hwnd: HWND,
@@ -54,21 +55,14 @@ struct PaletteInner {
     renderer: Renderer,
     edit: Option<SearchEdit>,
     rest_frame: physical::Rect,
-    anim: Option<PaletteAnim>,
+    applied_frame: physical::Rect,
     present_alpha: u8,
+    present_scale: f32,
+    edit_shown: bool,
+    suppress_size_paint: bool,
     icons: IconCache,
-}
-
-#[derive(Clone, Copy)]
-struct PaletteAnim {
-    kind: PaletteAnimKind,
-    start: std::time::Instant,
-}
-
-#[derive(Clone, Copy)]
-enum PaletteAnimKind {
-    Enter,
-    Exit,
+    menu: MenuMotion,
+    scroll_chrome: ScrollChrome,
 }
 
 impl PaletteWindow {
@@ -101,9 +95,19 @@ impl PaletteWindow {
                     w: 0,
                     h: 0,
                 },
-                anim: None,
+                applied_frame: physical::Rect {
+                    x: 0,
+                    y: 0,
+                    w: 0,
+                    h: 0,
+                },
                 present_alpha: LAYERED_SOURCE_CONSTANT_ALPHA,
+                present_scale: 1.0,
+                edit_shown: false,
+                suppress_size_paint: false,
                 icons: IconCache::new(),
+                menu: MenuMotion::default(),
+                scroll_chrome: ScrollChrome::default(),
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -148,33 +152,29 @@ impl PaletteWindow {
                 return;
             };
             (*inner).rest_frame = frame_px;
+            (*inner).present_alpha = LAYERED_SOURCE_CONSTANT_ALPHA;
+            (*inner).present_scale = 1.0;
             let dark = core_from_host((*inner).host)
                 .map(|c| (*c).appearance_key() == 0)
                 .unwrap_or(false);
             let _ = apply_dwm(self.hwnd, dark);
-            (*inner).anim = Some(PaletteAnim {
-                kind: PaletteAnimKind::Enter,
-                start: std::time::Instant::now(),
-            });
-            let (scale, alpha) = scale_alpha(PaletteAnimKind::Enter, 0.0);
-            (*inner).present_alpha = alpha;
-            let frame = scaled_rect(frame_px, scale);
             let _ = SetWindowPos(
                 self.hwnd,
                 HWND_TOPMOST,
-                frame.x,
-                frame.y,
-                frame.w,
-                frame.h,
-                SWP_SHOWWINDOW,
+                frame_px.x,
+                frame_px.y,
+                frame_px.w,
+                frame_px.h,
+                SIZE_POS | SWP_NOCOPYBITS,
             );
+            (*inner).applied_frame = frame_px;
+            let _ = ShowWindow(self.hwnd, SW_SHOW);
             let _ = SetForegroundWindow(self.hwnd);
+            let _ = KillTimer(self.hwnd, RESIGN_TIMER_ID);
             self.layout_search();
-            self.focus_search();
             let _ = SetTimer(self.hwnd, CARET_TIMER_ID, CARET_MS, None);
-            if SetTimer(self.hwnd, ANIM_TIMER_ID, ANIM_TICK_MS, None) == 0 {
-                finish_anim(self.hwnd, inner);
-            }
+            sync_search_edit(inner, true);
+            paint_palette(self.hwnd, inner);
         }
     }
 
@@ -242,38 +242,19 @@ impl PaletteWindow {
         }
     }
 
-    pub fn hide(&self) {
+    /// Hides immediately. The original `orderOut`s before it pops back to root,
+    /// so this returns true after `settle_hidden_palette` has run.
+    pub fn hide(&self) -> bool {
         unsafe {
             let Some(inner) = inner_from(self.hwnd) else {
                 let _ = ShowWindow(self.hwnd, SW_HIDE);
-                return;
+                return false;
             };
-            if let Some(PaletteAnim {
-                kind: PaletteAnimKind::Exit,
-                ..
-            }) = (*inner).anim
-            {
-                return;
+            if !IsWindowVisible(self.hwnd).as_bool() {
+                return false;
             }
-            if !IsWindowVisible(self.hwnd).as_bool() && (*inner).anim.is_none() {
-                return;
-            }
-            if (*inner).rest_frame.w <= 0 || (*inner).rest_frame.h <= 0 {
-                (*inner).anim = None;
-                (*inner).present_alpha = LAYERED_SOURCE_CONSTANT_ALPHA;
-                (*inner).icons.drop_all();
-                let _ = ShowWindow(self.hwnd, SW_HIDE);
-                return;
-            }
-            (*inner).anim = Some(PaletteAnim {
-                kind: PaletteAnimKind::Exit,
-                start: std::time::Instant::now(),
-            });
-            if SetTimer(self.hwnd, ANIM_TIMER_ID, ANIM_TICK_MS, None) == 0 {
-                finish_anim(self.hwnd, inner);
-            } else {
-                apply_anim_frame(self.hwnd, inner);
-            }
+            snap_hide(self.hwnd, inner);
+            true
         }
     }
 
@@ -291,22 +272,12 @@ impl PaletteWindow {
                 w: dip_scalar_to_px(w_dip, dpi),
                 h: dip_scalar_to_px(h_dip, dpi),
             };
-            if let Some(inner) = inner_from(self.hwnd) {
-                (*inner).rest_frame = rest;
-                if (*inner).anim.is_some() {
-                    apply_anim_frame(self.hwnd, inner);
-                    return;
-                }
-            }
-            let _ = SetWindowPos(
-                self.hwnd,
-                HWND_TOPMOST,
-                rest.x,
-                rest.y,
-                rest.w,
-                rest.h,
-                SWP_NOACTIVATE,
-            );
+            let Some(inner) = inner_from(self.hwnd) else {
+                return;
+            };
+            (*inner).rest_frame = rest;
+            place_rest(self.hwnd, rest);
+            (*inner).applied_frame = rest;
             let _ = InvalidateRect(self.hwnd, None, FALSE);
         }
     }
@@ -400,6 +371,12 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
                 appearance: 0,
             },
             menu: None,
+            menu_opacity: 0.0,
+            menu_scale: 1.0,
+            scroll_opacity: 0.0,
+            scroll_width: 6.0,
+            scroll_content: 0.0,
+            scroll_view: 0.0,
             clipboard_preview: None,
             tab_hint: None,
             clipboard_filter: None,
@@ -407,7 +384,9 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
             empty_results: None,
             chat: None,
         };
-        inner.renderer.paint(hwnd, params, inner.present_alpha);
+        inner
+            .renderer
+            .paint(hwnd, params, inner.present_alpha, inner.present_scale);
         return;
     };
     let placeholder = should_draw_placeholder(&(*core).palette);
@@ -416,7 +395,10 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
     let scroll = (*core).list_scroll();
     let appearance = (*core).appearance_key();
     let footer = (*core).footer_paint();
-    let menu = (*core).menu_paint();
+    let live_menu = (*core).menu_paint().map(|menu| OwnedMenu::capture(&menu));
+    let dpi = GetDpiForWindow(hwnd);
+    let (_, panel_h) = client_dip_size(hwnd, dpi);
+    let (scroll_pos, scroll_content, scroll_view) = (*core).scroll_metrics(panel_h);
     let preview = (*core).clipboard_preview();
     let tab_hint = (*core).tab_hint();
     let filter = (*core).clipboard_filter_paint();
@@ -461,6 +443,28 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         .map(|edit| unsafe { GetFocus() } == edit.hwnd)
         .unwrap_or(false);
     let caret_visible = focused && !(*core).menu_is_open() && caret_blink_on();
+    let now = std::time::Instant::now();
+    let scrollable = scroll_content > scroll_view + 1.0 && scroll_view > 8.0;
+    (*inner).scroll_chrome.sync(scroll_pos, scrollable, now);
+    (*inner).menu.sync(live_menu);
+    if (*inner).menu.needs_frame() || (*inner).scroll_chrome.needs_frame(now) {
+        let _ = arm_anim_timer(hwnd);
+    }
+    let presented = (*inner).menu.presentation();
+    let (menu, menu_opacity, menu_scale) = match &presented {
+        Some((owned, opacity, scale)) => (
+            Some(super::menu::MenuPaint {
+                header: owned.header.as_str(),
+                items: owned.items.as_slice(),
+                selection: owned.selection,
+                kind: owned.kind,
+                appearance: owned.appearance,
+            }),
+            *opacity,
+            *scale,
+        ),
+        None => (None, 0.0, 1.0),
+    };
     let params = PaintParams {
         placeholder,
         placeholder_text: placeholder_owned.as_str(),
@@ -475,6 +479,12 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         appearance,
         footer,
         menu,
+        menu_opacity,
+        menu_scale,
+        scroll_opacity: (*inner).scroll_chrome.opacity(),
+        scroll_width: (*inner).scroll_chrome.width(),
+        scroll_content,
+        scroll_view,
         clipboard_preview: preview.as_deref(),
         tab_hint,
         clipboard_filter: filter,
@@ -482,7 +492,9 @@ unsafe fn paint_palette(hwnd: HWND, inner: *mut PaletteInner) {
         empty_results,
         chat,
     };
-    inner.renderer.paint(hwnd, params, inner.present_alpha);
+    inner
+        .renderer
+        .paint(hwnd, params, inner.present_alpha, inner.present_scale);
 }
 
 fn layout_edit(hwnd: HWND, inner: *mut PaletteInner, trailing: f32) {
@@ -501,106 +513,71 @@ fn client_dip_size(hwnd: HWND, dpi: u32) -> (f32, f32) {
     client_point_to_dip(rc.right, rc.bottom, dpi)
 }
 
-fn scaled_rect(rest: physical::Rect, scale: f32) -> physical::Rect {
-    let w = ((rest.w as f32) * scale).round().max(1.0) as i32;
-    let h = ((rest.h as f32) * scale).round().max(1.0) as i32;
-    physical::Rect {
-        x: rest.x + (rest.w - w) / 2,
-        y: rest.y + (rest.h - h) / 2,
-        w,
-        h,
+fn place_rest(hwnd: HWND, rest: physical::Rect) {
+    unsafe {
+        // NOZORDER: restacking on every height step fights DWM and flickers.
+        let _ = SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            rest.x,
+            rest.y,
+            rest.w,
+            rest.h,
+            SIZE_POS | SWP_NOZORDER | SWP_NOCOPYBITS,
+        );
     }
 }
 
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t.clamp(0.0, 1.0)
+fn arm_anim_timer(hwnd: HWND) -> bool {
+    motion::arm_timer(hwnd, ANIM_TIMER_ID)
 }
 
-fn scale_alpha(kind: PaletteAnimKind, t: f32) -> (f32, u8) {
-    let rest_alpha = LAYERED_SOURCE_CONSTANT_ALPHA as f32;
-    match kind {
-        PaletteAnimKind::Enter => (
-            lerp(ENTER_SCALE, 1.0, t),
-            lerp(0.0, rest_alpha, t).round() as u8,
-        ),
-        PaletteAnimKind::Exit => (
-            lerp(1.0, ENTER_SCALE, t),
-            lerp(rest_alpha, 0.0, t).round() as u8,
-        ),
+unsafe fn snap_hide(hwnd: HWND, inner: *mut PaletteInner) {
+    if let Some(core) = core_from_host((*inner).host) {
+        if (*core).palette_visible {
+            return;
+        }
     }
-}
-
-fn anim_t(anim: &PaletteAnim) -> (f32, bool) {
-    let dur = std::time::Duration::from_secs_f32(match anim.kind {
-        PaletteAnimKind::Enter => theme::duration::ENTER_SECS,
-        PaletteAnimKind::Exit => theme::duration::EXIT_SECS,
-    });
-    let elapsed = anim.start.elapsed();
-    if elapsed >= dur {
-        (1.0, true)
-    } else {
-        (elapsed.as_secs_f32() / dur.as_secs_f32(), false)
-    }
-}
-
-unsafe fn apply_anim_frame(hwnd: HWND, inner: *mut PaletteInner) {
-    let Some(anim) = (*inner).anim else {
-        return;
-    };
-    let (t, _) = anim_t(&anim);
-    let (scale, alpha) = scale_alpha(anim.kind, t);
-    (*inner).present_alpha = alpha;
-    let frame = scaled_rect((*inner).rest_frame, scale);
-    let _ = SetWindowPos(
-        hwnd,
-        HWND_TOPMOST,
-        frame.x,
-        frame.y,
-        frame.w,
-        frame.h,
-        SWP_NOACTIVATE,
-    );
-}
-
-unsafe fn finish_anim(hwnd: HWND, inner: *mut PaletteInner) {
-    let Some(anim) = (*inner).anim.take() else {
-        return;
-    };
-    let _ = KillTimer(hwnd, ANIM_TIMER_ID);
+    motion::kill_timer(hwnd, ANIM_TIMER_ID);
+    motion::kill_timer(hwnd, CARET_TIMER_ID);
     (*inner).present_alpha = LAYERED_SOURCE_CONSTANT_ALPHA;
-    match anim.kind {
-        PaletteAnimKind::Enter => {
-            let rest = (*inner).rest_frame;
-            let _ = SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                rest.x,
-                rest.y,
-                rest.w,
-                rest.h,
-                SWP_NOACTIVATE,
-            );
-        }
-        PaletteAnimKind::Exit => {
-            (*inner).icons.drop_all();
-            let _ = KillTimer(hwnd, CARET_TIMER_ID);
-            let _ = ShowWindow(hwnd, SW_HIDE);
-        }
+    (*inner).present_scale = 1.0;
+    (*inner).menu = MenuMotion::default();
+    (*inner).scroll_chrome = ScrollChrome::default();
+    (*inner).icons.drop_all();
+    (*inner).edit_shown = false;
+    if let Some(edit) = (*inner).edit.as_ref() {
+        edit.set_visible(false);
+    }
+    let _ = ShowWindow(hwnd, SW_HIDE);
+    if let Some(core) = core_from_host((*inner).host) {
+        (*core).settle_hidden_palette();
     }
 }
 
 unsafe fn tick_anim(hwnd: HWND) {
+    let _frame = motion::frame_guard(hwnd);
     let Some(inner) = inner_from(hwnd) else {
         return;
     };
-    let Some(anim) = (*inner).anim else {
+    paint_palette(hwnd, inner);
+    let now = std::time::Instant::now();
+    if !(*inner).menu.needs_frame() && !(*inner).scroll_chrome.needs_frame(now) {
+        motion::kill_timer(hwnd, ANIM_TIMER_ID);
+    }
+}
+
+unsafe fn sync_search_edit(inner: *mut PaletteInner, visible: bool) {
+    if (*inner).edit_shown == visible {
+        return;
+    }
+    (*inner).edit_shown = visible;
+    let Some(edit) = (*inner).edit.as_ref() else {
         return;
     };
-    let (_, done) = anim_t(&anim);
-    if done {
-        finish_anim(hwnd, inner);
-    } else {
-        apply_anim_frame(hwnd, inner);
+    edit.set_visible(visible);
+    if visible {
+        edit.focus();
     }
 }
 
@@ -669,7 +646,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     .map(|c| (*c).search_trailing_width())
                     .unwrap_or(0.0);
                 layout_edit(hwnd, inner, trailing);
-                if (*inner).renderer.is_layered() {
+                if (*inner).renderer.is_layered() && !(*inner).suppress_size_paint {
                     paint_palette(hwnd, inner);
                 }
             }
@@ -749,11 +726,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_MOUSEMOVE => {
             if let Some(inner) = inner_from(hwnd) {
+                let dpi = GetDpiForWindow(hwnd);
+                let (x, y) = lparam_point(lparam);
+                let (x_dip, y_dip) = client_point_to_dip(x, y, dpi);
+                let (w_dip, h_dip) = client_dip_size(hwnd, dpi);
+                let top = tinycast_pure::layout::list::content_top();
+                let bottom = top + tinycast_pure::layout::list::view_height(h_dip);
+                let inside = ScrollChrome::hover_zone(x_dip, y_dip, w_dip, top, bottom);
+                (*inner)
+                    .scroll_chrome
+                    .pointer(inside, std::time::Instant::now());
+                if (*inner)
+                    .scroll_chrome
+                    .needs_frame(std::time::Instant::now())
+                {
+                    let _ = arm_anim_timer(hwnd);
+                }
                 if let Some(core) = core_from_host((*inner).host) {
-                    let dpi = GetDpiForWindow(hwnd);
-                    let (x, y) = lparam_point(lparam);
-                    let (x_dip, y_dip) = client_point_to_dip(x, y, dpi);
-                    let (w_dip, h_dip) = client_dip_size(hwnd, dpi);
                     (*core).pointer_move(x_dip, y_dip, w_dip, h_dip);
                 }
             }
@@ -812,7 +801,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_DESTROY => {
-            let _ = KillTimer(hwnd, ANIM_TIMER_ID);
+            motion::kill_timer(hwnd, ANIM_TIMER_ID);
             let _ = KillTimer(hwnd, RESIGN_TIMER_ID);
             let _ = KillTimer(hwnd, CARET_TIMER_ID);
             LRESULT(0)
@@ -839,5 +828,21 @@ mod tests {
         assert!(!resign_should_hide(true, true));
         assert!(!resign_should_hide(false, false));
         assert!(!resign_should_hide(false, true));
+    }
+
+    #[test]
+    fn entrance_scale_matches_v0102() {
+        assert_eq!(tinycast_pure::motion::ENTER_SCALE, 0.94);
+    }
+
+    #[test]
+    fn search_edit_is_shown_only_at_rest() {
+        let rest = tinycast_pure::motion::Visual::rest();
+        let hidden = tinycast_pure::motion::Visual::hidden();
+        assert!(rest.is_rest() && !rest.is_hidden());
+        assert!(hidden.is_hidden() && !hidden.is_rest());
+        let src = include_str!("hwnd.rs");
+        assert!(src.contains("KillTimer(self.hwnd, RESIGN_TIMER_ID)"));
+        assert!(src.contains("sync_search_edit(inner, show_edit)"));
     }
 }

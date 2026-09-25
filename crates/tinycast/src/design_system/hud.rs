@@ -145,11 +145,8 @@ fn paint_volume(
     let track_h = theme::size::VOLUME_TRACK_HEIGHT;
     let track_x = pad_h;
     let track_w = (w - pad_h * 2.0 - theme::spacing::MD - readout).max(8.0);
-    let fill = if muted {
-        0.0
-    } else {
-        tinycast_pure::volume::clamped(level)
-    };
+    let fill = level.clamp(0.0, 1.0);
+    let fill_alpha = if muted { 0.35 } else { 0.85 };
     fill_squircle(
         target,
         DipRect {
@@ -172,7 +169,7 @@ fn paint_volume(
                 h: track_h,
             },
             track_h / 2.0,
-            (r, g, b, a * 0.85),
+            (r, g, b, a * fill_alpha),
         )?;
     }
     let label = volume_readout(level, muted);

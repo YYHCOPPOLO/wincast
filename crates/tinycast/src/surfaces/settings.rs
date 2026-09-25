@@ -50,15 +50,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MINMAXINFO, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_RESTORE,
     WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY,
     WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_GETOBJECT, WM_KEYDOWN, WM_KEYUP,
-    WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_SYSKEYDOWN,
-    WM_SYSKEYUP, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
-    WS_OVERLAPPEDWINDOW, WS_SYSMENU,
+    WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE,
+    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW, WS_CAPTION, WS_CLIPCHILDREN, WS_EX_APPWINDOW,
+    WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_SYSMENU,
 };
 
 #[path = "settings_acc.rs"]
 mod acc;
 
 use crate::app_core::AppCore;
+use crate::design_system::motion::{self, scale_about};
+use crate::design_system::scrollbar::ScrollChrome;
 use crate::features::hotkeys::ui::recorder::Recorder;
 use crate::features::launcher::settings::items::{
     alias_commit_pair, hit_confirm, hit_launcher, hotkey_action_key, layout_confirm,
@@ -124,7 +126,12 @@ struct SettingsInner {
     focus: Option<usize>,
     edit_brush: HBRUSH,
     edit_appearance: u8,
+    detail_scroll: ScrollChrome,
+    callout: tinycast_pure::motion::Reveal,
+    callout_well: Option<DipRect>,
 }
+
+const SETTINGS_ANIM: usize = 11;
 
 struct Renderer {
     factory: ID2D1Factory,
@@ -183,6 +190,9 @@ impl SettingsWindow {
                 focus: None,
                 edit_brush: HBRUSH::default(),
                 edit_appearance: 255,
+                detail_scroll: ScrollChrome::default(),
+                callout: tinycast_pure::motion::Reveal::default(),
+                callout_well: None,
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -577,18 +587,6 @@ fn paint_scene(
         })();
         target.PopAxisAlignedClip();
         sidebar_paint?;
-        if let Some(idx) = (*inner).focus {
-            let items = focus_items(hwnd, inner);
-            if let Some(item) = items.get(idx) {
-                let _ = crate::design_system::squircle::stroke_squircle(
-                    target,
-                    item.rect,
-                    theme::radius::MENU_ROW,
-                    theme::colors::ramp_rgba(appearance, 0.45, 0.35),
-                    2.0,
-                );
-            }
-        }
         let formats = Formats {
             header: header_format,
             body: body_format,
@@ -604,6 +602,36 @@ fn paint_scene(
             size.width,
             size.height,
         )?;
+        // After the detail pane, or the card fill covers the ring.
+        if let Some(idx) = (*inner).focus {
+            let items = focus_items(hwnd, inner);
+            if let Some(item) = items.get(idx) {
+                let _ = crate::design_system::squircle::stroke_squircle(
+                    target,
+                    item.rect,
+                    theme::radius::MENU_ROW,
+                    theme::colors::ramp_rgba(appearance, 0.45, 0.35),
+                    2.0,
+                );
+            }
+        }
+        let now = std::time::Instant::now();
+        let detail_content = pane_content_height(inner, size.width);
+        (*inner)
+            .detail_scroll
+            .sync((*inner).scroll, detail_content > size.height + 1.0, now);
+        let _ = crate::design_system::scrollbar::paint(
+            target,
+            size.width,
+            3.0,
+            (size.height - 6.0).max(0.0),
+            (*inner).scroll,
+            detail_content,
+            size.height,
+            (*inner).detail_scroll.width(),
+            (*inner).detail_scroll.opacity(),
+            appearance,
+        );
         target.EndDraw(None, None)
     }
 }
@@ -781,18 +809,43 @@ unsafe fn paint_recorder_callout(
     inner: *mut SettingsInner,
     detail_w: f32,
 ) -> windows::core::Result<()> {
-    if !(*inner).recorder.is_recording() {
+    let recording = (*inner).recorder.is_recording();
+    if recording {
+        if let Some(well) = recording_well_rect(inner, detail_w, (*inner).scroll) {
+            (*inner).callout_well = Some(well);
+        }
+    }
+    let _ = (*inner).callout.go(
+        if recording { 1.0 } else { 0.0 },
+        theme::duration::SHORTCUT_POPOVER_SECS,
+        tinycast_pure::motion::Ease::Out,
+    );
+    let reveal = (*inner).callout.sample_now();
+    if reveal <= 0.001 {
+        if !recording {
+            (*inner).callout_well = None;
+        }
         return Ok(());
     }
-    let Some(well) = recording_well_rect(inner, detail_w, (*inner).scroll) else {
+    let Some(well) = (*inner).callout_well else {
         return Ok(());
     };
-    crate::features::hotkeys::ui::recorder::paint_callout(
+    let anchor_x = well.x + well.w * 0.5;
+    let anchor_y = well.y;
+    let scale = tinycast_pure::motion::lerp(tinycast_pure::motion::MENU_SCALE, 1.0, reveal);
+    motion::paint_in_layer(
         target,
-        formats,
-        well,
-        current_modifiers(),
-        None,
+        reveal,
+        scale_about(scale, anchor_x, anchor_y),
+        || {
+            crate::features::hotkeys::ui::recorder::paint_callout(
+                target,
+                formats,
+                well,
+                current_modifiers(),
+                None,
+            )
+        },
     )
 }
 
@@ -2580,6 +2633,22 @@ fn current_modifiers() -> Modifiers {
     }
 }
 
+fn lparam_point(lp: LPARAM) -> (i32, i32) {
+    let v = lp.0 as u32;
+    let x = v as u16 as i16 as i32;
+    let y = (v >> 16) as u16 as i16 as i32;
+    (x, y)
+}
+
+fn settings_animating(inner: *mut SettingsInner) -> bool {
+    unsafe {
+        let now = std::time::Instant::now();
+        (*inner).detail_scroll.needs_frame(now)
+            || (*inner).callout.is_running()
+            || crate::design_system::settings::knobs_settling()
+    }
+}
+
 fn client_dip_size(hwnd: HWND) -> (f32, f32) {
     let dpi = unsafe { GetDpiForWindow(hwnd) };
     let (w, h) = client_size(hwnd);
@@ -3742,8 +3811,37 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let _hdc = BeginPaint(hwnd, &mut ps);
             if let Some(inner) = inner_from(hwnd) {
                 (*inner).renderer.paint(hwnd, inner);
+                if settings_animating(inner) {
+                    let _ = motion::arm_timer(hwnd, SETTINGS_ANIM);
+                } else {
+                    motion::kill_timer(hwnd, SETTINGS_ANIM);
+                }
             }
             let _ = EndPaint(hwnd, &ps);
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            if wparam.0 == SETTINGS_ANIM {
+                let _frame = motion::frame_guard(hwnd);
+                let _ = InvalidateRect(hwnd, None, FALSE);
+            }
+            LRESULT(0)
+        }
+        WM_MOUSEMOVE => {
+            if let Some(inner) = inner_from(hwnd) {
+                let dpi = GetDpiForWindow(hwnd);
+                let (x, y) = lparam_point(lparam);
+                let (x, y) = crate::features::launcher::ui::list::client_point_to_dip(x, y, dpi);
+                let (w, h) = client_dip_size(hwnd);
+                let inside =
+                    x > theme::size::SETTINGS_SIDEBAR && ScrollChrome::hover_zone(x, y, w, 0.0, h);
+                let now = std::time::Instant::now();
+                (*inner).detail_scroll.pointer(inside, now);
+                if inside || (*inner).detail_scroll.needs_frame(now) {
+                    let _ = motion::arm_timer(hwnd, SETTINGS_ANIM);
+                    let _ = InvalidateRect(hwnd, None, FALSE);
+                }
+            }
             LRESULT(0)
         }
         WM_CTLCOLOREDIT => {

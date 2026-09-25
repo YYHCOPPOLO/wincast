@@ -9,9 +9,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     GetCursorPos, GetWindowLongPtrW, LoadIconW, PostMessageW, PostQuitMessage, RegisterClassW,
     SetForegroundWindow, SetWindowLongPtrW, TrackPopupMenu, CREATESTRUCTW, GWLP_USERDATA,
-    IDI_APPLICATION, MF_STRING, TPM_RETURNCMD, TPM_RIGHTBUTTON, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
-    WM_NCCREATE, WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+    IDI_APPLICATION, MF_STRING, SC_CLOSE, SET_WINDOW_POS_FLAGS, SWP_SHOWWINDOW, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, WINDOWPOS, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_CONTEXTMENU,
+    WM_DESTROY, WM_ENDSESSION, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCCREATE,
+    WM_RBUTTONUP, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 use super::messages::{
@@ -36,7 +38,17 @@ fn host_style() -> WINDOW_STYLE {
 }
 
 fn host_ex_style() -> WINDOW_EX_STYLE {
-    WS_EX_TOOLWINDOW
+    WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+}
+
+/// Owned popups call ShowWindow on this host as a side effect. A 0×0 visible
+/// owner then gets WM_CLOSE from the shell and would quit the tray process.
+fn strip_host_show(flags: SET_WINDOW_POS_FLAGS) -> SET_WINDOW_POS_FLAGS {
+    SET_WINDOW_POS_FLAGS(flags.0 & !SWP_SHOWWINDOW.0)
+}
+
+fn host_syscommand_closes(wparam: usize) -> bool {
+    (wparam & 0xFFF0) == (SC_CLOSE as usize & 0xFFF0)
 }
 
 fn host_adds_icon_on_create() -> bool {
@@ -327,6 +339,21 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
+        WM_WINDOWPOSCHANGING => {
+            let pos = lparam.0 as *mut WINDOWPOS;
+            if !pos.is_null() {
+                (*pos).flags = strip_host_show((*pos).flags);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_SYSCOMMAND => {
+            if host_syscommand_closes(wparam.0) {
+                LRESULT(0)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_CLOSE => LRESULT(0),
         WM_QUIT_APP => {
             let _ = DestroyWindow(hwnd);
             LRESULT(0)
@@ -365,6 +392,26 @@ mod tests {
         assert_eq!(host_style(), WS_POPUP);
         let ex = host_ex_style();
         assert_eq!(ex.0 & WS_EX_TOOLWINDOW.0, WS_EX_TOOLWINDOW.0);
+        assert_eq!(ex.0 & WS_EX_NOACTIVATE.0, WS_EX_NOACTIVATE.0);
         assert!(!host_adds_icon_on_create());
+    }
+
+    #[test]
+    fn host_windowpos_changing_strips_show() {
+        let shown = SET_WINDOW_POS_FLAGS(SWP_SHOWWINDOW.0 | 0x0010);
+        let out = strip_host_show(shown);
+        assert_eq!(out.0 & SWP_SHOWWINDOW.0, 0);
+        assert_eq!(out.0 & 0x0010, 0x0010);
+        assert_eq!(strip_host_show(SET_WINDOW_POS_FLAGS(0)).0, 0);
+    }
+
+    #[test]
+    fn host_close_and_syscommand_close_do_not_quit() {
+        assert!(host_syscommand_closes(SC_CLOSE as usize));
+        assert!(host_syscommand_closes((SC_CLOSE as usize) | 0x2));
+        assert!(!host_syscommand_closes(0xF030));
+        let src = include_str!("tray.rs");
+        assert!(src.contains("WM_CLOSE => LRESULT(0)"));
+        assert!(src.contains("WM_QUIT_APP"));
     }
 }

@@ -15,11 +15,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, CS_HREDRAW, CS_VREDRAW,
     GA_ROOTOWNER, GWLP_USERDATA, HHOOK, HWND_TOPMOST, IDC_ARROW, KBDLLHOOKSTRUCT, SWP_NOACTIVATE,
     SW_HIDE, SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_LBUTTONDOWN, WM_NCDESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WM_LBUTTONDOWN, WM_NCDESTROY, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::design_system::host::OverlayPainter;
+use crate::design_system::motion::{self, OverlayAnim};
 use crate::design_system::panel::paint_scrim;
 use crate::design_system::squircle::fill_squircle;
 use crate::design_system::text;
@@ -43,6 +44,7 @@ struct Inner {
     title: String,
     body: String,
     painter: OverlayPainter,
+    anim: OverlayAnim,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -100,6 +102,7 @@ impl ResultPanel {
                 title: String::new(),
                 body: String::new(),
                 painter,
+                anim: OverlayAnim::default(),
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -134,10 +137,18 @@ impl ResultPanel {
                 (*inner).body = body.to_string();
                 (*inner).painter.prefer_layered(self.hwnd);
                 place(self.hwnd, (*inner).painter.fonts(), body, true);
+                let visible = IsWindowVisible(self.hwnd).as_bool();
+                (*inner).anim.present(visible);
             }
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
             install_key_hook(self.hwnd);
-            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(self.hwnd, None, false);
+            paint_d2d(self.hwnd);
+            if !motion::arm_timer(self.hwnd, motion::TIMER_ID) {
+                if let Some(inner) = inner_from(self.hwnd) {
+                    (*inner).anim.snap_end();
+                    paint_d2d(self.hwnd);
+                }
+            }
         }
     }
 
@@ -153,8 +164,21 @@ impl ResultPanel {
 
     pub fn hide(&self) {
         unsafe {
-            remove_key_hook(self.hwnd);
-            let _ = ShowWindow(self.hwnd, SW_HIDE);
+            let Some(inner) = inner_from(self.hwnd) else {
+                remove_key_hook(self.hwnd);
+                let _ = ShowWindow(self.hwnd, SW_HIDE);
+                return;
+            };
+            if !IsWindowVisible(self.hwnd).as_bool() && !(*inner).anim.is_running() {
+                remove_key_hook(self.hwnd);
+                return;
+            }
+            (*inner).anim.dismiss();
+            paint_d2d(self.hwnd);
+            if !motion::arm_timer(self.hwnd, motion::TIMER_ID) {
+                remove_key_hook(self.hwnd);
+                let _ = ShowWindow(self.hwnd, SW_HIDE);
+            }
         }
     }
 
@@ -309,6 +333,15 @@ unsafe fn lang_of(inner: *mut Inner) -> tinycast_pure::i18n::UiLang {
     }
 }
 
+unsafe fn appearance_of(inner: *mut Inner) -> u8 {
+    let ptr = GetWindowLongPtrW((*inner).host, GWLP_USERDATA) as *mut crate::app_core::AppCore;
+    if ptr.is_null() {
+        crate::design_system::appearance::resolved()
+    } else {
+        (*ptr).appearance_key()
+    }
+}
+
 unsafe fn inner_from(hwnd: HWND) -> Option<*mut Inner> {
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
     if ptr.is_null() {
@@ -326,6 +359,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             return DefWindowProcW(hwnd, msg, wparam, lparam);
         }
         WM_ERASEBKGND => return LRESULT(1),
+        WM_TIMER => {
+            if wparam.0 == motion::TIMER_ID {
+                tick_qa(hwnd);
+            }
+            return LRESULT(0);
+        }
         WM_PAINT => {
             paint(hwnd);
             return LRESULT(0);
@@ -366,11 +405,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             return LRESULT(0);
         }
         WM_CLOSE => {
+            if let Some(inner) = inner_from(hwnd) {
+                (*inner).anim.dismiss();
+                if motion::arm_timer(hwnd, motion::TIMER_ID) {
+                    paint_d2d(hwnd);
+                    return LRESULT(0);
+                }
+            }
             remove_key_hook(hwnd);
             let _ = ShowWindow(hwnd, SW_HIDE);
             return LRESULT(0);
         }
         WM_DESTROY => {
+            motion::kill_timer(hwnd, motion::TIMER_ID);
             remove_key_hook(hwnd);
         }
         WM_NCDESTROY => {
@@ -386,6 +433,24 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
+unsafe fn tick_qa(hwnd: HWND) {
+    let _frame = motion::frame_guard(hwnd);
+    let Some(inner) = inner_from(hwnd) else {
+        return;
+    };
+    let tick = (*inner).anim.tick();
+    if tick.hide {
+        motion::kill_timer(hwnd, motion::TIMER_ID);
+        remove_key_hook(hwnd);
+        let _ = ShowWindow(hwnd, SW_HIDE);
+        return;
+    }
+    paint_d2d(hwnd);
+    if !tick.running {
+        motion::kill_timer(hwnd, motion::TIMER_ID);
+    }
+}
+
 fn paint(hwnd: HWND) {
     unsafe {
         let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
@@ -393,99 +458,115 @@ fn paint(hwnd: HWND) {
         if hdc.is_invalid() {
             return;
         }
+        paint_d2d(hwnd);
+        let _ = windows::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
+    }
+}
+
+fn paint_d2d(hwnd: HWND) {
+    unsafe {
         if let Some(inner) = inner_from(hwnd) {
             let title = (*inner).title.clone();
             let body = (*inner).body.clone();
             let lang = lang_of(inner);
+            let appearance = appearance_of(inner);
+            let visual = (*inner).anim.visual();
             (*inner).painter.set_locale(lang.dwrite_locale());
-            let _ = (*inner).painter.paint(hwnd, |target, fonts| {
-                let width = PANEL_WIDTH_DIP;
-                let size = target.GetSize();
-                let height = size.height;
-                paint_scrim(target, width, height, theme::radius::DIALOG, 0)?;
-                let pad = theme::spacing::XXL;
-                let icon = HEADER_ICON;
-                let header_y = theme::spacing::XL;
-                crate::design_system::symbols::paint_fluent_in(
-                    target,
-                    &fonts.dwrite,
-                    "sparkles",
-                    DipRect {
+            let _ = (*inner)
+                .painter
+                .paint_visual(hwnd, visual, |target, fonts| {
+                    let width = PANEL_WIDTH_DIP;
+                    let size = target.GetSize();
+                    let height = size.height;
+                    paint_scrim(target, width, height, theme::radius::DIALOG, appearance)?;
+                    let pad = theme::spacing::XXL;
+                    let icon = HEADER_ICON;
+                    let header_y = theme::spacing::XL;
+                    crate::design_system::symbols::paint_fluent_in(
+                        target,
+                        &fonts.dwrite,
+                        "sparkles",
+                        DipRect {
+                            x: pad,
+                            y: header_y,
+                            w: icon,
+                            h: icon,
+                        },
+                        text::secondary_ink(appearance),
+                    )?;
+                    text::draw(
+                        target,
+                        &fonts.headline,
+                        &title,
+                        DipRect {
+                            x: pad + icon + theme::spacing::SM,
+                            y: header_y - 2.0,
+                            w: width - pad * 2.0 - icon - theme::spacing::SM,
+                            h: 20.0,
+                        },
+                        text::primary_ink(appearance),
+                    )?;
+                    let body_top = header_height();
+                    let footer = footer_height();
+                    let body_h =
+                        (height - body_top - footer).min(theme::size::QUICK_ACTION_PANEL_BODY);
+                    let working = tinycast_pure::i18n::qa_working(lang);
+                    let shown = if body.is_empty() {
+                        working
+                    } else {
+                        body.as_str()
+                    };
+                    text::draw(
+                        target,
+                        &fonts.wrap_body,
+                        shown,
+                        DipRect {
+                            x: pad,
+                            y: body_top,
+                            w: width - pad * 2.0,
+                            h: body_h.max(theme::size::QUICK_ACTION_PANEL_MIN_BODY),
+                        },
+                        text::primary_ink(appearance),
+                    )?;
+                    let btn_h = theme::size::MENU_BUTTON;
+                    let btn_y = height - footer + (footer - btn_h) / 2.0;
+                    let half = (width - pad * 2.0 - theme::spacing::MD) / 2.0;
+                    let replace = DipRect {
                         x: pad,
-                        y: header_y,
-                        w: icon,
-                        h: icon,
-                    },
-                    text::secondary_ink(0),
-                )?;
-                text::draw(
-                    target,
-                    &fonts.headline,
-                    &title,
-                    DipRect {
-                        x: pad + icon + theme::spacing::SM,
-                        y: header_y - 2.0,
-                        w: width - pad * 2.0 - icon - theme::spacing::SM,
-                        h: 20.0,
-                    },
-                    text::primary_ink(0),
-                )?;
-                let body_top = header_height();
-                let footer = footer_height();
-                let body_h = (height - body_top - footer).min(theme::size::QUICK_ACTION_PANEL_BODY);
-                let working = tinycast_pure::i18n::qa_working(lang);
-                let shown = if body.is_empty() {
-                    working
-                } else {
-                    body.as_str()
-                };
-                text::draw(
-                    target,
-                    &fonts.wrap_body,
-                    shown,
-                    DipRect {
-                        x: pad,
-                        y: body_top,
-                        w: width - pad * 2.0,
-                        h: body_h.max(theme::size::QUICK_ACTION_PANEL_MIN_BODY),
-                    },
-                    text::primary_ink(0),
-                )?;
-                let btn_h = theme::size::MENU_BUTTON;
-                let btn_y = height - footer + (footer - btn_h) / 2.0;
-                let half = (width - pad * 2.0 - theme::spacing::MD) / 2.0;
-                let replace = DipRect {
-                    x: pad,
-                    y: btn_y,
-                    w: half,
-                    h: btn_h,
-                };
-                let copy = DipRect {
-                    x: pad + half + theme::spacing::MD,
-                    y: btn_y,
-                    w: half,
-                    h: btn_h,
-                };
-                fill_squircle(target, replace, btn_h / 2.0, text::control_surface(0))?;
-                fill_squircle(target, copy, btn_h / 2.0, text::control_surface(0))?;
-                text::draw(
-                    target,
-                    &fonts.bar,
-                    tinycast_pure::i18n::qa_replace(lang),
-                    replace,
-                    text::primary_ink(0),
-                )?;
-                text::draw(
-                    target,
-                    &fonts.bar,
-                    tinycast_pure::i18n::qa_copy(lang),
-                    copy,
-                    text::secondary_ink(0),
-                )?;
-                Ok(())
-            });
+                        y: btn_y,
+                        w: half,
+                        h: btn_h,
+                    };
+                    let copy = DipRect {
+                        x: pad + half + theme::spacing::MD,
+                        y: btn_y,
+                        w: half,
+                        h: btn_h,
+                    };
+                    fill_squircle(
+                        target,
+                        replace,
+                        btn_h / 2.0,
+                        text::control_surface(appearance),
+                    )?;
+                    fill_squircle(target, copy, btn_h / 2.0, text::control_surface(appearance))?;
+                    text::draw(
+                        target,
+                        &fonts.bar,
+                        tinycast_pure::i18n::qa_replace(lang),
+                        replace,
+                        text::primary_ink(appearance),
+                    )?;
+                    text::draw(
+                        target,
+                        &fonts.bar,
+                        tinycast_pure::i18n::qa_copy(lang),
+                        copy,
+                        text::secondary_ink(appearance),
+                    )?;
+                    Ok(())
+                });
         }
-        let _ = windows::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
     }
 }
 

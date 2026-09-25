@@ -3,10 +3,20 @@ use crate::theme;
 
 pub const ROW_HEIGHT: f32 = 36.0;
 
+/// List chrome inset (selection pill) plus the row's own horizontal padding.
+/// The icon has to sit inside the pill; sharing the pill's left edge covers the corner.
+pub fn row_content_left() -> f32 {
+    theme::spacing::MD + theme::spacing::MD
+}
+
+pub fn row_content_right(panel_w: f32) -> f32 {
+    (panel_w - theme::spacing::MD * 2.0).max(row_content_left())
+}
+
 pub fn row_icon_rect(row_y: f32) -> DipRect {
     let size = theme::size::ROW_ICON;
     DipRect {
-        x: theme::spacing::MD,
+        x: row_content_left(),
         y: row_y + (ROW_HEIGHT - size) / 2.0,
         w: size,
         h: size,
@@ -220,9 +230,14 @@ mod tests {
     }
 
     #[test]
-    fn row_icon_x_is_md() {
+    fn row_icon_sits_inside_the_selection() {
         let r = row_icon_rect(100.0);
-        assert_eq!(r.x, theme::spacing::MD);
+        let fill = row_fill_rect(750.0, 100.0);
+        assert_eq!(r.x, fill.x + theme::spacing::MD);
+        assert_eq!(r.x, row_content_left());
+        assert!((row_content_right(750.0) - (750.0 - theme::spacing::MD * 2.0)).abs() < 0.01);
+        assert!(r.x > fill.x);
+        assert!(r.x + r.w < row_content_right(750.0));
         assert_eq!(r.w, 24.0);
         assert_eq!(r.h, 24.0);
         assert!((r.y - (100.0 + 6.0)).abs() < 0.01);

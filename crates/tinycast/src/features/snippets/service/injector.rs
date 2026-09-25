@@ -23,8 +23,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_CONTROL, VK_LEFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, GetWindowLongW, GetWindowRect,
-    GetWindowThreadProcessId, SetForegroundWindow, GWL_STYLE, WS_CAPTION,
+    AllowSetForegroundWindow, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId,
+    SetForegroundWindow, GWL_STYLE, WS_CAPTION,
 };
 
 /// `dwExtraInfo` tag so the keyword hook can ignore Tinycast-generated key events.

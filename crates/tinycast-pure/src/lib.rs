@@ -22,6 +22,7 @@ pub mod launcher_ranking;
 pub mod launcher_results;
 pub mod layout;
 pub mod meeting;
+pub mod motion;
 pub mod note;
 pub mod palette_menu;
 pub mod palette_mode;

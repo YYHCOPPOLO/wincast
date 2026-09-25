@@ -8,8 +8,7 @@ use tinycast_pure::snippet::keyword::{classify_input, KeywordBuffer, KeywordInpu
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyState, ToUnicode, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
-    VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RWIN, VK_TAB,
-    VK_UP,
+    VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RWIN, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, PostMessageW, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_SYSKEYDOWN,

@@ -792,9 +792,9 @@ fn paint_header(
         )?
     };
     let rect = D2D_RECT_F {
-        left: theme::spacing::MD,
+        left: tinycast_pure::layout::list::row_content_left(),
         top: y,
-        right: panel_w - theme::spacing::MD,
+        right: tinycast_pure::layout::list::row_content_right(panel_w),
         bottom: y + h,
     };
     draw_text(target, &fonts.header, &brush, rect, title)
@@ -817,7 +817,6 @@ fn paint_row(
     dpi: f32,
     appearance: u8,
 ) -> windows::core::Result<()> {
-    let inset = theme::spacing::MD;
     if selected {
         crate::design_system::paint_row_fill(target, panel_w, y, true, false, appearance)?;
     }
@@ -836,7 +835,7 @@ fn paint_row(
         paint_icon_placeholder(target, icon_x, icon_y, icon_size, appearance)?;
     }
 
-    let mut right = panel_w - inset;
+    let mut right = tinycast_pure::layout::list::row_content_right(panel_w);
     let chrome = unsafe {
         target.CreateSolidColorBrush(
             &muted_color(appearance, theme::colors::TEXT_SECONDARY_ALPHA),
@@ -863,7 +862,7 @@ fn paint_row(
     if !trailing.is_empty() {
         let tw = text_width(dwrite, &fonts.trailing, trailing, 180.0, h) + theme::spacing::XS;
         let rect = D2D_RECT_F {
-            left: (right - tw).max(inset),
+            left: (right - tw).max(tinycast_pure::layout::list::row_content_left()),
             top: y,
             right,
             bottom: y + h,

@@ -2081,25 +2081,47 @@ impl AppCore {
     }
 
     pub fn hide_palette(&mut self) {
-        self.argument_session = None;
+        self.begin_palette_hide();
+        // The original orderOuts first and only then pops back to root. `hide`
+        // hides the HWND and settles before it returns.
+        let deferred = self
+            .palette_window
+            .as_ref()
+            .is_some_and(|window| window.hide());
+        if !deferred {
+            self.settle_hidden_palette();
+        }
+        self.apply_calendar_clock();
+    }
+
+    fn begin_palette_hide(&mut self) {
+        self.close_menu();
         if matches!(self.palette.mode, PaletteMode::Ai | PaletteMode::AiHistory) {
             self.ai.draft = self.palette.query.clone();
         }
+        self.palette_visible = false;
+        self.anchor = None;
+        self.anchor_px = None;
+    }
+
+    /// Drop the screen that was on display. Called only once the HWND is hidden,
+    /// or immediately when there is no window to fade.
+    pub(crate) fn settle_hidden_palette(&mut self) {
+        if self.palette_visible {
+            return;
+        }
+        self.argument_session = None;
+        self.palette.is_composing = false;
         if self.palette.mode == PaletteMode::FileSearch {
             self.file_search.cancel();
         }
-        self.close_menu();
-        self.palette_visible = false;
         self.expanded = false;
-        self.palette.is_composing = false;
-        self.anchor = None;
-        self.anchor_px = None;
+        self.list_scroll = 0.0;
+        self.palette.selection = 0;
+        self.palette.query.clear();
         if let Some(window) = &self.palette_window {
             window.reset_search();
-            window.hide();
         }
-        self.list_scroll = 0.0;
-        self.apply_calendar_clock();
     }
 
     pub fn handle_escape(&mut self) {
@@ -2153,7 +2175,9 @@ impl AppCore {
     }
 
     pub fn set_query(&mut self, text: String) {
-        if self.menu.is_open() {
+        // The dismiss fade is still the confirmed screen. An edit notification
+        // in that interval must not rebuild the list.
+        if !self.palette_visible || self.menu.is_open() {
             return;
         }
         if self.palette.query != text {
@@ -2177,7 +2201,7 @@ impl AppCore {
     }
 
     pub fn append_query_char(&mut self, c: char) {
-        if self.menu.is_open() || c.is_control() {
+        if !self.palette_visible || self.menu.is_open() || c.is_control() {
             return;
         }
         self.palette.query.push(c);
@@ -2194,6 +2218,9 @@ impl AppCore {
     }
 
     pub fn handle_key(&mut self, vk: u16) -> bool {
+        if !self.palette_visible {
+            return false;
+        }
         if vk == VK_ESCAPE.0 {
             self.handle_escape();
             return true;
@@ -2890,6 +2917,9 @@ impl AppCore {
     }
 
     pub(crate) fn invalidate_palette(&self) {
+        if !self.palette_visible {
+            return;
+        }
         if let Some(window) = &self.palette_window {
             window.invalidate();
         }
@@ -4470,6 +4500,14 @@ impl AppCore {
         );
     }
 
+    pub(crate) fn scroll_metrics(&self, panel_h: f32) -> (f32, f32, f32) {
+        (
+            self.list_scroll,
+            self.scroll_content_height(),
+            tinycast_pure::layout::list::view_height(panel_h),
+        )
+    }
+
     fn scroll_content_height(&self) -> f32 {
         if self.palette.mode == PaletteMode::Ai {
             crate::features::ai::ui::screen::transcript_content_height(
@@ -5315,6 +5353,51 @@ mod tests {
         assert!(c.palette_visible);
         c.handle_escape();
         assert!(!c.palette_visible);
+    }
+
+    #[test]
+    fn hide_keeps_the_confirmed_list_until_the_window_is_gone() {
+        let mut c = AppCore::new();
+        c.visibility = tinycast_pure::visibility::VisibilityStore::default();
+        c.favorites = tinycast_pure::favorites::FavoritesStore::default();
+        c.aliases = tinycast_pure::alias::AliasStore::default();
+        c.toggle_palette();
+        c.set_query("qqqq-no-such-row".into());
+        c.palette.selection = 4;
+        c.list_scroll = 48.0;
+        let filtered = c.launcher_paint_items().len();
+        c.begin_palette_hide();
+        assert!(!c.palette_visible);
+        assert_eq!(c.palette.query, "qqqq-no-such-row");
+        assert_eq!(c.palette.selection, 4);
+        assert!(c.expanded);
+        assert!((c.list_scroll - 48.0).abs() < 0.01);
+        assert_eq!(c.launcher_paint_items().len(), filtered);
+        c.set_query(String::new());
+        c.append_query_char('a');
+        assert!(!c.handle_key(VK_DOWN.0));
+        assert_eq!(c.palette.query, "qqqq-no-such-row");
+        assert_eq!(c.palette.selection, 4);
+        assert_eq!(c.launcher_paint_items().len(), filtered);
+        c.settle_hidden_palette();
+        assert!(c.palette.query.is_empty());
+        assert_eq!(c.palette.selection, 0);
+        assert!(!c.expanded);
+        assert_eq!(c.list_scroll, 0.0);
+        assert!(c.launcher_paint_items().len() > filtered);
+    }
+
+    #[test]
+    fn hide_without_a_window_still_resets_once_closed() {
+        let mut c = AppCore::new();
+        c.toggle_palette();
+        c.set_query("notepad".into());
+        assert!(c.expanded);
+        c.hide_palette();
+        assert!(!c.palette_visible);
+        assert!(c.palette.query.is_empty());
+        assert!(!c.expanded);
+        assert_eq!(c.list_scroll, 0.0);
     }
 
     #[test]
