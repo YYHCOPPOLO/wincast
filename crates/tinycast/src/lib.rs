@@ -5,5 +5,6 @@ pub mod features;
 pub mod palette;
 pub mod platform;
 pub mod surfaces;
+pub mod ui_host;
 
 pub use platform::run;
