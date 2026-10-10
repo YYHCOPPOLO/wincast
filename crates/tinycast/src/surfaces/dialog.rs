@@ -1,6 +1,7 @@
 //! Tinycast-owned Continue/Cancel dialog. One at a time; Escape cancels.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::cell::Cell;
+use std::sync::atomic::Ordering;
 
 use tinycast_pure::dialog::{DialogRole, DialogTone};
 use tinycast_pure::palette_placement::DipRect;
@@ -26,7 +27,14 @@ use crate::platform::screens::dip_scalar_to_px;
 
 const CLASS: windows::core::PCWSTR = w!("TinycastDialog");
 
-static DIALOG_UP: AtomicBool = AtomicBool::new(false);
+thread_local! {
+    /// "A dialog is up" is per thread on purpose. Tinycast has one UI thread
+    /// that owns every dialog, its callers and AppCore, so in the app this is
+    /// the same as a global. Under `cargo test` each test runs on its own
+    /// thread, so tests that hold the dialog slot no longer leak into
+    /// parallel tests (previously a process-wide AtomicBool made them flaky).
+    static DIALOG_UP: Cell<bool> = const { Cell::new(false) };
+}
 static LAST_VOLUME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 static LAST_RESULT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
@@ -39,17 +47,15 @@ pub struct ConfirmPrompt {
 }
 
 pub fn begin() -> bool {
-    DIALOG_UP
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_ok()
+    DIALOG_UP.with(|up| !up.replace(true))
 }
 
 pub fn end() {
-    DIALOG_UP.store(false, Ordering::SeqCst);
+    DIALOG_UP.with(|up| up.set(false));
 }
 
 pub fn is_up() -> bool {
-    DIALOG_UP.load(Ordering::SeqCst)
+    DIALOG_UP.with(Cell::get)
 }
 
 /// Continue / Cancel. Escape and clicking outside the card cancel.
@@ -563,6 +569,18 @@ mod tests {
         assert!(!is_up());
         assert!(begin());
         end();
+    }
+
+    #[test]
+    fn dialog_slot_is_exclusive_and_per_thread() {
+        assert!(begin());
+        assert!(is_up());
+        assert!(!begin(), "a second dialog must not stack");
+        std::thread::spawn(|| assert!(!is_up(), "other threads see their own slot"))
+            .join()
+            .unwrap();
+        end();
+        assert!(!is_up());
     }
 
     #[test]
