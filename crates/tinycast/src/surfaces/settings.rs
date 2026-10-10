@@ -832,7 +832,7 @@ unsafe fn paint_recorder_callout(
     };
     let anchor_x = well.x + well.w * 0.5;
     let anchor_y = well.y;
-    let scale = tinycast_pure::motion::lerp(tinycast_pure::motion::MENU_SCALE, 1.0, reveal);
+    let scale = tinycast_pure::motion::lerp(tinycast_pure::motion::CALLOUT_SCALE, 1.0, reveal);
     motion::paint_in_layer(
         target,
         reveal,
@@ -4057,7 +4057,7 @@ mod tests {
         );
         assert_eq!(*tabs.last().unwrap(), SettingsTab::About);
         assert_eq!(theme::size::SETTINGS_SIDEBAR, 215.0);
-        assert_eq!(theme::size::SETTINGS_WINDOW, (860.0, 700.0));
+        assert_eq!(theme::size::SETTINGS_WINDOW, (900.0, 700.0));
     }
 
     #[test]
@@ -4133,10 +4133,10 @@ mod tests {
 
     #[test]
     fn settings_client_scales_with_dpi() {
-        assert_eq!(dip_scalar_to_px(theme::size::SETTINGS_WINDOW.0, 96), 860);
+        assert_eq!(dip_scalar_to_px(theme::size::SETTINGS_WINDOW.0, 96), 900);
         assert_eq!(dip_scalar_to_px(theme::size::SETTINGS_WINDOW.1, 96), 700);
         assert_eq!(dip_scalar_to_px(theme::size::SETTINGS_SIDEBAR, 96), 215);
-        assert_eq!(dip_scalar_to_px(theme::size::SETTINGS_WINDOW.0, 120), 1075);
+        assert_eq!(dip_scalar_to_px(theme::size::SETTINGS_WINDOW.0, 120), 1125);
         assert_eq!(dip_scalar_to_px(theme::size::SETTINGS_WINDOW.1, 120), 875);
     }
 }

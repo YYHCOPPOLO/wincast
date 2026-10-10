@@ -1,9 +1,12 @@
-//! Palette menu open and close. `RootPaletteView` scales from 0.96 and fades
-//! with `easeOut(duration: 0.14)`, anchored at the corner the menu hangs from.
+//! Palette menu open and close, played by `Theme.MenuMotion` the way upstream
+//! `Palette/MenuPanel.swift` does: scale 0.94 → 1.003 → 1 while alpha rises on the
+//! expansion curve, then on dismissal scale −0.04 and alpha → 0 on the exit curve,
+//! anchored at the corner the menu hangs from.
 
-use tinycast_pure::motion::{lerp, Ease, Reveal, MENU_SCALE};
+use std::time::Instant;
+
+use tinycast_pure::motion::{MenuReveal, Visual};
 use tinycast_pure::palette_menu::{MenuItem, OpenMenu};
-use tinycast_pure::theme;
 
 use super::menu::MenuPaint;
 
@@ -36,22 +39,19 @@ impl OwnedMenu {
     }
 }
 
+#[derive(Default)]
 pub struct MenuMotion {
-    reveal: Reveal,
+    reveal: MenuReveal,
+    visual: Option<Visual>,
     snapshot: Option<OwnedMenu>,
-}
-
-impl Default for MenuMotion {
-    fn default() -> Self {
-        Self {
-            reveal: Reveal::default(),
-            snapshot: None,
-        }
-    }
 }
 
 impl MenuMotion {
     pub fn sync(&mut self, live: Option<OwnedMenu>) -> bool {
+        self.sync_at(live, Instant::now())
+    }
+
+    pub fn sync_at(&mut self, live: Option<OwnedMenu>, now: Instant) -> bool {
         if let Some(menu) = live {
             let switched = self
                 .snapshot
@@ -59,15 +59,19 @@ impl MenuMotion {
                 .is_some_and(|have| have.kind != menu.kind);
             self.snapshot = Some(menu);
             if switched {
-                self.reveal = Reveal::at(0.0);
+                self.reveal.restart(now);
+            } else {
+                self.reveal.open(now);
             }
-            let _ = self.reveal.go(1.0, theme::duration::MENU_SECS, Ease::Out);
         } else {
-            let _ = self.reveal.go(0.0, theme::duration::MENU_SECS, Ease::Out);
+            self.reveal.close(now);
         }
-        let value = self.reveal.sample_now();
-        if value <= 0.001 && !self.reveal.is_running() {
+        let visual = self.reveal.sample(now);
+        if self.reveal.is_hidden() {
             self.snapshot = None;
+            self.visual = None;
+        } else {
+            self.visual = Some(visual);
         }
         self.snapshot.is_some()
     }
@@ -83,11 +87,11 @@ impl MenuMotion {
 
     pub fn visual(&self) -> Option<(&OwnedMenu, f32, f32)> {
         let menu = self.snapshot.as_ref()?;
-        let t = self.reveal.value;
-        if t <= 0.001 {
+        let visual = self.visual?;
+        if visual.alpha <= 0.001 {
             return None;
         }
-        Some((menu, t, lerp(MENU_SCALE, 1.0, t)))
+        Some((menu, visual.alpha, visual.scale))
     }
 }
 
@@ -97,5 +101,48 @@ pub fn menu_anchor(kind: OpenMenu, panel_w: f32, panel_h: f32) -> (f32, f32) {
         OpenMenu::ClipboardFilter | OpenMenu::AiModel => (panel_w, 0.0),
         OpenMenu::AppMenu => (0.0, panel_h),
         OpenMenu::Actions | OpenMenu::None => (panel_w, panel_h),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn menu(kind: OpenMenu) -> OwnedMenu {
+        OwnedMenu {
+            header: String::new(),
+            items: Vec::new(),
+            selection: 0,
+            kind,
+            appearance: 0,
+        }
+    }
+
+    #[test]
+    fn menu_opens_overshoots_and_closes_to_nothing() {
+        let t0 = Instant::now();
+        let mut motion = MenuMotion::default();
+        assert!(motion.sync_at(Some(menu(OpenMenu::Actions)), t0));
+        assert!(motion.needs_frame());
+        motion.sync_at(
+            Some(menu(OpenMenu::Actions)),
+            t0 + Duration::from_millis(100),
+        );
+        let (_, _, scale) = motion.visual().expect("visible");
+        assert!(scale > 1.0, "overshoot at end of expansion: {scale}");
+        motion.sync_at(
+            Some(menu(OpenMenu::Actions)),
+            t0 + Duration::from_millis(400),
+        );
+        let (_, alpha, scale) = motion.visual().expect("visible");
+        assert!((alpha - 1.0).abs() < 1e-3 && (scale - 1.0).abs() < 1e-3);
+        assert!(!motion.needs_frame());
+
+        let t1 = t0 + Duration::from_millis(500);
+        assert!(motion.sync_at(None, t1));
+        assert!(motion.needs_frame());
+        assert!(!motion.sync_at(None, t1 + Duration::from_millis(400)));
+        assert!(motion.visual().is_none());
     }
 }

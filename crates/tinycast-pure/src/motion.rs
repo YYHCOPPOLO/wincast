@@ -1,11 +1,12 @@
-//! Easing shared with Tinycast v0.10.2.
+//! Easing shared with upstream Tinycast (oracle `da2c4e44`).
 //!
 //! Window fades use `CAMediaTimingFunction`: ease-out
 //! `cubic-bezier(0, 0, 0.58, 1)` on the way in, ease-in
-//! `cubic-bezier(0.42, 0, 1, 1)` on the way out. SwiftUI `.easeOut` /
-//! `.easeIn` / `.easeInOut` use those same control points. A menu or callout
-//! also scales from [`MENU_SCALE`]. Scrollbar knobs use the thin-scrollbar
-//! spring (`response: 0.28`, `dampingFraction: 0.85`).
+//! `cubic-bezier(0.42, 0, 1, 1)` on the way out
+//! (`DesignSystem/Interaction/PanelTransition.swift`). SwiftUI `.easeOut` /
+//! `.easeIn` / `.easeInOut` use those same control points. Palette menus play
+//! [`MenuReveal`] (`Theme.MenuMotion`); dialogs play [`DialogMotion`]. Scrollbar
+//! knobs use the thin-scrollbar spring (`response: 0.28`, `dampingFraction: 0.85`).
 
 use std::time::Instant;
 
@@ -14,8 +15,10 @@ use crate::theme;
 /// Content scale at the start of a panel entrance, matching `PanelEntrance.entryScale`.
 pub const ENTER_SCALE: f32 = 0.94;
 
-/// Menu and recorder-callout scale at the start of their transition.
-pub const MENU_SCALE: f32 = 0.96;
+/// Settings shortcut-recorder callout scale at the start of its transition.
+/// Upstream scales that callout from 0.5 (`Features/HotKeys/UI/ShortcutRecorderPopover.swift:139`);
+/// it is retuned with the Settings phase, not here.
+pub const CALLOUT_SCALE: f32 = 0.96;
 
 /// Floor so a reverse near the end of a clip does not vanish in one frame.
 const MIN_DURATION_SECS: f32 = 0.06;
@@ -345,8 +348,230 @@ impl Reveal {
     }
 }
 
+/// Samples a `CAMediaTimingFunction(controlPoints:)` tuple.
+pub fn bezier(curve: (f32, f32, f32, f32), t: f32) -> f32 {
+    cubic_bezier(curve.0, curve.1, curve.2, curve.3, t)
+}
+
+/// A palette menu's alpha and scale `elapsed` seconds into its reveal
+/// (`Palette/MenuPanel.swift` `startReveal`). Returns `true` once settled.
+pub fn menu_open_visual(elapsed_secs: f32) -> (Visual, bool) {
+    use theme::menu_motion as m;
+    let total = m::EXPANSION_SECS + m::SETTLE_SECS;
+    let e = elapsed_secs.max(0.0);
+    let alpha = bezier(m::EXPANSION_CURVE, e / total);
+    let scale = if e < m::EXPANSION_SECS {
+        lerp(
+            m::ENTRY_SCALE,
+            m::MAXIMUM_SCALE,
+            bezier(m::EXPANSION_CURVE, e / m::EXPANSION_SECS),
+        )
+    } else {
+        lerp(
+            m::MAXIMUM_SCALE,
+            1.0,
+            bezier(m::SETTLE_CURVE, (e - m::EXPANSION_SECS) / m::SETTLE_SECS),
+        )
+    };
+    let done = e >= total;
+    if done {
+        (Visual::rest(), true)
+    } else {
+        (Visual { scale, alpha }, false)
+    }
+}
+
+/// A palette menu's dismissal from wherever it stood (`MenuPanel.swift`
+/// `startDismissalAnimation`): scale drops by `exitScaleDelta`, never below
+/// `entryScale − exitScaleDelta`, while alpha runs to 0, both on the exit curve.
+pub fn menu_close_visual(from: Visual, elapsed_secs: f32) -> (Visual, bool) {
+    use theme::menu_motion as m;
+    let floor = m::ENTRY_SCALE - m::EXIT_SCALE_DELTA;
+    let target = (from.scale - m::EXIT_SCALE_DELTA).max(floor);
+    let t = (elapsed_secs.max(0.0) / m::EXIT_SECS).clamp(0.0, 1.0);
+    let e = bezier(m::EXIT_CURVE, t);
+    let done = t >= 1.0;
+    (
+        Visual {
+            scale: lerp(from.scale, target, e),
+            alpha: if done { 0.0 } else { lerp(from.alpha, 0.0, e) },
+        },
+        done,
+    )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum MenuPhase {
+    Hidden,
+    Opening { start: Instant },
+    Open,
+    Closing { start: Instant, from: Visual },
+}
+
+/// The open/close state machine behind [`menu_open_visual`] and
+/// [`menu_close_visual`]. Re-opening while closing restarts from the entry scale
+/// at alpha 0, as `MenuPanel.show` resets `alphaValue` and the model scale.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MenuReveal {
+    phase: MenuPhase,
+}
+
+impl Default for MenuReveal {
+    fn default() -> Self {
+        Self {
+            phase: MenuPhase::Hidden,
+        }
+    }
+}
+
+impl MenuReveal {
+    pub fn open(&mut self, now: Instant) {
+        if matches!(self.phase, MenuPhase::Hidden | MenuPhase::Closing { .. }) {
+            self.phase = MenuPhase::Opening { start: now };
+        }
+    }
+
+    /// A different menu replaced the open one: play the reveal again.
+    pub fn restart(&mut self, now: Instant) {
+        self.phase = MenuPhase::Opening { start: now };
+    }
+
+    pub fn close(&mut self, now: Instant) {
+        if matches!(self.phase, MenuPhase::Opening { .. } | MenuPhase::Open) {
+            let from = self.sample(now);
+            self.phase = MenuPhase::Closing { start: now, from };
+        }
+    }
+
+    pub fn is_running(&self) -> bool {
+        matches!(
+            self.phase,
+            MenuPhase::Opening { .. } | MenuPhase::Closing { .. }
+        )
+    }
+
+    pub fn is_hidden(&self) -> bool {
+        self.phase == MenuPhase::Hidden
+    }
+
+    pub fn sample(&mut self, now: Instant) -> Visual {
+        match self.phase {
+            MenuPhase::Hidden => Visual {
+                scale: theme::menu_motion::ENTRY_SCALE,
+                alpha: 0.0,
+            },
+            MenuPhase::Open => Visual::rest(),
+            MenuPhase::Opening { start } => {
+                let (visual, done) = menu_open_visual(secs_since(start, now));
+                if done {
+                    self.phase = MenuPhase::Open;
+                }
+                visual
+            }
+            MenuPhase::Closing { start, from } => {
+                let (visual, done) = menu_close_visual(from, secs_since(start, now));
+                if done {
+                    self.phase = MenuPhase::Hidden;
+                }
+                visual
+            }
+        }
+    }
+}
+
+fn secs_since(start: Instant, now: Instant) -> f32 {
+    now.checked_duration_since(start)
+        .unwrap_or_default()
+        .as_secs_f32()
+}
+
+/// `Theme.DialogMotion` + `Duration.dialogEnter/Exit`: a dialog rises 3pt from 8%
+/// opacity on ease-out, and fades out on ease-in without moving
+/// (`docs/ui.md` "Entrance and exit"). Returns (alpha, y offset in DIP, done).
+pub struct DialogMotion;
+
+impl DialogMotion {
+    pub fn enter(elapsed_secs: f32) -> (f32, f32, bool) {
+        use theme::dialog_motion as d;
+        let t = (elapsed_secs.max(0.0) / theme::duration::DIALOG_ENTER_SECS).clamp(0.0, 1.0);
+        let e = Ease::Out.apply(t);
+        (
+            lerp(d::INITIAL_OPACITY, 1.0, e),
+            lerp(d::OFFSET, 0.0, e),
+            t >= 1.0,
+        )
+    }
+
+    pub fn exit(from_alpha: f32, elapsed_secs: f32) -> (f32, bool) {
+        let t = (elapsed_secs.max(0.0) / theme::duration::DIALOG_EXIT_SECS).clamp(0.0, 1.0);
+        (lerp(from_alpha, 0.0, Ease::In.apply(t)), t >= 1.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn menu_reveal_overshoots_then_settles() {
+        let (start, done) = menu_open_visual(0.0);
+        assert!(!done);
+        assert!((start.scale - 0.94).abs() < 1e-4);
+        assert!(start.alpha.abs() < 1e-4);
+        let (peak, _) = menu_open_visual(theme::menu_motion::EXPANSION_SECS);
+        assert!((peak.scale - 1.003).abs() < 1e-3, "peak {}", peak.scale);
+        let (end, done) = menu_open_visual(0.15);
+        assert!(done);
+        assert_eq!(end, Visual::rest());
+        // The expansion curve front-loads: most of the alpha arrives early.
+        let (early, _) = menu_open_visual(0.03);
+        assert!(early.alpha > 0.3, "alpha {}", early.alpha);
+    }
+
+    #[test]
+    fn menu_close_drops_scale_by_delta_and_floors() {
+        let (end, done) = menu_close_visual(Visual::rest(), theme::menu_motion::EXIT_SECS);
+        assert!(done);
+        assert!((end.scale - 0.96).abs() < 1e-4);
+        assert_eq!(end.alpha, 0.0);
+        let low = Visual {
+            scale: 0.92,
+            alpha: 0.5,
+        };
+        let (end, _) = menu_close_visual(low, 1.0);
+        assert!((end.scale - 0.90).abs() < 1e-4);
+    }
+
+    #[test]
+    fn menu_reveal_state_machine() {
+        let t0 = Instant::now();
+        let mut m = MenuReveal::default();
+        assert!(m.is_hidden());
+        m.open(t0);
+        assert!(m.is_running());
+        let v = m.sample(t0 + std::time::Duration::from_millis(200));
+        assert_eq!(v, Visual::rest());
+        assert!(!m.is_running());
+        m.close(t0 + std::time::Duration::from_millis(200));
+        assert!(m.is_running());
+        let _ = m.sample(t0 + std::time::Duration::from_millis(400));
+        assert!(m.is_hidden());
+        // Re-open mid-close starts again from the entry scale.
+        m.open(t0);
+        m.close(t0 + std::time::Duration::from_millis(50));
+        m.open(t0 + std::time::Duration::from_millis(60));
+        let v = m.sample(t0 + std::time::Duration::from_millis(60));
+        assert!((v.scale - 0.94).abs() < 1e-3);
+    }
+
+    #[test]
+    fn dialog_rises_three_points_from_eight_percent() {
+        let (a, y, done) = DialogMotion::enter(0.0);
+        assert!((a - 0.08).abs() < 1e-4 && (y - 3.0).abs() < 1e-4 && !done);
+        let (a, y, done) = DialogMotion::enter(theme::duration::DIALOG_ENTER_SECS);
+        assert!((a - 1.0).abs() < 1e-4 && y.abs() < 1e-4 && done);
+        let (a, done) = DialogMotion::exit(1.0, theme::duration::DIALOG_EXIT_SECS);
+        assert!(a.abs() < 1e-4 && done);
+    }
+
     use super::*;
 
     #[test]
