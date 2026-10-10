@@ -1,6 +1,6 @@
 # Wincast
 
-Windows 上的原生启动器。行为与界面对齐 macOS 上的 [Tinycast](https://github.com/abue-ammar/tinycast) **v0.10.2**，用 Rust + Win32 + Direct2D 独立重写，不复制 Swift 源码。
+Windows 上的原生启动器。行为与界面对齐 macOS 上的 [Tinycast](https://github.com/abue-ammar/tinycast) 上游 `main`（当前对照提交 [`da2c4e44`](https://github.com/abue-ammar/tinycast/commit/da2c4e44)；此前的对照基准是 v0.10.2），用 Rust + Win32 + Direct2D 独立重写，不复制 Swift 源码。界面 token 以上游 `Tinycast/DesignSystem/Theme.swift` 与 `docs/ui.md` 为准，见 `crates/tinycast-pure/src/theme.rs`。
 
 A tiny native Windows launcher — one exe, no Electron, no WebView, no telemetry.
 
@@ -63,6 +63,11 @@ cargo build -p tinycast --release
 
 面板内修饰键按 Windows 习惯：**⌘ → Ctrl**（例如原作 `⌘K` 为 `Ctrl+K`）。
 
+### 字体与实验性模糊
+
+- 拉丁文字用 **Segoe UI Variable**（按字号选 Small / Text / Display 光学尺寸；未安装时回退 Segoe UI），中日韩文字经 DirectWrite 字体回退落到 **Microsoft YaHei UI**。搜索框等系统 `EDIT` 控件暂时仍用 YaHei UI，以保证输入法正常。
+- 面板背后的真实模糊默认关闭。启动前设置环境变量 `TINYCAST_EXPERIMENTAL_BLUR=1` 可试用（需要 Windows 11 并开启“透明效果”）；任何条件不满足时自动退回现在的纯遮罩。
+
 ## 架构
 
 ```
@@ -91,4 +96,4 @@ UI 线程一条。扫应用、解码图、FTS、HTTP 流等进线程池，结果
 
 ## 许可
 
-本仓库 `Cargo.toml` 声明 **MIT**。这是独立重写：对照 Tinycast v0.10.2 的公开文档与 Theme token，不复制其 Swift 源码。原作本身是 [AGPL-3.0](https://github.com/abue-ammar/tinycast)。
+本仓库 `Cargo.toml` 声明 **MIT**。这是独立重写：对照 Tinycast 上游 main（`da2c4e44`，此前为 v0.10.2）的公开文档与 Theme token，不复制其 Swift 源码。原作本身是 [AGPL-3.0](https://github.com/abue-ammar/tinycast)。
