@@ -73,14 +73,18 @@ impl NotesStore {
         self.ensure_dir()?;
         let preferred = self.active.as_ref().map(|n| n.id());
         self.summaries = self.list()?;
-        if self.active.is_some() {
-            return Ok(());
-        }
         if let Some(id) = preferred {
+            if self.dirty {
+                // Unsaved edits win; the next flush writes them (and
+                // recreates the file if it was removed meanwhile).
+                return Ok(());
+            }
             if self.summaries.iter().any(|s| s.id == id) {
+                // Pick up edits made outside Tinycast.
                 self.active = Some(self.load_id(&id)?);
                 return Ok(());
             }
+            self.active = None;
         }
         if let Some(first) = self.summaries.first() {
             self.active = Some(self.load_id(&first.id)?);
@@ -257,6 +261,43 @@ mod tests {
         assert_eq!(hits.len(), 2);
         let hits = store.search("Untitled 2");
         assert_eq!(hits.len(), 1);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reload_picks_up_external_edit_of_active_note() {
+        let (mut store, root) = temp_store();
+        store.create().unwrap();
+        store.set_body("mine".into());
+        store.flush().unwrap();
+        fs::write(root.join("Untitled.md"), "edited elsewhere").unwrap();
+        store.reload().unwrap();
+        assert_eq!(store.active().unwrap().body, "edited elsewhere");
+        assert!(!store.is_dirty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reload_keeps_unsaved_edits() {
+        let (mut store, root) = temp_store();
+        store.create().unwrap();
+        fs::write(root.join("Untitled.md"), "edited elsewhere").unwrap();
+        store.set_body("typing".into());
+        store.reload().unwrap();
+        assert_eq!(store.active().unwrap().body, "typing");
+        assert!(store.is_dirty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reload_falls_back_when_active_note_was_deleted() {
+        let (mut store, root) = temp_store();
+        store.create().unwrap();
+        store.create().unwrap();
+        assert_eq!(store.active().unwrap().id(), "Untitled 2.md");
+        fs::remove_file(root.join("Untitled 2.md")).unwrap();
+        store.reload().unwrap();
+        assert_eq!(store.active().unwrap().id(), "Untitled.md");
         let _ = fs::remove_dir_all(&root);
     }
 

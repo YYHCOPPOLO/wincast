@@ -646,7 +646,11 @@ impl AppCore {
             return;
         }
         self.notes_commit_editor();
+        let before = self.notes.active().map(|n| n.body.clone());
         let _ = self.notes.reload();
+        if self.notes.active().map(|n| &n.body) != before.as_ref() {
+            self.sync_notes_window();
+        }
         self.notes_switcher = self.notes.search("");
         if let Some(window) = &self.notes_window {
             window.fill_switcher(
