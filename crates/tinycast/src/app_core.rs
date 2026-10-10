@@ -581,6 +581,7 @@ impl AppCore {
             return;
         }
         self.hide_palette();
+        self.notes_commit_editor();
         if let Err(err) = self.notes.show_last() {
             self.show_alert("Notes", &err.to_string());
             return;
@@ -599,6 +600,7 @@ impl AppCore {
             return;
         }
         self.hide_palette();
+        self.notes_commit_editor();
         if let Err(err) = self.notes.create() {
             self.show_alert("Notes", &err.to_string());
             return;
@@ -621,7 +623,7 @@ impl AppCore {
     }
 
     pub fn notes_hide(&mut self) {
-        let _ = self.notes.flush();
+        self.notes_commit_editor();
         if let Some(window) = &self.notes_window {
             window.hide();
         }
@@ -643,6 +645,7 @@ impl AppCore {
             }
             return;
         }
+        self.notes_commit_editor();
         let _ = self.notes.reload();
         self.notes_switcher = self.notes.search("");
         if let Some(window) = &self.notes_window {
@@ -675,6 +678,7 @@ impl AppCore {
         let Some(id) = self.notes_switcher.get(index).map(|s| s.id.clone()) else {
             return;
         };
+        self.notes_commit_editor();
         if let Err(err) = self.notes.select(&id) {
             self.show_alert("Notes", &err.to_string());
             return;
@@ -688,6 +692,19 @@ impl AppCore {
 
     pub fn notes_body_changed(&mut self, body: String) {
         self.notes.set_body(body);
+        let _ = self.notes.flush();
+    }
+
+    /// Store editor text the 300 ms debounce has not saved yet, then flush.
+    /// Runs before hiding, switching notes, and on shutdown.
+    pub fn notes_commit_editor(&mut self) {
+        if let Some(body) = self
+            .notes_window
+            .as_ref()
+            .and_then(|w| w.take_pending_body())
+        {
+            self.notes.set_body(body);
+        }
         let _ = self.notes.flush();
     }
 
