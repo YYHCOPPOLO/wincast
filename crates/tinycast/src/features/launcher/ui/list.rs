@@ -8,7 +8,7 @@ use tinycast_pure::launcher_results::{
     list_items, LauncherListItem, LauncherSection, LauncherSectionKind,
 };
 use tinycast_pure::theme;
-use windows::core::{w, Interface, PCWSTR};
+use windows::core::{Interface, PCWSTR};
 use windows::Win32::Foundation::{HWND, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_PREMULTIPLIED;
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -21,10 +21,9 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    IDWriteFactory, IDWriteTextFormat, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-    DWRITE_FONT_WEIGHT_REGULAR, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_METRICS, DWRITE_TRIMMING,
-    DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
+    IDWriteFactory, IDWriteTextFormat, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_MEASURING_MODE_NATURAL,
+    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_METRICS,
+    DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
@@ -146,7 +145,7 @@ impl IconCache {
             appearance,
         };
         if !self.map.contains_key(&key) {
-            let px = (theme::size::ROW_ICON * dpi as f32 / 96.0).round() as i32;
+            let px = (theme::size::RESULT_ROW_ICON * dpi as f32 / 96.0).round() as i32;
             let loaded = load_shell_icon_bgra(source, px).map(|(width, height, bgra)| IconPixels {
                 width,
                 height,
@@ -666,17 +665,12 @@ fn paint_empty_results(
         glyph,
         tertiary,
     )?;
-    let format = unsafe {
-        dwrite.CreateTextFormat(
-            w!("Microsoft YaHei UI"),
-            None,
-            DWRITE_FONT_WEIGHT_REGULAR,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            theme::typography::ROW_TITLE,
-            w!("en-US"),
-        )?
-    };
+    let format = crate::design_system::fonts::ui_text_format(
+        dwrite,
+        theme::typography::ROW_TITLE,
+        DWRITE_FONT_WEIGHT_REGULAR,
+        "en-US",
+    )?;
     unsafe {
         format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
         format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
@@ -1021,8 +1015,8 @@ fn paint_fade(
         return Ok(());
     }
     let (sr, sg, sb, _) = theme::colors::scrim_rgba(appearance);
-    let top_floor = 0.15;
-    let bot_floor = 0.25;
+    let top_floor = theme::fade::EDGE_TOP_FLOOR;
+    let bot_floor = theme::fade::EDGE_BOTTOM_FLOOR;
     let top_outer = D2D1_COLOR_F {
         r: sr,
         g: sg,
@@ -1223,9 +1217,9 @@ mod tests {
 
     #[test]
     fn row_metrics_match_theme_tokens() {
-        assert_eq!(theme::size::ROW_ICON, 24.0);
+        assert_eq!(theme::size::RESULT_ROW_ICON, 26.0);
         assert_eq!(theme::radius::ROW, 10.0);
-        assert_eq!(ROW_HEIGHT, 36.0);
+        assert_eq!(ROW_HEIGHT, 38.0);
     }
 
     #[test]
@@ -1279,7 +1273,7 @@ mod tests {
     #[test]
     fn row_height_matches_pure_layout() {
         assert_eq!(ROW_HEIGHT, tinycast_pure::layout::list::ROW_HEIGHT);
-        assert_eq!(ROW_HEIGHT, 36.0);
+        assert_eq!(ROW_HEIGHT, 38.0);
     }
 
     #[test]
@@ -1351,7 +1345,7 @@ mod tests {
     fn ensure_visible_scrolls_selected_row_into_view() {
         let view = 100.0;
         assert_eq!(ensure_visible(0.0, 0.0, ROW_HEIGHT, view), 0.0);
-        assert_eq!(ensure_visible(0.0, 80.0, ROW_HEIGHT, view), 16.0);
+        assert_eq!(ensure_visible(0.0, 80.0, ROW_HEIGHT, view), 18.0);
         assert_eq!(ensure_visible(50.0, 0.0, ROW_HEIGHT, view), 0.0);
     }
 

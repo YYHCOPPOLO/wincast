@@ -25,7 +25,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_NOZORDER, SW_HIDE, SW_SHOW, WA_INACTIVE, WM_ACTIVATE, WM_CHAR, WM_COMMAND, WM_CTLCOLOREDIT,
     WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
     WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SIZE,
-    WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WM_TIMER, WM_WINDOWPOSCHANGED, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_POPUP,
 };
 
 use super::chrome::{MenuMotion, OwnedMenu};
@@ -63,6 +64,8 @@ struct PaletteInner {
     icons: IconCache,
     menu: MenuMotion,
     scroll_chrome: ScrollChrome,
+    /// Experimental blur under the palette (`TINYCAST_EXPERIMENTAL_BLUR=1`).
+    backdrop: Option<crate::design_system::backdrop::Backdrop>,
 }
 
 impl PaletteWindow {
@@ -108,6 +111,7 @@ impl PaletteWindow {
                 icons: IconCache::new(),
                 menu: MenuMotion::default(),
                 scroll_chrome: ScrollChrome::default(),
+                backdrop: None,
             });
             let ptr = Box::into_raw(inner);
             let hwnd = match CreateWindowExW(
@@ -135,6 +139,7 @@ impl PaletteWindow {
             // per-pixel alpha via UpdateLayeredWindow keeps the 0.40 scrim
             // and 26 DIP corners without a solid gray slab.
             (*ptr).renderer.set_layered(hwnd, true);
+            (*ptr).backdrop = crate::design_system::backdrop::Backdrop::create_if_requested(host);
             match SearchEdit::create(hwnd, host) {
                 Ok(edit) => (*ptr).edit = Some(edit),
                 Err(err) => {
@@ -637,6 +642,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_ERASEBKGND => LRESULT(1),
+        WM_WINDOWPOSCHANGED => {
+            if let Some(inner) = inner_from(hwnd) {
+                if let Some(backdrop) = (*inner).backdrop.as_mut() {
+                    backdrop.follow(hwnd);
+                }
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
         WM_SIZE => {
             if let Some(inner) = inner_from(hwnd) {
                 let width = (lparam.0 as u32) & 0xffff;

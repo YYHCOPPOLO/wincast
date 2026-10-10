@@ -1,7 +1,9 @@
 use crate::palette_placement::DipRect;
 use crate::theme;
 
-pub const ROW_HEIGHT: f32 = 36.0;
+/// `resultRowIcon` plus the row's `.vertical sm` padding (`docs/ui.md` "Rows, selection,
+/// hover"; `Launcher/UI/LauncherList.swift`). v0.10.2 used the 24pt icon, so 36.
+pub const ROW_HEIGHT: f32 = theme::size::RESULT_ROW_ICON + theme::spacing::SM * 2.0;
 
 /// List chrome inset (selection pill) plus the row's own horizontal padding.
 /// The icon has to sit inside the pill; sharing the pill's left edge covers the corner.
@@ -14,7 +16,7 @@ pub fn row_content_right(panel_w: f32) -> f32 {
 }
 
 pub fn row_icon_rect(row_y: f32) -> DipRect {
-    let size = theme::size::ROW_ICON;
+    let size = theme::size::RESULT_ROW_ICON;
     DipRect {
         x: row_content_left(),
         y: row_y + (ROW_HEIGHT - size) / 2.0,
@@ -46,11 +48,11 @@ pub fn view_height(panel_h: f32) -> f32 {
 }
 
 pub fn edge_dissolve_top_band() -> f32 {
-    theme::size::HEADER_HEIGHT + theme::size::HEADER_PADDING + 32.0
+    theme::fade::edge_top_band()
 }
 
 pub fn edge_dissolve_bottom_band() -> f32 {
-    theme::size::BOTTOM_BAR_HEIGHT + 28.0
+    theme::fade::edge_bottom_band()
 }
 
 pub fn section_header_height(is_first: bool) -> f32 {
@@ -225,8 +227,11 @@ mod tests {
 
     #[test]
     fn row_height_is_icon_plus_vertical_padding() {
-        assert_eq!(ROW_HEIGHT, theme::size::ROW_ICON + theme::spacing::SM * 2.0);
-        assert_eq!(ROW_HEIGHT, 36.0);
+        assert_eq!(
+            ROW_HEIGHT,
+            theme::size::RESULT_ROW_ICON + theme::spacing::SM * 2.0
+        );
+        assert_eq!(ROW_HEIGHT, 38.0);
     }
 
     #[test]
@@ -238,8 +243,8 @@ mod tests {
         assert!((row_content_right(750.0) - (750.0 - theme::spacing::MD * 2.0)).abs() < 0.01);
         assert!(r.x > fill.x);
         assert!(r.x + r.w < row_content_right(750.0));
-        assert_eq!(r.w, 24.0);
-        assert_eq!(r.h, 24.0);
+        assert_eq!(r.w, 26.0);
+        assert_eq!(r.h, 26.0);
         assert!((r.y - (100.0 + 6.0)).abs() < 0.01);
     }
 

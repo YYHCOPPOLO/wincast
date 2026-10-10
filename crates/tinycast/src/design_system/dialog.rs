@@ -44,7 +44,7 @@ pub fn paint(
         target,
         width,
         height,
-        theme::radius::DIALOG,
+        theme::radius::DIALOG_SURFACE,
         content.appearance,
     )?;
 
