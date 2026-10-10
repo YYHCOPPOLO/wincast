@@ -42,6 +42,7 @@ pub mod system_action;
 pub mod template;
 pub mod template_tokens;
 pub mod theme;
+pub mod typeface;
 pub mod uninstall;
 pub mod update;
 pub mod visibility;

@@ -36,7 +36,8 @@ pub fn draw(
     Ok(())
 }
 
-/// YaHei UI's em-box sits slightly high in a capsule; nudge the layout down.
+/// The UI face's em-box sits slightly high in a capsule; nudge the layout down.
+/// Measured with YaHei UI; re-check against Segoe UI Variable in the golden renders.
 pub const BUTTON_OPTICAL_NUDGE_Y: f32 = 1.0;
 
 pub fn draw_button_label(

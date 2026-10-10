@@ -410,8 +410,7 @@ mod tests {
     fn search_edit_font_is_yahei_ui() {
         let src = include_str!("edit.rs");
         assert!(src.contains("create_gdi_ui_font"));
-        let fonts = include_str!("../design_system/fonts.rs");
         let family = concat!("Microsoft ", "YaHei", " UI");
-        assert!(fonts.contains(family));
+        assert_eq!(crate::design_system::fonts::gdi_font_family(), family);
     }
 }

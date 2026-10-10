@@ -1,16 +1,14 @@
 use tinycast_pure::ai::{ChatMessage, ChatRole, ChatState};
 use tinycast_pure::layout::list as chat_layout;
 use tinycast_pure::theme;
-use windows::core::w;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{
     ID2D1RenderTarget, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    IDWriteFactory, IDWriteTextFormat, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-    DWRITE_FONT_WEIGHT_REGULAR, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
-    DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
-    DWRITE_WORD_WRAPPING_WRAP,
+    IDWriteFactory, IDWriteTextFormat, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_MEASURING_MODE_NATURAL,
+    DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
+    DWRITE_TEXT_METRICS, DWRITE_WORD_WRAPPING_WRAP,
 };
 
 use super::appearance;
@@ -190,17 +188,12 @@ fn wrap_format(
     dwrite: &IDWriteFactory,
     trailing: bool,
 ) -> windows::core::Result<IDWriteTextFormat> {
-    let format = unsafe {
-        dwrite.CreateTextFormat(
-            w!("Microsoft YaHei UI"),
-            None,
-            DWRITE_FONT_WEIGHT_REGULAR,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            theme::typography::ROW_TITLE,
-            w!("en-US"),
-        )?
-    };
+    let format = crate::design_system::fonts::ui_text_format(
+        dwrite,
+        theme::typography::ROW_TITLE,
+        DWRITE_FONT_WEIGHT_REGULAR,
+        "en-US",
+    )?;
     unsafe {
         format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
         format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
