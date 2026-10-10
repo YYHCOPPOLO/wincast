@@ -83,8 +83,6 @@ UI 线程一条。扫应用、解码图、FTS、HTTP 流等进线程池，结果
 
 开机启动（若打开）：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`。
 
-体积与 RSS 记录见 [`docs/size-ledger.md`](docs/size-ledger.md)。
-
 ## 明确不做（v1）
 
 - **Raycast 扩展运行时**（设置里有 Extensions 页，打开时说明尚未交付，不会塞 JS 引擎）
