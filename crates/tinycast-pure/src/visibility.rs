@@ -38,7 +38,7 @@ impl VisibilityStore {
         }
         let data = serde_json::to_vec_pretty(&self.to_data())
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(path, data)
+        crate::atomic_file::write(path, data)
     }
 
     pub fn is_kind_enabled(&self, k: AppKind) -> bool {

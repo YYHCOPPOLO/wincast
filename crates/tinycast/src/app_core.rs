@@ -1012,7 +1012,7 @@ impl AppCore {
     }
 
     pub fn finish_onboarding(&mut self) {
-        let _ = std::fs::write(onboarding_done_path(), b"1");
+        let _ = tinycast_pure::atomic_file::write(onboarding_done_path(), b"1");
         if let Some(window) = &self.onboarding_window {
             window.hide();
         }
@@ -4960,7 +4960,7 @@ fn load_support_state() -> SupportState {
 fn save_support_state(state: &SupportState) {
     let _ = std::fs::create_dir_all(crate::platform::paths::roaming_dir());
     if let Ok(bytes) = serde_json::to_vec_pretty(state) {
-        let _ = std::fs::write(support_state_path(), bytes);
+        let _ = tinycast_pure::atomic_file::write(support_state_path(), bytes);
     }
 }
 

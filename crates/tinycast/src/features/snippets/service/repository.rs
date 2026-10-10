@@ -198,7 +198,8 @@ impl SnippetRepository {
             });
         }
         let content = serialize(record);
-        atomic_write(&path, content.as_bytes()).map_err(|e| io_err(&path, e))?;
+        tinycast_pure::atomic_file::write(&path, content.as_bytes())
+            .map_err(|e| io_err(&path, e))?;
         Ok(StoredSnippet {
             path,
             name: record.name.clone(),
@@ -301,23 +302,6 @@ fn write_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
             } else {
                 std::fs::write(path, bytes)
             }
-        }
-    }
-}
-
-fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_file_name(format!(
-        ".{}.tmp",
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("snippet")
-    ));
-    std::fs::write(&tmp, bytes)?;
-    match std::fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            let _ = std::fs::remove_file(&tmp);
-            Err(err)
         }
     }
 }

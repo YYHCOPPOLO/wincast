@@ -120,7 +120,7 @@ impl QuicklinkStore {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let bytes = serde_json::to_vec_pretty(&self.links).map_err(|e| e.to_string())?;
-        std::fs::write(&self.path, bytes).map_err(|e| e.to_string())
+        tinycast_pure::atomic_file::write(&self.path, bytes).map_err(|e| e.to_string())
     }
 }
 

@@ -140,7 +140,8 @@ impl NotesStore {
             return Ok(());
         };
         let path = self.validated_child(&note.id())?;
-        fs::write(&path, note.body.as_bytes()).map_err(|e| NotesError::Io(e.to_string()))?;
+        tinycast_pure::atomic_file::write(&path, note.body.as_bytes())
+            .map_err(|e| NotesError::Io(e.to_string()))?;
         self.dirty = false;
         self.summaries = self.list()?;
         Ok(())
