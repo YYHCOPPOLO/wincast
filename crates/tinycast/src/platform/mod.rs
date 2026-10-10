@@ -6,6 +6,7 @@ mod dpi;
 pub(crate) mod keyboard_ll;
 pub(crate) mod launch_at_login;
 pub mod messages;
+pub(crate) mod modal;
 pub(crate) mod paster;
 pub(crate) mod paths;
 pub mod screens;
