@@ -230,15 +230,10 @@ pub fn paint_menu(
     let appearance = menu.appearance;
     let has_header = !menu.header.is_empty();
     let frame = menu_frame(menu.kind, panel_w, panel_h, menu.items.len(), has_header);
-    let glass = if appearance == 0 {
-        color(0.08, 0.08, 0.08, 0.94)
-    } else {
-        color(0.98, 0.98, 0.98, 0.96)
-    };
+    let glass = crate::design_system::appearance::color(
+        crate::design_system::glass::glass_tint_rgba(appearance),
+    );
     fill_round(target, frame, theme::radius::MENU_PANEL, glass)?;
-    let frost =
-        crate::design_system::appearance::color(theme::colors::ramp_rgba(appearance, 0.05, 0.03));
-    fill_round(target, frame, theme::radius::MENU_PANEL, frost)?;
     let border = unsafe {
         target.CreateSolidColorBrush(
             &crate::design_system::appearance::color(theme::colors::ramp_rgba(
