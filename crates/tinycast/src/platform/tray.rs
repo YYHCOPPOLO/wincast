@@ -335,6 +335,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_ENDSESSION => {
             if let Some(core) = core_from(hwnd) {
+                (*core).notes_commit_editor();
                 (*core).shutdown_hotkeys();
             }
             LRESULT(0)
@@ -360,6 +361,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_DESTROY => {
             if let Some(core) = core_from(hwnd) {
+                (*core).notes_commit_editor();
                 (*core).shutdown_hotkeys();
                 (*core).palette_window = None;
                 (*core).settings_window = None;

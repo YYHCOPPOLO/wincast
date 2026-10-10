@@ -26,7 +26,7 @@ impl FavoritesStore {
         }
         let data = serde_json::to_vec_pretty(&self.ids)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(path, data)
+        crate::atomic_file::write(path, data)
     }
 
     /// `1..=9` map to the first nine ids; `0` is the tenth. Other digits have no slot.

@@ -15,15 +15,16 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect,
-    GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW,
-    MoveWindow, RegisterClassW, SendMessageW, SetTimer, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, GWLP_WNDPROC,
-    HWND_TOP, IDC_ARROW, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, MINMAXINFO,
-    SWP_NOACTIVATE, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE,
-    WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO,
-    WM_KEYDOWN, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST, WM_PAINT, WM_SIZE,
-    WM_TIMER, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_TOOLWINDOW,
-    WS_OVERLAPPEDWINDOW, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_THICKFRAME, WS_VISIBLE, WS_VSCROLL,
+    GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsWindow, KillTimer,
+    LoadCursorW, MoveWindow, RegisterClassW, SendMessageW, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA,
+    GWLP_WNDPROC, HWND_TOP, IDC_ARROW, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL,
+    MINMAXINFO, SWP_NOACTIVATE, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+    WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDOWN, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST,
+    WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE,
+    WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_THICKFRAME,
+    WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::app_core::AppCore;
@@ -156,6 +157,16 @@ impl NotesWindow {
             close_switcher_of(self.hwnd);
             save_frame(self.hwnd);
             let _ = ShowWindow(self.hwnd, SW_HIDE);
+        }
+    }
+
+    /// Editor text typed since the last debounced save, if any. Cancels the
+    /// pending save so the caller owns storing it.
+    pub fn take_pending_body(&self) -> Option<String> {
+        unsafe {
+            KillTimer(self.hwnd, SAVE_TIMER)
+                .is_ok()
+                .then(|| edit_text(self.hwnd))
         }
     }
 
@@ -613,6 +624,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_TIMER if wparam.0 == SAVE_TIMER => {
+            // One-shot debounce: EN_CHANGE re-arms it on the next keystroke.
+            let _ = KillTimer(hwnd, SAVE_TIMER);
             if let Some(core) = inner_from(hwnd).and_then(|i| core_from_host((*i).host)) {
                 (*core).notes_body_changed(edit_text(hwnd));
             }
@@ -629,6 +642,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_DESTROY => {
+            // Shutdown destroys this window with the host; keep the last
+            // keystrokes the debounce timer has not stored yet.
+            if KillTimer(hwnd, SAVE_TIMER).is_ok() {
+                if let Some(core) = inner_from(hwnd).and_then(|i| core_from_host((*i).host)) {
+                    (*core).notes_body_changed(edit_text(hwnd));
+                }
+            }
             save_frame(hwnd);
             LRESULT(0)
         }

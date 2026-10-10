@@ -12,8 +12,8 @@ use windows::Win32::UI::Shell::{
     SIGDN_FILESYSPATH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW, RegisterClassW,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetWindowLongPtrW,
+    GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW, RegisterClassW,
     SetForegroundWindow, SetWindowLongPtrW, ShowWindow, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA,
     IDC_ARROW, MSG, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY,
     WM_KEYDOWN, WM_NCDESTROY, WNDCLASSW, WS_CHILD, WS_EX_CLIENTEDGE, WS_POPUP, WS_TABSTOP,
@@ -324,8 +324,8 @@ fn ask_string(owner: HWND, title: &str, lang: tinycast_pure::i18n::UiLang) -> Op
         let _ = SetForegroundWindow(hwnd);
         let mut msg = MSG::default();
         while IsWindow(hwnd).as_bool() {
-            let ok = GetMessageW(&mut msg, HWND::default(), 0, 0);
-            if !ok.as_bool() {
+            if !crate::platform::modal::next_message(&mut msg) {
+                let _ = DestroyWindow(hwnd);
                 break;
             }
             if msg.message == WM_KEYDOWN && msg.wParam.0 as u16 == 0x1B {

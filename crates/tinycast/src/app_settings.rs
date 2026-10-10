@@ -300,7 +300,7 @@ impl AppSettings {
     fn write_json(&self, roaming: &Path, local: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(roaming)?;
         std::fs::create_dir_all(local)?;
-        std::fs::write(
+        tinycast_pure::atomic_file::write(
             roaming.join("settings.json"),
             serde_json::to_vec_pretty(self)?,
         )

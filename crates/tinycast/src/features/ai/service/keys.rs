@@ -35,7 +35,8 @@ impl ApiKeyStore {
     pub fn set(&self, id: &Uuid, key: &str) -> Result<(), String> {
         let _ = std::fs::create_dir_all(&self.dir);
         let sealed = dpapi::protect(key.as_bytes(), id.as_str().as_bytes())?;
-        std::fs::write(self.path(id), sealed).map_err(|_| "could not store API key".to_string())
+        tinycast_pure::atomic_file::write(self.path(id), sealed)
+            .map_err(|_| "could not store API key".to_string())
     }
 
     pub fn remove(&self, id: &Uuid) {

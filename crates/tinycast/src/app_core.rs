@@ -581,6 +581,7 @@ impl AppCore {
             return;
         }
         self.hide_palette();
+        self.notes_commit_editor();
         if let Err(err) = self.notes.show_last() {
             self.show_alert("Notes", &err.to_string());
             return;
@@ -599,6 +600,7 @@ impl AppCore {
             return;
         }
         self.hide_palette();
+        self.notes_commit_editor();
         if let Err(err) = self.notes.create() {
             self.show_alert("Notes", &err.to_string());
             return;
@@ -621,7 +623,7 @@ impl AppCore {
     }
 
     pub fn notes_hide(&mut self) {
-        let _ = self.notes.flush();
+        self.notes_commit_editor();
         if let Some(window) = &self.notes_window {
             window.hide();
         }
@@ -643,7 +645,12 @@ impl AppCore {
             }
             return;
         }
+        self.notes_commit_editor();
+        let before = self.notes.active().map(|n| n.body.clone());
         let _ = self.notes.reload();
+        if self.notes.active().map(|n| &n.body) != before.as_ref() {
+            self.sync_notes_window();
+        }
         self.notes_switcher = self.notes.search("");
         if let Some(window) = &self.notes_window {
             window.fill_switcher(
@@ -675,6 +682,7 @@ impl AppCore {
         let Some(id) = self.notes_switcher.get(index).map(|s| s.id.clone()) else {
             return;
         };
+        self.notes_commit_editor();
         if let Err(err) = self.notes.select(&id) {
             self.show_alert("Notes", &err.to_string());
             return;
@@ -688,6 +696,19 @@ impl AppCore {
 
     pub fn notes_body_changed(&mut self, body: String) {
         self.notes.set_body(body);
+        let _ = self.notes.flush();
+    }
+
+    /// Store editor text the 300 ms debounce has not saved yet, then flush.
+    /// Runs before hiding, switching notes, and on shutdown.
+    pub fn notes_commit_editor(&mut self) {
+        if let Some(body) = self
+            .notes_window
+            .as_ref()
+            .and_then(|w| w.take_pending_body())
+        {
+            self.notes.set_body(body);
+        }
         let _ = self.notes.flush();
     }
 
@@ -991,7 +1012,7 @@ impl AppCore {
     }
 
     pub fn finish_onboarding(&mut self) {
-        let _ = std::fs::write(onboarding_done_path(), b"1");
+        let _ = tinycast_pure::atomic_file::write(onboarding_done_path(), b"1");
         if let Some(window) = &self.onboarding_window {
             window.hide();
         }
@@ -4939,7 +4960,7 @@ fn load_support_state() -> SupportState {
 fn save_support_state(state: &SupportState) {
     let _ = std::fs::create_dir_all(crate::platform::paths::roaming_dir());
     if let Ok(bytes) = serde_json::to_vec_pretty(state) {
-        let _ = std::fs::write(support_state_path(), bytes);
+        let _ = tinycast_pure::atomic_file::write(support_state_path(), bytes);
     }
 }
 
