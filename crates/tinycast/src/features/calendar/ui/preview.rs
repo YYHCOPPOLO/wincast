@@ -11,11 +11,10 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetWindowLongPtrW, IsWindow,
-    LoadCursorW, PeekMessageW, RegisterClassW, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MSG,
-    PM_REMOVE, SWP_NOACTIVATE, SW_SHOW, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_LBUTTONDOWN, WM_NCDESTROY, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_POPUP,
+    LoadCursorW, RegisterClassW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MSG, SWP_NOACTIVATE, SW_SHOW,
+    WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_NCDESTROY, WM_PAINT,
+    WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::design_system::host::OverlayPainter;
@@ -78,12 +77,7 @@ pub fn present(title: &str, lang: UiLang) -> bool {
             let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
-        while PeekMessageW(&mut msg, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
-            if msg.message == WM_PAINT || msg.message == 0x0012 {
-                let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            }
-        }
+        crate::platform::modal::discard_stray_input();
     }
     take_result()
 }
