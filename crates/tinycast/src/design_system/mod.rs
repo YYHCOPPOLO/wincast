@@ -4,6 +4,8 @@ pub mod chat;
 pub mod dialog;
 pub mod fonts;
 pub mod glass;
+#[cfg(test)]
+mod golden;
 pub mod host;
 pub mod hud;
 pub mod keycap;
@@ -54,7 +56,30 @@ pub mod test_render {
         h: u32,
         paint: impl FnOnce(&ID2D1RenderTarget) -> windows::core::Result<()>,
     ) -> windows::core::Result<(usize, usize, Vec<u8>)> {
-        let dpi = 96.0;
+        with_offscreen_px(w, h, 96, paint)
+    }
+
+    /// Renders `w_dip` x `h_dip` DIPs at `dpi` (96 = 100 %, 120 = 125 %, 144 = 150 %).
+    /// Painters keep drawing in DIPs; the render target scales to pixels.
+    pub fn with_offscreen_dpi(
+        w_dip: f32,
+        h_dip: f32,
+        dpi: u32,
+        paint: impl FnOnce(&ID2D1RenderTarget) -> windows::core::Result<()>,
+    ) -> windows::core::Result<(usize, usize, Vec<u8>)> {
+        let scale = dpi as f32 / 96.0;
+        let w = (w_dip * scale).ceil() as u32;
+        let h = (h_dip * scale).ceil() as u32;
+        with_offscreen_px(w, h, dpi, paint)
+    }
+
+    fn with_offscreen_px(
+        w: u32,
+        h: u32,
+        dpi: u32,
+        paint: impl FnOnce(&ID2D1RenderTarget) -> windows::core::Result<()>,
+    ) -> windows::core::Result<(usize, usize, Vec<u8>)> {
+        let dpi = dpi as f32;
         unsafe {
             let factory: ID2D1Factory = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
             let mem_dc = CreateCompatibleDC(HDC::default());
