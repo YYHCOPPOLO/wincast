@@ -1,0 +1,78 @@
+import { Theme } from "../theme.slint";
+import { IconSlot } from "row.slint";
+
+// The 44 DIP palette header: 10 DIP top pad lives on Panel, no divider.
+export component PanelHeader inherits Rectangle {
+    in property <string> text;
+    in property <bool> placeholder: false;
+    in property <bool> prominent: true;
+    in property <string> symbol;
+    in property <image> icon;
+    in property <bool> icon-ready: false;
+
+    height: Theme.size-header-height;
+    background: transparent;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md * 2;
+        padding-right: Theme.spacing-md * 2;
+        spacing: Theme.spacing-md;
+
+        VerticalLayout {
+            alignment: center;
+            IconSlot {
+                slot: Theme.size-header-icon-slot;
+                source: root.icon;
+                ready: root.icon-ready;
+                symbol: root.symbol;
+            }
+        }
+
+        Text {
+            text: root.text;
+            font-family: "Segoe UI";
+            font-size: root.prominent ? Theme.font-search : Theme.font-panel-title;
+            color: root.placeholder ? Theme.text-tertiary : Theme.text-primary;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+    }
+}
+
+// Squircle surface: the Path commands come from tinycast_ui::squircle_commands.
+// The caller lays out a PanelHeader, content and Footer inside; the top pad is
+// the panel's 10 DIP header inset and there is no bar divider.
+export component Panel inherits Rectangle {
+    in property <string> squircle-commands;
+    in property <bool> expanded: true;
+
+    width: Theme.size-panel-width;
+    height: expanded ? Theme.size-panel-height : Theme.size-compact-height;
+    background: transparent;
+
+    if root.squircle-commands == "": Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: Theme.radius-panel;
+        background: Theme.scrim;
+    }
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        commands: root.squircle-commands;
+        fill: Theme.scrim;
+    }
+
+    VerticalLayout {
+        width: 100%;
+        height: 100%;
+        padding-top: Theme.size-header-padding;
+        @children
+    }
+}

@@ -200,6 +200,9 @@ where
     t.set_size_drop_guide_width(theme::size::DROP_GUIDE_WIDTH);
     t.set_size_bottom_bar_height(theme::size::BOTTOM_BAR_HEIGHT);
     t.set_size_bar_button_height(theme::size::BAR_BUTTON_HEIGHT);
+    t.set_size_bar_menu_line_long(theme::size::BAR_MENU_LINE_LONG);
+    t.set_size_bar_menu_line_short(theme::size::BAR_MENU_LINE_SHORT);
+    t.set_size_bar_menu_line(theme::size::BAR_MENU_LINE);
     t.set_size_bar_circle(theme::size::MENU_BUTTON);
     t.set_size_row_height(theme::size::ROW_HEIGHT);
     t.set_size_row_icon(theme::size::ROW_ICON);
@@ -282,6 +285,9 @@ where
     t.set_size_emoji_grid_inset(theme::size::EMOJI_GRID_INSET);
     t.set_size_clipboard_list_width(theme::size::CLIPBOARD_LIST_WIDTH);
     t.set_size_checkbox(theme::size::CHECKBOX);
+    t.set_size_toggle_width(theme::size::TOGGLE_WIDTH);
+    t.set_size_toggle_height(theme::size::TOGGLE_HEIGHT);
+    t.set_size_sidebar_row(theme::size::SIDEBAR_ROW_HEIGHT);
     t.set_size_hairline(theme::size::HAIRLINE);
     t.set_size_chat_message_action(theme::size::CHAT_MESSAGE_ACTION);
     t.set_size_markdown_list_marker(theme::size::MARKDOWN_LIST_MARKER);

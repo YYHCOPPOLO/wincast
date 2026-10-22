@@ -1,0 +1,113 @@
+import { Theme, Motion } from "../theme.slint";
+import { Card } from "card.slint";
+import { IconSlot } from "row.slint";
+
+export component FormGroup inherits Card {
+    show-title: true;
+}
+
+// 40 x 22 settings switch, thumb spring 0.14 / 320 ms.
+export component Toggle inherits Rectangle {
+    in-out property <bool> checked: false;
+    callback toggled(bool);
+
+    width: Theme.size-toggle-width;
+    height: Theme.size-toggle-height;
+    border-radius: self.height / 2;
+    background: root.checked ? Theme.text-primary : Theme.control-surface;
+    border-width: root.checked ? 0px : Theme.size-hairline;
+    border-color: Theme.border;
+
+    thumb := Rectangle {
+        x: root.checked ? root.width - self.width - Theme.spacing-xxs : Theme.spacing-xxs;
+        y: Theme.spacing-xxs;
+        width: root.height - Theme.spacing-xs;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.checked ? Theme.settings-detail : Theme.text-secondary;
+
+        animate x {
+            // motion.rs: damping 0.86 -> bounce = 0.14. Slint requires a literal.
+            duration: Motion.toggle-spring;
+            easing: spring(0.14);
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+// 16 DIP checkbox drawn inside a 24 DIP row slot by the caller.
+export component Checkbox inherits Rectangle {
+    in-out property <bool> checked: false;
+    callback toggled(bool);
+
+    width: Theme.size-checkbox;
+    height: Theme.size-checkbox;
+    border-radius: Theme.radius-glyph;
+    border-width: Theme.size-hairline;
+    border-color: root.checked ? Theme.text-primary : Theme.border;
+    background: root.checked ? Theme.text-primary : transparent;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        commands: "M 4 8 L 7 11 L 12 5";
+        stroke: Theme.settings-detail;
+        stroke-width: Theme.size-hairline * 1.5;
+        fill: transparent;
+        visible: root.checked;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+// 32 DIP settings sidebar row: 20 DIP icon slot, 13 DIP label.
+export component SidebarRow inherits Rectangle {
+    in property <string> label;
+    in property <string> symbol;
+    in property <bool> selected: false;
+    callback clicked;
+
+    height: Theme.size-sidebar-row;
+    border-radius: Theme.radius-row;
+    background: root.selected ? Theme.selection
+        : (touch.has-hover ? Theme.row-hover : transparent);
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+
+        VerticalLayout {
+            alignment: center;
+            IconSlot {
+                slot: Theme.size-settings-row-icon;
+                symbol: root.symbol;
+            }
+        }
+
+        Text {
+            text: root.label;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

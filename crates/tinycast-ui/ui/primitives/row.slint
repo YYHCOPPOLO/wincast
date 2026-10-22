@@ -1,0 +1,122 @@
+import { Theme } from "../theme.slint";
+import { Keycap } from "keycap.slint";
+
+// A 26 DIP icon slot: the decoded image, or the placeholder tile + symbol.
+export component IconSlot inherits Rectangle {
+    in property <image> source;
+    in property <bool> ready: false;
+    in property <string> symbol;
+    in property <length> slot: Theme.size-result-row-icon;
+
+    width: slot;
+    height: slot;
+    background: transparent;
+
+    if ready: Image {
+        width: 100%;
+        height: 100%;
+        source: root.source;
+        image-fit: contain;
+    }
+    if !ready: Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: Theme.radius-thumbnail;
+        background: Theme.icon-placeholder;
+
+        if root.symbol != "": Text {
+            text: root.symbol;
+            font-family: "Segoe Fluent Icons";
+            font-size: Theme.font-header-icon;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Section header: 11 DIP secondary, 8 DIP gutter, first block gets 4 DIP top.
+export component SectionHeader inherits Rectangle {
+    in property <string> title;
+    in property <bool> first: false;
+
+    height: (first ? Theme.spacing-xs : Theme.spacing-section) + Theme.font-section
+        + Theme.spacing-section-header-bottom;
+    background: transparent;
+
+    HorizontalLayout {
+        padding-left: Theme.size-row-padding-x;
+        padding-right: Theme.size-row-padding-x;
+
+        Text {
+            text: root.title;
+            font-family: "Segoe UI";
+            font-size: Theme.font-section;
+            font-weight: 500;
+            color: Theme.text-secondary;
+            vertical-alignment: bottom;
+            overflow: elide;
+        }
+    }
+}
+
+// One palette result row. Selection wins over hover; hover only after arming.
+export component Row inherits Rectangle {
+    in property <string> title;
+    in property <string> trailing;
+    in property <string> keycap-text;
+    in property <string> symbol;
+    in property <image> icon;
+    in property <bool> icon-ready: false;
+    in property <bool> selected: false;
+    in property <bool> hover-armed: false;
+
+    callback clicked;
+
+    height: Theme.size-row-height;
+    border-radius: Theme.radius-row;
+    background: root.selected ? Theme.selection
+        : (root.hover-armed && touch.has-hover ? Theme.row-hover : transparent);
+
+    HorizontalLayout {
+        padding-left: Theme.size-row-padding-x;
+        padding-right: Theme.size-row-padding-x;
+        spacing: Theme.size-row-icon-gap;
+
+        VerticalLayout {
+            alignment: center;
+            IconSlot {
+                source: root.icon;
+                ready: root.icon-ready;
+                symbol: root.symbol;
+            }
+        }
+
+        Text {
+            text: root.title;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+
+        if root.trailing != "": Text {
+            text: root.trailing;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row-trailing;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+        }
+
+        if root.keycap-text != "": VerticalLayout {
+            alignment: center;
+            Keycap { text: root.keycap-text; }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

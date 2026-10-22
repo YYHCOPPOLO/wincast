@@ -1,0 +1,56 @@
+import { Theme } from "../theme.slint";
+
+// A capsule HUD: 40 DIP tall, never wider than 420 DIP.
+export component Hud inherits Rectangle {
+    in property <string> message;
+    in property <string> detail;
+    in property <string> symbol;
+    in property <length> requested-width: Theme.size-hud-max-width;
+
+    width: Math.min(root.requested-width, Theme.size-hud-max-width);
+    height: Theme.size-bar-button-height + Theme.spacing-sm * 2;
+    border-radius: self.height / 2;
+    background: Theme.scrim;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-xl;
+        padding-right: Theme.spacing-xl;
+        spacing: Theme.spacing-md;
+
+        if root.symbol != "": Rectangle {
+            width: Theme.size-menu-icon;
+            height: Theme.size-menu-icon;
+            border-radius: Theme.radius-thumbnail;
+            background: Theme.control-surface;
+
+            Text {
+                text: root.symbol;
+                font-family: "Segoe Fluent Icons";
+                font-size: Theme.font-row-trailing;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+
+            Text {
+                text: root.message;
+                font-family: "Segoe UI";
+                font-size: Theme.font-row;
+                color: Theme.text-primary;
+                overflow: elide;
+            }
+
+            if root.detail != "": Text {
+                text: root.detail;
+                font-family: "Segoe UI";
+                font-size: Theme.font-section;
+                color: Theme.text-secondary;
+                overflow: elide;
+            }
+        }
+    }
+}

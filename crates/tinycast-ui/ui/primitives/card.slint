@@ -1,0 +1,28 @@
+import { Theme } from "../theme.slint";
+
+// A settings card: cardFill body, one hairline cardStroke, 10 DIP radius.
+export component Card inherits Rectangle {
+    in property <bool> show-title: true;
+    in property <string> title;
+
+    background: Theme.card-fill;
+    border-width: Theme.size-hairline;
+    border-color: Theme.card-stroke;
+    border-radius: Theme.radius-card;
+
+    VerticalLayout {
+        padding: Theme.spacing-xl;
+        spacing: Theme.spacing-sm;
+
+        if root.show-title && root.title != "": Text {
+            text: root.title;
+            font-family: "Segoe UI";
+            font-size: Theme.font-section;
+            font-weight: 500;
+            color: Theme.text-secondary;
+            overflow: elide;
+        }
+
+        @children
+    }
+}

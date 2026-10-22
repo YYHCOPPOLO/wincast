@@ -1,0 +1,28 @@
+import { Theme } from "../theme.slint";
+
+// Outlined (default) or filled keyboard cap; 18 standard, 15 compact, 22 hero.
+export enum KeycapVariant { standard, compact, hero }
+
+export component Keycap inherits Rectangle {
+    in property <KeycapVariant> variant: KeycapVariant.standard;
+    in property <bool> filled: false;
+    in property <string> text;
+
+    height: variant == KeycapVariant.hero ? Theme.size-hero-key-cap
+        : variant == KeycapVariant.compact ? Theme.size-compact-key-cap
+        : Theme.size-key-cap;
+    width: Math.max(self.height, label.width + Theme.spacing-xs * 2);
+    border-radius: Theme.radius-key-cap;
+    background: filled ? Theme.control-surface : transparent;
+    border-width: filled ? 0px : Theme.size-hairline;
+    border-color: Theme.border;
+
+    label := Text {
+        text: root.text;
+        font-family: "Segoe UI";
+        font-size: variant == KeycapVariant.hero ? Theme.font-panel-title : Theme.font-keycap;
+        color: Theme.text-secondary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

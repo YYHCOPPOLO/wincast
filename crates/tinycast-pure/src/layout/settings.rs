@@ -3,7 +3,7 @@ use crate::settings_tab::{SettingsSection, SettingsTab};
 use crate::theme;
 
 pub const SIDEBAR_SECTION_HEADER_HEIGHT: f32 = 22.0;
-pub const SIDEBAR_TAB_ROW_HEIGHT: f32 = 32.0;
+pub const SIDEBAR_TAB_ROW_HEIGHT: f32 = theme::size::SIDEBAR_ROW_HEIGHT;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SidebarRowKind {

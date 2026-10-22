@@ -1,0 +1,89 @@
+import { Theme } from "../theme.slint";
+import { IconSlot } from "row.slint";
+
+export struct MenuItem {
+    label: string,
+    shortcut: string,
+    symbol: string,
+    enabled: bool,
+}
+
+// A 276 DIP menu surface: 16 DIP radius, 36 DIP rows, hover/selection fill.
+export component Menu inherits Rectangle {
+    in property <[MenuItem]> items;
+    in property <int> selected: -1;
+    in property <string> header;
+
+    callback activated(int);
+
+    width: Theme.size-menu-width;
+    height: Theme.spacing-md * 2
+        + (root.header == "" ? 0px : Theme.size-menu-section-header)
+        + items.length * (Theme.size-menu-row-height + Theme.size-menu-row-spacing);
+    background: Theme.scrim;
+    border-radius: Theme.radius-menu-panel;
+    border-width: Theme.size-hairline;
+    border-color: Theme.border;
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.size-menu-row-spacing;
+
+        if root.header != "": Text {
+            height: Theme.size-menu-section-header;
+            text: root.header;
+            font-family: "Segoe UI";
+            font-size: Theme.font-section;
+            font-weight: 500;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        for item[i] in root.items: Rectangle {
+            height: Theme.size-menu-row-height;
+            border-radius: Theme.radius-menu-row;
+            background: root.selected == i || item-touch.has-hover ? Theme.menu-hover : transparent;
+
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+
+                VerticalLayout {
+                    alignment: center;
+                    IconSlot {
+                        slot: Theme.size-menu-icon;
+                        symbol: item.symbol;
+                    }
+                }
+
+                Text {
+                    text: item.label;
+                    font-family: "Segoe UI";
+                    font-size: Theme.font-row;
+                    color: item.enabled ? Theme.text-primary : Theme.text-tertiary;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+
+                if item.shortcut != "": Text {
+                    text: item.shortcut;
+                    font-family: "Segoe UI";
+                    font-size: Theme.font-row-trailing;
+                    color: Theme.text-tertiary;
+                    vertical-alignment: center;
+                }
+            }
+
+            item-touch := TouchArea {
+                clicked => {
+                    if item.enabled {
+                        root.activated(i);
+                    }
+                }
+            }
+        }
+    }
+}

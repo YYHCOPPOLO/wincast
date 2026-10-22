@@ -83,6 +83,10 @@ pub mod size {
     pub const DROP_GUIDE_WIDTH: f32 = 2.0;
     pub const BOTTOM_BAR_HEIGHT: f32 = 52.0;
     pub const BAR_BUTTON_HEIGHT: f32 = 28.0;
+    /// The launcher glyph inside the footer's 36 DIP circle: two pills.
+    pub const BAR_MENU_LINE_LONG: f32 = 14.0;
+    pub const BAR_MENU_LINE_SHORT: f32 = 8.0;
+    pub const BAR_MENU_LINE: f32 = 1.5;
     /// `Size.rowIcon` (Theme.swift:116): Settings rows and compact favorites.
     pub const ROW_ICON: f32 = 24.0;
     /// `Size.resultRowIcon` (Theme.swift:117): every palette result slot, whatever fills it.
@@ -122,6 +126,11 @@ pub mod size {
     pub const MARKDOWN_LIST_MARKER: f32 = 20.0;
     pub const MARKDOWN_QUOTE_BAR: f32 = 2.0;
     pub const CHECKBOX: f32 = 16.0;
+    /// Settings switch (`design_system/settings.rs` `TOGGLE_W/H`).
+    pub const TOGGLE_WIDTH: f32 = 40.0;
+    pub const TOGGLE_HEIGHT: f32 = 22.0;
+    /// Settings sidebar tab row; `layout::settings` reuses this token.
+    pub const SIDEBAR_ROW_HEIGHT: f32 = 32.0;
     pub const CLIPBOARD_LIST_WIDTH: f32 = 290.0;
     /// `Size.emojiGridInset` (Theme.swift:160).
     pub const EMOJI_GRID_INSET: f32 = 16.0;

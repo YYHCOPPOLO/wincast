@@ -1,0 +1,106 @@
+import { Theme } from "../theme.slint";
+
+component DialogButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    callback clicked;
+
+    height: Theme.size-dialog-button-height;
+    border-radius: Theme.radius-bar-control;
+    background: root.primary ? Theme.control-surface : transparent;
+    border-width: root.primary ? 0px : Theme.size-hairline;
+    border-color: Theme.border;
+
+    VerticalLayout {
+        alignment: center;
+
+        Text {
+            text: root.label;
+            font-family: "Segoe UI";
+            font-size: Theme.font-bar;
+            font-weight: 500;
+            color: Theme.text-primary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// A 20 DIP corner dialog surface: symbol tile, title, message, two actions.
+export component Dialog inherits Rectangle {
+    in property <string> title;
+    in property <string> message;
+    in property <string> accept-label;
+    in property <string> cancel-label;
+    in property <string> symbol;
+    in property <bool> show-cancel: true;
+    in property <bool> form: false;
+
+    callback accepted;
+    callback cancelled;
+
+    width: root.form ? Theme.size-dialog-width : Theme.size-dialog-compact-width;
+    height: content.preferred-height;
+    background: Theme.scrim;
+    border-radius: Theme.radius-dialog;
+    border-width: Theme.size-hairline;
+    border-color: Theme.border;
+
+    content := VerticalLayout {
+        padding: Theme.spacing-dialog-content-inset;
+        spacing: Theme.spacing-sm;
+
+        if root.symbol != "": Rectangle {
+            width: Theme.size-dialog-symbol-container;
+            height: Theme.size-dialog-symbol-container;
+            border-radius: Theme.radius-dialog-symbol;
+            background: Theme.control-surface;
+
+            Text {
+                text: root.symbol;
+                font-family: "Segoe Fluent Icons";
+                font-size: Theme.size-dialog-symbol;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: root.title;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row;
+            font-weight: 600;
+            color: Theme.text-primary;
+            wrap: word-wrap;
+        }
+
+        if root.message != "": Text {
+            text: root.message;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row-trailing;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+
+        HorizontalLayout {
+            alignment: end;
+            spacing: Theme.spacing-xs;
+
+            if root.show-cancel: DialogButton {
+                label: root.cancel-label;
+                clicked => { root.cancelled(); }
+            }
+
+            DialogButton {
+                label: root.accept-label;
+                primary: true;
+                clicked => { root.accepted(); }
+            }
+        }
+    }
+}

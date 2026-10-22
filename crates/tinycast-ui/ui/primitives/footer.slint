@@ -1,0 +1,131 @@
+import { Theme } from "../theme.slint";
+import { Keycap } from "keycap.slint";
+
+component BarButton inherits Rectangle {
+    in property <string> label;
+    in property <string> shortcut;
+    callback clicked;
+
+    height: Theme.size-bar-button-height;
+    border-radius: Theme.radius-menu;
+    background: touch.has-hover ? Theme.control-hover : transparent;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-xs;
+        padding-right: Theme.spacing-xs;
+        spacing: Theme.spacing-xxs;
+
+        Text {
+            text: root.label;
+            font-family: "Segoe UI";
+            font-size: Theme.font-bar;
+            font-weight: 500;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+        }
+
+        if root.shortcut != "": VerticalLayout {
+            alignment: center;
+            Keycap { text: root.shortcut; }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// 52 DIP footer with no divider: the 36 DIP apps circle and the action capsule.
+export component Footer inherits Rectangle {
+    in property <string> primary-label;
+    in property <string> actions-label;
+    in property <string> primary-shortcut;
+    in property <string> actions-shortcut;
+    in property <bool> show-actions: true;
+
+    callback apps-clicked;
+    callback primary-clicked;
+    callback actions-clicked;
+
+    height: Theme.size-bottom-bar-height;
+    background: transparent;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+
+        VerticalLayout {
+            alignment: center;
+
+            apps := Rectangle {
+                width: Theme.size-bar-circle;
+                height: Theme.size-bar-circle;
+                border-radius: self.width / 2;
+                background: Theme.control-surface;
+
+                Rectangle {
+                    x: (parent.width - Theme.size-bar-menu-line-long) / 2;
+                    y: (parent.height - Theme.size-bar-menu-line - Theme.spacing-xs) / 2;
+                    width: Theme.size-bar-menu-line-long;
+                    height: Theme.size-bar-menu-line;
+                    border-radius: self.height / 2;
+                    background: Theme.text-secondary;
+                }
+
+                Rectangle {
+                    x: (parent.width - Theme.size-bar-menu-line-short) / 2;
+                    y: (parent.height + Theme.spacing-xs) / 2 - Theme.size-bar-menu-line / 2;
+                    width: Theme.size-bar-menu-line-short;
+                    height: Theme.size-bar-menu-line;
+                    border-radius: self.height / 2;
+                    background: Theme.text-secondary;
+                }
+
+                Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: self.width / 2;
+                    background: Theme.row-hover;
+                    visible: apps-touch.has-hover;
+                }
+            }
+
+            apps-touch := TouchArea {
+                clicked => { root.apps-clicked(); }
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            background: transparent;
+        }
+
+        VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                height: Theme.size-bar-button-height + Theme.spacing-xs * 2;
+                border-radius: self.height / 2;
+                background: Theme.control-surface;
+
+                HorizontalLayout {
+                    padding: Theme.spacing-xs;
+                    spacing: Theme.spacing-xxs;
+
+                    BarButton {
+                        label: root.primary-label;
+                        shortcut: root.primary-shortcut;
+                        clicked => { root.primary-clicked(); }
+                    }
+
+                    if root.show-actions: BarButton {
+                        label: root.actions-label;
+                        shortcut: root.actions-shortcut;
+                        clicked => { root.actions-clicked(); }
+                    }
+                }
+            }
+        }
+    }
+}
