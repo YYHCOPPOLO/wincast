@@ -1875,13 +1875,15 @@ impl AppCore {
                 items.push(PaintItem::Row {
                     title: event.title,
                     alias: None,
+                    // The countdown is the row's only subtext; the time itself is
+                    // not part of the paint model yet.
                     trailing: tinycast_pure::meeting::UpcomingWindow::countdown(
                         event.start,
                         unix_now(),
                     ),
                     keycap: None,
                     icon_source: None,
-                    symbol: None,
+                    symbol: Some("calendar".into()),
                     checkbox: 0,
                     selected: i == self.palette.selection,
                 });
@@ -1918,7 +1920,7 @@ impl AppCore {
                     ),
                     keycap: None,
                     icon_source: None,
-                    symbol: None,
+                    symbol: Some("calendar".into()),
                     checkbox: 0,
                     selected: self.palette.selection == 0,
                 },
