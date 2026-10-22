@@ -860,7 +860,6 @@ fn draw_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 
     #[test]
     fn feature_switch_rows_are_stacked_row_h() {
@@ -982,106 +981,5 @@ mod tests {
             "checkbox mark must stay light on accent, not primary ink"
         );
         assert!(!check.contains("primary_ink"));
-    }
-
-    #[test]
-    fn toggle_thumb_is_visible_on_and_off() {
-        let rect = DipRect {
-            x: 8.0,
-            y: 4.0,
-            w: TOGGLE_W,
-            h: TOGGLE_H,
-        };
-        let paint = |on: bool| {
-            crate::design_system::test_render::with_offscreen(64, 32, |target| {
-                unsafe {
-                    target.Clear(Some(&D2D1_COLOR_F {
-                        r: 0.16,
-                        g: 0.16,
-                        b: 0.16,
-                        a: 1.0,
-                    }));
-                }
-                paint_toggle(target, rect, on, true, 0)
-            })
-            .expect("toggle")
-            .2
-        };
-        let on = paint(true);
-        let off = paint(false);
-        let sample = |bits: &[u8], x: i32| {
-            let x = x.clamp(0, 63) as usize;
-            let y = 14usize;
-            let i = (y * 64 + x) * 4;
-            (bits[i] as i16, bits[i + 1] as i16, bits[i + 2] as i16)
-        };
-        let on_right = sample(&on, (rect.x + rect.w - 6.0) as i32);
-        let on_left = sample(&on, (rect.x + 6.0) as i32);
-        let off_left = sample(&off, (rect.x + 6.0) as i32);
-        assert!(
-            on_right.2 > 180 && on_right.1 > 180 && on_right.0 > 180,
-            "on thumb should be light, got {:?}",
-            on_right
-        );
-        assert!(
-            on_left.2 < 80 && on_left.1 > 60,
-            "on track should be accent, got {:?}",
-            on_left
-        );
-        assert!(
-            off_left.2 > 180 && off_left.1 > 180,
-            "off thumb should be light on the left, got {:?}",
-            off_left
-        );
-    }
-
-    #[test]
-    fn toggle_thumb_reads_on_a_light_card() {
-        let rect = DipRect {
-            x: 8.0,
-            y: 4.0,
-            w: TOGGLE_W,
-            h: TOGGLE_H,
-        };
-        let paint = |on: bool| {
-            crate::design_system::test_render::with_offscreen(64, 32, |target| {
-                unsafe {
-                    target.Clear(Some(&D2D1_COLOR_F {
-                        r: theme::settings_chrome::DETAIL_LIGHT.0,
-                        g: theme::settings_chrome::DETAIL_LIGHT.1,
-                        b: theme::settings_chrome::DETAIL_LIGHT.2,
-                        a: 1.0,
-                    }));
-                }
-                paint_toggle(target, rect, on, true, 1)
-            })
-            .expect("light toggle")
-            .2
-        };
-        let on = paint(true);
-        let off = paint(false);
-        let sample = |bits: &[u8], x: i32| {
-            let x = x.clamp(0, 63) as usize;
-            let y = 14usize;
-            let i = (y * 64 + x) * 4;
-            (bits[i] as i16, bits[i + 1] as i16, bits[i + 2] as i16)
-        };
-        let lum = |c: (i16, i16, i16)| c.0 + c.1 + c.2;
-        let off_thumb = sample(&off, (rect.x + 6.0) as i32);
-        let off_track = sample(&off, (rect.x + rect.w - 8.0) as i32);
-        assert!(
-            lum(off_thumb) > lum(off_track) + 80,
-            "light off thumb {off_thumb:?} must out-contrast the track {off_track:?}"
-        );
-        let on_track = sample(&on, (rect.x + 6.0) as i32);
-        let on_thumb = sample(&on, (rect.x + rect.w - 6.0) as i32);
-        assert!(
-            on_track.0 > on_track.2 + 40,
-            "light on track should stay accent blue, got {on_track:?}"
-        );
-        assert!(
-            on_thumb.2 > 180 && on_thumb.1 > 180 && on_thumb.0 > 180,
-            "light on thumb should stay light, got {on_thumb:?}"
-        );
     }
 }

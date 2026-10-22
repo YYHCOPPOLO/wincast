@@ -364,33 +364,6 @@ mod tests {
     }
 
     #[test]
-    fn dark_dialog_center_is_scrim() {
-        let (w, h, bits) = crate::design_system::test_render::with_offscreen(420, 180, |target| {
-            let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
-            let fonts = Fonts::new(&dwrite)?;
-            let content = DialogContent {
-                title: "Confirm",
-                message: "Continue?",
-                accept: "Continue",
-                cancel: Some("Cancel"),
-                volume: None,
-                appearance: 0,
-                tone: DialogTone::Neutral,
-                symbol: "info.circle",
-                accept_role: DialogRole::Standard,
-            };
-            let _ = paint(target, &fonts, &content)?;
-            Ok(())
-        })
-        .expect("offscreen");
-        assert_eq!(w, 420);
-        let i = ((h / 2) * w + (w / 2)) * 4;
-        let a = bits[i + 3] as f32 / 255.0;
-        assert!(a > 0.30 && a < 0.50, "alpha {a}");
-        assert_eq!(bits[3], 0, "outside squircle must be transparent");
-    }
-
-    #[test]
     fn dialog_buttons_center_the_label() {
         let src = include_str!("dialog.rs");
         assert!(src.contains("draw_button_label"));

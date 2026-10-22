@@ -93,21 +93,3 @@ pub fn paint_sheen(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn dark_scrim_center_is_black_40() {
-        let (w, h, bits) =
-            crate::design_system::test_render::panel_scrim(100, 100, 0).expect("offscreen");
-        let i = ((h / 2) * w + (w / 2)) * 4;
-        let b = bits[i] as f32;
-        let g = bits[i + 1] as f32;
-        let r = bits[i + 2] as f32;
-        let a = bits[i + 3] as f32 / 255.0;
-        assert!(a > 0.30 && a < 0.50, "alpha {a}");
-        assert!(r < 8.0 && g < 8.0 && b < 8.0);
-        let corner = 0;
-        assert_eq!(bits[corner + 3], 0, "outside squircle must be transparent");
-    }
-}

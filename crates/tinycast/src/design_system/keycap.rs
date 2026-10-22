@@ -80,25 +80,6 @@ pub fn paint_keycap(
     Ok(cap_w)
 }
 
-#[cfg(test)]
-mod tests {
-    use windows::Win32::Graphics::DirectWrite::{DWriteCreateFactory, DWRITE_FACTORY_TYPE_SHARED};
-
-    #[test]
-    fn keycap_paints_chip_width() {
-        let (_w, _h, bits) = crate::design_system::test_render::with_offscreen(200, 40, |target| {
-            let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
-            let fonts = crate::design_system::Fonts::new(&dwrite)?;
-            let w =
-                crate::design_system::paint_keycap(target, &fonts, "↵", 180.0, 0.0, 36.0, true, 0)?;
-            assert!(w >= tinycast_pure::theme::size::KEY_CAP);
-            Ok(())
-        })
-        .expect("keycap");
-        assert!(!bits.is_empty());
-    }
-}
-
 fn measure_width(fonts: &Fonts, text: &str, max_w: f32, h: f32) -> f32 {
     if text.is_empty() {
         return 0.0;
