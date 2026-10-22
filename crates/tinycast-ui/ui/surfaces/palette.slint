@@ -6,6 +6,7 @@ import { Panel } from "../primitives/panel.slint";
 import { Keycap } from "../primitives/keycap.slint";
 import { Row, SectionHeader } from "../primitives/row.slint";
 import { Scrollbar } from "../primitives/scrollbar.slint";
+import { Footer } from "../primitives/footer.slint";
 
 // Row kinds shared with crates/tinycast/src/ui_host/snapshot.rs.
 // 0 result row, 1 section header, 2 calculator card, 3 emoji row.
@@ -42,10 +43,21 @@ export component PaletteWindow inherits Window {
     // Scroll state. AppCore owns both values; the Flickable follows them.
     in property <length> content-height: 0px;
     in-out property <length> scroll-y: 0px;
+    // Bottom bar: the label is mode dependent, the shortcuts are fixed.
+    in property <string> primary-label;
+    in property <string> actions-label;
+    in property <string> primary-shortcut;
+    in property <string> primary-modifier;
+    in property <string> actions-shortcut;
+    in property <string> actions-modifier;
+    in property <bool> show-actions: true;
 
     callback header-clicked();
     callback row-clicked(int);
     callback scrolled(length);
+    callback apps-clicked();
+    callback primary-clicked();
+    callback actions-clicked();
 
     // Left edge of the native field: 16 DIP gutter + 22 DIP glyph + 8 DIP gap.
     property <length> field-x:
@@ -319,9 +331,17 @@ export component PaletteWindow inherits Window {
             }
         }
 
-        if root.expanded: Rectangle {
-            height: Theme.size-bottom-bar-height;
-            background: transparent;
+        if root.expanded: Footer {
+            primary-label: root.primary-label;
+            actions-label: root.actions-label;
+            primary-shortcut: root.primary-shortcut;
+            primary-modifier: root.primary-modifier;
+            actions-shortcut: root.actions-shortcut;
+            actions-modifier: root.actions-modifier;
+            show-actions: root.show-actions;
+            apps-clicked => { root.apps-clicked(); }
+            primary-clicked => { root.primary-clicked(); }
+            actions-clicked => { root.actions-clicked(); }
         }
     }
 }

@@ -33,8 +33,7 @@ pub fn action_group_rects_for_label(
     primary_label: &str,
     actions_label: &str,
 ) -> Option<ActionGroupRects> {
-    let dwrite: IDWriteFactory =
-        unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()? };
+    let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()? };
     let fonts = Fonts::new(&dwrite).ok()?;
     action_group_rects_for_fonts(&fonts, panel_w, panel_h, primary_label, actions_label)
 }

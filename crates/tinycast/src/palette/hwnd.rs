@@ -17,9 +17,9 @@ use std::time::Duration;
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
+use tinycast_pure::layout::list;
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
-use tinycast_pure::layout::list;
 use tinycast_pure::palette_state::should_draw_placeholder;
 use tinycast_pure::theme;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -33,20 +33,19 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetForegroundWindow, GetWindowLongPtrW, KillTimer, PostMessageW,
     SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, EN_CHANGE, GA_ROOT,
-    GWL_EXSTYLE, GWLP_USERDATA, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    GWLP_USERDATA, GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WA_INACTIVE, WM_ACTIVATE, WM_COMMAND,
     WM_CTLCOLOREDIT, WM_DPICHANGED, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
-    WM_TIMER,
-    WS_EX_TOOLWINDOW,
+    WM_TIMER, WS_EX_TOOLWINDOW,
 };
 
 use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
 use crate::features::launcher::ui::list::IconCache;
-use crate::ui_host::snapshot::{self, RowImages};
 use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
+use crate::ui_host::snapshot::{self, RowImages};
 
 const SUBCLASS_ID: usize = 1;
 const RESIGN_TIMER_ID: usize = 2;
@@ -107,7 +106,11 @@ impl PaletteWindow {
             ready: false,
             pending_show: None,
         }));
-        let window = Self { hwnd: HWND::default(), ui, inner };
+        let window = Self {
+            hwnd: HWND::default(),
+            ui,
+            inner,
+        };
         // The model is created once: the host replaces its contents, never it,
         // so a scroll position or a hover never resets with the data.
         window
@@ -127,7 +130,38 @@ impl PaletteWindow {
                 scrolled(inner, offset);
             }
         });
-
+        let ptr: usize = inner as usize;
+        window.ui.on_primary_clicked(move || {
+            let inner = ptr as *mut PaletteInner;
+            if inner.is_null() {
+                return;
+            }
+            if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                unsafe {
+                    (*core).activate_selected();
+                }
+            }
+        });
+        let ptr: usize = inner as usize;
+        window.ui.on_actions_clicked(move || {
+            let inner = ptr as *mut PaletteInner;
+            if inner.is_null() {
+                return;
+            }
+            if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                unsafe {
+                    (*core).toggle_actions();
+                }
+            }
+        });
+        let ptr: usize = inner as usize;
+        window.ui.on_apps_clicked(move || {
+            let inner = ptr as *mut PaletteInner;
+            if inner.is_null() {
+                return;
+            }
+            apps_clicked(inner);
+        });
         // Clicking the header glyph or the placeholder focuses the native field.
         let ptr = inner as usize;
         window.ui.on_header_clicked(move || {
@@ -144,10 +178,7 @@ impl PaletteWindow {
             x: PARKED as f32,
             y: PARKED as f32,
         });
-        window
-            .ui
-            .show()
-            .map_err(crate::ui_host::platform_error)?;
+        window.ui.show().map_err(crate::ui_host::platform_error)?;
         arm_init(inner);
         Ok(window)
     }
@@ -431,12 +462,50 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     ui.set_content_height(content.max(visible.content_height));
     ui.set_scroll_y(scroll);
     ui.set_empty_text(empty.into());
+    attach_footer(ui, core);
     let changed = (unsafe { (*inner).trailing } - trailing).abs() > 0.01;
     if changed {
         unsafe {
             (*inner).trailing = trailing;
         }
         layout_search(ui, inner);
+    }
+}
+
+/// Footer labels come from the mode; the actions chord is split into two caps.
+fn attach_footer(ui: &Palette, core: &AppCore) {
+    let footer = core.footer_paint();
+    ui.set_primary_label(footer.primary_label.into());
+    ui.set_actions_label(footer.actions_label.into());
+    ui.set_primary_shortcut("↵".into());
+    ui.set_primary_modifier("".into());
+    let mut caps = tinycast_pure::palette_menu::ACTIONS_SHORTCUT.split('+');
+    let modifier = caps.next().unwrap_or_default();
+    let key = caps.next().unwrap_or_default();
+    ui.set_actions_modifier(modifier.into());
+    ui.set_actions_shortcut(key.into());
+    ui.set_show_actions(footer.show_action_group);
+}
+
+/// The apps circle opens the same menu the footer circle always did.
+fn apps_clicked(inner: *mut PaletteInner) {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    let panel_h = snapshot::panel_height(
+        unsafe { (*inner).weak.upgrade() }
+            .map(|ui| ui.get_expanded())
+            .unwrap_or(false),
+    );
+    let circle = tinycast_pure::palette_menu::menu_button_rect(panel_h);
+    unsafe {
+        (*core).pointer_down(
+            circle.x + circle.w / 2.0,
+            circle.y + circle.h / 2.0,
+            theme::size::PANEL_WIDTH,
+            panel_h,
+            false,
+        );
     }
 }
 
@@ -596,7 +665,10 @@ unsafe extern "system" fn palette_subclass(
                     .unwrap_or(1)
             };
             SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, crate::design_system::appearance::ink_colorref(appearance));
+            SetTextColor(
+                hdc,
+                crate::design_system::appearance::ink_colorref(appearance),
+            );
             LRESULT(GetStockObject(NULL_BRUSH).0 as isize)
         }
         WM_MOUSEWHEEL => {
@@ -662,8 +734,7 @@ unsafe extern "system" fn palette_subclass(
             DefSubclassProc(hwnd, msg, wparam, lparam)
         }
         WM_NCDESTROY => {
-            let _ =
-                RemoveWindowSubclass(hwnd, SUBCLASSPROC::Some(palette_subclass), SUBCLASS_ID);
+            let _ = RemoveWindowSubclass(hwnd, SUBCLASSPROC::Some(palette_subclass), SUBCLASS_ID);
             DefSubclassProc(hwnd, msg, wparam, lparam)
         }
         _ => DefSubclassProc(hwnd, msg, wparam, lparam),

@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use tinycast_pure::theme;
 use tinycast_ui::PaletteRow;
 
-use crate::features::launcher::ui::list::{slot_height, slots_of, IconCache, IconPixels, PaintItem};
+use crate::features::launcher::ui::list::{
+    slot_height, slots_of, IconCache, IconPixels, PaintItem,
+};
 
 /// Row kind numbers shared with `ui/surfaces/palette.slint`.
 const KIND_ROW: i32 = 0;

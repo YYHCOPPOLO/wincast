@@ -1,9 +1,11 @@
 import { Theme } from "../theme.slint";
 import { Keycap } from "keycap.slint";
 
+// One capsule button: label, then the modifier and the key as separate caps.
 component BarButton inherits Rectangle {
     in property <string> label;
     in property <string> shortcut;
+    in property <string> modifier;
     callback clicked;
 
     height: Theme.size-bar-button-height;
@@ -24,9 +26,14 @@ component BarButton inherits Rectangle {
             vertical-alignment: center;
         }
 
+        if root.modifier != "": VerticalLayout {
+            alignment: center;
+            Keycap { text: root.modifier; filled: true; }
+        }
+
         if root.shortcut != "": VerticalLayout {
             alignment: center;
-            Keycap { text: root.shortcut; }
+            Keycap { text: root.shortcut; filled: true; }
         }
     }
 
@@ -40,7 +47,9 @@ export component Footer inherits Rectangle {
     in property <string> primary-label;
     in property <string> actions-label;
     in property <string> primary-shortcut;
+    in property <string> primary-modifier;
     in property <string> actions-shortcut;
+    in property <string> actions-modifier;
     in property <bool> show-actions: true;
 
     callback apps-clicked;
@@ -116,12 +125,14 @@ export component Footer inherits Rectangle {
                     BarButton {
                         label: root.primary-label;
                         shortcut: root.primary-shortcut;
+                        modifier: root.primary-modifier;
                         clicked => { root.primary-clicked(); }
                     }
 
                     if root.show-actions: BarButton {
                         label: root.actions-label;
                         shortcut: root.actions-shortcut;
+                        modifier: root.actions-modifier;
                         clicked => { root.actions-clicked(); }
                     }
                 }
