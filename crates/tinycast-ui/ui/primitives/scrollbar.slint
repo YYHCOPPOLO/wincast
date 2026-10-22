@@ -23,13 +23,17 @@ export component Scrollbar inherits Rectangle {
         easing: spring(0.15);
     }
 
-    property <length> travel: root.height - thumb.height;
+    // `visible: false` still evaluates the bindings, so every divisor is guarded.
+    property <length> safe-content: Math.max(1px, root.content-height);
+    property <length> travel: Math.max(0px, root.height - thumb.height);
     property <length> thumb-height: Math.max(
         Theme.size-scrollbar-min-thumb,
-        root.height * (root.viewport-height / root.content-height),
+        root.height * (root.viewport-height / root.safe-content),
     );
     property <length> thumb-y:
-        root.offset / (root.content-height - root.viewport-height) * travel;
+        root.offset
+            / Math.max(1px, root.safe-content - root.viewport-height)
+            * root.travel;
     property <bool> lit: root.hovered || touch.has-hover;
 
     thumb := Rectangle {

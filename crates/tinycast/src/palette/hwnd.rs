@@ -35,8 +35,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, EN_CHANGE, GA_ROOT,
     GWLP_USERDATA, GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WA_INACTIVE, WM_ACTIVATE, WM_COMMAND,
-    WM_CTLCOLOREDIT, WM_DPICHANGED, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
-    WM_TIMER, WS_EX_TOOLWINDOW,
+    WM_CTLCOLOREDIT, WM_DPICHANGED, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEACTIVATE,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_TIMER, WS_EX_TOOLWINDOW,
 };
 
 use super::edit::SearchEdit;
@@ -460,7 +460,9 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     );
     inner_mut.model.set_vec(visible.rows);
     ui.set_content_height(content.max(visible.content_height));
-    ui.set_scroll_y(scroll);
+    // Slint's Flickable offset is negative while scrolled down; AppCore keeps
+    // the positive distance-from-top.
+    ui.set_scroll_y(-scroll);
     ui.set_empty_text(empty.into());
     attach_footer(ui, core);
     let changed = (unsafe { (*inner).trailing } - trailing).abs() > 0.01;
@@ -538,6 +540,8 @@ fn scrolled(inner: *mut PaletteInner, offset: f32) {
     let Some(core) = core_from_host(unsafe { (*inner).host }) else {
         return;
     };
+    // Flickable `content-y` is negative while scrolled down.
+    let offset = -offset;
     let current = unsafe { (*core).list_scroll() };
     if (offset - current).abs() < 0.5 {
         return;
@@ -679,6 +683,17 @@ unsafe extern "system" fn palette_subclass(
                 }
             }
             LRESULT(0)
+        }
+        // A click anywhere in the palette must not take the keyboard away from
+        // the native field: rows, footer and the apps circle all re-focus it.
+        WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
+            let result = DefSubclassProc(hwnd, msg, wparam, lparam);
+            if !inner.is_null() {
+                if let Some(edit) = (*inner).edit.as_ref() {
+                    edit.focus();
+                }
+            }
+            result
         }
         WM_MOUSEMOVE => {
             if !inner.is_null() && !(*inner).hover_armed {

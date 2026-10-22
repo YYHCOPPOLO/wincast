@@ -314,12 +314,16 @@ export component PaletteWindow inherits Window {
 
             // 16 DIP hover strip: the 6/10 DIP rail alone is a 6 px target.
             Scrollbar {
-                x: parent.width - Theme.size-scrollbar-inset - Theme.size-scrollbar-hover-width;
+                // `self.width` is 6 at rest and 10 under the pointer; both sit on
+                // the same 3 DIP inset from the trailing edge.
+                x: parent.width - Theme.size-scrollbar-inset - self.width;
                 y: Theme.size-scrollbar-inset;
                 height: parent.height - Theme.size-scrollbar-inset * 2;
                 content-height: root.content-height;
                 viewport-height: parent.height;
-                offset: root.scroll-y;
+                // `content-y` is negative while scrolled down; the rail wants a
+                // positive offset.
+                offset: -root.scroll-y;
                 hovered: scroll-zone.has-hover;
             }
 

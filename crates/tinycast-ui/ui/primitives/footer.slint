@@ -6,6 +6,8 @@ component BarButton inherits Rectangle {
     in property <string> label;
     in property <string> shortcut;
     in property <string> modifier;
+    // Ink, not layout: the actions capsule is secondary, the primary is not.
+    in property <bool> secondary: false;
     callback clicked;
 
     height: Theme.size-bar-button-height;
@@ -22,18 +24,18 @@ component BarButton inherits Rectangle {
             font-family: "Segoe UI";
             font-size: Theme.font-bar;
             font-weight: 500;
-            color: Theme.text-primary;
+            color: root.secondary ? Theme.text-secondary : Theme.text-primary;
             vertical-alignment: center;
         }
 
         if root.modifier != "": VerticalLayout {
             alignment: center;
-            Keycap { text: root.modifier; filled: true; }
+            Keycap { text: root.modifier; }
         }
 
         if root.shortcut != "": VerticalLayout {
             alignment: center;
-            Keycap { text: root.shortcut; filled: true; }
+            Keycap { text: root.shortcut; }
         }
     }
 
@@ -133,6 +135,7 @@ export component Footer inherits Rectangle {
                         label: root.actions-label;
                         shortcut: root.actions-shortcut;
                         modifier: root.actions-modifier;
+                        secondary: true;
                         clicked => { root.actions-clicked(); }
                     }
                 }
