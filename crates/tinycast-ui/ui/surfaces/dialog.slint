@@ -5,7 +5,6 @@ import { Theme, Motion } from "../theme.slint";
 import { Dialog } from "../primitives/dialog.slint";
 
 export component DialogWindow inherits Window {
-    // `title` is the Window's own property, so the card heading has its own name.
     in property <string> heading;
     in property <string> message;
     in property <string> accept-label;
@@ -53,8 +52,8 @@ export component DialogWindow inherits Window {
         easing: cubic-bezier(0.42, 0, 1, 1);
     }
 
-    // Esc cancels, Enter accepts, the arrows walk the volume grid. The focused
-    // action handles Enter/Space first and rejects everything else.
+    // Esc cancels, Enter accepts, the arrows walk the volume grid. The scope
+    // wraps the card so a key the focused action rejects still reaches it.
     keys := FocusScope {
         key-pressed(event) => {
             if (event.text == Key.Escape) {
@@ -75,29 +74,29 @@ export component DialogWindow inherits Window {
             }
             reject
         }
-    }
 
-    card := Dialog {
-        y: (1 - root.reveal) * Motion.dialog-offset;
-        opacity: (Motion.dialog-initial-opacity
-            + (1 - Motion.dialog-initial-opacity) * root.reveal) * root.exit-fade;
+        card := Dialog {
+            y: (1 - root.reveal) * Motion.dialog-offset;
+            opacity: (Motion.dialog-initial-opacity
+                + (1 - Motion.dialog-initial-opacity) * root.reveal) * root.exit-fade;
 
-        title: root.heading;
-        message: root.message;
-        accept-label: root.accept-label;
-        cancel-label: root.cancel-label;
-        symbol: root.symbol;
-        show-cancel: root.show-cancel;
-        form: root.form;
-        destructive: root.destructive;
-        show-volume: root.show-volume;
-        volume <=> root.volume;
-        volume-readout: root.volume-readout;
+            title: root.heading;
+            message: root.message;
+            accept-label: root.accept-label;
+            cancel-label: root.cancel-label;
+            symbol: root.symbol;
+            show-cancel: root.show-cancel;
+            form: root.form;
+            destructive: root.destructive;
+            show-volume: root.show-volume;
+            volume <=> root.volume;
+            volume-readout: root.volume-readout;
 
-        accepted => { root.accepted(); }
-        cancelled => { root.cancelled(); }
-        volume-changed(value) => { root.volume-changed(value); }
-        volume-nudged(up) => { root.volume-nudged(up); }
+            accepted => { root.accepted(); }
+            cancelled => { root.cancelled(); }
+            volume-changed(value) => { root.volume-changed(value); }
+            volume-nudged(up) => { root.volume-nudged(up); }
+        }
     }
 
     // The host calls this once the window has focus: a dangerous action starts

@@ -6,13 +6,19 @@ use crate::surfaces::dialog::{self, ConfirmPrompt};
 pub const CONFIRM_TITLE: &str = "Move to Recycle Bin?";
 pub const CONFIRM_ACTION: &str = "Uninstall";
 
-pub fn confirm(name: &str, count: usize, lang: UiLang) -> bool {
-    dialog::confirm(&ConfirmPrompt {
-        title: tinycast_pure::i18n::uninstall_confirm_title(lang).into(),
-        message: tinycast_pure::i18n::uninstall_confirm_message(name, count, lang),
-        accept: tinycast_pure::i18n::uninstall_label(lang).into(),
-        cancel: chrome(Chrome::Cancel, lang).into(),
-    })
+/// Registers the recycle call and shows the card. Nothing is moved until the
+/// user accepts.
+pub fn confirm(name: &str, count: usize, lang: UiLang, on_accept: impl FnOnce() + 'static) -> bool {
+    dialog::confirm(
+        &ConfirmPrompt {
+            title: tinycast_pure::i18n::uninstall_confirm_title(lang).into(),
+            message: tinycast_pure::i18n::uninstall_confirm_message(name, count, lang),
+            accept: tinycast_pure::i18n::uninstall_label(lang).into(),
+            cancel: chrome(Chrome::Cancel, lang).into(),
+            destructive: true,
+        },
+        on_accept,
+    )
 }
 
 pub fn primary_label() -> &'static str {

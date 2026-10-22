@@ -73,22 +73,34 @@ pub fn confirm_prompt_lang(
         message: message.to_string(),
         accept: accept.to_string(),
         cancel: chrome(Chrome::Cancel, lang).into(),
+        // Every system-action confirmation is destructive: Empty Trash,
+        // Restart, Shut Down, Quit All.
+        destructive: true,
     }
 }
 
-/// Palette must already be hidden. Returns false on Cancel, Escape, or a stacked dialog.
-pub fn confirm(title: &str, message: &str, accept: &str) -> bool {
-    confirm_lang(title, message, accept, UiLang::En)
+/// Registers the runner call and shows the card. Returns whether it opened;
+/// `on_accept` runs later, and only if the user accepted.
+pub fn confirm(
+    title: &str,
+    message: &str,
+    accept: &str,
+    on_accept: impl FnOnce() + 'static,
+) -> bool {
+    confirm_lang(title, message, accept, UiLang::En, on_accept)
 }
 
-pub fn confirm_lang(title: &str, message: &str, accept: &str, lang: UiLang) -> bool {
-    if !dialog::begin() {
-        return false;
-    }
-    let prompt = confirm_prompt_lang(title, message, accept, lang);
-    let accepted = dialog::confirm(&prompt);
-    dialog::end();
-    accepted
+pub fn confirm_lang(
+    title: &str,
+    message: &str,
+    accept: &str,
+    lang: UiLang,
+    on_accept: impl FnOnce() + 'static,
+) -> bool {
+    dialog::confirm(
+        &confirm_prompt_lang(title, message, accept, lang),
+        on_accept,
+    )
 }
 
 pub fn execute(id: SystemActionId, previous: HWND) -> Result<Option<Feedback>, Failure> {
@@ -166,7 +178,7 @@ mod tests {
     #[test]
     fn confirm_returns_false_when_a_dialog_is_already_up() {
         assert!(dialog::begin());
-        assert!(!confirm("Empty Trash?", "gone", "Empty Trash"));
+        assert!(!confirm("Empty Trash?", "gone", "Empty Trash", || {}));
         dialog::end();
     }
 }

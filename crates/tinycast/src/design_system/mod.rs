@@ -1,7 +1,6 @@
 pub mod appearance;
 pub mod backdrop;
 pub mod chat;
-pub mod dialog;
 pub mod fonts;
 pub mod glass;
 pub mod host;

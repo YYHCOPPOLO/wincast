@@ -1,33 +1,13 @@
-//! Tinycast-owned Continue/Cancel dialog. One at a time; Escape cancels.
+//! Continue/Cancel dialogs. The caller registers the accepted side with the
+//! modal gate and returns; the Slint card runs it only when the user accepts.
+//! Escape, a click outside and a second dialog never execute anything.
 
-use std::sync::atomic::Ordering;
+use std::cell::Cell;
+use std::rc::Rc;
 
-use tinycast_pure::dialog::{DialogRole, DialogTone};
-use tinycast_pure::palette_placement::DipRect;
-use tinycast_pure::theme;
-use windows::core::w;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, SetFocus};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetWindowLongPtrW, IsWindow,
-    LoadCursorW, RegisterClassW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MSG, SWP_NOACTIVATE, SW_SHOW,
-    WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_POPUP,
-};
+use tinycast_pure::i18n::{chrome, Chrome, UiLang};
 
-use crate::design_system::dialog::{self as ds, DialogContent, DialogHits};
-use crate::design_system::host::OverlayPainter;
-use crate::design_system::motion::{self, OverlayAnim};
-use crate::platform::screens::dip_scalar_to_px;
-
-const CLASS: windows::core::PCWSTR = w!("TinycastDialog");
-
-static LAST_VOLUME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-static LAST_RESULT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+use crate::ui_host::modal::{self, DialogRequest};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmPrompt {
@@ -35,518 +15,89 @@ pub struct ConfirmPrompt {
     pub message: String,
     pub accept: String,
     pub cancel: String,
+    /// Dangerous action: red ink and the default focus starts on Cancel.
+    pub destructive: bool,
 }
 
 /// Claims the one dialog slot. The modal gate owns it, so a confirm that is
 /// already registered blocks a second one.
 pub fn begin() -> bool {
-    crate::ui_host::modal::begin()
+    modal::begin()
 }
 
 pub fn end() {
-    crate::ui_host::modal::end();
+    modal::end();
 }
 
 pub fn is_up() -> bool {
-    crate::ui_host::modal::is_up()
+    modal::is_up()
 }
 
-/// Continue / Cancel. Escape and clicking outside the card cancel.
-pub fn confirm(prompt: &ConfirmPrompt) -> bool {
-    run(prompt, true)
+/// Continue / Cancel. Returns whether the card opened; `on_accept` runs later,
+/// from the event loop, and only if the user accepted.
+pub fn confirm(prompt: &ConfirmPrompt, on_accept: impl FnOnce() + 'static) -> bool {
+    open(prompt, "info.circle", None, Box::new(on_accept))
 }
 
-/// Set Volume slider: ←/→ walk the 5% grid, Enter accepts, Escape cancels.
-pub fn pick_volume(current: f32, lang: tinycast_pure::i18n::UiLang) -> Option<f32> {
-    if !begin() {
-        return None;
-    }
-    LAST_VOLUME.store(current.to_bits(), Ordering::SeqCst);
-    let prompt = ConfirmPrompt {
-        title: tinycast_pure::i18n::dialog_set_volume(lang).into(),
-        message: tinycast_pure::i18n::dialog_set_volume_message(lang).into(),
-        accept: tinycast_pure::i18n::dialog_set_volume(lang).into(),
-        cancel: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang).into(),
-    };
-    let accepted = run_volume(&prompt, current);
-    end();
-    if accepted {
-        Some(f32::from_bits(LAST_VOLUME.load(Ordering::SeqCst)))
-    } else {
-        None
-    }
-}
-
-/// Single Continue button for failure reports.
-pub fn alert(title: &str, message: &str, lang: tinycast_pure::i18n::UiLang) {
+/// Single Continue button for failure reports; accepting changes nothing.
+pub fn alert(title: &str, message: &str, lang: UiLang) -> bool {
     let prompt = ConfirmPrompt {
         title: title.to_string(),
         message: message.to_string(),
         accept: tinycast_pure::i18n::onboarding_continue(lang).into(),
         cancel: String::new(),
+        destructive: false,
     };
-    if !begin() {
-        return;
-    }
-    let _ = run(&prompt, false);
-    end();
+    open(&prompt, "info.circle", None, Box::new(|| {}))
 }
 
-fn run(prompt: &ConfirmPrompt, has_cancel: bool) -> bool {
-    let hwnd = match create_window(prompt, has_cancel, None) {
-        Ok(h) => h,
-        Err(_) => return false,
+/// Set Volume slider: left/right walk the 5% grid, Enter accepts, Escape
+/// cancels. The level the user left behind goes to `on_accept`.
+pub fn pick_volume(current: f32, lang: UiLang, on_accept: impl FnOnce(f32) + 'static) -> bool {
+    let level = Rc::new(Cell::new(tinycast_pure::volume::clamped(current)));
+    let accepted = Rc::clone(&level);
+    let prompt = ConfirmPrompt {
+        title: tinycast_pure::i18n::dialog_set_volume(lang).into(),
+        message: tinycast_pure::i18n::dialog_set_volume_message(lang).into(),
+        accept: tinycast_pure::i18n::dialog_set_volume(lang).into(),
+        cancel: chrome(Chrome::Cancel, lang).into(),
+        destructive: false,
     };
-    pump(hwnd)
+    open(
+        &prompt,
+        "speaker.wave.2",
+        Some(level),
+        Box::new(move || on_accept(accepted.get())),
+    )
 }
 
-fn run_volume(prompt: &ConfirmPrompt, current: f32) -> bool {
-    let hwnd = match create_window(prompt, true, Some(current)) {
-        Ok(h) => h,
-        Err(_) => return false,
-    };
-    pump(hwnd)
-}
-
-fn pump(hwnd: HWND) -> bool {
-    unsafe {
-        start_enter(hwnd);
-        let _ = ShowWindow(hwnd, SW_SHOW);
-        let _ = SetForegroundWindow(hwnd);
-        let _ = SetFocus(hwnd);
-        arm(hwnd);
-        let mut msg = MSG::default();
-        while IsWindow(hwnd).as_bool() {
-            if !crate::platform::modal::next_message(&mut msg) {
-                let _ = DestroyWindow(hwnd);
-                break;
-            }
-            if msg.message == WM_KEYDOWN {
-                let vk = msg.wParam.0 as u16;
-                if vk == 0x1B {
-                    begin_close(hwnd, false);
-                    continue;
-                }
-                if vk == 0x0D {
-                    begin_close(hwnd, true);
-                    continue;
-                }
-                if vk == 0x25 || vk == 0x27 {
-                    nudge_volume(hwnd, vk == 0x27);
-                    continue;
-                }
-            }
-            let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-        crate::platform::modal::discard_stray_input();
-        take_result()
-    }
-}
-
-struct Inner {
-    prompt: ConfirmPrompt,
-    has_cancel: bool,
-    result: bool,
-    chosen: bool,
-    armed: bool,
-    continue_rect: DipRect,
-    cancel_rect: Option<DipRect>,
-    volume_rect: Option<DipRect>,
-    volume: Option<f32>,
-    dragging: bool,
-    painter: OverlayPainter,
-    anim: OverlayAnim,
-}
-
-fn create_window(
+fn open(
     prompt: &ConfirmPrompt,
-    has_cancel: bool,
-    volume: Option<f32>,
-) -> windows::core::Result<HWND> {
-    unsafe {
-        let hinstance = GetModuleHandleW(None)?;
-        let class = WNDCLASSW {
-            style: CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(wndproc),
-            hInstance: hinstance.into(),
-            lpszClassName: CLASS,
-            hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-            ..Default::default()
-        };
-        let atom = RegisterClassW(&class);
-        if atom == 0 {
-            let last = windows::Win32::Foundation::GetLastError();
-            if last != windows::Win32::Foundation::ERROR_CLASS_ALREADY_EXISTS {
-                return Err(last.into());
-            }
-        }
-        let painter = OverlayPainter::new()?;
-        let content = content_of(prompt, has_cancel, volume);
-        let height = ds::measure_height(painter.fonts(), &content);
-        let inner = Box::new(Inner {
-            prompt: prompt.clone(),
-            has_cancel,
-            result: false,
-            chosen: false,
-            armed: false,
-            continue_rect: DipRect {
-                x: 0.0,
-                y: 0.0,
-                w: 0.0,
-                h: 0.0,
-            },
-            cancel_rect: None,
-            volume_rect: None,
-            volume,
-            dragging: false,
-            painter,
-            anim: OverlayAnim::default(),
-        });
-        let ptr = Box::into_raw(inner);
-        let hwnd = match CreateWindowExW(
-            WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED,
-            CLASS,
-            w!("Tinycast"),
-            WS_POPUP,
-            0,
-            0,
-            420,
-            height.round() as i32,
-            HWND::default(),
-            None,
-            hinstance,
-            Some(ptr as *const core::ffi::c_void),
-        ) {
-            Ok(h) => h,
-            Err(err) => {
-                drop(Box::from_raw(ptr));
-                return Err(err);
-            }
-        };
-        (*ptr).painter.prefer_layered(hwnd);
-        position(hwnd, height);
-        paint_d2d(hwnd);
-        Ok(hwnd)
-    }
-}
-
-fn content_of<'a>(
-    prompt: &'a ConfirmPrompt,
-    has_cancel: bool,
-    volume: Option<f32>,
-) -> DialogContent<'a> {
-    DialogContent {
-        title: &prompt.title,
-        message: &prompt.message,
-        accept: &prompt.accept,
-        cancel: if has_cancel && !prompt.cancel.is_empty() {
-            Some(prompt.cancel.as_str())
-        } else {
-            None
-        },
+    symbol: &str,
+    volume: Option<Rc<Cell<f32>>>,
+    on_accept: Box<dyn FnOnce()>,
+) -> bool {
+    let request = DialogRequest {
+        heading: prompt.title.clone(),
+        message: prompt.message.clone(),
+        accept: prompt.accept.clone(),
+        cancel: prompt.cancel.clone(),
+        symbol: fluent(symbol),
+        destructive: prompt.destructive,
+        show_cancel: !prompt.cancel.is_empty(),
+        // Confirmations are the compact card; form dialogs arrive with the
+        // editors in phase 8.
+        form: false,
         volume,
-        appearance: crate::design_system::appearance::resolved(),
-        tone: DialogTone::Neutral,
-        symbol: if volume.is_some() {
-            "speaker.wave.2"
-        } else {
-            "info.circle"
-        },
-        accept_role: if prompt.accept == "Uninstall" {
-            DialogRole::Destructive
-        } else {
-            DialogRole::Standard
-        },
-    }
-}
-
-fn position(hwnd: HWND, height_dip: f32) {
-    let dpi = unsafe { GetDpiForWindow(hwnd) };
-    let w = dip_scalar_to_px(theme::size::DIALOG_WIDTH, dpi);
-    let h = dip_scalar_to_px(height_dip, dpi);
-    let screens = crate::platform::screens::screens_px();
-    let screen = screens
-        .iter()
-        .find(|s| s.origin_is_primary)
-        .or(screens.first());
-    let (x, y) = if let Some(s) = screen {
-        let sw = s.work.right - s.work.left;
-        let sh = s.work.bottom - s.work.top;
-        (s.work.left + (sw - w) / 2, s.work.top + (sh - h) / 3)
-    } else {
-        (100, 100)
     };
-    unsafe {
-        let _ = SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
-    }
+    modal::open(request, on_accept)
 }
 
-fn nudge_volume(hwnd: HWND, up: bool) {
-    unsafe {
-        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if ptr.is_null() {
-            return;
-        }
-        if let Some(level) = (*ptr).volume {
-            let next = tinycast_pure::volume::volume_step(level, up);
-            (*ptr).volume = Some(next);
-            LAST_VOLUME.store(next.to_bits(), Ordering::SeqCst);
-            paint_d2d(hwnd);
-        }
-    }
-}
-
-fn set_volume_from_x(hwnd: HWND, x_dip: f32) {
-    unsafe {
-        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if ptr.is_null() {
-            return;
-        }
-        let Some(rect) = (*ptr).volume_rect else {
-            return;
-        };
-        let next = ds::volume_level_at(rect, x_dip);
-        (*ptr).volume = Some(next);
-        LAST_VOLUME.store(next.to_bits(), Ordering::SeqCst);
-        paint_d2d(hwnd);
-    }
-}
-
-fn set_result(hwnd: HWND, value: bool) {
-    unsafe {
-        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if ptr.is_null() || (*ptr).chosen {
-            return;
-        }
-        (*ptr).chosen = true;
-        (*ptr).result = value;
-        LAST_RESULT.store(if value { 1 } else { 0 }, Ordering::SeqCst);
-        if let Some(level) = (*ptr).volume {
-            LAST_VOLUME.store(level.to_bits(), Ordering::SeqCst);
-        }
-    }
-}
-
-fn take_result() -> bool {
-    LAST_RESULT.swap(0, Ordering::SeqCst) == 1
-}
-
-fn arm(hwnd: HWND) {
-    unsafe {
-        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if !ptr.is_null() {
-            (*ptr).armed = true;
-        }
-    }
-}
-
-fn start_enter(hwnd: HWND) {
-    unsafe {
-        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if ptr.is_null() {
-            return;
-        }
-        (*ptr).anim.present(false);
-        paint_d2d(hwnd);
-        if !motion::arm_timer(hwnd, motion::TIMER_ID) {
-            (*ptr).anim.snap_end();
-            paint_d2d(hwnd);
-        }
-    }
-}
-
-fn begin_close(hwnd: HWND, value: bool) {
-    unsafe {
-        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if ptr.is_null() {
-            let _ = DestroyWindow(hwnd);
-            return;
-        }
-        if (*ptr).anim.is_hiding() && (*ptr).anim.is_running() {
-            return;
-        }
-        set_result(hwnd, value);
-        (*ptr).anim.dismiss();
-        paint_d2d(hwnd);
-        if !motion::arm_timer(hwnd, motion::TIMER_ID) {
-            let _ = DestroyWindow(hwnd);
-        }
-    }
-}
-
-unsafe fn tick_dialog(hwnd: HWND) {
-    let _frame = motion::frame_guard(hwnd);
-    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-    if ptr.is_null() {
-        return;
-    }
-    let tick = (*ptr).anim.tick();
-    if tick.hide {
-        motion::kill_timer(hwnd, motion::TIMER_ID);
-        let _ = DestroyWindow(hwnd);
-        return;
-    }
-    paint_d2d(hwnd);
-    if !tick.running {
-        motion::kill_timer(hwnd, motion::TIMER_ID);
-    }
-}
-
-fn client_dip(hwnd: HWND, lparam: LPARAM) -> (f32, f32) {
-    let dpi = unsafe { GetDpiForWindow(hwnd) };
-    let dpi = if dpi == 0 { 96.0 } else { dpi as f32 };
-    let x = (lparam.0 as u32 & 0xFFFF) as i16 as f32 * 96.0 / dpi;
-    let y = ((lparam.0 as u32 >> 16) & 0xFFFF) as i16 as f32 * 96.0 / dpi;
-    (x, y)
-}
-
-unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    match msg {
-        0x0081 => {
-            let cs = lparam.0 as *const windows::Win32::UI::WindowsAndMessaging::CREATESTRUCTW;
-            if !cs.is_null() {
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, (*cs).lpCreateParams as isize);
-            }
-            DefWindowProcW(hwnd, msg, wparam, lparam)
-        }
-        WM_ERASEBKGND => LRESULT(1),
-        WM_TIMER => {
-            if wparam.0 == motion::TIMER_ID {
-                tick_dialog(hwnd);
-            }
-            LRESULT(0)
-        }
-        WM_PAINT => {
-            let mut ps = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
-            let hdc = windows::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut ps);
-            if !hdc.is_invalid() {
-                paint_d2d(hwnd);
-                let _ = windows::Win32::Graphics::Gdi::EndPaint(hwnd, &ps);
-            }
-            LRESULT(0)
-        }
-        WM_LBUTTONDOWN => {
-            hit(hwnd, lparam);
-            LRESULT(0)
-        }
-        WM_MOUSEMOVE => {
-            unsafe_drag(hwnd, lparam);
-            LRESULT(0)
-        }
-        WM_LBUTTONUP => {
-            unsafe {
-                let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-                if !ptr.is_null() && (*ptr).dragging {
-                    (*ptr).dragging = false;
-                    let _ = ReleaseCapture();
-                }
-            }
-            LRESULT(0)
-        }
-        WM_ACTIVATE => {
-            if (wparam.0 as u16) == 0 {
-                let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-                if !ptr.is_null() && (*ptr).armed && !(*ptr).chosen {
-                    begin_close(hwnd, false);
-                }
-            }
-            LRESULT(0)
-        }
-        WM_KEYDOWN => {
-            let vk = wparam.0 as u16;
-            if vk == 0x1B {
-                begin_close(hwnd, false);
-            } else if vk == 0x0D {
-                begin_close(hwnd, true);
-            } else if vk == 0x25 || vk == 0x27 {
-                nudge_volume(hwnd, vk == 0x27);
-            }
-            LRESULT(0)
-        }
-        WM_CLOSE => {
-            begin_close(hwnd, false);
-            LRESULT(0)
-        }
-        WM_DESTROY => {
-            motion::kill_timer(hwnd, motion::TIMER_ID);
-            LRESULT(0)
-        }
-        WM_NCDESTROY => {
-            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-            if !ptr.is_null() {
-                LAST_RESULT.store(if (*ptr).result { 1 } else { 0 }, Ordering::SeqCst);
-                drop(Box::from_raw(ptr));
-            }
-            LRESULT(0)
-        }
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-    }
-}
-
-fn unsafe_drag(hwnd: HWND, lparam: LPARAM) {
-    unsafe {
-        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if ptr.is_null() || !(*ptr).dragging {
-            return;
-        }
-        let (x, _) = client_dip(hwnd, lparam);
-        set_volume_from_x(hwnd, x);
-    }
-}
-
-fn paint_d2d(hwnd: HWND) {
-    unsafe {
-        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if ptr.is_null() {
-            return;
-        }
-        let inner = &mut *ptr;
-        let prompt = inner.prompt.clone();
-        let has_cancel = inner.has_cancel;
-        let volume = inner.volume;
-        let content = content_of(&prompt, has_cancel, volume);
-        let mut hits: Option<DialogHits> = None;
-        let visual = inner.anim.visual();
-        let _ = inner.painter.paint_visual(hwnd, visual, |target, fonts| {
-            hits = Some(ds::paint(target, fonts, &content)?);
-            Ok(())
-        });
-        if let Some(h) = hits {
-            inner.continue_rect = h.accept;
-            inner.cancel_rect = h.cancel;
-            inner.volume_rect = h.volume;
-        }
-    }
-}
-
-fn hit(hwnd: HWND, lparam: LPARAM) {
-    let (x, y) = client_dip(hwnd, lparam);
-    unsafe {
-        let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Inner;
-        if ptr.is_null() {
-            return;
-        }
-        let inner = &*ptr;
-        if ds::contains(inner.continue_rect, x, y) {
-            begin_close(hwnd, true);
-            return;
-        }
-        if let Some(cancel) = inner.cancel_rect {
-            if ds::contains(cancel, x, y) {
-                begin_close(hwnd, false);
-                return;
-            }
-        }
-        if let Some(volume) = inner.volume_rect {
-            if ds::contains(volume, x, y) {
-                (*ptr).dragging = true;
-                let _ = SetCapture(hwnd);
-                set_volume_from_x(hwnd, x);
-            }
-        }
-    }
+/// SF Symbol name to the Segoe Fluent glyph the card draws.
+fn fluent(symbol: &str) -> String {
+    crate::design_system::symbols::fluent_for_sf(symbol)
+        .unwrap_or(symbol)
+        .to_string()
 }
 
 #[cfg(test)]

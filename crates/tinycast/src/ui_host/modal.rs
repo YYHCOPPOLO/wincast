@@ -20,10 +20,10 @@ use slint::winit_030::WinitWindowAccessor;
 use slint::ComponentHandle;
 use tinycast_pure::theme;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, GetWindowRect, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
     GWL_EXSTYLE, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE,
@@ -357,7 +357,9 @@ fn apply_tool_window(hwnd: HWND) {
 }
 
 fn subclass(hwnd: HWND) -> bool {
-    unsafe { SetWindowSubclass(hwnd, SUBCLASSPROC::Some(dialog_subclass), SUBCLASS_ID, 0).as_bool() }
+    unsafe {
+        SetWindowSubclass(hwnd, SUBCLASSPROC::Some(dialog_subclass), SUBCLASS_ID, 0).as_bool()
+    }
 }
 
 unsafe extern "system" fn dialog_subclass(
@@ -418,7 +420,9 @@ fn request_close(accepted: bool) {
     }
     // The pending stays registered while the card fades, so a second request
     // still sees the slot as taken.
-    let millis = (theme::duration::DIALOG_EXIT_SECS * 1000.0).round().max(0.0) as u64;
+    let millis = (theme::duration::DIALOG_EXIT_SECS * 1000.0)
+        .round()
+        .max(0.0) as u64;
     slint::Timer::single_shot(Duration::from_millis(millis), move || finish(accepted));
 }
 

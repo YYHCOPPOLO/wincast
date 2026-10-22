@@ -728,20 +728,41 @@ impl AppCore {
             return;
         }
         if enabled {
-            if !crate::features::calendar::ui::coordinator::consent(self.ui_lang()) {
-                return;
-            }
-            if self.calendar.request_and_refresh().is_err() {
-                self.show_alert(
-                    "Calendar",
-                    "Calendar access was denied. Meetings will stay empty.",
-                );
-            }
-            self.calendar.arm_now();
-        } else if self.palette.mode == PaletteMode::Schedule {
+            let host = self.host;
+            crate::features::calendar::ui::coordinator::consent(self.ui_lang(), move || {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).enable_calendar();
+                    }
+                }
+            });
+            return;
+        }
+        if self.palette.mode == PaletteMode::Schedule {
             self.palette.prepare(PaletteMode::Launcher);
         }
-        self.settings.calendar_enabled = enabled;
+        self.settings.calendar_enabled = false;
+        let _ = self.settings.save();
+        self.invalidate_palette();
+        self.invalidate_settings();
+        self.apply_calendar_tooltip();
+        self.apply_calendar_clock();
+    }
+
+    /// Consent accepted: read the calendar and persist the switch, after the
+    /// card has closed.
+    fn enable_calendar(&mut self) {
+        if self.settings.calendar_enabled {
+            return;
+        }
+        if self.calendar.request_and_refresh().is_err() {
+            self.show_alert(
+                "Calendar",
+                "Calendar access was denied. Meetings will stay empty.",
+            );
+        }
+        self.calendar.arm_now();
+        self.settings.calendar_enabled = true;
         let _ = self.settings.save();
         self.invalidate_palette();
         self.invalidate_settings();
@@ -900,24 +921,26 @@ impl AppCore {
             policy.meeting(self.calendar.events(), now, self.calendar_window(), &joined)
         {
             if self.settings.auto_join_confirms && !self.settings.camera_preview {
-                let ok =
-                    crate::surfaces::dialog::confirm(&crate::surfaces::dialog::ConfirmPrompt {
-                        title: tinycast_pure::i18n::join_now_title(
-                            event.title.as_str(),
-                            self.ui_lang(),
-                        ),
-                        message: tinycast_pure::i18n::join_now_message(self.ui_lang()).into(),
-                        accept: tinycast_pure::i18n::join_now_accept(self.ui_lang()).into(),
-                        cancel: tinycast_pure::i18n::chrome(
-                            tinycast_pure::i18n::Chrome::Cancel,
-                            self.ui_lang(),
-                        )
+                let lang = self.ui_lang();
+                let prompt = crate::surfaces::dialog::ConfirmPrompt {
+                    title: tinycast_pure::i18n::join_now_title(event.title.as_str(), lang),
+                    message: tinycast_pure::i18n::join_now_message(lang).into(),
+                    accept: tinycast_pure::i18n::join_now_accept(lang).into(),
+                    cancel: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang)
                         .into(),
-                    });
-                self.calendar.mark_joined(&event.id);
-                if !ok {
-                    return;
-                }
+                    // Joining is not destructive: the action keeps the focus.
+                    destructive: false,
+                };
+                let host = self.host;
+                let target = event.clone();
+                crate::surfaces::dialog::confirm(&prompt, move || {
+                    if let Some(core) = crate::ui_host::app_core(host) {
+                        unsafe {
+                            (*core).join_meeting(&target);
+                        }
+                    }
+                });
+                return;
             }
             self.join_meeting(&event);
         }
@@ -1252,13 +1275,25 @@ impl AppCore {
             return;
         }
         let count = self.uninstall_selection.ids().count();
-        if !crate::features::uninstall::ui::coordinator::confirm(
-            &self.uninstall_name,
+        let host = self.host;
+        let name = self.uninstall_name.clone();
+        crate::features::uninstall::ui::coordinator::confirm(
+            &name,
             count,
             self.ui_lang(),
-        ) {
-            return;
-        }
+            move || {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).recycle_selected();
+                    }
+                }
+            },
+        );
+    }
+
+    /// The accepted side of the recycle confirmation: nothing is moved until
+    /// the user accepts.
+    fn recycle_selected(&mut self) {
         let order = tinycast_pure::uninstall::plan::recycle_order(
             &self.uninstall_candidates,
             &self.uninstall_selection,
@@ -2247,6 +2282,11 @@ impl AppCore {
     }
 
     pub fn handle_key(&mut self, vk: u16) -> bool {
+        if crate::ui_host::modal::is_up() {
+            // The card owns the keyboard while it is up; the panel must not
+            // confirm, move or hide behind it.
+            return true;
+        }
         if !self.palette_visible {
             return false;
         }
@@ -2694,27 +2734,39 @@ impl AppCore {
                 message,
                 accept,
             } => {
-                if !sys::gated_run(sys::confirm_lang(&title, &message, &accept, lang)) {
-                    return;
-                }
-                self.apply_system_action(id, previous);
+                let host = self.host;
+                sys::confirm_lang(&title, &message, &accept, lang, move || {
+                    if let Some(core) = crate::ui_host::app_core(host) {
+                        unsafe {
+                            (*core).apply_system_action(id, previous);
+                        }
+                    }
+                });
             }
             sys::RunPlan::PickVolume => {
                 let current = crate::features::system_actions::service::runner::current_volume()
                     .unwrap_or(0.5);
-                let Some(level) = crate::surfaces::dialog::pick_volume(current, lang) else {
-                    return;
-                };
-                if let Err(failure) =
-                    crate::features::system_actions::service::runner::set_volume(level)
-                {
-                    self.present_system_action_failure(id, failure);
-                    return;
-                }
-                self.show_volume_hud();
+                let host = self.host;
+                crate::surfaces::dialog::pick_volume(current, lang, move |level| {
+                    if let Some(core) = crate::ui_host::app_core(host) {
+                        unsafe {
+                            (*core).apply_picked_volume(level);
+                        }
+                    }
+                });
             }
             sys::RunPlan::Execute => self.apply_system_action(id, previous),
         }
+    }
+
+    /// The accepted volume: set it once and report, or surface the failure.
+    fn apply_picked_volume(&mut self, level: f32) {
+        use tinycast_pure::system_action::SystemActionId;
+        if let Err(failure) = crate::features::system_actions::service::runner::set_volume(level) {
+            self.present_system_action_failure(SystemActionId::SetVolume, failure);
+            return;
+        }
+        self.show_volume_hud();
     }
 
     fn apply_system_action(
@@ -4677,13 +4729,16 @@ impl AppCore {
         self.hide_palette();
         match custom_coordinator::request_run(&command) {
             custom_coordinator::RunRequest::Confirm => {
-                if !custom_coordinator::confirm_lang(&command, self.ui_lang()) {
-                    return;
-                }
+                let host = self.host;
+                let run = command.clone();
+                custom_coordinator::confirm_lang(&command, self.ui_lang(), move || {
+                    custom_coordinator::start(&run, host);
+                });
             }
-            custom_coordinator::RunRequest::Execute => {}
+            custom_coordinator::RunRequest::Execute => {
+                custom_coordinator::start(&command, self.host);
+            }
         }
-        custom_coordinator::start(&command, self.host);
     }
 
     fn apply_snippets_enabled(&mut self) {
@@ -5745,7 +5800,7 @@ mod tests {
         assert_eq!(prompt.cancel, "Cancel");
         assert!(crate::surfaces::dialog::begin());
         assert!(
-            !confirm(&command),
+            !confirm(&command, || {}),
             "Cancel / stacked dialog must not run the command"
         );
         crate::surfaces::dialog::end();

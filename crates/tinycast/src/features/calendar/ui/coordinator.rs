@@ -11,13 +11,19 @@ pub const CONSENT_MESSAGE: &str =
 pub const CONSENT_ACTION: &str = "Continue";
 pub const NOTHING_TO_JOIN: &str = "Nothing to join right now";
 
-pub fn consent(lang: UiLang) -> bool {
-    dialog::confirm(&ConfirmPrompt {
-        title: tinycast_pure::i18n::calendar_consent_title(lang).into(),
-        message: tinycast_pure::i18n::calendar_consent_message(lang).into(),
-        accept: tinycast_pure::i18n::onboarding_continue(lang).into(),
-        cancel: chrome(Chrome::Cancel, lang).into(),
-    })
+/// Registers the settings write and shows the consent card. Turning the
+/// calendar on is not destructive, so the action keeps the default focus.
+pub fn consent(lang: UiLang, on_accept: impl FnOnce() + 'static) -> bool {
+    dialog::confirm(
+        &ConfirmPrompt {
+            title: tinycast_pure::i18n::calendar_consent_title(lang).into(),
+            message: tinycast_pure::i18n::calendar_consent_message(lang).into(),
+            accept: tinycast_pure::i18n::onboarding_continue(lang).into(),
+            cancel: chrome(Chrome::Cancel, lang).into(),
+            destructive: false,
+        },
+        on_accept,
+    )
 }
 
 pub fn window(lead_minutes: i64) -> UpcomingWindow {
