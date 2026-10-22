@@ -38,6 +38,7 @@ where
         theme::colors::TEXT_PRIMARY_ALPHA,
         theme::colors::TEXT_PRIMARY_ALPHA,
     ));
+    t.set_destructive(rgba(theme::colors::DESTRUCTIVE));
     t.set_text_secondary(ink(
         appearance,
         theme::colors::TEXT_SECONDARY_ALPHA,

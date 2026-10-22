@@ -1,6 +1,5 @@
 //! Tinycast-owned Continue/Cancel dialog. One at a time; Escape cancels.
 
-use std::cell::Cell;
 use std::sync::atomic::Ordering;
 
 use tinycast_pure::dialog::{DialogRole, DialogTone};
@@ -27,14 +26,6 @@ use crate::platform::screens::dip_scalar_to_px;
 
 const CLASS: windows::core::PCWSTR = w!("TinycastDialog");
 
-thread_local! {
-    /// "A dialog is up" is per thread on purpose. Tinycast has one UI thread
-    /// that owns every dialog, its callers and AppCore, so in the app this is
-    /// the same as a global. Under `cargo test` each test runs on its own
-    /// thread, so tests that hold the dialog slot no longer leak into
-    /// parallel tests (previously a process-wide AtomicBool made them flaky).
-    static DIALOG_UP: Cell<bool> = const { Cell::new(false) };
-}
 static LAST_VOLUME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 static LAST_RESULT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
@@ -46,16 +37,18 @@ pub struct ConfirmPrompt {
     pub cancel: String,
 }
 
+/// Claims the one dialog slot. The modal gate owns it, so a confirm that is
+/// already registered blocks a second one.
 pub fn begin() -> bool {
-    DIALOG_UP.with(|up| !up.replace(true))
+    crate::ui_host::modal::begin()
 }
 
 pub fn end() {
-    DIALOG_UP.with(|up| up.set(false));
+    crate::ui_host::modal::end();
 }
 
 pub fn is_up() -> bool {
-    DIALOG_UP.with(Cell::get)
+    crate::ui_host::modal::is_up()
 }
 
 /// Continue / Cancel. Escape and clicking outside the card cancel.

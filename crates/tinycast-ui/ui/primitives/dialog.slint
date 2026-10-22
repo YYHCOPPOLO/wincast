@@ -1,36 +1,62 @@
 import { Theme } from "../theme.slint";
 
-component DialogButton inherits Rectangle {
+// One dialog action: Cancel is outlined, the primary action is filled. Enter
+// and Space activate the focused action; the ring shows which one has focus.
+export component DialogButton inherits Rectangle {
     in property <string> label;
     in property <bool> primary: false;
+    // Reads red and takes the default focus on dangerous actions.
+    in property <bool> destructive: false;
     callback clicked;
 
     height: Theme.size-dialog-button-height;
+    width: Math.max(72px, label-text.width + Theme.spacing-xl * 2);
     border-radius: Theme.radius-bar-control;
     background: root.primary ? Theme.control-surface : transparent;
     border-width: root.primary ? 0px : Theme.size-hairline;
     border-color: Theme.border;
 
-    VerticalLayout {
-        alignment: center;
-
-        Text {
-            text: root.label;
-            font-family: "Segoe UI";
-            font-size: Theme.font-bar;
-            font-weight: 500;
-            color: Theme.text-primary;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+    // Key delivery: the focused action accepts, everything else bubbles to the
+    // window's scope (Escape, volume arrows).
+    focus-scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == Key.Space) {
+                root.clicked();
+                return accept;
+            }
+            reject
         }
+    }
+
+    label-text := Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        font-family: "Segoe UI";
+        font-size: Theme.font-bar;
+        font-weight: 500;
+        color: root.destructive ? Theme.destructive : Theme.text-primary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    // Focus ring, drawn inside the pill so the layout never moves.
+    if focus-scope.has-focus: Rectangle {
+        background: transparent;
+        border-width: 2px;
+        border-color: Theme.text-secondary;
+        border-radius: root.border-radius;
     }
 
     touch := TouchArea {
         clicked => { root.clicked(); }
     }
+
+    public function focus-button() { focus-scope.focus(); }
 }
 
-// A 20 DIP corner dialog surface: symbol tile, title, message, two actions.
+// A 20 DIP corner dialog surface: symbol tile, title, message, an optional
+// volume accessory, and two actions with Cancel leading.
 export component Dialog inherits Rectangle {
     in property <string> title;
     in property <string> message;
@@ -39,9 +65,16 @@ export component Dialog inherits Rectangle {
     in property <string> symbol;
     in property <bool> show-cancel: true;
     in property <bool> form: false;
+    in property <bool> destructive: false;
+    // At most one accessory; the volume slider is the only one today.
+    in property <bool> show-volume: false;
+    in-out property <float> volume: 0.5;
+    in property <string> volume-readout;
 
     callback accepted;
     callback cancelled;
+    callback volume-changed(float);
+    callback volume-nudged(bool);
 
     width: root.form ? Theme.size-dialog-width : Theme.size-dialog-compact-width;
     height: content.preferred-height;
@@ -49,6 +82,24 @@ export component Dialog inherits Rectangle {
     border-radius: Theme.radius-dialog;
     border-width: Theme.size-hairline;
     border-color: Theme.border;
+    clip: true;
+
+    // Volume geometry. The row spans the content width; the rail stops short of
+    // the 38 DIP readout. The knob's centre travels inside the rail.
+    private property <length> volume-track-width:
+        Math.max(
+            Theme.size-volume-knob,
+            root.width - Theme.spacing-dialog-content-inset * 2
+                - Theme.size-volume-readout - Theme.spacing-md,
+        );
+    private property <length> volume-travel:
+        Math.max(1px, root.volume-track-width - Theme.size-volume-knob);
+    private property <float> volume-fill: root.volume.clamp(0.0, 1.0);
+    private property <bool> dragging: false;
+
+    function volume-at(x: length) -> float {
+        return ((x - Theme.size-volume-knob / 2) / root.volume-travel).clamp(0.0, 1.0);
+    }
 
     content := VerticalLayout {
         padding: Theme.spacing-dialog-content-inset;
@@ -87,20 +138,101 @@ export component Dialog inherits Rectangle {
             wrap: word-wrap;
         }
 
+        if root.show-volume: Rectangle {
+            height: Theme.size-volume-knob;
+            background: transparent;
+
+            Text {
+                x: parent.width - Theme.size-volume-readout;
+                y: 0;
+                width: Theme.size-volume-readout;
+                height: parent.height;
+                text: root.volume-readout;
+                font-family: "Segoe UI";
+                font-size: Theme.font-row-trailing;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                x: 0;
+                y: (parent.height - Theme.size-volume-track) / 2;
+                width: root.volume-track-width;
+                height: Theme.size-volume-track;
+                border-radius: self.height / 2;
+                background: Theme.control-surface;
+
+                // Filled portion, measured to the knob centre.
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: Math.min(
+                        parent.width,
+                        Theme.size-volume-knob / 2 + root.volume-fill * root.volume-travel,
+                    );
+                    height: parent.height;
+                    border-radius: self.height / 2;
+                    background: Theme.text-primary.with-alpha(0.85);
+                }
+            }
+
+            Rectangle {
+                x: root.volume-fill * root.volume-travel;
+                y: (parent.height - Theme.size-volume-knob) / 2;
+                width: Theme.size-volume-knob;
+                height: Theme.size-volume-knob;
+                border-radius: self.width / 2;
+                background: Theme.text-primary;
+            }
+
+            // The rail is the target; dragging tracks the pointer.
+            slider := TouchArea {
+                x: 0;
+                y: 0;
+                width: root.volume-track-width;
+                height: parent.height;
+
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.dragging = true;
+                        root.volume = root.volume-at(slider.mouse-x);
+                        root.volume-changed(root.volume);
+                    } else if (event.kind == PointerEventKind.up
+                        || event.kind == PointerEventKind.cancel) {
+                        root.dragging = false;
+                    }
+                }
+
+                moved => {
+                    if (root.dragging) {
+                        root.volume = root.volume-at(slider.mouse-x);
+                        root.volume-changed(root.volume);
+                    }
+                }
+            }
+        }
+
         HorizontalLayout {
             alignment: end;
-            spacing: Theme.spacing-xs;
+            spacing: Theme.spacing-md;
 
-            if root.show-cancel: DialogButton {
+            cancel-button := DialogButton {
+                visible: root.show-cancel;
                 label: root.cancel-label;
                 clicked => { root.cancelled(); }
             }
 
-            DialogButton {
+            accept-button := DialogButton {
                 label: root.accept-label;
                 primary: true;
+                destructive: root.destructive;
                 clicked => { root.accepted(); }
             }
         }
     }
+
+    // Default focus: Cancel leads a dangerous action, the action itself does not.
+    public function focus-cancel() { cancel-button.focus-button(); }
+    public function focus-accept() { accept-button.focus-button(); }
 }

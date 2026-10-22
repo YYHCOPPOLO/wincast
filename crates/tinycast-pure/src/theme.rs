@@ -384,6 +384,9 @@ pub mod colors {
     pub const TOOLTIP_SHADOW_ALPHA: f32 = 0.18;
     /// `composerSend` (Theme.swift:516).
     pub const COMPOSER_SEND_ALPHA: f32 = 0.92;
+    /// Destructive action ink (the dialog's red label and its tone). Straight
+    /// alpha; the same in both appearances.
+    pub const DESTRUCTIVE: (f32, f32, f32, f32) = (0.86, 0.22, 0.22, 1.0);
 
     /// 0 = Dark, 1 = Light.
     pub fn ramp_rgba(appearance: u8, dark_alpha: f32, light_alpha: f32) -> (f32, f32, f32, f32) {

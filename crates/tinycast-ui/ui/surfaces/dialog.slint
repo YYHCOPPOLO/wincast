@@ -1,0 +1,112 @@
+// A card-sized, frameless confirmation. The host creates one per request,
+// shows it, and drops it after the exit fade. There is no full-screen overlay:
+// the window is exactly the card, and losing focus cancels.
+import { Theme, Motion } from "../theme.slint";
+import { Dialog } from "../primitives/dialog.slint";
+
+export component DialogWindow inherits Window {
+    // `title` is the Window's own property, so the card heading has its own name.
+    in property <string> heading;
+    in property <string> message;
+    in property <string> accept-label;
+    in property <string> cancel-label;
+    in property <string> symbol;
+    in property <bool> show-cancel: true;
+    in property <bool> form: false;
+    in property <bool> destructive: false;
+    in property <bool> show-volume: false;
+    in-out property <float> volume: 0.5;
+    in property <string> volume-readout;
+
+    callback accepted();
+    callback cancelled();
+    callback volume-changed(float);
+    callback volume-nudged(bool);
+
+    // 0 while the card rises into place, 1 once settled. The exit never moves
+    // it and never scales it.
+    in-out property <float> reveal: 0;
+    // 1 normally, 0 during the exit fade: the only thing the exit animates.
+    in-out property <float> exit-fade: 1;
+
+    title: "Tinycast";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+    width: card.width;
+    // Room for the entrance offset, so the card is never clipped while it rises.
+    height: card.height + Motion.dialog-offset;
+
+    forward-focus: keys;
+
+    animate reveal {
+        duration: Theme.duration-dialog-enter;
+        // `tinycast_pure::motion` `Ease::Out`.
+        easing: cubic-bezier(0, 0, 0.58, 1);
+    }
+
+    animate exit-fade {
+        duration: Theme.duration-dialog-exit;
+        // `tinycast_pure::motion` `Ease::In`.
+        easing: cubic-bezier(0.42, 0, 1, 1);
+    }
+
+    // Esc cancels, Enter accepts, the arrows walk the volume grid. The focused
+    // action handles Enter/Space first and rejects everything else.
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancelled();
+                return accept;
+            }
+            if (event.text == Key.Return) {
+                root.accepted();
+                return accept;
+            }
+            if (root.show-volume && event.text == Key.LeftArrow) {
+                root.volume-nudged(false);
+                return accept;
+            }
+            if (root.show-volume && event.text == Key.RightArrow) {
+                root.volume-nudged(true);
+                return accept;
+            }
+            reject
+        }
+    }
+
+    card := Dialog {
+        y: (1 - root.reveal) * Motion.dialog-offset;
+        opacity: (Motion.dialog-initial-opacity
+            + (1 - Motion.dialog-initial-opacity) * root.reveal) * root.exit-fade;
+
+        title: root.heading;
+        message: root.message;
+        accept-label: root.accept-label;
+        cancel-label: root.cancel-label;
+        symbol: root.symbol;
+        show-cancel: root.show-cancel;
+        form: root.form;
+        destructive: root.destructive;
+        show-volume: root.show-volume;
+        volume <=> root.volume;
+        volume-readout: root.volume-readout;
+
+        accepted => { root.accepted(); }
+        cancelled => { root.cancelled(); }
+        volume-changed(value) => { root.volume-changed(value); }
+        volume-nudged(up) => { root.volume-nudged(up); }
+    }
+
+    // The host calls this once the window has focus: a dangerous action starts
+    // on Cancel, everything else on the action.
+    public function focus-default() {
+        if (root.destructive) {
+            card.focus-cancel();
+        } else {
+            card.focus-accept();
+        }
+    }
+}

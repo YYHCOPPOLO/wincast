@@ -125,7 +125,7 @@ pub fn sheen(appearance: u8) -> (f32, f32, f32, f32) {
     tinycast_pure::theme::colors::ramp_rgba(appearance, 0.04, 0.04)
 }
 
-pub const DESTRUCTIVE: (f32, f32, f32, f32) = (0.86, 0.22, 0.22, 1.0);
+pub const DESTRUCTIVE: (f32, f32, f32, f32) = tinycast_pure::theme::colors::DESTRUCTIVE;
 pub const SUCCESS: (f32, f32, f32, f32) = (0.20, 0.78, 0.35, 1.0);
 pub const PROGRESS: (f32, f32, f32, f32) = (0.0, 0.47, 0.83, 1.0);
 pub const BRAND: (f32, f32, f32, f32) = (0.525, 0.231, 1.0, 1.0);

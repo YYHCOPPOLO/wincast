@@ -52,5 +52,9 @@ pub fn run() -> windows::core::Result<()> {
     core.start();
     // The tray host is Win32, so no Slint window is visible most of the time:
     // the loop must not quit when the palette hides.
-    slint::run_event_loop_until_quit().map_err(crate::ui_host::platform_error)
+    let result = slint::run_event_loop_until_quit().map_err(crate::ui_host::platform_error);
+    // A dialog still up when the loop ends drops its surface while the backend
+    // is alive, and its continuation does not run on the way out.
+    crate::ui_host::modal::end();
+    result
 }
