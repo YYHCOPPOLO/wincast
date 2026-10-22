@@ -1812,7 +1812,8 @@ impl AppCore {
                     trailing: String::new(),
                     keycap: None,
                     icon_source: None,
-                    symbol: None,
+                    // Quicklinks have no file icon; the link glyph keeps the slot readable.
+                    symbol: Some("link".into()),
                     checkbox: 0,
                     selected: i == self.palette.selection,
                 });
