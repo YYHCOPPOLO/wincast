@@ -185,9 +185,11 @@ component CalcCard inherits Rectangle {
     }
 }
 
-// One 56 DIP emoji grid row. Cells split the list width into the model's
-// column count; the selected cell gets a 2 DIP border and the glyph keeps
-// every colour (Segoe UI Emoji is COLR, so no tint is applied).
+// One 56 DIP emoji grid row. 56 is the cell HEIGHT (tinycast_pure::emoji::CELL_DIP,
+// the same slot height the Direct2D row used); the width is the list width divided
+// by the model's column count, exactly what emoji::hit_index maps pointer x with.
+// The selected cell gets a 2 DIP border and the glyph keeps every colour
+// (Segoe UI Emoji is COLR, so no tint is applied).
 component EmojiGridRow inherits Rectangle {
     in property <[string]> glyphs;
     in property <int> columns: 8;

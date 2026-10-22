@@ -57,8 +57,10 @@ const TAB_HINT_WIDTH: f32 = 104.0;
 const WS_EX_APPWINDOW_BIT: isize = 0x0004_0000;
 /// The window has to exist before it can be measured, so it is born off-screen.
 const PARKED: i32 = -32_000;
-/// The old Direct2D preview drew at most 2000 characters; keep layout bounded.
-const PREVIEW_CHARS: usize = 2000;
+/// The preview scrolls, so a long clip is not truncated for layout; only a
+/// pathological paste (a whole log file) is capped so Slint text shaping stays
+/// bounded. 20k characters is several screens of wrapped text.
+const PREVIEW_CHARS: usize = 20_000;
 
 type Palette = tinycast_ui::PaletteWindow;
 
@@ -848,10 +850,13 @@ fn wheel_over_preview(hwnd: HWND, inner: *mut PaletteInner, lparam: LPARAM) -> b
     if !unsafe { ScreenToClient(hwnd, &mut point) }.as_bool() {
         return false;
     }
-    let split = dip_scalar_to_px(theme::size::CLIPBOARD_LIST_WIDTH, unsafe {
-        GetDpiForWindow(hwnd)
-    });
-    point.x > split
+    // The preview starts one hairline right of the 290 DIP list column; anything
+    // left of that still belongs to AppCore's list scroll.
+    let preview_left = dip_scalar_to_px(
+        theme::size::CLIPBOARD_LIST_WIDTH + theme::size::HAIRLINE,
+        unsafe { GetDpiForWindow(hwnd) },
+    );
+    point.x >= preview_left
 }
 
 fn layout_search_of(hwnd: HWND, inner: *mut PaletteInner) {
