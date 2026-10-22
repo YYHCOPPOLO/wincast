@@ -19,7 +19,10 @@ export component Keycap inherits Rectangle {
 
     label := Text {
         text: root.text;
-        font-family: "Segoe UI";
+        // Segoe UI Symbol carries Segoe UI's own Latin plus the arrows and
+        // modifiers a cap holds (↵ ⇥ ⌘ ⌥ ⇧ ⌫). Slint's font fallback finds no
+        // glyph for them, so a "Segoe UI" cap drew tofu.
+        font-family: "Segoe UI Symbol";
         font-size: variant == KeycapVariant.hero ? Theme.font-panel-title : Theme.font-keycap;
         color: Theme.text-secondary;
         horizontal-alignment: center;
