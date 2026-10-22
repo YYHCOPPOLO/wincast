@@ -408,6 +408,17 @@ pub mod colors {
             (1.0, 1.0, 1.0, PANEL_SCRIM_LIGHT_ALPHA)
         }
     }
+
+    /// Opaque-enough tint for a floating glass surface when no live blur sits
+    /// behind it (the palette menus). This is the fill the Direct2D menu painter
+    /// used; the Slint menu reads it through `Theme.menu-fill`.
+    pub fn glass_tint_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        if appearance == 0 {
+            (0.08, 0.08, 0.08, 0.94)
+        } else {
+            (0.98, 0.98, 0.98, 0.96)
+        }
+    }
 }
 
 pub mod settings_chrome {

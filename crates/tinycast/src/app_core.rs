@@ -3351,7 +3351,7 @@ impl AppCore {
         self.invalidate_palette();
     }
 
-    fn close_menu(&mut self) {
+    pub(crate) fn close_menu(&mut self) {
         if self.menu == OpenMenu::None && self.menu_items.is_empty() {
             return;
         }

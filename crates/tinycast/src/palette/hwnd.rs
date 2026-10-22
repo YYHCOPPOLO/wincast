@@ -17,6 +17,7 @@ use std::time::Duration;
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
 use slint::{ComponentHandle, ModelRc, VecModel};
+use tinycast_pure::palette_menu::{menu_frame, menu_row_rect};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
 use tinycast_pure::palette_state::should_draw_placeholder;
@@ -154,6 +155,9 @@ impl PaletteWindow {
                 return;
             }
             if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                if dismiss_menu_if_open(core) {
+                    return;
+                }
                 unsafe {
                     (*core).activate_selected();
                 }
@@ -166,6 +170,9 @@ impl PaletteWindow {
                 return;
             }
             if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                if dismiss_menu_if_open(core) {
+                    return;
+                }
                 unsafe {
                     (*core).toggle_actions();
                 }
@@ -179,12 +186,38 @@ impl PaletteWindow {
             }
             apps_clicked(inner);
         });
+        let ptr = inner as usize;
+        window.ui.on_menu_activated(move |index| {
+            let inner = ptr as *mut PaletteInner;
+            if !inner.is_null() {
+                menu_activated(inner, index);
+            }
+        });
+        let ptr = inner as usize;
+        window.ui.on_menu_hovered(move |index| {
+            let inner = ptr as *mut PaletteInner;
+            if !inner.is_null() {
+                menu_hovered(inner, index);
+            }
+        });
+        let ptr = inner as usize;
+        window.ui.on_menu_dismissed(move |x, y| {
+            let inner = ptr as *mut PaletteInner;
+            if !inner.is_null() {
+                menu_dismissed(inner, x, y);
+            }
+        });
         // Clicking the header glyph or the placeholder focuses the native field.
         let ptr = inner as usize;
         window.ui.on_header_clicked(move || {
             let inner = ptr as *mut PaletteInner;
             if inner.is_null() {
                 return;
+            }
+            if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                if dismiss_menu_if_open(core) {
+                    return;
+                }
             }
             if let Some(edit) = unsafe { (*inner).edit.as_ref() } {
                 edit.focus();
@@ -253,6 +286,9 @@ impl PaletteWindow {
         unsafe {
             let _ = KillTimer(self.hwnd, RESIGN_TIMER_ID);
         }
+        // The exit animation belongs to a visible window; a hide cuts it so a
+        // quick re-show never finds a half-faded menu with no menu open.
+        self.ui.set_menu_visible(false);
         let _ = self.ui.hide();
         if let Some(edit) = unsafe { (*self.inner).edit.as_ref() } {
             edit.set_visible(false);
@@ -509,6 +545,7 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     ui.set_scroll_y(-scroll);
     ui.set_empty_text(empty.into());
     attach_footer(ui, core);
+    attach_menu(ui, core, expanded);
     let changed = (unsafe { (*inner).trailing } - trailing).abs() > 0.01;
     if changed {
         unsafe {
@@ -559,6 +596,174 @@ fn attach_footer(ui: &Palette, core: &AppCore) {
     ui.set_actions_shortcut(key.into());
     ui.set_show_actions(footer.show_action_group);
     ui.set_primary_destructive(footer.primary_destructive);
+}
+
+/// The in-panel menu overlay: AppCore owns the frame, the items and the
+/// selection; leaving the last content in place lets the exit animation fade
+/// the menu it was showing instead of an empty shell.
+fn attach_menu(ui: &Palette, core: &AppCore, expanded: bool) {
+    let Some(paint) = core.menu_paint().filter(|_| expanded) else {
+        ui.set_menu_open(false);
+        return;
+    };
+    let has_header = !paint.header.is_empty();
+    let frame = menu_frame(
+        paint.kind,
+        theme::size::PANEL_WIDTH,
+        snapshot::panel_height(expanded),
+        paint.items.len(),
+        has_header,
+    );
+    let items: Vec<tinycast_ui::MenuItem> = paint
+        .items
+        .iter()
+        .map(|item| {
+            // AppCore keeps "Ctrl+Enter" as one string; the menu draws one cap
+            // per token, exactly like the footer.
+            let caps: Vec<slint::SharedString> = item
+                .shortcut
+                .map(|shortcut| shortcut.split('+').map(slint::SharedString::from).collect())
+                .unwrap_or_default();
+            tinycast_ui::MenuItem {
+                label: item.label.as_str().into(),
+                shortcut: slint::ModelRc::new(slint::VecModel::from(caps)),
+                symbol: slint::SharedString::new(),
+                destructive: item.is_destructive(),
+                enabled: true,
+            }
+        })
+        .collect();
+    ui.set_menu_header(paint.header.into());
+    ui.set_menu_selected(paint.selection as i32);
+    ui.set_menu_items(slint::ModelRc::new(slint::VecModel::from(items)));
+    ui.set_menu_x(frame.x);
+    ui.set_menu_y(frame.y);
+    ui.set_menu_width(frame.w);
+    ui.set_menu_height(frame.h);
+    // Last, so the reveal animates content that is already in place.
+    ui.set_menu_open(true);
+}
+
+/// The frame pointer_down/pointer_move will resolve against, for the row
+/// centre a Slint click or hover reports.
+fn menu_geometry(
+    core: &AppCore,
+    expanded: bool,
+) -> Option<(tinycast_pure::palette_placement::DipRect, bool)> {
+    if !expanded {
+        return None;
+    }
+    let paint = core.menu_paint()?;
+    let has_header = !paint.header.is_empty();
+    let frame = menu_frame(
+        paint.kind,
+        theme::size::PANEL_WIDTH,
+        snapshot::panel_height(expanded),
+        paint.items.len(),
+        has_header,
+    );
+    Some((frame, has_header))
+}
+
+/// A menu row click re-enters AppCore::pointer_down at the row's centre: the
+/// same path that already maps the frame back to an item and activates it.
+fn menu_activated(inner: *mut PaletteInner, index: i32) {
+    if index < 0 {
+        return;
+    }
+    let inner_ref = unsafe { &*inner };
+    let Some(core) = core_from_host(inner_ref.host) else {
+        return;
+    };
+    let expanded = inner_ref
+        .weak
+        .upgrade()
+        .map(|ui| ui.get_expanded())
+        .unwrap_or(false);
+    let Some((frame, has_header)) = menu_geometry(unsafe { &*core }, expanded) else {
+        return;
+    };
+    let row = menu_row_rect(frame, has_header, index as usize);
+    let panel_h = snapshot::panel_height(expanded);
+    unsafe {
+        (*core).pointer_down(
+            row.x + row.w / 2.0,
+            row.y + row.h / 2.0,
+            theme::size::PANEL_WIDTH,
+            panel_h,
+            false,
+        );
+    }
+}
+
+/// Pointer movement keeps the keyboard selection under the pointer, exactly as
+/// the Direct2D panel did with pointer_move.
+fn menu_hovered(inner: *mut PaletteInner, index: i32) {
+    if index < 0 {
+        return;
+    }
+    let inner_ref = unsafe { &*inner };
+    let Some(core) = core_from_host(inner_ref.host) else {
+        return;
+    };
+    let expanded = inner_ref
+        .weak
+        .upgrade()
+        .map(|ui| ui.get_expanded())
+        .unwrap_or(false);
+    let Some((frame, has_header)) = menu_geometry(unsafe { &*core }, expanded) else {
+        return;
+    };
+    let row = menu_row_rect(frame, has_header, index as usize);
+    let panel_h = snapshot::panel_height(expanded);
+    unsafe {
+        (*core).pointer_move(
+            row.x + row.w / 2.0,
+            row.y + row.h / 2.0,
+            theme::size::PANEL_WIDTH,
+            panel_h,
+        );
+    }
+}
+
+/// A click outside the menu closes it without activating anything. The whole
+/// window backdrop reports the point, so the same pointer_down decides; the
+/// guard keeps a late click from reaching the row underneath.
+fn menu_dismissed(inner: *mut PaletteInner, x: f32, y: f32) {
+    let inner_ref = unsafe { &*inner };
+    let Some(core) = core_from_host(inner_ref.host) else {
+        return;
+    };
+    if !unsafe { (*core).menu_is_open() } {
+        return;
+    }
+    let expanded = inner_ref
+        .weak
+        .upgrade()
+        .map(|ui| ui.get_expanded())
+        .unwrap_or(false);
+    unsafe {
+        (*core).pointer_down(
+            x,
+            y,
+            theme::size::PANEL_WIDTH,
+            snapshot::panel_height(expanded),
+            false,
+        );
+    }
+}
+
+/// Footer/header actions must dismiss an open menu first: the click belongs to
+/// the menu session, not to the action behind it.
+fn dismiss_menu_if_open(core: *mut AppCore) -> bool {
+    if unsafe { (*core).menu_is_open() } {
+        unsafe {
+            (*core).close_menu();
+        }
+        true
+    } else {
+        false
+    }
 }
 
 /// The apps circle opens the same menu the footer circle always did.

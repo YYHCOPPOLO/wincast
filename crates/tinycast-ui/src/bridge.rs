@@ -79,6 +79,7 @@ where
         theme::colors::MENU_HOVER_DARK_ALPHA,
         theme::colors::MENU_HOVER_LIGHT_ALPHA,
     ));
+    t.set_menu_fill(rgba(theme::colors::glass_tint_rgba(appearance)));
     t.set_control_hover(ink(
         appearance,
         theme::colors::CONTROL_HOVER_DARK_ALPHA,

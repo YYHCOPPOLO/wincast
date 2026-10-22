@@ -102,7 +102,7 @@ pub fn menu_row_height() -> f32 {
 }
 
 pub fn menu_header_height() -> f32 {
-    theme::spacing::XS + theme::spacing::XS / 2.0 + 16.0
+    theme::spacing::XS + theme::spacing::XS / 2.0 + theme::size::MENU_SECTION_HEADER
 }
 
 pub fn menu_height(item_count: usize, has_header: bool) -> f32 {

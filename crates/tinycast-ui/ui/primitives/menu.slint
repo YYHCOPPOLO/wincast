@@ -1,56 +1,90 @@
 import { Theme } from "../theme.slint";
 import { IconSlot } from "row.slint";
+import { Keycap } from "keycap.slint";
 
+// Shortcut tokens are separate caps ("Ctrl", "Enter"), like the footer: the
+// host splits AppCore's "Ctrl+Enter" before it fills the model.
 export struct MenuItem {
     label: string,
-    shortcut: string,
+    shortcut: [string],
     symbol: string,
+    destructive: bool,
     enabled: bool,
 }
 
 // A 276 DIP menu surface: 16 DIP radius, 36 DIP rows, hover/selection fill.
+// The host hands over the exact frame from palette_menu::menu_frame, so the
+// rows here line up with menu_row_at/menu_row_rect down to the pixel.
 export component Menu inherits Rectangle {
     in property <[MenuItem]> items;
     in property <int> selected: -1;
     in property <string> header;
 
     callback activated(int);
+    callback hovered(int);
+
+    // palette_menu::menu_header_height().
+    property <length> header-block:
+        Theme.spacing-xs + Theme.spacing-xs / 2 + Theme.size-menu-section-header;
 
     width: Theme.size-menu-width;
-    height: Theme.spacing-md * 2
-        + (root.header == "" ? 0px : Theme.size-menu-section-header)
-        + items.length * (Theme.size-menu-row-height + Theme.size-menu-row-spacing);
-    background: Theme.scrim;
+    // palette_menu::menu_height: sm padding, the 22 DIP header block and one
+    // 1 DIP gap per row boundary. The host overrides width/height with the
+    // exact menu_frame it hit-tests against.
+    height: Theme.spacing-sm * 2
+        + (root.header == "" ? 0px
+            : root.header-block + (items.length > 0 ? Theme.size-menu-row-spacing : 0px))
+        + items.length * Theme.size-menu-row-height
+        + Math.max(0, items.length - 1) * Theme.size-menu-row-spacing;
+    background: Theme.menu-fill;
     border-radius: Theme.radius-menu-panel;
     border-width: Theme.size-hairline;
     border-color: Theme.border;
 
+    // Clicks on the menu's own padding or header must not reach the palette
+    // behind it; the row touch areas below are declared later and win.
+    TouchArea {
+        clicked => { }
+    }
+
     VerticalLayout {
-        padding: Theme.spacing-md;
+        padding: Theme.spacing-sm;
         spacing: Theme.size-menu-row-spacing;
 
-        if root.header != "": Text {
-            height: Theme.size-menu-section-header;
-            text: root.header;
-            font-family: "Segoe UI";
-            font-size: Theme.font-section;
-            font-weight: 500;
-            color: Theme.text-secondary;
-            vertical-alignment: center;
-            overflow: elide;
+        if root.header != "": Rectangle {
+            height: root.header-block;
+            background: transparent;
+
+            // menu_header_rect starts at spacing.lg, not the frame's sm pad.
+            header-label := Text {
+                x: Theme.spacing-lg - Theme.spacing-sm;
+                y: 0;
+                width: parent.width - (Theme.spacing-lg - Theme.spacing-sm) * 2;
+                height: parent.height;
+                text: root.header;
+                font-family: "Segoe UI";
+                font-size: Theme.font-section;
+                font-weight: 500;
+                color: Theme.text-tertiary;
+                vertical-alignment: center;
+                overflow: elide;
+            }
         }
 
         for item[i] in root.items: Rectangle {
             height: Theme.size-menu-row-height;
             border-radius: Theme.radius-menu-row;
-            background: root.selected == i || item-touch.has-hover ? Theme.menu-hover : transparent;
+            background: root.selected == i ? Theme.selection
+                : (item-touch.has-hover ? Theme.menu-hover : transparent);
 
             HorizontalLayout {
                 padding-left: Theme.spacing-md;
                 padding-right: Theme.spacing-md;
-                spacing: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
 
-                VerticalLayout {
+                // Only a real symbol gets a slot: an empty one would leave a
+                // placeholder tile on every row.
+                if item.symbol != "": VerticalLayout {
                     alignment: center;
                     IconSlot {
                         slot: Theme.size-menu-icon;
@@ -62,22 +96,34 @@ export component Menu inherits Rectangle {
                     text: item.label;
                     font-family: "Segoe UI";
                     font-size: Theme.font-row;
-                    color: item.enabled ? Theme.text-primary : Theme.text-tertiary;
+                    color: item.destructive ? Theme.destructive
+                        : (item.enabled ? Theme.text-primary : Theme.text-tertiary);
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                     overflow: elide;
                 }
 
-                if item.shortcut != "": Text {
-                    text: item.shortcut;
-                    font-family: "Segoe UI";
-                    font-size: Theme.font-row-trailing;
-                    color: Theme.text-tertiary;
-                    vertical-alignment: center;
+                if item.shortcut.length > 0: HorizontalLayout {
+                    alignment: end;
+                    spacing: Theme.spacing-xxs;
+
+                    for cap in item.shortcut: VerticalLayout {
+                        alignment: center;
+                        Keycap {
+                            text: cap;
+                            filled: true;
+                        }
+                    }
                 }
             }
 
             item-touch := TouchArea {
+                changed has-hover => {
+                    if (self.has-hover) {
+                        root.hovered(i);
+                    }
+                }
+
                 clicked => {
                     if item.enabled {
                         root.activated(i);

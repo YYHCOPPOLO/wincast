@@ -1,8 +1,9 @@
 // The command palette. The squircle, the header, the rows and the chrome are
 // Slint; the search field itself is a native EDIT child the host parents to
 // this window, so the placeholder is drawn here and shows through it.
-import { Theme } from "../theme.slint";
+import { Theme, Motion } from "../theme.slint";
 import { Panel } from "../primitives/panel.slint";
+import { Menu, MenuItem } from "../primitives/menu.slint";
 import { Keycap } from "../primitives/keycap.slint";
 import { Row, SectionHeader } from "../primitives/row.slint";
 import { Scrollbar } from "../primitives/scrollbar.slint";
@@ -424,6 +425,20 @@ export component PaletteWindow inherits Window {
     in property <string> actions-modifier;
     in property <bool> show-actions: true;
     in property <bool> primary-destructive: false;
+    // In-panel menu overlay. AppCore owns whether a menu is open, its frame
+    // (palette_menu::menu_frame), header, items and selection; the surface only
+    // plays the reveal and keeps the last frame while it fades out.
+    in property <bool> menu-open: false;
+    in-out property <bool> menu-visible: false;
+    in property <length> menu-x: 0px;
+    in property <length> menu-y: 0px;
+    in property <length> menu-width: 0px;
+    in property <length> menu-height: 0px;
+    in property <string> menu-header;
+    in property <[MenuItem]> menu-items;
+    in property <int> menu-selected: -1;
+    private property <float> menu-scale: Motion.menu-entry-scale;
+    private property <float> menu-opacity: 0;
 
     callback header-clicked();
     callback row-clicked(int, length, length);
@@ -432,6 +447,9 @@ export component PaletteWindow inherits Window {
     callback apps-clicked();
     callback primary-clicked();
     callback actions-clicked();
+    callback menu-activated(int);
+    callback menu-hovered(int);
+    callback menu-dismissed(length, length);
 
     // Left edge of the native field: 16 DIP gutter + 22 DIP glyph + 8 DIP gap.
     property <length> field-x:
@@ -465,6 +483,50 @@ export component PaletteWindow inherits Window {
 
     // The host compares against AppCore's value, so this cannot loop.
     changed scroll-y => { root.scrolled(root.scroll-y); }
+
+    // Opening reveals at 0.94 over duration-menu-open; closing keeps the last
+    // frame while it fades to 0 over duration-menu-exit. Control points come
+    // from theme::menu_motion (EXPANSION_CURVE / EXIT_CURVE).
+    states [
+        menu-revealed when root.menu-open: {
+            menu-scale: 1;
+            menu-opacity: 1;
+            in {
+                animate menu-scale {
+                    duration: Theme.duration-menu-open;
+                    easing: cubic-bezier(0.2, 0.7, 0.2, 1);
+                }
+                animate menu-opacity {
+                    duration: Theme.duration-menu-open;
+                    easing: cubic-bezier(0.2, 0.7, 0.2, 1);
+                }
+            }
+            out {
+                animate menu-scale {
+                    duration: Theme.duration-menu-exit;
+                    easing: cubic-bezier(0.4, 0, 1, 1);
+                }
+                animate menu-opacity {
+                    duration: Theme.duration-menu-exit;
+                    easing: cubic-bezier(0.4, 0, 1, 1);
+                }
+            }
+        }
+    ]
+
+    // The first frame of an opening menu must be visible; closing keeps the
+    // overlay alive until the exit animation is over.
+    changed menu-open => {
+        if (root.menu-open) {
+            root.menu-visible = true;
+        }
+    }
+
+    Timer {
+        interval: Theme.duration-menu-exit;
+        running: root.menu-visible && !root.menu-open;
+        triggered => { root.menu-visible = false; }
+    }
 
     Panel {
         squircle-commands: root.squircle-commands;
@@ -765,5 +827,40 @@ export component PaletteWindow inherits Window {
             primary-clicked => { root.primary-clicked(); }
             actions-clicked => { root.actions-clicked(); }
         }
+    }
+
+    // A palette menu is an in-panel overlay, never a native PopupWindow: the
+    // native search field keeps focus, and AppCore's menu_frame already fits
+    // the 475 DIP panel. The backdrop swallows the click that closes it so it
+    // can never reach the row or footer underneath.
+    if root.menu-visible: Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+
+        dismiss-touch := TouchArea {
+            clicked => {
+                root.menu-dismissed(
+                    self.absolute-position.x + self.mouse-x,
+                    self.absolute-position.y + self.mouse-y,
+                );
+            }
+        }
+    }
+
+    if root.menu-visible: Menu {
+        x: root.menu-x;
+        y: root.menu-y;
+        width: root.menu-width;
+        height: root.menu-height;
+        header: root.menu-header;
+        items: root.menu-items;
+        selected: root.menu-selected;
+        opacity: root.menu-opacity;
+        transform-scale: root.menu-scale;
+        activated(i) => { root.menu-activated(i); }
+        hovered(i) => { root.menu-hovered(i); }
     }
 }

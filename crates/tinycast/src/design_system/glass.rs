@@ -39,11 +39,7 @@ pub enum ControlState {
 /// Opaque-enough tint for a floating glass surface when no live blur sits behind it.
 /// Matches what the palette menu painted before (dark 0.08 gray, light 0.98 gray).
 pub fn glass_tint_rgba(appearance: u8) -> (f32, f32, f32, f32) {
-    if appearance == 0 {
-        (0.08, 0.08, 0.08, 0.94)
-    } else {
-        (0.98, 0.98, 0.98, 0.96)
-    }
+    theme::colors::glass_tint_rgba(appearance)
 }
 
 pub fn rim_rgba(appearance: u8) -> (f32, f32, f32, f32) {

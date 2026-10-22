@@ -300,7 +300,13 @@ unsafe extern "system" fn edit_subclass(
         WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
             let result = DefSubclassProc(hwnd, msg, wparam, lparam);
             if let Some(core) = core_from_host(host) {
-                (*core).invalidate_palette();
+                // A click in the search field is outside an open menu: close it
+                // instead of leaving the menu up while the caret moves.
+                if (*core).menu_is_open() {
+                    (*core).close_menu();
+                } else {
+                    (*core).invalidate_palette();
+                }
             }
             result
         }

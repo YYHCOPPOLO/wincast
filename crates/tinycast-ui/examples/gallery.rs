@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use tinycast_ui::{GalleryRow, GalleryWindow, MenuItem};
 
@@ -57,24 +57,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     ui.set_menu_header("操作".into());
     let menu = vec![
-        MenuItem {
-            label: "打开".into(),
-            shortcut: "↵".into(),
-            symbol: "\u{E8E5}".into(),
-            enabled: true,
-        },
-        MenuItem {
-            label: "在文件夹中显示".into(),
-            shortcut: "Ctrl+O".into(),
-            symbol: "".into(),
-            enabled: true,
-        },
-        MenuItem {
-            label: "复制路径".into(),
-            shortcut: "".into(),
-            symbol: "".into(),
-            enabled: false,
-        },
+        menu_item("打开", &["↵"], "\u{E8E5}", false, true),
+        menu_item("在文件夹中显示", &["Ctrl", "O"], "", false, true),
+        menu_item("复制路径", &[], "", false, false),
+        menu_item("卸载应用", &[], "", true, true),
     ];
     ui.set_menu_items(ModelRc::from(Rc::new(VecModel::from(menu))));
 
@@ -99,6 +85,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     ui.run()?;
     Ok(())
+}
+
+fn menu_item(
+    label: &str,
+    shortcut: &[&str],
+    symbol: &str,
+    destructive: bool,
+    enabled: bool,
+) -> MenuItem {
+    let caps: Vec<SharedString> = shortcut
+        .iter()
+        .map(|cap| SharedString::from(*cap))
+        .collect();
+    MenuItem {
+        label: label.into(),
+        shortcut: ModelRc::new(VecModel::from(caps)),
+        symbol: symbol.into(),
+        destructive,
+        enabled,
+    }
 }
 
 fn row(title: &str, trailing: &str, keycap: &str, symbol: &str, selected: bool) -> GalleryRow {
