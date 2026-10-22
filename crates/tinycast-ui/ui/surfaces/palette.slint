@@ -33,6 +33,18 @@ export struct PaletteRow {
     height: length,
 }
 
+// AI transcript rows, built by crates/tinycast/src/ui_host/snapshot.rs.
+// 0 user bubble, 1 assistant text, 2 notice line. top/height come from
+// tinycast_pure::layout::list, the same functions AppCore clamps the wheel with.
+export struct ChatRow {
+    role: int,
+    text: string,
+    failed: bool,
+    streaming: bool,
+    top: length,
+    height: length,
+}
+
 // A badge under one calculator column: 11 DIP ink on controlSurface.
 component CalcBadge inherits Rectangle {
     in property <string> text;
@@ -277,6 +289,91 @@ component FilterButton inherits Rectangle {
     }
 }
 
+// One transcript block. The host owns the row's top and height, so a block is
+// placed like any other palette slot: user on the right in a controlSurface
+// bubble, the assistant's plain text at the 20 DIP transcript gutter, and a
+// secondary notice line under the last reply.
+component ChatLine inherits Rectangle {
+    in property <int> role;
+    in property <string> text;
+    in property <bool> failed: false;
+    in property <bool> streaming: false;
+    // "Thinking" while a reply streams with no text yet; the host's i18n copy,
+    // never an English literal here.
+    in property <string> thinking-label;
+    // The transcript column width; a component cannot read its parent.
+    in property <length> slot-width;
+
+    property <string> display: root.role == 1 && root.streaming && root.text == ""
+        ? root.thinking-label : root.text;
+    property <color> ink: root.failed ? Theme.destructive : Theme.text-primary;
+
+    background: transparent;
+
+    if root.role == 0: HorizontalLayout {
+        alignment: end;
+        // 20 DIP gutters: the bubble right edge sits where the assistant's
+        // column starts, so a full-width bubble lines up with the plain text.
+        padding-left: Theme.spacing-xxl;
+        padding-right: Theme.spacing-xxl;
+
+        bubble := Rectangle {
+            max-width: root.slot-width - Theme.spacing-xxl * 2;
+            border-radius: Theme.radius-row;
+            background: Theme.control-surface;
+
+            HorizontalLayout {
+                padding-left: Theme.spacing-xl;
+                padding-right: Theme.spacing-xl;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-md;
+
+                Text {
+                    text: root.display;
+                    // A long unbroken token must still wrap inside the cap.
+                    min-width: 0px;
+                    wrap: word-wrap;
+                    overflow: clip;
+                    horizontal-alignment: right;
+                    vertical-alignment: top;
+                    font-family: "Segoe UI";
+                    font-size: Theme.font-row;
+                    color: root.ink;
+                }
+            }
+        }
+    }
+
+    // The assistant has no bubble: 20 DIP gutter plus the 6 DIP text inset.
+    if root.role == 1: Text {
+        x: Theme.spacing-xxl + Theme.spacing-sm;
+        y: Theme.spacing-md;
+        width: root.slot-width - (Theme.spacing-xxl + Theme.spacing-sm) * 2;
+        height: root.height - Theme.spacing-md * 2;
+        text: root.display;
+        wrap: word-wrap;
+        overflow: clip;
+        vertical-alignment: top;
+        font-family: "Segoe UI";
+        font-size: Theme.font-row;
+        color: root.ink;
+    }
+
+    if root.role == 2: Text {
+        x: Theme.spacing-xxl;
+        y: 0;
+        width: root.slot-width - Theme.spacing-xxl * 2;
+        height: root.height;
+        text: root.text;
+        wrap: word-wrap;
+        overflow: clip;
+        vertical-alignment: top;
+        font-family: "Segoe UI";
+        font-size: Theme.font-row;
+        color: Theme.text-secondary;
+    }
+}
+
 export component PaletteWindow inherits Window {
     // Squircle path commands for the current size, from tinycast_ui::squircle_commands.
     in property <string> squircle-commands;
@@ -292,6 +389,11 @@ export component PaletteWindow inherits Window {
     in property <length> search-trailing: 0px;
     // Visible slice of the list, rebuilt by the host as it scrolls.
     in property <[PaletteRow]> rows;
+    // AI transcript. The whole transcript is a few dozen fixed-height rows, so
+    // it is handed over whole; scroll-y and content-height are the list's.
+    in property <bool> chat-mode: false;
+    in property <[ChatRow]> chat-rows;
+    in property <string> thinking-label;
     in property <bool> hover-armed: false;
     in property <string> empty-text;
     // Glyph above the empty text, the same fluent magnifier in every mode.
@@ -507,6 +609,33 @@ export component PaletteWindow inherits Window {
                         selected: row.emoji-selected;
                         hover-armed: root.hover-armed;
                         clicked(x, y) => { root.row-clicked(i, x, y); }
+                    }
+                }
+
+                // Zero-height holder: the rows carry the transcript's own y, so
+                // they share the list's coordinate space instead of a layout.
+                if root.chat-mode: Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: 100%;
+                    height: 0;
+                    background: transparent;
+
+                    for row[i] in root.chat-rows: Rectangle {
+                        x: 0;
+                        y: row.top;
+                        width: 100%;
+                        height: row.height;
+                        background: transparent;
+
+                        ChatLine {
+                            role: row.role;
+                            text: row.text;
+                            failed: row.failed;
+                            streaming: row.streaming;
+                            thinking-label: root.thinking-label;
+                            slot-width: root.width;
+                        }
                     }
                 }
             }

@@ -77,6 +77,8 @@ struct PaletteInner {
     edit: Option<SearchEdit>,
     /// Visible slice only; `AppCore` still owns the whole screen.
     model: Rc<VecModel<tinycast_ui::PaletteRow>>,
+    /// The AI transcript, whole: a conversation is a few dozen fixed rows.
+    chat: Rc<VecModel<tinycast_ui::ChatRow>>,
     icons: IconCache,
     images: RowImages,
     appearance: u8,
@@ -101,6 +103,7 @@ impl PaletteWindow {
             weak: ui.as_weak(),
             edit: None,
             model: Rc::new(VecModel::default()),
+            chat: Rc::new(VecModel::default()),
             icons: IconCache::new(),
             images: RowImages::new(),
             appearance,
@@ -120,6 +123,9 @@ impl PaletteWindow {
         window
             .ui
             .set_rows(ModelRc::from(unsafe { (*inner).model.clone() }));
+        window
+            .ui
+            .set_chat_rows(ModelRc::from(unsafe { (*inner).chat.clone() }));
         let ptr = inner as usize;
         window.ui.on_row_clicked(move |index, x, y| {
             let inner = ptr as *mut PaletteInner;
@@ -487,6 +493,16 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
         appearance,
     );
     inner_mut.model.set_vec(visible.rows);
+    // AI mode: the transcript replaces the list. Heights come from the layout
+    // module, so the rows and AppCore's clamp share one model.
+    let messages = core.ai_chat_messages();
+    if let Some(messages) = messages {
+        inner_mut
+            .chat
+            .set_vec(snapshot::chat_rows(messages, core.ai_chat_notice()));
+    }
+    ui.set_chat_mode(messages.is_some());
+    ui.set_thinking_label(tinycast_pure::i18n::ai_thinking(core.ui_lang()).into());
     ui.set_content_height(content.max(visible.content_height));
     // Slint's Flickable offset is negative while scrolled down; AppCore keeps
     // the positive distance-from-top.

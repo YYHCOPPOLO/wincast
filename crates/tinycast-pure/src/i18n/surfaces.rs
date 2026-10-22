@@ -294,6 +294,11 @@ pub fn ai_copy_last_response(lang: UiLang) -> &'static str {
     pick(lang, "Copy Last Response", "复制上次回复")
 }
 
+/// The transcript placeholder while a reply streams with no text yet.
+pub fn ai_thinking(lang: UiLang) -> &'static str {
+    pick(lang, "Thinking", "思考中")
+}
+
 pub fn qa_working(lang: UiLang) -> &'static str {
     pick(lang, "Working…", "正在处理…")
 }

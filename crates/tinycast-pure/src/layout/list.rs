@@ -129,18 +129,35 @@ fn chat_wrap_inner(is_user: bool, panel_w: f32) -> f32 {
     }
 }
 
-pub fn chat_text_height(text: &str, inner_w: f32) -> f32 {
-    let line = theme::typography::ROW_TITLE;
-    if text.is_empty() {
-        return line;
+/// One wrapped line of 13 DIP Segoe UI, measured from femtovg: the font's
+/// ascent plus descent is 1.33 em, so a line advances 17.3 DIP rather than the
+/// nominal 13. The renderer ceils a paragraph's total height.
+const CHAT_LINE_ADVANCE: f32 = 17.3;
+
+/// Mean advance of one narrow glyph at 13 DIP, used only to model how many
+/// characters fit on a line. Measured prose runs 5.9–6.6 DIP; 6.8 errs wide so
+/// a fixed-height row is never shorter than the text it holds (a clipped last
+/// line is worse than a spare one), and wide glyphs count double.
+const CHAT_CHAR_ADVANCE: f32 = 6.8;
+
+/// Columns a character occupies in the line box, in narrow-glyph units. East
+/// Asian wide blocks and emoji take a full em; the rest average half.
+fn chat_columns(c: char) -> usize {
+    if (c as u32) >= 0x1100 {
+        2
+    } else {
+        1
     }
-    let cols = ((inner_w / (line * 0.5)).floor() as usize).max(1);
+}
+
+pub fn chat_text_height(text: &str, inner_w: f32) -> f32 {
+    let cols = ((inner_w / CHAT_CHAR_ADVANCE).floor() as usize).max(1);
     let mut lines = 0usize;
     for para in text.split('\n') {
-        let n = para.chars().count().max(1);
+        let n = para.chars().map(chat_columns).sum::<usize>().max(1);
         lines += n.div_ceil(cols);
     }
-    (lines as f32 * line).max(line)
+    (lines.max(1) as f32 * CHAT_LINE_ADVANCE).ceil()
 }
 
 pub fn chat_message_height(is_user: bool, text: &str, panel_w: f32) -> f32 {

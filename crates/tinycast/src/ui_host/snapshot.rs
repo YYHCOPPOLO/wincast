@@ -7,8 +7,10 @@
 use std::collections::HashMap;
 
 use slint::{ModelRc, SharedString, VecModel};
+use tinycast_pure::ai::{ChatMessage, ChatRole, ChatState};
+use tinycast_pure::layout::list as chat_layout;
 use tinycast_pure::theme;
-use tinycast_ui::PaletteRow;
+use tinycast_ui::{ChatRow, PaletteRow};
 
 use crate::design_system::symbols::fluent_for_sf;
 use crate::features::launcher::ui::list::{
@@ -23,6 +25,11 @@ const KIND_EMOJI: i32 = 3;
 
 /// The uninstall list's locked rows draw a lock instead of a box.
 const CHECKBOX_LOCKED: u8 = 3;
+
+/// Transcript roles shared with `ui/surfaces/palette.slint`.
+const CHAT_USER: i32 = 0;
+const CHAT_ASSISTANT: i32 = 1;
+const CHAT_NOTICE: i32 = 2;
 
 /// Rows kept above and below the viewport so a wheel notch never shows a gap.
 const OVERSCAN: f32 = 76.0;
@@ -193,6 +200,54 @@ fn to_row(
             row
         }
     }
+}
+
+/// The AI transcript as fixed blocks. Tops and heights come from the same
+/// `layout::list` functions `AppCore` clamps the scroll with, so the wheel can
+/// always reach the last row and never scroll past it. The assistant's markdown
+/// is flattened here, not in the surface: the renderer only wraps plain text.
+pub fn chat_rows(messages: &[ChatMessage], notice: Option<&str>) -> Vec<ChatRow> {
+    let panel_w = theme::size::PANEL_WIDTH;
+    let gap = chat_layout::chat_message_gap();
+    let mut rows = Vec::new();
+    let mut top = chat_layout::chat_pad_top();
+    let mut any = false;
+    for message in messages {
+        if any {
+            top += gap;
+        }
+        any = true;
+        let is_user = message.role == ChatRole::User;
+        let text = if is_user {
+            message.text.clone()
+        } else {
+            crate::features::ai::ui::screen::assistant_plain(&message.text)
+        };
+        let height = chat_layout::chat_message_height(is_user, &message.text, panel_w);
+        rows.push(ChatRow {
+            role: if is_user { CHAT_USER } else { CHAT_ASSISTANT },
+            text: text.into(),
+            failed: message.state == ChatState::Failed,
+            streaming: message.state == ChatState::Streaming,
+            top,
+            height,
+        });
+        top += height;
+    }
+    if let Some(notice) = notice.filter(|s| !s.is_empty()) {
+        if any {
+            top += gap;
+        }
+        rows.push(ChatRow {
+            role: CHAT_NOTICE,
+            text: notice.into(),
+            failed: false,
+            streaming: false,
+            top,
+            height: chat_layout::CHAT_NOTICE_HEIGHT,
+        });
+    }
+    rows
 }
 
 /// SF Symbol name → the Segoe Fluent codepoint Slint draws.
