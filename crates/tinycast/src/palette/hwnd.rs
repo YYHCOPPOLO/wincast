@@ -3,7 +3,9 @@
 //!
 //! Everything user-visible inside the frame is a Slint surface; the search
 //! field stays a Win32 `EDIT` so the IME candidate window docks to a real
-//! caret (phase 0 probe, conclusion 2).
+//! caret (phase 0 probe, conclusion 2). The `EDIT` paints only text and caret:
+//! `WM_CTLCOLOREDIT` hands it a hollow brush so the scrim and the Slint
+//! placeholder show through.
 //!
 //! winit only creates its HWND once the event loop runs, so `create` shows the
 //! window off-screen and finishes the setup on a short timer: window styles,
@@ -16,25 +18,36 @@ use slint::winit_030::WinitWindowAccessor;
 use slint::ComponentHandle;
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
+use tinycast_pure::palette_state::should_draw_placeholder;
 use tinycast_pure::theme;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    GetStockObject, SetBkMode, SetTextColor, HDC, NULL_BRUSH, TRANSPARENT,
+};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, EN_CHANGE,
-    GWL_EXSTYLE, GWLP_USERDATA, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOCOPYBITS,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WM_COMMAND, WM_NCDESTROY, WS_EX_TOOLWINDOW,
+    GetAncestor, GetForegroundWindow, GetWindowLongPtrW, KillTimer, PostMessageW,
+    SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, EN_CHANGE, GA_ROOT,
+    GWL_EXSTYLE, GWLP_USERDATA, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WA_INACTIVE, WM_ACTIVATE, WM_COMMAND,
+    WM_CTLCOLOREDIT, WM_DPICHANGED, WM_MOUSEACTIVATE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_TIMER,
+    WS_EX_TOOLWINDOW,
 };
 
 use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
+use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
 
 const SUBCLASS_ID: usize = 1;
+const RESIGN_TIMER_ID: usize = 2;
 const INIT_MS: u64 = 16;
+/// Room for the "Tab opens AI chat" hint between the field and the trailing gutter.
+const TAB_HINT_WIDTH: f32 = 104.0;
 /// winit's `skip_taskbar` leaves this bit set, which would put a tool window
 /// back on the taskbar.
 const WS_EX_APPWINDOW_BIT: isize = 0x0004_0000;
@@ -55,6 +68,8 @@ struct PaletteInner {
     weak: slint::Weak<Palette>,
     edit: Option<SearchEdit>,
     appearance: u8,
+    /// DIP reserved to the right of the native field, last applied.
+    trailing: f32,
     ready: bool,
     /// A show request that arrived before the HWND existed.
     pending_show: Option<physical::Rect>,
@@ -67,25 +82,37 @@ impl PaletteWindow {
             .map(|core| unsafe { (*core).appearance_key() })
             .unwrap_or(0);
         tinycast_ui::apply_appearance(&ui, appearance);
-        // No HWND exists until the event loop runs; park the window out of sight.
-        ui.window().set_position(slint::LogicalPosition {
-            x: PARKED as f32,
-            y: PARKED as f32,
-        });
-        ui.show().map_err(crate::ui_host::platform_error)?;
         let inner = Box::into_raw(Box::new(PaletteInner {
             host,
             weak: ui.as_weak(),
             edit: None,
             appearance,
+            // Forces the first layout.
+            trailing: -1.0,
             ready: false,
             pending_show: None,
         }));
-        let window = Self {
-            hwnd: HWND::default(),
-            ui,
-            inner,
-        };
+        let window = Self { hwnd: HWND::default(), ui, inner };
+        // Clicking the header glyph or the placeholder focuses the native field.
+        let ptr = inner as usize;
+        window.ui.on_header_clicked(move || {
+            let inner = ptr as *mut PaletteInner;
+            if inner.is_null() {
+                return;
+            }
+            if let Some(edit) = unsafe { (*inner).edit.as_ref() } {
+                edit.focus();
+            }
+        });
+        // No HWND exists until the event loop runs; park the window out of sight.
+        window.ui.window().set_position(slint::LogicalPosition {
+            x: PARKED as f32,
+            y: PARKED as f32,
+        });
+        window
+            .ui
+            .show()
+            .map_err(crate::ui_host::platform_error)?;
         arm_init(inner);
         Ok(window)
     }
@@ -140,6 +167,9 @@ impl PaletteWindow {
     /// Hides immediately. The original `orderOut`s before it pops back to root,
     /// so returning `false` lets `settle_hidden_palette` run right away.
     pub fn hide(&self) -> bool {
+        unsafe {
+            let _ = KillTimer(self.hwnd, RESIGN_TIMER_ID);
+        }
         let _ = self.ui.hide();
         if let Some(edit) = unsafe { (*self.inner).edit.as_ref() } {
             edit.set_visible(false);
@@ -154,8 +184,8 @@ impl PaletteWindow {
         let frame = frame_at(expanded, anchor_px, unsafe { GetDpiForWindow(self.hwnd) });
         sync_size(&self.ui, expanded);
         place(self.hwnd, frame);
-        layout_search(&self.ui, self.inner);
         refresh(&self.ui, self.inner);
+        layout_search(&self.ui, self.inner);
     }
 }
 
@@ -168,6 +198,7 @@ impl Drop for PaletteWindow {
                     SUBCLASSPROC::Some(palette_subclass),
                     SUBCLASS_ID,
                 );
+                let _ = KillTimer(self.hwnd, RESIGN_TIMER_ID);
             }
             if !self.inner.is_null() {
                 drop(Box::from_raw(self.inner));
@@ -254,6 +285,8 @@ fn show_frame(ui: &Palette, inner: *mut PaletteInner, frame: physical::Rect) {
     if ui.show().is_err() {
         return;
     }
+    // Showing re-applies winit's own extended style, so the tool-window bit
+    // has to be set again afterwards.
     apply_tool_window(hwnd);
     unsafe {
         let _ = SetForegroundWindow(hwnd);
@@ -298,10 +331,8 @@ fn sync_size(ui: &Palette, expanded: bool) {
 }
 
 fn layout_search(ui: &Palette, inner: *mut PaletteInner) {
-    let trailing = core_from_host(unsafe { (*inner).host })
-        .map(|core| unsafe { (*core).search_trailing_width() })
-        .unwrap_or(0.0);
     let hwnd = window_hwnd(ui).unwrap_or_default();
+    let trailing = unsafe { (*inner).trailing };
     if let Some(edit) = unsafe { (*inner).edit.as_mut() } {
         edit.layout_with_trailing(hwnd, trailing);
     }
@@ -326,6 +357,16 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
         "chevron.left"
     };
     ui.set_header_symbol(header_symbol.into());
+    ui.set_placeholder(core.search_placeholder().into());
+    ui.set_show_placeholder(should_draw_placeholder(&core.palette));
+    let hint = core.tab_hint().unwrap_or("");
+    ui.set_tab_hint(hint.into());
+    // The native field shrinks by whatever sits to its right, the hint included.
+    let mut trailing = core.search_trailing_width();
+    if !hint.is_empty() {
+        trailing += TAB_HINT_WIDTH;
+    }
+    ui.set_search_trailing(trailing);
     let panel_h = if ui.get_expanded() {
         expanded_size().1
     } else {
@@ -334,6 +375,13 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     let (scroll, content, _view) = core.scroll_metrics(panel_h);
     ui.set_content_height(content);
     ui.set_scroll_y(scroll);
+    let changed = (unsafe { (*inner).trailing } - trailing).abs() > 0.01;
+    if changed {
+        unsafe {
+            (*inner).trailing = trailing;
+        }
+        layout_search(ui, inner);
+    }
 }
 
 fn window_hwnd(ui: &Palette) -> Option<HWND> {
@@ -396,6 +444,31 @@ fn core_from_host(host: HWND) -> Option<*mut AppCore> {
     }
 }
 
+fn resign_should_hide(palette_visible: bool, foreground_is_self: bool) -> bool {
+    palette_visible && !foreground_is_self
+}
+
+fn foreground_is_palette_or_child(palette: HWND) -> bool {
+    let fg = unsafe { GetForegroundWindow() };
+    if fg.is_invalid() {
+        return false;
+    }
+    fg == palette || unsafe { GetAncestor(fg, GA_ROOT) == palette }
+}
+
+/// Focus left the palette: the original `orderOut`s, so hide now.
+fn apply_resign(palette: HWND, inner: *mut PaletteInner) {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    let visible = unsafe { (*core).palette_visible };
+    if resign_should_hide(visible, foreground_is_palette_or_child(palette)) {
+        unsafe {
+            (*core).hide_palette();
+        }
+    }
+}
+
 unsafe extern "system" fn palette_subclass(
     hwnd: HWND,
     msg: u32,
@@ -418,14 +491,103 @@ unsafe extern "system" fn palette_subclass(
             }
             DefSubclassProc(hwnd, msg, wparam, lparam)
         }
+        // The EDIT paints only its text; the scrim and placeholder are Slint.
+        WM_CTLCOLOREDIT => {
+            let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
+            let appearance = if inner.is_null() {
+                1
+            } else {
+                core_from_host((*inner).host)
+                    .map(|core| (*core).appearance_key())
+                    .unwrap_or(1)
+            };
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, crate::design_system::appearance::ink_colorref(appearance));
+            LRESULT(GetStockObject(NULL_BRUSH).0 as isize)
+        }
+        WM_MOUSEWHEEL => {
+            if !inner.is_null() {
+                if let Some(core) = core_from_host((*inner).host) {
+                    let delta = ((wparam.0 as u32) >> 16) as i16;
+                    (*core).scroll_list(delta);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_MOUSEACTIVATE => {
+            let menu_open = if inner.is_null() {
+                false
+            } else {
+                core_from_host((*inner).host)
+                    .map(|core| (*core).menu_is_open())
+                    .unwrap_or(false)
+            };
+            if menu_open {
+                // Clicking into an open menu must not take focus from the field.
+                LRESULT(MA_NOACTIVATE as isize)
+            } else {
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_ACTIVATE => {
+            if (wparam.0 as u32) & 0xffff == WA_INACTIVE {
+                // Defer hide: a tray click deactivates us before WM_TOGGLE_PALETTE.
+                let _ = SetTimer(hwnd, RESIGN_TIMER_ID, 1, None);
+            }
+            DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
+        WM_TIMER => {
+            if wparam.0 == RESIGN_TIMER_ID {
+                let _ = KillTimer(hwnd, RESIGN_TIMER_ID);
+                let _ = PostMessageW(hwnd, WM_RESIGN_PALETTE, WPARAM(0), LPARAM(0));
+            }
+            DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
+        WM_RESIGN_PALETTE => {
+            if !inner.is_null() {
+                apply_resign(hwnd, inner);
+            }
+            LRESULT(0)
+        }
+        WM_DPICHANGED => {
+            if !inner.is_null() {
+                layout_search_of(hwnd, inner);
+                if let Some(core) = core_from_host((*inner).host) {
+                    (*core).relayout_palette();
+                }
+            }
+            DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
         WM_NCDESTROY => {
-            let _ = RemoveWindowSubclass(
-                hwnd,
-                SUBCLASSPROC::Some(palette_subclass),
-                SUBCLASS_ID,
-            );
+            let _ =
+                RemoveWindowSubclass(hwnd, SUBCLASSPROC::Some(palette_subclass), SUBCLASS_ID);
             DefSubclassProc(hwnd, msg, wparam, lparam)
         }
         _ => DefSubclassProc(hwnd, msg, wparam, lparam),
+    }
+}
+
+fn layout_search_of(hwnd: HWND, inner: *mut PaletteInner) {
+    let trailing = unsafe { (*inner).trailing };
+    if let Some(edit) = unsafe { (*inner).edit.as_mut() } {
+        edit.layout_with_trailing(hwnd, trailing);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resign_should_hide;
+
+    #[test]
+    fn resign_hides_only_when_visible_and_focus_left() {
+        assert!(resign_should_hide(true, false));
+        assert!(!resign_should_hide(true, true));
+        assert!(!resign_should_hide(false, false));
+        assert!(!resign_should_hide(false, true));
+    }
+
+    #[test]
+    fn entrance_scale_matches_v0102() {
+        assert_eq!(tinycast_pure::motion::ENTER_SCALE, 0.94);
     }
 }

@@ -1,6 +1,6 @@
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Gdi::{BeginPaint, DeleteObject, EndPaint, HFONT, PAINTSTRUCT};
+use windows::Win32::Graphics::Gdi::{DeleteObject, HFONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{EM_GETSEL, EM_REPLACESEL, EM_SETMARGINS};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -12,12 +12,12 @@ use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HideCaret, IsWindow,
+    CreateWindowExW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow,
     SendMessageW, SetWindowPos, SetWindowTextW, ShowWindow, EC_LEFTMARGIN, EC_RIGHTMARGIN,
     ES_AUTOHSCROLL, ES_LEFT, GWLP_USERDATA, HWND_TOP, SWP_NOACTIVATE, SW_HIDE, SW_SHOWNA,
     WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR, WM_ERASEBKGND, WM_IME_COMPOSITION,
-    WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SETFOCUS, WM_SETFONT, WS_CHILD,
+    WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_MOUSEWHEEL, WM_NCDESTROY, WM_SETFONT, WS_CHILD,
     WS_VISIBLE,
 };
 
@@ -273,23 +273,9 @@ unsafe extern "system" fn edit_subclass(
 ) -> LRESULT {
     let host = HWND(dwrefdata as *mut core::ffi::c_void);
     match msg {
+        // The control paints only its text: the parent returns a hollow brush so
+        // the Slint scrim shows through, and the caret stays visible.
         WM_ERASEBKGND => LRESULT(1),
-        WM_PAINT => {
-            let mut ps = PAINTSTRUCT::default();
-            unsafe {
-                let _ = BeginPaint(hwnd, &mut ps);
-                let _ = EndPaint(hwnd, &ps);
-            }
-            LRESULT(0)
-        }
-        WM_SETFOCUS => {
-            let result = DefSubclassProc(hwnd, msg, wparam, lparam);
-            unsafe {
-                let _ = HideCaret(hwnd);
-            }
-            result
-        }
-        WM_KILLFOCUS => DefSubclassProc(hwnd, msg, wparam, lparam),
         WM_KEYDOWN => {
             if let Some(core) = core_from_host(host) {
                 let menu_open = (*core).menu_is_open();

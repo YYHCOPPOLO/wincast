@@ -1,8 +1,9 @@
-// The command palette. The squircle, the header and (later tasks) the rows and
-// footer are Slint; the search field itself is a native EDIT child the host
-// parents to this window.
+// The command palette. The squircle, the header and the chrome are Slint; the
+// search field itself is a native EDIT child the host parents to this window,
+// so the placeholder is drawn here and shows through the transparent control.
 import { Theme } from "../theme.slint";
 import { Panel } from "../primitives/panel.slint";
+import { Keycap } from "../primitives/keycap.slint";
 
 export component PaletteWindow inherits Window {
     // Squircle path commands for the current size, from tinycast_ui::squircle_commands.
@@ -10,9 +11,25 @@ export component PaletteWindow inherits Window {
     in property <bool> expanded: false;
     // Fluent symbol for the current mode ("magnifyingglass", "chevron.left").
     in property <string> header-symbol;
+    // Placeholder from PaletteMode::placeholder; only drawn for an empty query.
+    in property <string> placeholder;
+    in property <bool> show-placeholder: false;
+    // "Opens the AI chat" hint; empty unless expanded and actually available.
+    in property <string> tab-hint;
+    // DIP reserved to the right of the native field (compact favourites, pills, hint).
+    in property <length> search-trailing: 0px;
     // Scroll state. AppCore owns both values; the Flickable follows them.
     in property <length> content-height: 0px;
     in-out property <length> scroll-y: 0px;
+
+    callback header-clicked();
+
+    // Left edge of the native field: 16 DIP gutter + 22 DIP glyph + 8 DIP gap.
+    property <length> field-x:
+        Theme.spacing-md * 2 + Theme.size-header-icon-slot + Theme.spacing-md;
+    // Right edge: the panel's 16 DIP gutter minus whatever the host reserved.
+    property <length> field-right:
+        Math.max(root.field-x, root.width - Theme.spacing-md * 2 - root.search-trailing);
 
     title: "Tinycast";
     no-frame: true;
@@ -27,7 +44,7 @@ export component PaletteWindow inherits Window {
         squircle-commands: root.squircle-commands;
         expanded: root.expanded;
 
-        // 44 DIP header: a 22 DIP mode glyph where the search text starts after.
+        // 44 DIP header: the mode glyph, the placeholder and the Tab hint.
         Rectangle {
             height: Theme.size-header-height;
             background: transparent;
@@ -42,6 +59,50 @@ export component PaletteWindow inherits Window {
                 color: Theme.text-secondary;
                 horizontal-alignment: center;
                 vertical-alignment: center;
+            }
+
+            if root.show-placeholder: Text {
+                x: root.field-x;
+                y: 0;
+                width: root.field-right - root.field-x;
+                height: parent.height;
+                text: root.placeholder;
+                font-family: "Segoe UI";
+                font-size: Theme.font-search;
+                color: Theme.text-tertiary;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            if root.tab-hint != "": Rectangle {
+                x: root.field-right;
+                y: 0;
+                width: Math.max(0px, root.width - Theme.spacing-md * 2 - root.field-right);
+                height: parent.height;
+                background: transparent;
+
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: Theme.spacing-sm;
+
+                    Text {
+                        text: root.tab-hint;
+                        font-family: "Segoe UI";
+                        font-size: Theme.font-row-trailing;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        Keycap { text: "⇥"; filled: true; }
+                    }
+                }
+            }
+
+            TouchArea {
+                clicked => { root.header-clicked(); }
             }
         }
     }

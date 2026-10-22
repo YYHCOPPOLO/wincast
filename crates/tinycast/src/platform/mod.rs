@@ -50,5 +50,7 @@ pub fn run() -> windows::core::Result<()> {
     // Installs the low-level keyboard hook on this thread; its callbacks and the
     // posted tray messages keep arriving while the Slint loop runs.
     core.start();
-    slint::run_event_loop().map_err(crate::ui_host::platform_error)
+    // The tray host is Win32, so no Slint window is visible most of the time:
+    // the loop must not quit when the palette hides.
+    slint::run_event_loop_until_quit().map_err(crate::ui_host::platform_error)
 }
