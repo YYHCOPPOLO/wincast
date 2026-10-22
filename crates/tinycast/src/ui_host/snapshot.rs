@@ -1,0 +1,208 @@
+//! `PaintItem` → Slint rows for the visible slice of the palette list.
+//!
+//! Only the rows intersecting the viewport (plus one row of overscan on each
+//! side) are pushed into the model, so a two thousand entry launcher never
+//! builds two thousand components.
+
+use std::collections::HashMap;
+
+use tinycast_pure::theme;
+use tinycast_ui::PaletteRow;
+
+use crate::features::launcher::ui::list::{slot_height, slots_of, IconCache, IconPixels, PaintItem};
+
+/// Row kind numbers shared with `ui/surfaces/palette.slint`.
+const KIND_ROW: i32 = 0;
+const KIND_HEADER: i32 = 1;
+const KIND_CALC: i32 = 2;
+const KIND_EMOJI: i32 = 3;
+
+/// Rows kept above and below the viewport so a wheel notch never shows a gap.
+const OVERSCAN: f32 = 76.0;
+/// Decoded images kept for the current DPI and appearance.
+const IMAGE_CACHE_MAX: usize = 96;
+
+pub struct VisibleList {
+    pub rows: Vec<PaletteRow>,
+    pub content_height: f32,
+}
+
+/// Decoded shell icons reused between refreshes; cleared when the DPI or the
+/// appearance changes, because the cache key lives in `IconCache`.
+pub struct RowImages {
+    map: HashMap<String, slint::Image>,
+    dpi: u32,
+    appearance: u8,
+}
+
+impl Default for RowImages {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RowImages {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+            dpi: 0,
+            appearance: 0,
+        }
+    }
+
+    fn image(
+        &mut self,
+        source: &str,
+        cache: &mut IconCache,
+        dpi: u32,
+        appearance: u8,
+    ) -> Option<slint::Image> {
+        if self.dpi != dpi || self.appearance != appearance {
+            self.dpi = dpi;
+            self.appearance = appearance;
+            self.map.clear();
+        }
+        if let Some(image) = self.map.get(source) {
+            return Some(image.clone());
+        }
+        let image = rgba_image(cache.get_or_load(source, dpi, appearance)?)?;
+        if self.map.len() >= IMAGE_CACHE_MAX {
+            self.map.clear();
+        }
+        self.map.insert(source.to_string(), image.clone());
+        Some(image)
+    }
+}
+
+/// The rows between `scroll` and `scroll + view`, with one row of overscan.
+pub fn visible_rows(
+    items: &[PaintItem],
+    scroll: f32,
+    view: f32,
+    icons: &mut IconCache,
+    images: &mut RowImages,
+    dpi: u32,
+    appearance: u8,
+) -> VisibleList {
+    let slots = slots_of(items);
+    let content_height = slots.iter().copied().map(slot_height).sum();
+    let top = (scroll - OVERSCAN).max(0.0);
+    let bottom = scroll + view + OVERSCAN;
+    let mut rows = Vec::new();
+    let mut y = 0.0;
+    for (item, slot) in items.iter().zip(slots.iter()) {
+        let height = slot_height(*slot);
+        if y + height >= top && y <= bottom {
+            rows.push(to_row(item, y, height, icons, images, dpi, appearance));
+        }
+        y += height;
+        if y > bottom {
+            break;
+        }
+    }
+    VisibleList {
+        rows,
+        content_height,
+    }
+}
+
+fn to_row(
+    item: &PaintItem,
+    top: f32,
+    height: f32,
+    icons: &mut IconCache,
+    images: &mut RowImages,
+    dpi: u32,
+    appearance: u8,
+) -> PaletteRow {
+    match item {
+        PaintItem::Header { title } => {
+            let mut row = base(KIND_HEADER, top, height);
+            row.title = title.as_str().into();
+            row
+        }
+        PaintItem::Row {
+            title,
+            alias,
+            trailing,
+            keycap,
+            icon_source,
+            selected,
+        } => {
+            let mut row = base(KIND_ROW, top, height);
+            row.title = title.as_str().into();
+            // A user alias replaces the trailing column; both never coexist.
+            row.trailing = alias.as_deref().unwrap_or(trailing).into();
+            row.keycap = keycap.as_deref().unwrap_or_default().into();
+            row.selected = *selected;
+            if let Some(source) = icon_source.as_deref() {
+                if let Some(image) = images.image(source, icons, dpi, appearance) {
+                    row.icon = image;
+                    row.icon_ready = true;
+                }
+            }
+            row
+        }
+        PaintItem::Calc {
+            expression,
+            display,
+            selected,
+            ..
+        } => {
+            let mut row = base(KIND_CALC, top, height);
+            row.title = display.as_str().into();
+            row.trailing = expression.as_str().into();
+            row.selected = *selected;
+            row
+        }
+        PaintItem::EmojiRow { glyphs, .. } => {
+            let mut row = base(KIND_EMOJI, top, height);
+            row.title = glyphs.join(" ").into();
+            row
+        }
+    }
+}
+
+fn base(kind: i32, top: f32, height: f32) -> PaletteRow {
+    PaletteRow {
+        kind,
+        title: Default::default(),
+        trailing: Default::default(),
+        keycap: Default::default(),
+        symbol: Default::default(),
+        icon: Default::default(),
+        icon_ready: false,
+        selected: false,
+        top,
+        height,
+    }
+}
+
+/// BGRA premultiplied from `list.rs::premultiply` to Slint's RGBA.
+fn rgba_image(pixels: &IconPixels) -> Option<slint::Image> {
+    if pixels.width == 0 || pixels.height == 0 {
+        return None;
+    }
+    let mut buffer =
+        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(pixels.width, pixels.height);
+    let bytes = buffer.make_mut_slice();
+    if pixels.bgra.len() != bytes.len() * 4 {
+        return None;
+    }
+    for (dst, src) in bytes.iter_mut().zip(pixels.bgra.chunks_exact(4)) {
+        dst.r = src[2];
+        dst.g = src[1];
+        dst.b = src[0];
+        dst.a = src[3];
+    }
+    Some(slint::Image::from_rgba8_premultiplied(buffer))
+}
+
+/// Panel DIP height for the current expansion state.
+pub fn panel_height(expanded: bool) -> f32 {
+    if expanded {
+        theme::size::PANEL_HEIGHT
+    } else {
+        theme::size::COMPACT_HEIGHT
+    }
+}

@@ -215,6 +215,9 @@ where
     t.set_size_scrollbar_width(theme::size::SCROLLBAR_WIDTH);
     t.set_size_scrollbar_hover_width(theme::size::SCROLLBAR_HOVER_WIDTH);
     t.set_size_scrollbar_min_thumb(theme::size::SCROLLBAR_MIN_THUMB);
+    t.set_size_scrollbar_inset(theme::size::SCROLLBAR_INSET);
+    t.set_size_scrollbar_hover_zone(theme::size::SCROLLBAR_HOVER_ZONE);
+    t.set_size_empty_results_glyph(theme::size::EMPTY_RESULTS_GLYPH);
     t.set_size_key_cap(theme::size::KEY_CAP);
     t.set_size_compact_key_cap(theme::size::COMPACT_KEY_CAP);
     t.set_size_hero_key_cap(theme::size::HERO_KEY_CAP);

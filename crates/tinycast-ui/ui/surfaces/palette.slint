@@ -1,9 +1,26 @@
-// The command palette. The squircle, the header and the chrome are Slint; the
-// search field itself is a native EDIT child the host parents to this window,
-// so the placeholder is drawn here and shows through the transparent control.
+// The command palette. The squircle, the header, the rows and the chrome are
+// Slint; the search field itself is a native EDIT child the host parents to
+// this window, so the placeholder is drawn here and shows through it.
 import { Theme } from "../theme.slint";
 import { Panel } from "../primitives/panel.slint";
 import { Keycap } from "../primitives/keycap.slint";
+import { Row, SectionHeader } from "../primitives/row.slint";
+import { Scrollbar } from "../primitives/scrollbar.slint";
+
+// Row kinds shared with crates/tinycast/src/ui_host/snapshot.rs.
+// 0 result row, 1 section header, 2 calculator card, 3 emoji row.
+export struct PaletteRow {
+    kind: int,
+    title: string,
+    trailing: string,
+    keycap: string,
+    symbol: string,
+    icon: image,
+    icon-ready: bool,
+    selected: bool,
+    top: length,
+    height: length,
+}
 
 export component PaletteWindow inherits Window {
     // Squircle path commands for the current size, from tinycast_ui::squircle_commands.
@@ -18,11 +35,17 @@ export component PaletteWindow inherits Window {
     in property <string> tab-hint;
     // DIP reserved to the right of the native field (compact favourites, pills, hint).
     in property <length> search-trailing: 0px;
+    // Visible slice of the list, rebuilt by the host as it scrolls.
+    in property <[PaletteRow]> rows;
+    in property <bool> hover-armed: false;
+    in property <string> empty-text;
     // Scroll state. AppCore owns both values; the Flickable follows them.
     in property <length> content-height: 0px;
     in-out property <length> scroll-y: 0px;
 
     callback header-clicked();
+    callback row-clicked(int);
+    callback scrolled(length);
 
     // Left edge of the native field: 16 DIP gutter + 22 DIP glyph + 8 DIP gap.
     property <length> field-x:
@@ -30,6 +53,20 @@ export component PaletteWindow inherits Window {
     // Right edge: the panel's 16 DIP gutter minus whatever the host reserved.
     property <length> field-right:
         Math.max(root.field-x, root.width - Theme.spacing-md * 2 - root.search-trailing);
+    // Edge dissolve: the bands overshoot the header and the bottom bar, so only
+    // the part inside the list viewport is drawn here.
+    property <length> fade-top:
+        Math.max(0px, Theme.fade-edge-top-band - Theme.size-compact-height);
+    property <length> fade-bottom:
+        Math.max(0px, Theme.fade-edge-bottom-band - Theme.size-bottom-bar-height);
+    property <float> fade-top-alpha:
+        (1 - Theme.fade-edge-top-floor) * (root.fade-top / Theme.fade-edge-top-band);
+    property <float> fade-bottom-alpha:
+        (1 - Theme.fade-edge-bottom-floor) * (root.fade-bottom / Theme.fade-edge-bottom-band);
+    // Viewport between the compact bar and the bottom bar (layout::list::view_height).
+    property <length> list-height:
+        Theme.size-panel-height - Theme.size-compact-height - Theme.size-bottom-bar-height;
+    property <bool> scrollable: root.content-height > root.list-height;
 
     title: "Tinycast";
     no-frame: true;
@@ -39,6 +76,9 @@ export component PaletteWindow inherits Window {
     default-font-size: Theme.font-row;
     width: Theme.size-panel-width;
     height: root.expanded ? Theme.size-panel-height : Theme.size-compact-height;
+
+    // The host compares against AppCore's value, so this cannot loop.
+    changed scroll-y => { root.scrolled(root.scroll-y); }
 
     Panel {
         squircle-commands: root.squircle-commands;
@@ -104,6 +144,184 @@ export component PaletteWindow inherits Window {
             TouchArea {
                 clicked => { root.header-clicked(); }
             }
+        }
+
+        if root.expanded: Rectangle {
+            height: Theme.size-header-padding;
+            background: transparent;
+        }
+
+        if root.expanded: Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
+            clip: true;
+
+            // The list top sits on the 64 DIP compact bar (layout::list::content_top).
+            Flickable {
+                interactive: false;
+                content-y <=> root.scroll-y;
+                content-height: root.content-height;
+
+                for row[i] in root.rows: Rectangle {
+                    x: 0;
+                    y: row.top;
+                    width: 100%;
+                    height: row.height;
+                    background: transparent;
+
+                    if row.kind == 1: SectionHeader {
+                        title: row.title;
+                    }
+
+                    if row.kind == 0: Row {
+                        title: row.title;
+                        trailing: row.trailing;
+                        keycap-text: row.keycap;
+                        symbol: row.symbol;
+                        icon: row.icon;
+                        icon-ready: row.icon-ready;
+                        selected: row.selected;
+                        hover-armed: root.hover-armed;
+                        clicked => { root.row-clicked(i); }
+                    }
+
+                    // Calculator and emoji rows get a readable generic rendering
+                    // until phase 4 draws their own.
+                    if row.kind == 2: Rectangle {
+                        border-radius: Theme.radius-card;
+                        background: row.selected ? Theme.selection
+                            : (root.hover-armed && calc-touch.has-hover
+                                ? Theme.row-hover : transparent);
+
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-xl;
+                            padding-right: Theme.spacing-xl;
+                            spacing: Theme.spacing-md;
+
+                            Text {
+                                text: row.trailing;
+                                font-family: "Segoe UI";
+                                font-size: Theme.font-row-trailing;
+                                color: Theme.text-secondary;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                text: row.title;
+                                font-family: "Segoe UI";
+                                font-size: Theme.font-calc-result;
+                                color: Theme.text-primary;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+                        }
+
+                        calc-touch := TouchArea {
+                            clicked => { root.row-clicked(i); }
+                        }
+                    }
+
+                    if row.kind == 3: Rectangle {
+                        border-radius: Theme.radius-row;
+                        background: transparent;
+
+                        HorizontalLayout {
+                            padding-left: Theme.size-row-padding-x;
+                            padding-right: Theme.size-row-padding-x;
+
+                            Text {
+                                text: row.title;
+                                font-family: "Segoe UI Emoji";
+                                font-size: Theme.size-emoji-cell * 0.5;
+                                color: Theme.text-primary;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+
+                        emoji-touch := TouchArea {
+                            clicked => { root.row-clicked(i); }
+                        }
+                    }
+                }
+            }
+
+            // Edge dissolve: the scrim fades the first and last visible rows.
+            if root.scrollable: Rectangle {
+                y: 0;
+                height: Math.min(root.fade-top, parent.height);
+                width: 100%;
+                background: @linear-gradient(
+                    180deg,
+                    Theme.scrim.with-alpha(root.fade-top-alpha) 0%,
+                    Theme.scrim.with-alpha(0) 100%,
+                );
+            }
+
+            if root.scrollable: Rectangle {
+                y: parent.height - Math.min(root.fade-bottom, parent.height);
+                height: Math.min(root.fade-bottom, parent.height);
+                width: 100%;
+                background: @linear-gradient(
+                    180deg,
+                    Theme.scrim.with-alpha(0) 0%,
+                    Theme.scrim.with-alpha(root.fade-bottom-alpha) 100%,
+                );
+            }
+
+            if root.empty-text != "" && root.rows.length == 0: Rectangle {
+                y: 0;
+                height: 100%;
+                width: 100%;
+                background: transparent;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-md;
+
+                    Text {
+                        text: root.header-symbol;
+                        font-family: "Segoe Fluent Icons";
+                        font-size: Theme.size-empty-results-glyph;
+                        color: Theme.text-tertiary;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: root.empty-text;
+                        font-family: "Segoe UI";
+                        font-size: Theme.font-row;
+                        color: Theme.text-tertiary;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            // 16 DIP hover strip: the 6/10 DIP rail alone is a 6 px target.
+            Scrollbar {
+                x: parent.width - Theme.size-scrollbar-inset - Theme.size-scrollbar-hover-width;
+                y: Theme.size-scrollbar-inset;
+                height: parent.height - Theme.size-scrollbar-inset * 2;
+                content-height: root.content-height;
+                viewport-height: parent.height;
+                offset: root.scroll-y;
+                hovered: scroll-zone.has-hover;
+            }
+
+            scroll-zone := TouchArea {
+                x: parent.width - Theme.size-scrollbar-hover-zone;
+                y: 0;
+                width: Theme.size-scrollbar-hover-zone;
+                height: 100%;
+            }
+        }
+
+        if root.expanded: Rectangle {
+            height: Theme.size-bottom-bar-height;
+            background: transparent;
         }
     }
 }

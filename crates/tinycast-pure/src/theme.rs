@@ -126,6 +126,12 @@ pub mod size {
     pub const SCROLLBAR_WIDTH: f32 = 6.0;
     pub const SCROLLBAR_HOVER_WIDTH: f32 = 10.0;
     pub const SCROLLBAR_MIN_THUMB: f32 = 28.0;
+    /// `design_system/scrollbar.rs` `INSET`: gap between the rail and the panel edge.
+    pub const SCROLLBAR_INSET: f32 = 3.0;
+    /// `design_system/scrollbar.rs` `HOVER_ZONE`: the rail is 6 DIP, its target is 16.
+    pub const SCROLLBAR_HOVER_ZONE: f32 = 16.0;
+    /// `features/launcher/ui/list.rs::paint_empty_results`: glyph above the empty text.
+    pub const EMPTY_RESULTS_GLYPH: f32 = 32.0;
     pub const MARKDOWN_LIST_MARKER: f32 = 20.0;
     pub const MARKDOWN_QUOTE_BAR: f32 = 2.0;
     pub const CHECKBOX: f32 = 16.0;

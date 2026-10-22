@@ -11,13 +11,15 @@
 //! window off-screen and finishes the setup on a short timer: window styles,
 //! the child `EDIT` and the Win32 subclass.
 
+use std::rc::Rc;
 use std::time::Duration;
 
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
-use slint::ComponentHandle;
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
+use tinycast_pure::layout::list;
 use tinycast_pure::palette_state::should_draw_placeholder;
 use tinycast_pure::theme;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -33,13 +35,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, EN_CHANGE, GA_ROOT,
     GWL_EXSTYLE, GWLP_USERDATA, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WA_INACTIVE, WM_ACTIVATE, WM_COMMAND,
-    WM_CTLCOLOREDIT, WM_DPICHANGED, WM_MOUSEACTIVATE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_TIMER,
+    WM_CTLCOLOREDIT, WM_DPICHANGED, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
+    WM_TIMER,
     WS_EX_TOOLWINDOW,
 };
 
 use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
+use crate::features::launcher::ui::list::IconCache;
+use crate::ui_host::snapshot::{self, RowImages};
 use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
 
@@ -67,9 +72,15 @@ struct PaletteInner {
     /// Upgradeable handle for the init timer; does not keep the window alive.
     weak: slint::Weak<Palette>,
     edit: Option<SearchEdit>,
+    /// Visible slice only; `AppCore` still owns the whole screen.
+    model: Rc<VecModel<tinycast_ui::PaletteRow>>,
+    icons: IconCache,
+    images: RowImages,
     appearance: u8,
     /// DIP reserved to the right of the native field, last applied.
     trailing: f32,
+    /// Hover stays dark until the pointer actually moves over the palette.
+    hover_armed: bool,
     ready: bool,
     /// A show request that arrived before the HWND existed.
     pending_show: Option<physical::Rect>,
@@ -86,13 +97,37 @@ impl PaletteWindow {
             host,
             weak: ui.as_weak(),
             edit: None,
+            model: Rc::new(VecModel::default()),
+            icons: IconCache::new(),
+            images: RowImages::new(),
             appearance,
             // Forces the first layout.
             trailing: -1.0,
+            hover_armed: true,
             ready: false,
             pending_show: None,
         }));
         let window = Self { hwnd: HWND::default(), ui, inner };
+        // The model is created once: the host replaces its contents, never it,
+        // so a scroll position or a hover never resets with the data.
+        window
+            .ui
+            .set_rows(ModelRc::from(unsafe { (*inner).model.clone() }));
+        let ptr = inner as usize;
+        window.ui.on_row_clicked(move |index| {
+            let inner = ptr as *mut PaletteInner;
+            if !inner.is_null() {
+                row_clicked(inner, index);
+            }
+        });
+        let ptr: usize = inner as usize;
+        window.ui.on_scrolled(move |offset| {
+            let inner = ptr as *mut PaletteInner;
+            if !inner.is_null() {
+                scrolled(inner, offset);
+            }
+        });
+
         // Clicking the header glyph or the placeholder focuses the native field.
         let ptr = inner as usize;
         window.ui.on_header_clicked(move || {
@@ -291,6 +326,11 @@ fn show_frame(ui: &Palette, inner: *mut PaletteInner, frame: physical::Rect) {
     unsafe {
         let _ = SetForegroundWindow(hwnd);
     }
+    // Hover must stay dark until the pointer moves over the fresh window.
+    ui.set_hover_armed(false);
+    unsafe {
+        (*inner).hover_armed = false;
+    }
     refresh(ui, inner);
     layout_search(ui, inner);
     if let Some(edit) = unsafe { (*inner).edit.as_ref() } {
@@ -367,20 +407,74 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
         trailing += TAB_HINT_WIDTH;
     }
     ui.set_search_trailing(trailing);
-    let panel_h = if ui.get_expanded() {
-        expanded_size().1
+    let expanded = ui.get_expanded();
+    let panel_h = snapshot::panel_height(expanded);
+    let (scroll, content, view) = core.scroll_metrics(panel_h);
+    let items = core.launcher_paint_items();
+    let empty = if items.is_empty() && core.ai_chat_messages().is_none() {
+        core.empty_results_text().unwrap_or("")
     } else {
-        compact_size().1
+        ""
     };
-    let (scroll, content, _view) = core.scroll_metrics(panel_h);
-    ui.set_content_height(content);
+    let dpi = unsafe { GetDpiForWindow(window_hwnd(ui).unwrap_or_default()) };
+    let inner_mut = unsafe { &mut *inner };
+    let visible = snapshot::visible_rows(
+        &items,
+        scroll,
+        view,
+        &mut inner_mut.icons,
+        &mut inner_mut.images,
+        dpi,
+        appearance,
+    );
+    inner_mut.model.set_vec(visible.rows);
+    ui.set_content_height(content.max(visible.content_height));
     ui.set_scroll_y(scroll);
+    ui.set_empty_text(empty.into());
     let changed = (unsafe { (*inner).trailing } - trailing).abs() > 0.01;
     if changed {
         unsafe {
             (*inner).trailing = trailing;
         }
         layout_search(ui, inner);
+    }
+}
+
+/// A row click re-enters the existing pointer path, which owns the selection.
+fn row_clicked(inner: *mut PaletteInner, index: i32) {
+    let inner_ref = unsafe { &*inner };
+    let Some(core) = core_from_host(inner_ref.host) else {
+        return;
+    };
+    let Some(row) = inner_ref.model.row_data(index.max(0) as usize) else {
+        return;
+    };
+    let expanded = inner_ref
+        .weak
+        .upgrade()
+        .map(|ui| ui.get_expanded())
+        .unwrap_or(false);
+    let panel_h = snapshot::panel_height(expanded);
+    let scroll = unsafe { (*core).list_scroll() };
+    // Panel DIP centre of the row: the list starts on the compact bar.
+    let y = list::content_top() + row.top - scroll + row.height / 2.0;
+    let x = theme::size::PANEL_WIDTH / 2.0;
+    unsafe {
+        (*core).pointer_down(x, y, theme::size::PANEL_WIDTH, panel_h, false);
+    }
+}
+
+/// The Flickable reports drags and clamped offsets; `AppCore` stays authoritative.
+fn scrolled(inner: *mut PaletteInner, offset: f32) {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    let current = unsafe { (*core).list_scroll() };
+    if (offset - current).abs() < 0.5 {
+        return;
+    }
+    unsafe {
+        (*core).set_list_scroll(offset);
     }
 }
 
@@ -513,6 +607,15 @@ unsafe extern "system" fn palette_subclass(
                 }
             }
             LRESULT(0)
+        }
+        WM_MOUSEMOVE => {
+            if !inner.is_null() && !(*inner).hover_armed {
+                (*inner).hover_armed = true;
+                if let Some(ui) = (*inner).weak.upgrade() {
+                    ui.set_hover_armed(true);
+                }
+            }
+            DefSubclassProc(hwnd, msg, wparam, lparam)
         }
         WM_MOUSEACTIVATE => {
             let menu_open = if inner.is_null() {

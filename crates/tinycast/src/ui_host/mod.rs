@@ -1,4 +1,5 @@
 pub mod modal;
+pub mod snapshot;
 
 /// Slint's platform errors are not `windows::core::Error`s. One conversion keeps
 /// the host code from repeating the HRESULT.

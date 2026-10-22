@@ -1888,6 +1888,14 @@ impl AppCore {
         self.list_scroll
     }
 
+    /// A Flickable drag or clamp hands its offset back; `ensure_visible` and the
+    /// wheel still go through `scroll_list`.
+    pub(crate) fn set_list_scroll(&mut self, value: f32) {
+        self.list_scroll = value;
+        self.clamp_scroll();
+        self.invalidate_palette();
+    }
+
     pub fn appearance_key(&self) -> u8 {
         self.resolved_appearance()
     }

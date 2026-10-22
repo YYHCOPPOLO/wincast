@@ -7,8 +7,12 @@ export component Scrollbar inherits Rectangle {
     in property <length> viewport-height;
     in property <length> offset;
     in property <bool> dragging: false;
+    // The palette arms this from its 16 DIP hover strip; the rail alone is too
+    // narrow to hit.
+    in property <bool> hovered: false;
 
-    width: touch.has-hover ? Theme.size-scrollbar-hover-width : Theme.size-scrollbar-width;
+    width: (root.hovered || touch.has-hover)
+        ? Theme.size-scrollbar-hover-width : Theme.size-scrollbar-width;
     height: 100%;
     background: transparent;
     visible: root.content-height > root.viewport-height;
@@ -26,6 +30,7 @@ export component Scrollbar inherits Rectangle {
     );
     property <length> thumb-y:
         root.offset / (root.content-height - root.viewport-height) * travel;
+    property <bool> lit: root.hovered || touch.has-hover;
 
     thumb := Rectangle {
         y: root.thumb-y;
@@ -34,7 +39,7 @@ export component Scrollbar inherits Rectangle {
         border-radius: self.width / 2;
         background: Theme.text-primary.with-alpha(
             root.dragging ? Theme.scrollbar-drag-alpha
-            : touch.has-hover ? Theme.scrollbar-hover-alpha
+            : root.lit ? Theme.scrollbar-hover-alpha
             : Theme.scrollbar-rest-alpha,
         );
 
