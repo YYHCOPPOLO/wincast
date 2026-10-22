@@ -186,6 +186,63 @@ component CalcCard inherits Rectangle {
     }
 }
 
+// One 56 DIP emoji grid row. Cells split the list width into the model's
+// column count; the selected cell gets a 2 DIP border and the glyph keeps
+// every colour (Segoe UI Emoji is COLR, so no tint is applied).
+component EmojiGridRow inherits Rectangle {
+    in property <[string]> glyphs;
+    in property <int> columns: 8;
+    in property <int> start;
+    in property <int> selected;
+    in property <bool> hover-armed: false;
+
+    callback clicked(length, length);
+
+    height: Theme.size-emoji-cell;
+    background: transparent;
+    property <length> cell-width: self.width / Math.max(1, root.columns);
+
+    for glyph[k] in root.glyphs: Rectangle {
+        x: k * root.cell-width;
+        y: 0;
+        width: root.cell-width;
+        height: root.height;
+        background: transparent;
+
+        Rectangle {
+            x: Theme.size-hairline * 2;
+            y: Theme.size-hairline * 2;
+            width: parent.width - Theme.size-hairline * 4;
+            height: parent.height - Theme.size-hairline * 4;
+            border-radius: Theme.radius-emoji-cell;
+            background: root.start + k == root.selected ? Theme.selection : Theme.emoji-cell;
+            border-width: (root.start + k == root.selected)
+                || (root.hover-armed && cell-touch.has-hover)
+                ? Theme.size-hairline * 2 : 0px;
+            border-color: root.start + k == root.selected
+                ? Theme.emoji-selection-border : Theme.emoji-hover-border;
+        }
+
+        Text {
+            text: glyph;
+            font-family: "Segoe UI Emoji";
+            font-size: Theme.font-emoji;
+            color: Theme.text-primary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        cell-touch := TouchArea {
+            clicked => {
+                root.clicked(
+                    self.absolute-position.x + self.mouse-x,
+                    self.absolute-position.y + self.mouse-y,
+                );
+            }
+        }
+    }
+}
+
 // The clipboard type filter in the header's trailing slot.
 component FilterButton inherits Rectangle {
     in property <string> label;
@@ -441,33 +498,13 @@ export component PaletteWindow inherits Window {
                         clicked(x, y) => { root.row-clicked(i, x, y); }
                     }
 
-                    if row.kind == 3: Rectangle {
-                        border-radius: Theme.radius-row;
-                        background: transparent;
-
-                        HorizontalLayout {
-                            padding-left: Theme.size-row-padding-x;
-                            padding-right: Theme.size-row-padding-x;
-
-                            Text {
-                                text: row.title;
-                                font-family: "Segoe UI Emoji";
-                                font-size: Theme.size-emoji-cell * 0.5;
-                                color: Theme.text-primary;
-                                vertical-alignment: center;
-                                overflow: elide;
-                            }
-                        }
-
-                        emoji-touch := TouchArea {
-                            clicked => {
-                                root.row-clicked(
-                                    i,
-                                    self.absolute-position.x + self.mouse-x,
-                                    self.absolute-position.y + self.mouse-y,
-                                );
-                            }
-                        }
+                    if row.kind == 3: EmojiGridRow {
+                        glyphs: row.glyphs;
+                        columns: row.columns;
+                        start: row.emoji-start;
+                        selected: row.emoji-selected;
+                        hover-armed: root.hover-armed;
+                        clicked(x, y) => { root.row-clicked(i, x, y); }
                     }
                 }
             }
