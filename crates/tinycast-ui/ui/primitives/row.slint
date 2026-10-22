@@ -35,18 +35,16 @@ export component IconSlot inherits Rectangle {
     }
 }
 
-// Section header: 11 DIP secondary, 8 DIP gutter, first block gets 4 DIP top.
+// Section header: 22 DIP tall, 11 DIP secondary, 16 DIP content gutter.
 export component SectionHeader inherits Rectangle {
     in property <string> title;
-    in property <bool> first: false;
 
-    height: (first ? Theme.spacing-xs : Theme.spacing-section) + Theme.font-section
-        + Theme.spacing-section-header-bottom;
+    height: Theme.size-section-header-height;
     background: transparent;
 
     HorizontalLayout {
-        padding-left: Theme.size-row-padding-x;
-        padding-right: Theme.size-row-padding-x;
+        padding-left: Theme.size-row-content-left;
+        padding-right: Theme.size-row-content-left;
 
         Text {
             text: root.title;
@@ -54,7 +52,7 @@ export component SectionHeader inherits Rectangle {
             font-size: Theme.font-section;
             font-weight: 500;
             color: Theme.text-secondary;
-            vertical-alignment: bottom;
+            vertical-alignment: center;
             overflow: elide;
         }
     }

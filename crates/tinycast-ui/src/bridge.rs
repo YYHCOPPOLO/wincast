@@ -205,12 +205,16 @@ where
     t.set_size_bar_menu_line(theme::size::BAR_MENU_LINE);
     t.set_size_bar_circle(theme::size::MENU_BUTTON);
     t.set_size_row_height(theme::size::ROW_HEIGHT);
+    t.set_size_section_header_height(theme::size::SECTION_HEADER_HEIGHT);
     t.set_size_row_icon(theme::size::ROW_ICON);
     t.set_size_result_row_icon(theme::size::RESULT_ROW_ICON);
     t.set_size_row_padding_x(theme::spacing::MD);
     t.set_size_row_padding_y(theme::spacing::SM);
+    t.set_size_row_content_left(tinycast_pure::layout::list::row_content_left());
     t.set_size_row_icon_gap(theme::spacing::LG);
     t.set_size_scrollbar_width(theme::size::SCROLLBAR_WIDTH);
+    t.set_size_scrollbar_hover_width(theme::size::SCROLLBAR_HOVER_WIDTH);
+    t.set_size_scrollbar_min_thumb(theme::size::SCROLLBAR_MIN_THUMB);
     t.set_size_key_cap(theme::size::KEY_CAP);
     t.set_size_compact_key_cap(theme::size::COMPACT_KEY_CAP);
     t.set_size_hero_key_cap(theme::size::HERO_KEY_CAP);

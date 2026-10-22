@@ -92,10 +92,11 @@ pub mod size {
     /// `Size.resultRowIcon` (Theme.swift:117): every palette result slot, whatever fills it.
     /// v0.10.2 had no separate token and used 24.
     pub const RESULT_ROW_ICON: f32 = 26.0;
-    /// Windows palette row (`docs/superpowers/specs/2026-09-06-tinycast-windows-ui-replica-design.md:171`).
-    /// The Direct2D launcher still uses `layout::list::ROW_HEIGHT` (38) until phase 10;
-    /// the Slint primitives use this 36 DIP row with the 26 DIP result icon centred.
-    pub const ROW_HEIGHT: f32 = 36.0;
+    /// Palette result row: `resultRowIcon` plus the row's `.vertical sm` padding.
+    /// `layout::list::ROW_HEIGHT` reuses this token, so both renderers agree on 38.
+    pub const ROW_HEIGHT: f32 = RESULT_ROW_ICON + super::spacing::SM * 2.0;
+    /// Every palette section header; `features/launcher/ui/list.rs` uses the same 22.
+    pub const SECTION_HEADER_HEIGHT: f32 = 22.0;
     pub const KEY_CAP: f32 = 18.0;
     pub const RECORDER_KEY_CAP: f32 = 16.0;
     pub const SHORTCUT_RECORDER: f32 = 120.0;
@@ -121,8 +122,10 @@ pub mod size {
     pub const NOTE_EMPTY_GLYPH: f32 = 28.0;
     pub const CHAT_MESSAGE_ACTION: f32 = 16.0;
     pub const HAIRLINE: f32 = 1.0;
-    /// Plan §4.4: the Slint thumb is a 2–3 DIP hairline; 3 keeps it visible at 100 %.
-    pub const SCROLLBAR_WIDTH: f32 = 3.0;
+    /// `design_system/scrollbar.rs` `THIN` / `EXPANDED` / `MIN_THUMB`.
+    pub const SCROLLBAR_WIDTH: f32 = 6.0;
+    pub const SCROLLBAR_HOVER_WIDTH: f32 = 10.0;
+    pub const SCROLLBAR_MIN_THUMB: f32 = 28.0;
     pub const MARKDOWN_LIST_MARKER: f32 = 20.0;
     pub const MARKDOWN_QUOTE_BAR: f32 = 2.0;
     pub const CHECKBOX: f32 = 16.0;

@@ -1,21 +1,27 @@
 import { Theme, Motion } from "../theme.slint";
 
-// A 3 DIP thumb over a transparent rail. The spring is the thin-scrollbar
-// morph from tinycast_pure::theme (response 0.28, damping 0.85).
+// Thin overlay rail: 6 DIP at rest, 10 DIP under the pointer, 28 DIP minimum
+// thumb. The spring is the thin-scrollbar morph (response 0.28, damping 0.85).
 export component Scrollbar inherits Rectangle {
     in property <length> content-height;
     in property <length> viewport-height;
     in property <length> offset;
     in property <bool> dragging: false;
 
-    width: Theme.size-scrollbar-width;
+    width: touch.has-hover ? Theme.size-scrollbar-hover-width : Theme.size-scrollbar-width;
     height: 100%;
     background: transparent;
     visible: root.content-height > root.viewport-height;
 
+    animate width {
+        // motion.rs: damping 0.85 -> bounce = 0.15. Slint requires a literal.
+        duration: Motion.scrollbar-spring;
+        easing: spring(0.15);
+    }
+
     property <length> travel: root.height - thumb.height;
     property <length> thumb-height: Math.max(
-        Theme.size-key-cap,
+        Theme.size-scrollbar-min-thumb,
         root.height * (root.viewport-height / root.content-height),
     );
     property <length> thumb-y:

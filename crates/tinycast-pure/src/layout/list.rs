@@ -2,8 +2,8 @@ use crate::palette_placement::DipRect;
 use crate::theme;
 
 /// `resultRowIcon` plus the row's `.vertical sm` padding (`docs/ui.md` "Rows, selection,
-/// hover"; `Launcher/UI/LauncherList.swift`). v0.10.2 used the 24pt icon, so 36.
-pub const ROW_HEIGHT: f32 = theme::size::RESULT_ROW_ICON + theme::spacing::SM * 2.0;
+/// hover"; `Launcher/UI/LauncherList.swift`).
+pub const ROW_HEIGHT: f32 = theme::size::ROW_HEIGHT;
 
 /// List chrome inset (selection pill) plus the row's own horizontal padding.
 /// The icon has to sit inside the pill; sharing the pill's left edge covers the corner.
@@ -55,12 +55,9 @@ pub fn edge_dissolve_bottom_band() -> f32 {
     theme::fade::edge_bottom_band()
 }
 
-pub fn section_header_height(is_first: bool) -> f32 {
-    if is_first {
-        22.0
-    } else {
-        30.0
-    }
+/// All palette section headers are 22 DIP; the slot model has no separate first inset.
+pub fn section_header_height(_is_first: bool) -> f32 {
+    theme::size::SECTION_HEADER_HEIGHT
 }
 
 pub fn calc_card_rect(panel_w: f32, y: f32) -> DipRect {

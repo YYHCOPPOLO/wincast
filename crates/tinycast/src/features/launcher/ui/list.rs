@@ -38,7 +38,7 @@ use windows::Win32::UI::Shell::{
 use super::coordinator::icon_source;
 
 pub const ROW_HEIGHT: f32 = tinycast_pure::layout::list::ROW_HEIGHT;
-pub const SECTION_HEADER_HEIGHT: f32 = 22.0;
+pub const SECTION_HEADER_HEIGHT: f32 = theme::size::SECTION_HEADER_HEIGHT;
 
 fn fade_top() -> f32 {
     tinycast_pure::layout::list::edge_dissolve_top_band()
