@@ -39,10 +39,12 @@ pub fn paint_items(
             .map(|(i, hit)| PaintItem::Row {
                 title: hit.name.clone(),
                 alias: None,
+                // The parent path is the row's trailing subtext, as the old list drew it.
                 trailing: hit.parent.clone(),
                 keycap: None,
                 icon_source: Some(hit.path.replace('/', "\\")),
-                symbol: None,
+                // A directory keeps its type visible when the shell icon is still decoding.
+                symbol: hit.is_directory.then(|| "folder".to_string()),
                 checkbox: 0,
                 selected: i == selection,
             })
