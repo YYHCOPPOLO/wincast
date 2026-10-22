@@ -1899,6 +1899,17 @@ impl AppCore {
         if self.palette.mode == PaletteMode::CalculatorHistory {
             return self.calc_history_paint_items();
         }
+        if self.palette.mode == PaletteMode::ExtensionCommand {
+            // Extension commands are launcher entries: same row component, same
+            // selection, and an icon-less entry keeps the iconPlaceholder tile.
+            // v1 ships no extension runtime, so this screen currently has no rows.
+            return paint_items(
+                &self.sections(),
+                self.palette.selection,
+                &self.favorites,
+                self.ui_lang(),
+            );
+        }
         let card = self.calc_result();
         let meeting = self.meeting_card();
         let lead = if card.is_some() || meeting.is_some() {
