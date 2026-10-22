@@ -318,15 +318,22 @@ impl AppCore {
         }
     }
 
+    /// DIP reserved to the right of the native field. The clipboard type filter
+    /// and the AI model button only exist on the expanded screen, so a compact
+    /// bar keeps nothing for them and the field runs to the trailing gutter.
     pub fn search_trailing_width(&self) -> f32 {
+        let compact = tinycast_pure::layout::palette_chrome::compact_favorites_trailing(
+            self.compact_favorite_entries().len(),
+        );
+        if !self.expanded {
+            return compact;
+        }
         if self.palette.mode == PaletteMode::Clipboard {
             clip_screen::filter_trailing_width()
         } else if self.palette.mode == PaletteMode::Ai {
             crate::features::ai::ui::screen::model_trailing_width()
         } else {
-            tinycast_pure::layout::palette_chrome::compact_favorites_trailing(
-                self.compact_favorite_entries().len(),
-            )
+            compact
         }
     }
 
@@ -4068,7 +4075,8 @@ impl AppCore {
             Some(tinycast_pure::ai::ModelSelection::ChatGpt { model, .. }) => {
                 format!("ChatGPT · {model}")
             }
-            None => "Model".into(),
+            // No model yet: name the button for what it picks, in the UI language.
+            None => tinycast_pure::i18n::ai_default_model(self.ui_lang()).into(),
         }
     }
 

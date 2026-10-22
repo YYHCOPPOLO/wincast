@@ -475,7 +475,7 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
             .collect::<String>()
             .into(),
     );
-    attach_filter(ui, core);
+    attach_filter(ui, core, expanded);
     let empty = if items.is_empty() && core.ai_chat_messages().is_none() {
         core.empty_results_text().unwrap_or("")
     } else {
@@ -518,9 +518,10 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     }
 }
 
-/// The clipboard type filter: AppCore owns the label, the open state and the rect.
-fn attach_filter(ui: &Palette, core: &AppCore) {
-    let filter = if core.palette.mode == PaletteMode::Clipboard {
+/// The header pop-up: the clipboard type filter or the AI model button. Both
+/// belong to the expanded screen; AppCore owns the label, open state and rect.
+fn attach_filter(ui: &Palette, core: &AppCore, expanded: bool) {
+    let filter = if expanded {
         core.clipboard_filter_paint()
     } else {
         None
@@ -601,7 +602,8 @@ fn row_clicked(inner: *mut PaletteInner, _index: i32, x: f32, y: f32) {
     }
 }
 
-/// The filter's own rect goes back through the pointer path that owns the menu.
+/// The filter's or model button's own rect goes back through the pointer path
+/// that owns the menu.
 fn filter_clicked(inner: *mut PaletteInner) {
     let Some(core) = core_from_host(unsafe { (*inner).host }) else {
         return;
