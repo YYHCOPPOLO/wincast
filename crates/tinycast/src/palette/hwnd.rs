@@ -439,6 +439,7 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     };
     ui.set_header_symbol(fluent_for_sf(header_symbol).unwrap_or_default().into());
     ui.set_empty_symbol(fluent_for_sf("magnifyingglass").unwrap_or_default().into());
+    ui.set_arrow_symbol(fluent_for_sf("arrow.right").unwrap_or_default().into());
     ui.set_placeholder(core.search_placeholder().into());
     ui.set_show_placeholder(should_draw_placeholder(&core.palette));
     let hint = core.tab_hint().unwrap_or("");

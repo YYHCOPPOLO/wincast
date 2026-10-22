@@ -33,6 +33,159 @@ export struct PaletteRow {
     height: length,
 }
 
+// A badge under one calculator column: 11 DIP ink on controlSurface.
+component CalcBadge inherits Rectangle {
+    in property <string> text;
+
+    height: Theme.font-calc-badge + Theme.spacing-xs;
+    border-radius: Theme.radius-key-cap;
+    background: Theme.control-surface;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+
+        Text {
+            text: root.text;
+            font-family: "Segoe UI";
+            font-size: Theme.font-calc-badge;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+// One 96 DIP answer card: expression to result, or a triangle and the message.
+// Two columns share the card; the 22 DIP arrows is the only fixed slot between.
+component CalcCard inherits Rectangle {
+    in property <string> expression;
+    in property <string> display;
+    in property <string> badge-left;
+    in property <string> badge-right;
+    in property <string> error-symbol;
+    in property <string> arrow-symbol;
+    in property <bool> is-error: false;
+    in property <bool> selected: false;
+    in property <bool> hover-armed: false;
+    // The list column width; a component cannot read its parent.
+    in property <length> slot-width;
+
+    callback clicked(length, length);
+
+    x: Theme.spacing-xl;
+    y: 0;
+    width: root.slot-width - Theme.spacing-xl * 2;
+    height: Theme.size-calc-card-height;
+    border-radius: Theme.radius-card;
+    background: root.selected ? Theme.selection
+        : (root.hover-armed && card-touch.has-hover ? Theme.row-hover : Theme.card-fill);
+
+    if root.is-error: HorizontalLayout {
+        padding-left: Theme.spacing-xxxl;
+        padding-right: Theme.spacing-xxxl;
+        spacing: Theme.spacing-md;
+
+        Text {
+            text: root.error-symbol;
+            font-family: "Segoe Fluent Icons";
+            font-size: Theme.font-header-icon;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.display;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+    }
+
+    if !root.is-error: HorizontalLayout {
+        padding-top: Theme.spacing-xxxl;
+        padding-bottom: Theme.spacing-xxxl;
+        padding-left: Theme.spacing-xl;
+        padding-right: Theme.spacing-xl;
+        spacing: Theme.spacing-sm;
+
+        Rectangle {
+            horizontal-stretch: 1;
+            background: transparent;
+
+            VerticalLayout {
+                alignment: space-between;
+
+                Text {
+                    text: root.expression;
+                    font-family: "Segoe UI";
+                    font-size: Theme.font-row-trailing;
+                    font-weight: 500;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                if root.badge-left != "": CalcBadge {
+                    text: root.badge-left;
+                    horizontal-stretch: 0;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+
+            Text {
+                text: root.arrow-symbol;
+                font-family: "Segoe Fluent Icons";
+                font-size: Theme.font-header-icon;
+                color: Theme.text-tertiary;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            background: transparent;
+
+            VerticalLayout {
+                alignment: space-between;
+
+                Text {
+                    text: root.display;
+                    font-family: "Segoe UI";
+                    font-size: Theme.font-calc-result;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                if root.badge-right != "": CalcBadge {
+                    text: root.badge-right;
+                    horizontal-stretch: 0;
+                }
+            }
+        }
+    }
+
+    card-touch := TouchArea {
+        clicked => {
+            root.clicked(
+                self.absolute-position.x + self.mouse-x,
+                self.absolute-position.y + self.mouse-y,
+            );
+        }
+    }
+}
+
 // The clipboard type filter in the header's trailing slot.
 component FilterButton inherits Rectangle {
     in property <string> label;
@@ -99,6 +252,8 @@ export component PaletteWindow inherits Window {
     in property <length> filter-y: 0px;
     in property <length> filter-w: 0px;
     in property <length> filter-h: 0px;
+    // Fluent arrow.right, between the two calculator columns.
+    in property <string> arrow-symbol;
     // Bottom bar: the label is mode dependent, the shortcuts are fixed.
     in property <string> primary-label;
     in property <string> actions-label;
@@ -247,7 +402,7 @@ export component PaletteWindow inherits Window {
                 content-y <=> root.scroll-y;
                 content-height: root.content-height;
 
-                for row[i] in root.rows: Rectangle {
+                for row[i] in root.rows: slot := Rectangle {
                     x: 0;
                     y: row.top;
                     width: 100%;
@@ -272,48 +427,18 @@ export component PaletteWindow inherits Window {
                         clicked(x, y) => { root.row-clicked(i, x, y); }
                     }
 
-                    // Calculator and emoji rows get a readable generic rendering
-                    // until phase 4 draws their own.
-                    if row.kind == 2: Rectangle {
-                        border-radius: Theme.radius-card;
-                        background: row.selected ? Theme.selection
-                            : (root.hover-armed && calc-touch.has-hover
-                                ? Theme.row-hover : transparent);
-
-                        HorizontalLayout {
-                            padding-left: Theme.spacing-xl;
-                            padding-right: Theme.spacing-xl;
-                            spacing: Theme.spacing-md;
-
-                            Text {
-                                text: row.trailing;
-                                font-family: "Segoe UI";
-                                font-size: Theme.font-row-trailing;
-                                color: Theme.text-secondary;
-                                vertical-alignment: center;
-                                overflow: elide;
-                            }
-
-                            Text {
-                                text: row.title;
-                                font-family: "Segoe UI";
-                                font-size: Theme.font-calc-result;
-                                color: Theme.text-primary;
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;
-                                overflow: elide;
-                            }
-                        }
-
-                        calc-touch := TouchArea {
-                            clicked => {
-                                root.row-clicked(
-                                    i,
-                                    self.absolute-position.x + self.mouse-x,
-                                    self.absolute-position.y + self.mouse-y,
-                                );
-                            }
-                        }
+                    if row.kind == 2: CalcCard {
+                        slot-width: slot.width;
+                        expression: row.expression;
+                        display: row.title;
+                        badge-left: row.badge-left;
+                        badge-right: row.badge-right;
+                        error-symbol: row.symbol;
+                        arrow-symbol: root.arrow-symbol;
+                        is-error: row.is-error;
+                        selected: row.selected;
+                        hover-armed: root.hover-armed;
+                        clicked(x, y) => { root.row-clicked(i, x, y); }
                     }
 
                     if row.kind == 3: Rectangle {
