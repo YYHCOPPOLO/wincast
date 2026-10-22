@@ -24,6 +24,19 @@ pub fn run() -> windows::core::Result<()> {
         )
         .ok()?;
     }
+    // Slint's winit backend has to be picked before any Slint window exists.
+    // femtovg is the only renderer the probes validated; skip-taskbar is the one
+    // window attribute the hook can express (the tool-window bit is applied per
+    // window once its HWND exists).
+    slint::BackendSelector::new()
+        .backend_name("winit".into())
+        .renderer_name("femtovg".into())
+        .with_winit_window_attributes_hook(|attributes| {
+            use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
+            attributes.with_skip_taskbar(true)
+        })
+        .select()
+        .map_err(slint_error)?;
     let _instance = single_instance::acquire()?;
     let mut core = crate::app_core::AppCore::new();
     let host = tray::create(&mut core)?;
@@ -34,27 +47,15 @@ pub fn run() -> windows::core::Result<()> {
     core.about_surface = crate::surfaces::AboutWindow::create(host).ok();
     core.onboarding_window = crate::surfaces::OnboardingWindow::create(host).ok();
     core.set_host(host);
+    // Installs the low-level keyboard hook on this thread; its callbacks and the
+    // posted tray messages keep arriving while the Slint loop runs.
     core.start();
-    pump()
+    slint::run_event_loop().map_err(slint_error)
 }
 
-fn pump() -> windows::core::Result<()> {
-    use windows::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, GetMessageW, TranslateMessage, MSG,
-    };
-
-    unsafe {
-        loop {
-            let mut msg = MSG::default();
-            let status = GetMessageW(&mut msg, None, 0, 0);
-            match status.0 {
-                0 => return Ok(()),
-                -1 => return Err(windows::core::Error::from_win32()),
-                _ => {
-                    let _ = TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
-                }
-            }
-        }
-    }
+fn slint_error(error: slint::PlatformError) -> windows::core::Error {
+    windows::core::Error::new(
+        windows::core::HRESULT(0x8000_4005u32 as i32),
+        error.to_string(),
+    )
 }

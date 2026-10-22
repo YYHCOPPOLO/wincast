@@ -7,7 +7,7 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    GetCursorPos, GetWindowLongPtrW, LoadIconW, PostMessageW, PostQuitMessage, RegisterClassW,
+    GetCursorPos, GetWindowLongPtrW, LoadIconW, PostMessageW, RegisterClassW,
     SetForegroundWindow, SetWindowLongPtrW, TrackPopupMenu, CREATESTRUCTW, GWLP_USERDATA,
     IDI_APPLICATION, MF_STRING, SC_CLOSE, SET_WINDOW_POS_FLAGS, SWP_SHOWWINDOW, TPM_RETURNCMD,
     TPM_RIGHTBUTTON, WINDOWPOS, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_CONTEXTMENU,
@@ -369,7 +369,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 (*core).support_window = None;
             }
             remove_icon(hwnd);
-            PostQuitMessage(0);
+            // The Slint loop owns the message pump now, so quitting has to go
+            // through it instead of posting WM_QUIT to a loop nobody runs.
+            let _ = slint::quit_event_loop();
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
