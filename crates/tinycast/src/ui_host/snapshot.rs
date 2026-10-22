@@ -6,9 +6,11 @@
 
 use std::collections::HashMap;
 
+use slint::{ModelRc, SharedString, VecModel};
 use tinycast_pure::theme;
 use tinycast_ui::PaletteRow;
 
+use crate::design_system::symbols::fluent_for_sf;
 use crate::features::launcher::ui::list::{
     slot_height, slots_of, IconCache, IconPixels, PaintItem,
 };
@@ -129,13 +131,18 @@ fn to_row(
             trailing,
             keycap,
             icon_source,
+            symbol,
+            checkbox,
             selected,
         } => {
             let mut row = base(KIND_ROW, top, height);
             row.title = title.as_str().into();
-            // A user alias replaces the trailing column; both never coexist.
-            row.trailing = alias.as_deref().unwrap_or(trailing).into();
+            // The alias is its own capsule after the title, never the trailing column.
+            row.alias = alias.as_deref().unwrap_or_default().into();
+            row.trailing = trailing.as_str().into();
             row.keycap = keycap.as_deref().unwrap_or_default().into();
+            row.symbol = glyph(symbol.as_deref());
+            row.checkbox = i32::from(*checkbox);
             row.selected = *selected;
             if let Some(source) = icon_source.as_deref() {
                 if let Some(image) = images.image(source, icons, dpi, appearance) {
@@ -148,21 +155,46 @@ fn to_row(
         PaintItem::Calc {
             expression,
             display,
+            source_badge,
+            target_badge,
             selected,
-            ..
+            is_error,
         } => {
             let mut row = base(KIND_CALC, top, height);
+            row.expression = expression.as_str().into();
             row.title = display.as_str().into();
-            row.trailing = expression.as_str().into();
+            row.badge_left = source_badge.as_deref().unwrap_or_default().into();
+            row.badge_right = target_badge.as_deref().unwrap_or_default().into();
+            row.is_error = *is_error;
+            if *is_error {
+                row.symbol = glyph(Some("exclamationmark.triangle"));
+            }
             row.selected = *selected;
             row
         }
-        PaintItem::EmojiRow { glyphs, .. } => {
+        PaintItem::EmojiRow {
+            glyphs,
+            columns,
+            start,
+            selected,
+        } => {
             let mut row = base(KIND_EMOJI, top, height);
-            row.title = glyphs.join(" ").into();
+            let cells: Vec<SharedString> = glyphs.iter().map(|g| g.as_str().into()).collect();
+            row.glyphs = ModelRc::new(VecModel::from(cells));
+            row.columns = *columns as i32;
+            row.emoji_start = *start as i32;
+            row.emoji_selected = *selected as i32;
             row
         }
     }
+}
+
+/// SF Symbol name → the Segoe Fluent codepoint Slint draws.
+fn glyph(symbol: Option<&str>) -> SharedString {
+    symbol
+        .and_then(fluent_for_sf)
+        .map(SharedString::from)
+        .unwrap_or_default()
 }
 
 fn base(kind: i32, top: f32, height: f32) -> PaletteRow {
@@ -172,6 +204,16 @@ fn base(kind: i32, top: f32, height: f32) -> PaletteRow {
         trailing: Default::default(),
         keycap: Default::default(),
         symbol: Default::default(),
+        alias: Default::default(),
+        expression: Default::default(),
+        badge_left: Default::default(),
+        badge_right: Default::default(),
+        is_error: false,
+        glyphs: Default::default(),
+        columns: 0,
+        emoji_start: 0,
+        emoji_selected: 0,
+        checkbox: 0,
         icon: Default::default(),
         icon_ready: false,
         selected: false,

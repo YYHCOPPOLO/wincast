@@ -16,15 +16,14 @@ use std::time::Duration;
 
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
-use slint::{ComponentHandle, Model, ModelRc, VecModel};
-use tinycast_pure::layout::list;
+use slint::{ComponentHandle, ModelRc, VecModel};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
 use tinycast_pure::palette_state::should_draw_placeholder;
 use tinycast_pure::theme;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    GetStockObject, SetBkMode, SetTextColor, HDC, NULL_BRUSH, TRANSPARENT,
+    GetStockObject, ScreenToClient, SetBkMode, SetTextColor, HDC, NULL_BRUSH, TRANSPARENT,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{
@@ -42,6 +41,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
+use crate::design_system::symbols::fluent_for_sf;
 use crate::features::launcher::ui::list::IconCache;
 use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
@@ -57,6 +57,8 @@ const TAB_HINT_WIDTH: f32 = 104.0;
 const WS_EX_APPWINDOW_BIT: isize = 0x0004_0000;
 /// The window has to exist before it can be measured, so it is born off-screen.
 const PARKED: i32 = -32_000;
+/// The old Direct2D preview drew at most 2000 characters; keep layout bounded.
+const PREVIEW_CHARS: usize = 2000;
 
 type Palette = tinycast_ui::PaletteWindow;
 
@@ -117,10 +119,17 @@ impl PaletteWindow {
             .ui
             .set_rows(ModelRc::from(unsafe { (*inner).model.clone() }));
         let ptr = inner as usize;
-        window.ui.on_row_clicked(move |index| {
+        window.ui.on_row_clicked(move |index, x, y| {
             let inner = ptr as *mut PaletteInner;
             if !inner.is_null() {
-                row_clicked(inner, index);
+                row_clicked(inner, index, x, y);
+            }
+        });
+        let ptr = inner as usize;
+        window.ui.on_filter_clicked(move || {
+            let inner = ptr as *mut PaletteInner;
+            if !inner.is_null() {
+                filter_clicked(inner);
             }
         });
         let ptr: usize = inner as usize;
@@ -422,12 +431,14 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
         }
         tinycast_ui::apply_appearance(ui, appearance);
     }
+    // Slint draws the fluent codepoint, not the SF name.
     let header_symbol = if core.palette.mode == PaletteMode::Launcher {
         "magnifyingglass"
     } else {
         "chevron.left"
     };
-    ui.set_header_symbol(header_symbol.into());
+    ui.set_header_symbol(fluent_for_sf(header_symbol).unwrap_or_default().into());
+    ui.set_empty_symbol(fluent_for_sf("magnifyingglass").unwrap_or_default().into());
     ui.set_placeholder(core.search_placeholder().into());
     ui.set_show_placeholder(should_draw_placeholder(&core.palette));
     let hint = core.tab_hint().unwrap_or("");
@@ -442,6 +453,20 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     let panel_h = snapshot::panel_height(expanded);
     let (scroll, content, view) = core.scroll_metrics(panel_h);
     let items = core.launcher_paint_items();
+    // Clipboard is the one split screen: 290 DIP list, rule, wrapped preview.
+    let preview = core.clipboard_preview();
+    let split = preview.is_some() && !items.is_empty();
+    ui.set_split(split);
+    ui.set_split_x(theme::size::CLIPBOARD_LIST_WIDTH);
+    ui.set_preview_text(
+        preview
+            .unwrap_or_default()
+            .chars()
+            .take(PREVIEW_CHARS)
+            .collect::<String>()
+            .into(),
+    );
+    attach_filter(ui, core);
     let empty = if items.is_empty() && core.ai_chat_messages().is_none() {
         core.empty_results_text().unwrap_or("")
     } else {
@@ -471,6 +496,24 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
             (*inner).trailing = trailing;
         }
         layout_search(ui, inner);
+    }
+}
+
+/// The clipboard type filter: AppCore owns the label, the open state and the rect.
+fn attach_filter(ui: &Palette, core: &AppCore) {
+    let filter = if core.palette.mode == PaletteMode::Clipboard {
+        core.clipboard_filter_paint()
+    } else {
+        None
+    };
+    ui.set_filter_visible(filter.is_some());
+    if let Some(button) = filter {
+        ui.set_filter_label(button.title.as_str().into());
+        ui.set_filter_open(button.open);
+        ui.set_filter_x(button.rect.x);
+        ui.set_filter_y(button.rect.y);
+        ui.set_filter_w(button.rect.w);
+        ui.set_filter_h(button.rect.h);
     }
 }
 
@@ -512,12 +555,11 @@ fn apps_clicked(inner: *mut PaletteInner) {
 }
 
 /// A row click re-enters the existing pointer path, which owns the selection.
-fn row_clicked(inner: *mut PaletteInner, index: i32) {
+/// Slint hands over the window DIP coordinates, so emoji cells and rows resolve
+/// to the same pointer semantics the Direct2D layer had.
+fn row_clicked(inner: *mut PaletteInner, _index: i32, x: f32, y: f32) {
     let inner_ref = unsafe { &*inner };
     let Some(core) = core_from_host(inner_ref.host) else {
-        return;
-    };
-    let Some(row) = inner_ref.model.row_data(index.max(0) as usize) else {
         return;
     };
     let expanded = inner_ref
@@ -526,12 +568,31 @@ fn row_clicked(inner: *mut PaletteInner, index: i32) {
         .map(|ui| ui.get_expanded())
         .unwrap_or(false);
     let panel_h = snapshot::panel_height(expanded);
-    let scroll = unsafe { (*core).list_scroll() };
-    // Panel DIP centre of the row: the list starts on the compact bar.
-    let y = list::content_top() + row.top - scroll + row.height / 2.0;
-    let x = theme::size::PANEL_WIDTH / 2.0;
     unsafe {
         (*core).pointer_down(x, y, theme::size::PANEL_WIDTH, panel_h, false);
+    }
+}
+
+/// The filter's own rect goes back through the pointer path that owns the menu.
+fn filter_clicked(inner: *mut PaletteInner) {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    let Some(button) = (unsafe { (*core).clipboard_filter_paint() }) else {
+        return;
+    };
+    let expanded = unsafe { (*inner).weak.upgrade() }
+        .map(|ui| ui.get_expanded())
+        .unwrap_or(false);
+    let panel_h = snapshot::panel_height(expanded);
+    unsafe {
+        (*core).pointer_down(
+            button.rect.x + button.rect.w / 2.0,
+            button.rect.y + button.rect.h / 2.0,
+            theme::size::PANEL_WIDTH,
+            panel_h,
+            false,
+        );
     }
 }
 
@@ -677,6 +738,11 @@ unsafe extern "system" fn palette_subclass(
         }
         WM_MOUSEWHEEL => {
             if !inner.is_null() {
+                // Over the clipboard preview the wheel belongs to its Flickable,
+                // so hand the message to winit/Slint instead of the list.
+                if wheel_over_preview(hwnd, inner, lparam) {
+                    return DefSubclassProc(hwnd, msg, wparam, lparam);
+                }
                 if let Some(core) = core_from_host((*inner).host) {
                     let delta = ((wparam.0 as u32) >> 16) as i16;
                     (*core).scroll_list(delta);
@@ -754,6 +820,28 @@ unsafe extern "system" fn palette_subclass(
         }
         _ => DefSubclassProc(hwnd, msg, wparam, lparam),
     }
+}
+
+/// True while the pointer sits right of the 290 DIP list column in clipboard mode.
+fn wheel_over_preview(hwnd: HWND, inner: *mut PaletteInner, lparam: LPARAM) -> bool {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return false;
+    };
+    if unsafe { (*core).palette.mode } != PaletteMode::Clipboard {
+        return false;
+    }
+    // WM_MOUSEWHEEL carries screen coordinates.
+    let mut point = POINT {
+        x: (lparam.0 & 0xffff) as u16 as i16 as i32,
+        y: ((lparam.0 >> 16) & 0xffff) as u16 as i16 as i32,
+    };
+    if !unsafe { ScreenToClient(hwnd, &mut point) }.as_bool() {
+        return false;
+    }
+    let split = dip_scalar_to_px(theme::size::CLIPBOARD_LIST_WIDTH, unsafe {
+        GetDpiForWindow(hwnd)
+    });
+    point.x > split
 }
 
 fn layout_search_of(hwnd: HWND, inner: *mut PaletteInner) {

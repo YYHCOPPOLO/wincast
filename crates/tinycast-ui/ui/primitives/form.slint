@@ -63,36 +63,6 @@ export component Toggle inherits Rectangle {
     }
 }
 
-// 16 DIP checkbox drawn inside a 24 DIP row slot by the caller.
-export component Checkbox inherits Rectangle {
-    in-out property <bool> checked: false;
-    callback toggled(bool);
-
-    width: Theme.size-checkbox;
-    height: Theme.size-checkbox;
-    border-radius: Theme.radius-glyph;
-    border-width: Theme.size-hairline;
-    border-color: root.checked ? Theme.text-primary : Theme.border;
-    background: root.checked ? Theme.text-primary : transparent;
-
-    Path {
-        width: 100%;
-        height: 100%;
-        commands: "M 4 8 L 7 11 L 12 5";
-        stroke: Theme.settings-detail;
-        stroke-width: Theme.size-hairline * 1.5;
-        fill: transparent;
-        visible: root.checked;
-    }
-
-    touch := TouchArea {
-        clicked => {
-            root.checked = !root.checked;
-            root.toggled(root.checked);
-        }
-    }
-}
-
 // 32 DIP settings sidebar row: 20 DIP icon slot, 13 DIP label.
 export component SidebarRow inherits Rectangle {
     in property <string> label;

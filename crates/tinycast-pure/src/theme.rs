@@ -252,6 +252,10 @@ pub mod typography {
     pub const PANEL_TITLE: f32 = 13.0;
     pub const CALC_RESULT: f32 = 22.0;
     pub const CALC_BADGE: f32 = 11.0;
+    /// Alias pill ink in a result row; the old renderer reused `calcBadge`.
+    pub const CHIP: f32 = CALC_BADGE;
+    /// Emoji grid glyph; `features/launcher/ui/list.rs` drew Segoe UI Emoji at 32.
+    pub const EMOJI: f32 = 32.0;
 }
 
 pub mod duration {

@@ -8,6 +8,8 @@ component BarButton inherits Rectangle {
     in property <string> modifier;
     // Ink, not layout: the actions capsule is secondary, the primary is not.
     in property <bool> secondary: false;
+    // The uninstall screen's primary action is destructive.
+    in property <bool> destructive: false;
     callback clicked;
 
     height: Theme.size-bar-button-height;
@@ -24,7 +26,8 @@ component BarButton inherits Rectangle {
             font-family: "Segoe UI";
             font-size: Theme.font-bar;
             font-weight: 500;
-            color: root.secondary ? Theme.text-secondary : Theme.text-primary;
+            color: root.destructive ? Theme.destructive
+                : (root.secondary ? Theme.text-secondary : Theme.text-primary);
             vertical-alignment: center;
         }
 
@@ -53,6 +56,7 @@ export component Footer inherits Rectangle {
     in property <string> actions-shortcut;
     in property <string> actions-modifier;
     in property <bool> show-actions: true;
+    in property <bool> primary-destructive: false;
 
     callback apps-clicked;
     callback primary-clicked;
@@ -128,6 +132,7 @@ export component Footer inherits Rectangle {
                         label: root.primary-label;
                         shortcut: root.primary-shortcut;
                         modifier: root.primary-modifier;
+                        destructive: root.primary-destructive;
                         clicked => { root.primary-clicked(); }
                     }
 

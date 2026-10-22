@@ -1807,6 +1807,8 @@ impl AppCore {
                     trailing: String::new(),
                     keycap: None,
                     icon_source: None,
+                    symbol: None,
+                    checkbox: 0,
                     selected: i == self.palette.selection,
                 });
             }
@@ -1859,6 +1861,8 @@ impl AppCore {
                     trailing: mark.to_string(),
                     keycap: None,
                     icon_source: None,
+                    symbol: None,
+                    checkbox: 0,
                     selected: index == self.palette.selection,
                 });
                 index += 1;
@@ -1877,6 +1881,8 @@ impl AppCore {
                     ),
                     keycap: None,
                     icon_source: None,
+                    symbol: None,
+                    checkbox: 0,
                     selected: i == self.palette.selection,
                 });
             }
@@ -1912,6 +1918,8 @@ impl AppCore {
                     ),
                     keycap: None,
                     icon_source: None,
+                    symbol: None,
+                    checkbox: 0,
                     selected: self.palette.selection == 0,
                 },
             );
@@ -4262,6 +4270,8 @@ impl AppCore {
                 trailing: entry.result,
                 keycap: None,
                 icon_source: None,
+                symbol: None,
+                checkbox: 0,
                 selected: self.palette.selection == index,
             });
             index += 1;

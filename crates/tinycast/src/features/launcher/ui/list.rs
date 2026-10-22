@@ -82,6 +82,10 @@ pub enum PaintItem {
         trailing: String,
         keycap: Option<String>,
         icon_source: Option<String>,
+        /// SF Symbol name for the leading slot when the row has no icon.
+        symbol: Option<String>,
+        /// 0 none, 1 off, 2 on, 3 locked (the uninstall list's 16 DIP box).
+        checkbox: u8,
         selected: bool,
     },
     Calc {
@@ -331,6 +335,8 @@ pub fn paint_items(
                     trailing: kind_label(entry.kind, lang).to_string(),
                     keycap: keycap_label(entry, fav_slot),
                     icon_source: icon_source(entry),
+                    symbol: None,
+                    checkbox: 0,
                     selected: sel == selection,
                 });
                 sel += 1;
@@ -555,6 +561,7 @@ pub fn paint(
                 keycap,
                 icon_source,
                 selected,
+                ..
             } => {
                 let h = ROW_HEIGHT;
                 if y + h > clip_top && y < bottom {

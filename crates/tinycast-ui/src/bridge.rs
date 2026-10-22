@@ -150,6 +150,8 @@ where
     t.set_font_panel_title(theme::typography::PANEL_TITLE);
     t.set_font_calc_result(theme::typography::CALC_RESULT);
     t.set_font_calc_badge(theme::typography::CALC_BADGE);
+    t.set_font_chip(theme::typography::CHIP);
+    t.set_font_emoji(theme::typography::EMOJI);
 
     // Spacing (`theme::spacing`).
     t.set_spacing_xxs(theme::spacing::XXS);

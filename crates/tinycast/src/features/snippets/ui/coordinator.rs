@@ -126,6 +126,8 @@ pub fn paint_argument_items(
                 trailing: value,
                 keycap: None,
                 icon_source: None,
+                symbol: None,
+                checkbox: 0,
                 selected: false,
             });
         }
@@ -142,6 +144,8 @@ pub fn paint_argument_items(
                 trailing: String::new(),
                 keycap: None,
                 icon_source: None,
+                symbol: None,
+                checkbox: 0,
                 selected: i == selection,
             });
         }

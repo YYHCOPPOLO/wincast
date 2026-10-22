@@ -1,5 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Keycap } from "keycap.slint";
+import { Checkbox } from "checkbox.slint";
 
 // A 26 DIP icon slot: the decoded image, or the placeholder tile + symbol.
 export component IconSlot inherits Rectangle {
@@ -59,17 +60,21 @@ export component SectionHeader inherits Rectangle {
 }
 
 // One palette result row. Selection wins over hover; hover only after arming.
+// The alias capsule follows the title and never takes the trailing column.
 export component Row inherits Rectangle {
     in property <string> title;
+    in property <string> alias;
     in property <string> trailing;
     in property <string> keycap-text;
     in property <string> symbol;
+    // 0 none, 1 off, 2 on, 3 locked; the uninstall list draws 1..3.
+    in property <int> checkbox: 0;
     in property <image> icon;
     in property <bool> icon-ready: false;
     in property <bool> selected: false;
     in property <bool> hover-armed: false;
 
-    callback clicked;
+    callback clicked(length, length);
 
     height: Theme.size-row-height;
     border-radius: Theme.radius-row;
@@ -81,7 +86,33 @@ export component Row inherits Rectangle {
         padding-right: Theme.size-row-padding-x;
         spacing: Theme.size-row-icon-gap;
 
-        VerticalLayout {
+        // 16 DIP box centered in the result-row icon slot; locked rows show a lock.
+        if root.checkbox != 0: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: Theme.size-result-row-icon;
+                height: Theme.size-result-row-icon;
+                background: transparent;
+
+                if root.checkbox == 3: Text {
+                    text: root.symbol;
+                    font-family: "Segoe Fluent Icons";
+                    font-size: Theme.font-header-icon;
+                    color: Theme.text-tertiary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                if root.checkbox != 3: Checkbox {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    checked: root.checkbox == 2;
+                    interactive: false;
+                }
+            }
+        }
+
+        if root.checkbox == 0: VerticalLayout {
             alignment: center;
             IconSlot {
                 source: root.icon;
@@ -100,6 +131,25 @@ export component Row inherits Rectangle {
             overflow: elide;
         }
 
+        if root.alias != "": Rectangle {
+            height: Theme.size-key-cap;
+            border-radius: Theme.radius-menu;
+            background: Theme.control-surface;
+
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+
+                Text {
+                    text: root.alias;
+                    font-family: "Segoe UI";
+                    font-size: Theme.font-chip;
+                    color: Theme.text-primary;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
         if root.trailing != "": Text {
             text: root.trailing;
             font-family: "Segoe UI";
@@ -115,6 +165,11 @@ export component Row inherits Rectangle {
     }
 
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked(
+                self.absolute-position.x + self.mouse-x,
+                self.absolute-position.y + self.mouse-y,
+            );
+        }
     }
 }

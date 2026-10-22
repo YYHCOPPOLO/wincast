@@ -16,11 +16,53 @@ export struct PaletteRow {
     trailing: string,
     keycap: string,
     symbol: string,
+    alias: string,
+    expression: string,
+    badge-left: string,
+    badge-right: string,
+    is-error: bool,
+    glyphs: [string],
+    columns: int,
+    emoji-start: int,
+    emoji-selected: int,
+    checkbox: int,
     icon: image,
     icon-ready: bool,
     selected: bool,
     top: length,
     height: length,
+}
+
+// The clipboard type filter in the header's trailing slot.
+component FilterButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> open: false;
+
+    callback clicked;
+
+    border-radius: Theme.radius-bar-control;
+    background: root.open ? Theme.selection
+        : (filter-touch.has-hover ? Theme.control-hover : Theme.control-surface);
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+
+        Text {
+            text: root.label;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row-trailing;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+    }
+
+    filter-touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
 }
 
 export component PaletteWindow inherits Window {
@@ -40,9 +82,23 @@ export component PaletteWindow inherits Window {
     in property <[PaletteRow]> rows;
     in property <bool> hover-armed: false;
     in property <string> empty-text;
+    // Glyph above the empty text, the same fluent magnifier in every mode.
+    in property <string> empty-symbol;
     // Scroll state. AppCore owns both values; the Flickable follows them.
     in property <length> content-height: 0px;
     in-out property <length> scroll-y: 0px;
+    // Clipboard: 290 DIP list + 1 DIP separator + the preview pane.
+    in property <bool> split: false;
+    in property <length> split-x: 0px;
+    in property <string> preview-text;
+    // Clipboard type filter; the host passes rect/title/open from AppCore.
+    in property <bool> filter-visible: false;
+    in property <string> filter-label;
+    in property <bool> filter-open: false;
+    in property <length> filter-x: 0px;
+    in property <length> filter-y: 0px;
+    in property <length> filter-w: 0px;
+    in property <length> filter-h: 0px;
     // Bottom bar: the label is mode dependent, the shortcuts are fixed.
     in property <string> primary-label;
     in property <string> actions-label;
@@ -51,9 +107,11 @@ export component PaletteWindow inherits Window {
     in property <string> actions-shortcut;
     in property <string> actions-modifier;
     in property <bool> show-actions: true;
+    in property <bool> primary-destructive: false;
 
     callback header-clicked();
-    callback row-clicked(int);
+    callback row-clicked(int, length, length);
+    callback filter-clicked();
     callback scrolled(length);
     callback apps-clicked();
     callback primary-clicked();
@@ -156,6 +214,17 @@ export component PaletteWindow inherits Window {
             TouchArea {
                 clicked => { root.header-clicked(); }
             }
+
+            // Onto the header, not into its layout: the rect is AppCore's.
+            if root.filter-visible: FilterButton {
+                x: root.filter-x;
+                y: root.filter-y - Theme.size-header-padding;
+                width: root.filter-w;
+                height: root.filter-h;
+                label: root.filter-label;
+                open: root.filter-open;
+                clicked => { root.filter-clicked(); }
+            }
         }
 
         if root.expanded: Rectangle {
@@ -170,6 +239,10 @@ export component PaletteWindow inherits Window {
 
             // The list top sits on the 64 DIP compact bar (layout::list::content_top).
             Flickable {
+                x: 0;
+                y: 0;
+                width: root.split ? root.split-x : parent.width;
+                height: 100%;
                 interactive: false;
                 content-y <=> root.scroll-y;
                 content-height: root.content-height;
@@ -187,14 +260,16 @@ export component PaletteWindow inherits Window {
 
                     if row.kind == 0: Row {
                         title: row.title;
+                        alias: row.alias;
                         trailing: row.trailing;
                         keycap-text: row.keycap;
                         symbol: row.symbol;
+                        checkbox: row.checkbox;
                         icon: row.icon;
                         icon-ready: row.icon-ready;
                         selected: row.selected;
                         hover-armed: root.hover-armed;
-                        clicked => { root.row-clicked(i); }
+                        clicked(x, y) => { root.row-clicked(i, x, y); }
                     }
 
                     // Calculator and emoji rows get a readable generic rendering
@@ -231,7 +306,13 @@ export component PaletteWindow inherits Window {
                         }
 
                         calc-touch := TouchArea {
-                            clicked => { root.row-clicked(i); }
+                            clicked => {
+                                root.row-clicked(
+                                    i,
+                                    self.absolute-position.x + self.mouse-x,
+                                    self.absolute-position.y + self.mouse-y,
+                                );
+                            }
                         }
                     }
 
@@ -254,17 +335,56 @@ export component PaletteWindow inherits Window {
                         }
 
                         emoji-touch := TouchArea {
-                            clicked => { root.row-clicked(i); }
+                            clicked => {
+                                root.row-clicked(
+                                    i,
+                                    self.absolute-position.x + self.mouse-x,
+                                    self.absolute-position.y + self.mouse-y,
+                                );
+                            }
                         }
                     }
+                }
+            }
+
+            // Clipboard: the 1 DIP rule and the wrapped, scrollable preview.
+            if root.split: Rectangle {
+                x: root.split-x;
+                y: 0;
+                width: Theme.size-hairline;
+                height: 100%;
+                background: Theme.separator;
+            }
+
+            if root.split: Flickable {
+                x: root.split-x + Theme.size-hairline;
+                y: 0;
+                width: parent.width - root.split-x - Theme.size-hairline;
+                height: 100%;
+                interactive: true;
+                content-width: self.width;
+                content-height: Math.max(
+                    self.height,
+                    preview-text.height + Theme.spacing-xl * 2,
+                );
+
+                preview-text := Text {
+                    x: Theme.spacing-xl;
+                    y: Theme.spacing-xl;
+                    width: parent.width - Theme.spacing-xl * 2;
+                    text: root.preview-text;
+                    wrap: word-wrap;
+                    font-family: "Segoe UI";
+                    font-size: Theme.font-row;
+                    color: Theme.text-primary;
                 }
             }
 
             // Edge dissolve: the scrim fades the first and last visible rows.
             if root.scrollable: Rectangle {
                 y: 0;
+                width: root.split ? root.split-x : parent.width;
                 height: Math.min(root.fade-top, parent.height);
-                width: 100%;
                 background: @linear-gradient(
                     180deg,
                     Theme.scrim.with-alpha(root.fade-top-alpha) 0%,
@@ -274,8 +394,8 @@ export component PaletteWindow inherits Window {
 
             if root.scrollable: Rectangle {
                 y: parent.height - Math.min(root.fade-bottom, parent.height);
+                width: root.split ? root.split-x : parent.width;
                 height: Math.min(root.fade-bottom, parent.height);
-                width: 100%;
                 background: @linear-gradient(
                     180deg,
                     Theme.scrim.with-alpha(0) 0%,
@@ -294,7 +414,7 @@ export component PaletteWindow inherits Window {
                     spacing: Theme.spacing-md;
 
                     Text {
-                        text: root.header-symbol;
+                        text: root.empty-symbol;
                         font-family: "Segoe Fluent Icons";
                         font-size: Theme.size-empty-results-glyph;
                         color: Theme.text-tertiary;
@@ -314,21 +434,25 @@ export component PaletteWindow inherits Window {
 
             // 16 DIP hover strip: the 6/10 DIP rail alone is a 6 px target.
             Scrollbar {
-                // `self.width` is 6 at rest and 10 under the pointer; both sit on
-                // the same 3 DIP inset from the trailing edge.
-                x: parent.width - Theme.size-scrollbar-inset - self.width;
+                // self.width is 6 at rest and 10 under the pointer; in split mode
+                // the rail hugs the 290 DIP list column instead of the panel edge.
+                x: root.split
+                    ? root.split-x - Theme.size-scrollbar-inset - self.width
+                    : parent.width - Theme.size-scrollbar-inset - self.width;
                 y: Theme.size-scrollbar-inset;
                 height: parent.height - Theme.size-scrollbar-inset * 2;
                 content-height: root.content-height;
                 viewport-height: parent.height;
-                // `content-y` is negative while scrolled down; the rail wants a
+                // content-y is negative while scrolled down; the rail wants a
                 // positive offset.
                 offset: -root.scroll-y;
                 hovered: scroll-zone.has-hover;
             }
 
             scroll-zone := TouchArea {
-                x: parent.width - Theme.size-scrollbar-hover-zone;
+                x: root.split
+                    ? root.split-x - Theme.size-scrollbar-hover-zone
+                    : parent.width - Theme.size-scrollbar-hover-zone;
                 y: 0;
                 width: Theme.size-scrollbar-hover-zone;
                 height: 100%;
@@ -343,6 +467,7 @@ export component PaletteWindow inherits Window {
             actions-shortcut: root.actions-shortcut;
             actions-modifier: root.actions-modifier;
             show-actions: root.show-actions;
+            primary-destructive: root.primary-destructive;
             apps-clicked => { root.apps-clicked(); }
             primary-clicked => { root.primary-clicked(); }
             actions-clicked => { root.actions-clicked(); }

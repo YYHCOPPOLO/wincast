@@ -42,6 +42,8 @@ pub fn paint_items(
                 trailing: hit.parent.clone(),
                 keycap: None,
                 icon_source: Some(hit.path.replace('/', "\\")),
+                symbol: None,
+                checkbox: 0,
                 selected: i == selection,
             })
             .collect(),

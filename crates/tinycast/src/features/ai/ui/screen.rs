@@ -67,6 +67,8 @@ pub fn paint_history(rows: &[ChatConversation], selection: usize) -> Vec<PaintIt
             trailing: row.preview.clone(),
             keycap: None,
             icon_source: None,
+            symbol: None,
+            checkbox: 0,
             selected: i == selection,
         })
         .collect()
