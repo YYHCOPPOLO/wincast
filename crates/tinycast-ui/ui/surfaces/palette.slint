@@ -122,8 +122,9 @@ component CalcCard inherits Rectangle {
                 Text {
                     text: root.expression;
                     font-family: "Segoe UI";
-                    font-size: Theme.font-row-trailing;
-                    font-weight: 500;
+                    // The Direct2D card drew both columns with calcResult (22, semibold).
+                    font-size: Theme.font-calc-result;
+                    font-weight: 600;
                     color: Theme.text-primary;
                     horizontal-alignment: center;
                     vertical-alignment: center;
