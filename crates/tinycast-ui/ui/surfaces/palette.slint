@@ -527,10 +527,10 @@ export component PaletteWindow inherits Window {
                 content-width: self.width;
                 content-height: Math.max(
                     self.height,
-                    preview-text.height + Theme.spacing-xl * 2,
+                    preview-body.height + Theme.spacing-xl * 2,
                 );
 
-                preview-text := Text {
+                preview-body := Text {
                     x: Theme.spacing-xl;
                     y: Theme.spacing-xl;
                     width: parent.width - Theme.spacing-xl * 2;
