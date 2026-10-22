@@ -1,21 +1,17 @@
-use tinycast_pure::palette_menu::MenuItem;
+//! Footer and menu snapshots plus the DirectWrite measurement the footer's hit
+//! testing shares with the Slint surface.
+
 use tinycast_pure::palette_menu::{
-    action_group_rects_measured, menu_button_rect, menu_frame, menu_header_rect, menu_line_rects,
-    menu_row_rect, ActionGroupRects, OpenMenu, ACTIONS_SHORTCUT,
+    action_group_rects_measured, ActionGroupRects, MenuItem, OpenMenu, ACTIONS_SHORTCUT,
 };
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
-};
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
-    DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_METRICS,
+    DWRITE_TEXT_METRICS,
 };
 
 use crate::design_system::Fonts;
-use crate::features::launcher::ui::list::ListFonts;
 
 pub fn action_group_rects_for_fonts(
     fonts: &Fonts,
@@ -30,14 +26,15 @@ pub fn action_group_rects_for_fonts(
     action_group_rects_measured(panel_w, panel_h, primary_w, actions_w)
 }
 
-/// Same DirectWrite metrics as `paint_footer`, for hit testing without a paint-time cache.
+/// Same DirectWrite metrics as the footer paint, for hit testing.
 pub fn action_group_rects_for_label(
     panel_w: f32,
     panel_h: f32,
     primary_label: &str,
     actions_label: &str,
 ) -> Option<ActionGroupRects> {
-    let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()? };
+    let dwrite: IDWriteFactory =
+        unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()? };
     let fonts = Fonts::new(&dwrite).ok()?;
     action_group_rects_for_fonts(&fonts, panel_w, panel_h, primary_label, actions_label)
 }
@@ -58,128 +55,11 @@ pub struct MenuPaint<'a> {
     pub appearance: u8,
 }
 
-pub fn paint_footer(
-    target: &ID2D1RenderTarget,
-    dwrite: &IDWriteFactory,
-    _fonts: &ListFonts,
-    width: f32,
-    height: f32,
-    footer: &FooterPaint<'_>,
-) -> windows::core::Result<()> {
-    if height < theme::size::COMPACT_HEIGHT + theme::size::BOTTOM_BAR_HEIGHT {
-        return Ok(());
-    }
-    let appearance = footer.appearance;
-    let surface = crate::design_system::appearance::color(theme::colors::ramp_rgba(
-        appearance,
-        theme::colors::CONTROL_SURFACE_DARK_ALPHA,
-        theme::colors::CONTROL_SURFACE_LIGHT_ALPHA,
-    ));
-    let brush = unsafe { target.CreateSolidColorBrush(&surface, None)? };
-
-    let circle = menu_button_rect(height);
-    let menu_r = circle.w / 2.0;
-    let ellipse = D2D1_ELLIPSE {
-        point: D2D_POINT_2F {
-            x: circle.x + menu_r,
-            y: circle.y + circle.h / 2.0,
-        },
-        radiusX: menu_r,
-        radiusY: menu_r,
-    };
-    unsafe {
-        target.FillEllipse(&ellipse, &brush);
-    }
-    let ink = crate::design_system::appearance::color(theme::colors::ramp_rgba(
-        appearance,
-        theme::colors::TEXT_SECONDARY_ALPHA,
-        theme::colors::TEXT_SECONDARY_ALPHA,
-    ));
-    let (top, bot) = menu_line_rects(circle);
-    fill_round(target, top, top.h / 2.0, ink)?;
-    fill_round(target, bot, bot.h / 2.0, ink)?;
-
-    if !footer.show_action_group {
-        return Ok(());
-    }
-    let ds = Fonts::new(dwrite)?;
-    let action_caps: Vec<&str> = ACTIONS_SHORTCUT.split('+').collect();
-    let Some(group) = action_group_rects_for_fonts(
-        &ds,
-        width,
-        height,
-        footer.primary_label,
-        footer.actions_label,
-    ) else {
-        return Ok(());
-    };
-    crate::design_system::fill_squircle(
-        target,
-        group.capsule,
-        group.capsule.h / 2.0,
-        theme::colors::ramp_rgba(
-            appearance,
-            theme::colors::CONTROL_SURFACE_DARK_ALPHA,
-            theme::colors::CONTROL_SURFACE_LIGHT_ALPHA,
-        ),
-    )?;
-    if footer.primary_destructive {
-        let danger = color(0.86, 0.22, 0.22, 0.95);
-        fill_round(target, group.primary, group.primary.h / 2.0, danger)?;
-    }
-
-    let (lr, lg, lb, la) = theme::colors::ramp_rgba(
-        appearance,
-        theme::colors::TEXT_PRIMARY_ALPHA,
-        theme::colors::TEXT_PRIMARY_ALPHA,
-    );
-    let (mr, mg, mb, ma) = theme::colors::ramp_rgba(
-        appearance,
-        theme::colors::TEXT_SECONDARY_ALPHA,
-        theme::colors::TEXT_SECONDARY_ALPHA,
-    );
-    let label = color(lr, lg, lb, la);
-    let muted = color(mr, mg, mb, ma);
-    let pad = theme::spacing::MD;
-    let primary = group.primary;
-    let mut right = primary.x + primary.w - pad;
-    right -= crate::design_system::paint_keycap(
-        target, &ds, "↵", right, primary.y, primary.h, true, appearance,
-    )?;
-    draw_text(
-        target,
-        &ds.bar,
-        label,
-        D2D_RECT_F {
-            left: primary.x + pad,
-            top: primary.y,
-            right: (right - theme::spacing::SM).max(primary.x + pad + 8.0),
-            bottom: primary.y + primary.h,
-        },
-        footer.primary_label,
-    )?;
-
-    let actions = group.actions;
-    right = actions.x + actions.w - pad;
-    for token in action_caps.iter().rev() {
-        right -= crate::design_system::paint_keycap(
-            target, &ds, token, right, actions.y, actions.h, true, appearance,
-        )?;
-        right -= theme::spacing::XXS;
-    }
-    draw_text(
-        target,
-        &ds.bar,
-        muted,
-        D2D_RECT_F {
-            left: actions.x + pad,
-            top: actions.y,
-            right: (right - theme::spacing::XS).max(actions.x + pad + 8.0),
-            bottom: actions.y + actions.h,
-        },
-        footer.actions_label,
-    )?;
-    Ok(())
+/// The clipboard filter / AI model pill in the header's trailing slot.
+pub struct FilterButtonPaint {
+    pub title: String,
+    pub open: bool,
+    pub rect: DipRect,
 }
 
 fn bar_button_width(fonts: &Fonts, label: &str, caps: &[&str]) -> f32 {
@@ -216,212 +96,6 @@ fn keycap_width(fonts: &Fonts, text: &str) -> f32 {
     (text_w + pad * 2.0).max(theme::size::KEY_CAP)
 }
 
-pub fn paint_menu(
-    target: &ID2D1RenderTarget,
-    dwrite: &IDWriteFactory,
-    fonts: &ListFonts,
-    panel_w: f32,
-    panel_h: f32,
-    menu: &MenuPaint<'_>,
-) -> windows::core::Result<()> {
-    if menu.items.is_empty() {
-        return Ok(());
-    }
-    let appearance = menu.appearance;
-    let has_header = !menu.header.is_empty();
-    let frame = menu_frame(menu.kind, panel_w, panel_h, menu.items.len(), has_header);
-    let glass = crate::design_system::appearance::color(
-        crate::design_system::glass::glass_tint_rgba(appearance),
-    );
-    fill_round(target, frame, theme::radius::MENU_PANEL, glass)?;
-    let border = unsafe {
-        target.CreateSolidColorBrush(
-            &crate::design_system::appearance::color(theme::colors::ramp_rgba(
-                appearance,
-                theme::colors::BORDER_DARK_ALPHA,
-                theme::colors::BORDER_LIGHT_ALPHA,
-            )),
-            None,
-        )?
-    };
-    unsafe {
-        target.DrawRoundedRectangle(
-            &D2D1_ROUNDED_RECT {
-                rect: rect_of(frame),
-                radiusX: theme::radius::MENU_PANEL,
-                radiusY: theme::radius::MENU_PANEL,
-            },
-            &border,
-            theme::size::HAIRLINE,
-            None,
-        );
-    }
-
-    if has_header {
-        let header = menu_header_rect(frame);
-        let (hr, hg, hb, ha) = theme::colors::ramp_rgba(
-            appearance,
-            theme::colors::TEXT_TERTIARY_DARK_ALPHA,
-            theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
-        );
-        draw_text(
-            target,
-            &fonts.header,
-            color(hr, hg, hb, ha),
-            rect_of(header),
-            menu.header,
-        )?;
-    }
-
-    for (index, item) in menu.items.iter().enumerate() {
-        let row = menu_row_rect(frame, has_header, index);
-        if index == menu.selection {
-            let (sr, sg, sb, sa) = theme::colors::ramp_rgba(
-                appearance,
-                theme::colors::SELECTION_DARK_ALPHA,
-                theme::colors::SELECTION_LIGHT_ALPHA,
-            );
-            fill_round(target, row, theme::radius::MENU_ROW, color(sr, sg, sb, sa))?;
-        }
-        let ink = if item.is_destructive() {
-            color(0.86, 0.22, 0.22, 0.95)
-        } else {
-            let (r, g, b, a) = theme::colors::ramp_rgba(appearance, 0.92, 0.92);
-            color(r, g, b, a)
-        };
-        let pad = theme::spacing::MD;
-        let mut right = row.x + row.w - pad;
-        if let Some(shortcut) = item.shortcut {
-            for token in shortcut.split('+').rev() {
-                right -= paint_keycap(
-                    target, dwrite, fonts, token, right, row.y, row.h, appearance,
-                )?;
-                right -= theme::spacing::XXS;
-            }
-        }
-        let icon = theme::size::MENU_ICON;
-        let icon_rect = D2D_RECT_F {
-            left: row.x + pad,
-            top: row.y + (row.h - icon) / 2.0,
-            right: row.x + pad + icon,
-            bottom: row.y + (row.h + icon) / 2.0,
-        };
-        fill_round(
-            target,
-            DipRect {
-                x: icon_rect.left,
-                y: icon_rect.top,
-                w: icon,
-                h: icon,
-            },
-            theme::radius::MENU,
-            crate::design_system::appearance::color(theme::colors::ramp_rgba(
-                appearance, 0.08, 0.06,
-            )),
-        )?;
-        let text_left = icon_rect.right + theme::spacing::SM;
-        draw_text(
-            target,
-            &fonts.title,
-            ink,
-            D2D_RECT_F {
-                left: text_left,
-                top: row.y,
-                right: (right - theme::spacing::SM).max(text_left + 8.0),
-                bottom: row.y + row.h,
-            },
-            &item.label,
-        )?;
-    }
-    Ok(())
-}
-
-fn paint_keycap(
-    target: &ID2D1RenderTarget,
-    dwrite: &IDWriteFactory,
-    fonts: &ListFonts,
-    text: &str,
-    right: f32,
-    row_y: f32,
-    row_h: f32,
-    appearance: u8,
-) -> windows::core::Result<f32> {
-    let cap_h = theme::size::KEY_CAP;
-    let text_w =
-        text_width(dwrite, &fonts.keycap, text, 80.0, cap_h).max(theme::size::COMPACT_KEY_CAP);
-    let cap_w = text_w + theme::spacing::SM * 2.0;
-    let cap_x = right - cap_w;
-    let cap_y = row_y + (row_h - cap_h) / 2.0;
-    let (fr, fg, fb, fa) = theme::colors::ramp_rgba(appearance, 0.12, 0.08);
-    fill_round(
-        target,
-        DipRect {
-            x: cap_x,
-            y: cap_y,
-            w: cap_w,
-            h: cap_h,
-        },
-        theme::radius::KEY_CAP,
-        color(fr, fg, fb, fa),
-    )?;
-    let (tr, tg, tb, ta) = theme::colors::ramp_rgba(appearance, 0.70, 0.70);
-    draw_text(
-        target,
-        &fonts.keycap,
-        color(tr, tg, tb, ta),
-        D2D_RECT_F {
-            left: cap_x,
-            top: cap_y + crate::design_system::text::BUTTON_OPTICAL_NUDGE_Y,
-            right: cap_x + cap_w,
-            bottom: cap_y + cap_h,
-        },
-        text,
-    )?;
-    Ok(cap_w)
-}
-
-fn fill_round(
-    target: &ID2D1RenderTarget,
-    r: DipRect,
-    radius: f32,
-    c: D2D1_COLOR_F,
-) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&c, None)? };
-    unsafe {
-        target.FillRoundedRectangle(
-            &D2D1_ROUNDED_RECT {
-                rect: rect_of(r),
-                radiusX: radius,
-                radiusY: radius,
-            },
-            &brush,
-        );
-    }
-    Ok(())
-}
-
-fn draw_text(
-    target: &ID2D1RenderTarget,
-    format: &IDWriteTextFormat,
-    c: D2D1_COLOR_F,
-    rect: D2D_RECT_F,
-    text: &str,
-) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&c, None)? };
-    let wide: Vec<u16> = text.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &wide,
-            format,
-            &rect,
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    Ok(())
-}
-
 fn text_width(
     dwrite: &IDWriteFactory,
     format: &IDWriteTextFormat,
@@ -442,25 +116,14 @@ fn text_width(
     }
 }
 
-fn rect_of(r: DipRect) -> D2D_RECT_F {
-    D2D_RECT_F {
-        left: r.x,
-        top: r.y,
-        right: r.x + r.w,
-        bottom: r.y + r.h,
-    }
-}
-
-fn color(r: f32, g: f32, b: f32, a: f32) -> D2D1_COLOR_F {
-    D2D1_COLOR_F { r, g, b, a }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn action_group_hits_match_measured_paint_rects() {
-        let dwrite = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).expect("dwrite") };
+        let dwrite: IDWriteFactory =
+            unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).expect("dwrite") };
         let fonts = Fonts::new(&dwrite).expect("fonts");
         let painted =
             action_group_rects_for_fonts(&fonts, 750.0, 475.0, "Open Application", "Actions")

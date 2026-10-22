@@ -1,0 +1,48 @@
+// The command palette. The squircle, the header and (later tasks) the rows and
+// footer are Slint; the search field itself is a native EDIT child the host
+// parents to this window.
+import { Theme } from "../theme.slint";
+import { Panel } from "../primitives/panel.slint";
+
+export component PaletteWindow inherits Window {
+    // Squircle path commands for the current size, from tinycast_ui::squircle_commands.
+    in property <string> squircle-commands;
+    in property <bool> expanded: false;
+    // Fluent symbol for the current mode ("magnifyingglass", "chevron.left").
+    in property <string> header-symbol;
+    // Scroll state. AppCore owns both values; the Flickable follows them.
+    in property <length> content-height: 0px;
+    in-out property <length> scroll-y: 0px;
+
+    title: "Tinycast";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+    width: Theme.size-panel-width;
+    height: root.expanded ? Theme.size-panel-height : Theme.size-compact-height;
+
+    Panel {
+        squircle-commands: root.squircle-commands;
+        expanded: root.expanded;
+
+        // 44 DIP header: a 22 DIP mode glyph where the search text starts after.
+        Rectangle {
+            height: Theme.size-header-height;
+            background: transparent;
+
+            Text {
+                x: Theme.spacing-md * 2;
+                width: Theme.size-header-icon-slot;
+                height: parent.height;
+                text: root.header-symbol;
+                font-family: "Segoe Fluent Icons";
+                font-size: Theme.font-header-icon;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

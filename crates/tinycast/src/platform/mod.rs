@@ -36,7 +36,7 @@ pub fn run() -> windows::core::Result<()> {
             attributes.with_skip_taskbar(true)
         })
         .select()
-        .map_err(slint_error)?;
+        .map_err(crate::ui_host::platform_error)?;
     let _instance = single_instance::acquire()?;
     let mut core = crate::app_core::AppCore::new();
     let host = tray::create(&mut core)?;
@@ -50,12 +50,5 @@ pub fn run() -> windows::core::Result<()> {
     // Installs the low-level keyboard hook on this thread; its callbacks and the
     // posted tray messages keep arriving while the Slint loop runs.
     core.start();
-    slint::run_event_loop().map_err(slint_error)
-}
-
-fn slint_error(error: slint::PlatformError) -> windows::core::Error {
-    windows::core::Error::new(
-        windows::core::HRESULT(0x8000_4005u32 as i32),
-        error.to_string(),
-    )
+    slint::run_event_loop().map_err(crate::ui_host::platform_error)
 }

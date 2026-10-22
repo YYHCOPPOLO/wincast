@@ -353,9 +353,9 @@ impl AppCore {
             .collect()
     }
 
-    pub fn clipboard_filter_paint(&self) -> Option<crate::palette::d2d::FilterButtonPaint> {
+    pub fn clipboard_filter_paint(&self) -> Option<crate::palette::menu::FilterButtonPaint> {
         if self.palette.mode == PaletteMode::Ai {
-            return Some(crate::palette::d2d::FilterButtonPaint {
+            return Some(crate::palette::menu::FilterButtonPaint {
                 title: self.ai_model_label(),
                 open: self.menu == OpenMenu::AiModel,
                 rect: crate::features::ai::ui::screen::model_button_rect(theme::size::PANEL_WIDTH),
@@ -364,7 +364,7 @@ impl AppCore {
         if self.palette.mode != PaletteMode::Clipboard {
             return None;
         }
-        Some(crate::palette::d2d::FilterButtonPaint {
+        Some(crate::palette::menu::FilterButtonPaint {
             title: clip_screen::filter_title_lang(self.clipboard_filter, self.ui_lang())
                 .to_string(),
             open: self.menu == OpenMenu::ClipboardFilter,

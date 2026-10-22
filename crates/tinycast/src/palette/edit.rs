@@ -169,22 +169,6 @@ impl Drop for SearchEdit {
     }
 }
 
-pub fn search_display(committed: &str, composition: &str) -> String {
-    let mut text = String::with_capacity(committed.len() + composition.len());
-    text.push_str(committed);
-    text.push_str(composition);
-    text
-}
-
-pub fn composition_text(hwnd: HWND) -> String {
-    ime_string(hwnd, GCS_COMPSTR)
-}
-
-pub fn caret_utf16(hwnd: HWND) -> usize {
-    let result = unsafe { SendMessageW(hwnd, EM_GETSEL, WPARAM(0), LPARAM(0)) };
-    (result.0 as u32 & 0xffff) as usize
-}
-
 pub fn window_text(hwnd: HWND) -> String {
     unsafe {
         let len = GetWindowTextLengthW(hwnd);
@@ -385,13 +369,6 @@ unsafe extern "system" fn edit_subclass(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn search_display_concatenates_committed_and_composition() {
-        assert_eq!(search_display("", "ni"), "ni");
-        assert_eq!(search_display("hello", ""), "hello");
-        assert_eq!(search_display("hello", "世界"), "hello世界");
-    }
 
     #[test]
     fn search_field_matches_chrome_layout() {
