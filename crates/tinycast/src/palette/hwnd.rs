@@ -17,7 +17,7 @@ use std::time::Duration;
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
 use slint::{ComponentHandle, ModelRc, VecModel};
-use tinycast_pure::palette_menu::{menu_frame, menu_row_rect};
+use tinycast_pure::palette_menu::{menu_frame, menu_row_rect, OpenMenu};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
 use tinycast_pure::palette_state::should_draw_placeholder;
@@ -598,9 +598,12 @@ fn attach_footer(ui: &Palette, core: &AppCore) {
     ui.set_primary_destructive(footer.primary_destructive);
 }
 
-/// The in-panel menu overlay: AppCore owns the frame, the items and the
+/// The in-panel menu overlay for every OpenMenu variant: Actions (footer,
+/// Ctrl+K, a file-search row), AppMenu (the apps circle), ClipboardFilter and
+/// AiModel (the header pill). AppCore owns the frame, the items and the
 /// selection; leaving the last content in place lets the exit animation fade
-/// the menu it was showing instead of an empty shell.
+/// the menu it was showing instead of an empty shell. File-search filtering and
+/// emoji categories have no OpenMenu or data, so no menu is invented for them.
 fn attach_menu(ui: &Palette, core: &AppCore, expanded: bool) {
     let Some(paint) = core.menu_paint().filter(|_| expanded) else {
         ui.set_menu_open(false);
@@ -640,6 +643,7 @@ fn attach_menu(ui: &Palette, core: &AppCore, expanded: bool) {
     ui.set_menu_y(frame.y);
     ui.set_menu_width(frame.w);
     ui.set_menu_height(frame.h);
+    ui.set_menu_anchored_bottom(matches!(paint.kind, OpenMenu::Actions | OpenMenu::AppMenu));
     // Last, so the reveal animates content that is already in place.
     ui.set_menu_open(true);
 }

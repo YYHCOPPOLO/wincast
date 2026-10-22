@@ -437,6 +437,9 @@ export component PaletteWindow inherits Window {
     in property <string> menu-header;
     in property <[MenuItem]> menu-items;
     in property <int> menu-selected: -1;
+    // Actions/AppMenu hang from the bottom-trailing corner, the header
+    // pop-ups from the top-trailing one; the reveal scales from that corner.
+    in property <bool> menu-anchored-bottom: true;
     private property <float> menu-scale: Motion.menu-entry-scale;
     private property <float> menu-opacity: 0;
 
@@ -860,6 +863,10 @@ export component PaletteWindow inherits Window {
         selected: root.menu-selected;
         opacity: root.menu-opacity;
         transform-scale: root.menu-scale;
+        transform-origin: {
+            x: root.menu-width,
+            y: root.menu-anchored-bottom ? root.menu-height : 0px,
+        };
         activated(i) => { root.menu-activated(i); }
         hovered(i) => { root.menu-hovered(i); }
     }
