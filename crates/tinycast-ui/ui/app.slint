@@ -6,6 +6,7 @@ import { IconSlot, Row, SectionHeader } from "primitives/row.slint";
 import { Keycap, KeycapVariant } from "primitives/keycap.slint";
 import { Footer } from "primitives/footer.slint";
 import { Menu, MenuItem } from "primitives/menu.slint";
+import { RecorderBubble } from "primitives/recorder.slint";
 import { Scrollbar } from "primitives/scrollbar.slint";
 import { Card } from "primitives/card.slint";
 import { FormGroup, SidebarRow, Toggle } from "primitives/form.slint";
@@ -184,6 +185,11 @@ export component GalleryWindow inherits Window {
     in property <string> hud-message;
     in property <string> hud-detail;
     in property <string> hud-symbol;
+    in property <string> recorder-title;
+    in property <string> recorder-caption;
+    in property <[string]> recorder-keys;
+    in property <string> recorder-esc;
+    in-out property <bool> recorder-reveal: true;
 
     in-out property <int> appearance: 0;
     in-out property <bool> toggle-on: true;
@@ -313,6 +319,40 @@ export component GalleryWindow inherits Window {
                     actions-label: root.actions-label;
                     primary-shortcut: root.primary-shortcut;
                     actions-shortcut: root.actions-shortcut;
+                }
+
+                // Click the bubble to replay its 140 ms reveal.
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+
+                    Text {
+                        text: root.recorder-title;
+                        font-family: "Segoe UI";
+                        font-size: Theme.font-row;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle {
+                        width: Theme.size-shortcut-popover-width + Theme.spacing-md * 2;
+                        height: Theme.size-shortcut-popover-height + Theme.spacing-md * 2;
+                        background: transparent;
+
+                        RecorderBubble {
+                            x: Theme.spacing-md;
+                            y: Theme.spacing-md;
+                            reveal: root.recorder-reveal;
+                            keys: root.recorder-keys;
+                            caption: root.recorder-caption;
+                            esc-label: root.recorder-esc;
+                        }
+
+                        TouchArea {
+                            clicked => {
+                                root.recorder-reveal = !root.recorder-reveal;
+                            }
+                        }
+                    }
                 }
             }
 

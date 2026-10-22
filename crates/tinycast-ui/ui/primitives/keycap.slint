@@ -6,6 +6,9 @@ export enum KeycapVariant { standard, compact, hero }
 export component Keycap inherits Rectangle {
     in property <KeycapVariant> variant: KeycapVariant.standard;
     in property <bool> filled: false;
+    // Recorder caps sit on a dark floating surface and need brighter ink than
+    // the footer's outlined caps.
+    in property <color> ink: Theme.text-secondary;
     in property <string> text;
 
     height: variant == KeycapVariant.hero ? Theme.size-hero-key-cap
@@ -24,7 +27,7 @@ export component Keycap inherits Rectangle {
         // glyph for them, so a "Segoe UI" cap drew tofu.
         font-family: "Segoe UI Symbol";
         font-size: variant == KeycapVariant.hero ? Theme.font-panel-title : Theme.font-keycap;
-        color: Theme.text-secondary;
+        color: root.ink;
         horizontal-alignment: center;
         vertical-alignment: center;
     }

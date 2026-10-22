@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
+use tinycast_pure::i18n::{listening_label, UiLang};
 use tinycast_ui::{GalleryRow, GalleryWindow, MenuItem};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -73,6 +74,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_hud_message("已复制到剪贴板".into());
     ui.set_hud_detail("3 个项目".into());
     ui.set_hud_symbol("".into());
+
+    // The recorder bubble's caption is i18n copy, never a Slint literal.
+    ui.set_recorder_title("快捷键录音".into());
+    ui.set_recorder_caption(listening_label(UiLang::ZhHans).into());
+    let recorder_keys = vec![SharedString::from("Ctrl"), SharedString::from("K")];
+    ui.set_recorder_keys(ModelRc::from(Rc::new(VecModel::from(recorder_keys))));
+    ui.set_recorder_esc("esc".into());
+    ui.set_recorder_reveal(true);
 
     let weak = ui.as_weak();
     ui.on_toggle_appearance(move || {

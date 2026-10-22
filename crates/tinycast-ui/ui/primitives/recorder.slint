@@ -1,0 +1,104 @@
+import { Theme, Motion } from "../theme.slint";
+import { Keycap, KeycapVariant } from "keycap.slint";
+
+// The shortcut recorder bubble that floats above a recorder well. 132 x 88
+// including the 7 DIP caret, so the settled bubble sits exactly where
+// palette geometry reserves it. Copy (the listening label, the conflict owner
+// or the "type a shortcut" hint) always arrives from the host's i18n; the
+// component owns geometry, key caps and the 0.96 / 140 ms reveal only.
+export component RecorderBubble inherits Rectangle {
+    // Modifier or example caps, already split by the host ("Ctrl", "K").
+    in property <[string]> keys;
+    // One line under the caps: i18n listening/hint copy or the conflict owner.
+    in property <string> caption;
+    // Conflict copy is destructive, like the old orange owner line.
+    in property <bool> conflict: false;
+    // The compact dismissal cap in the bottom-trailing corner.
+    in property <string> esc-label;
+    // 0 hides, 1 shows; the caller drives it with the recorder state.
+    in-out property <bool> reveal: false;
+
+    width: Theme.size-shortcut-popover-width;
+    height: Theme.size-shortcut-popover-height;
+    background: transparent;
+
+    property <float> bubble-scale: root.reveal ? 1 : Motion.callout-scale;
+    property <float> bubble-opacity: root.reveal ? 1 : 0;
+
+    animate bubble-scale {
+        duration: Theme.duration-shortcut-popover;
+        easing: ease-out;
+    }
+    animate bubble-opacity {
+        duration: Theme.duration-shortcut-popover;
+        easing: ease-out;
+    }
+
+    // The scale grows out of the caret tip, where the well sits.
+    opacity: root.bubble-opacity;
+    transform-scale: root.bubble-scale;
+    transform-origin: {
+        x: root.width / 2,
+        y: root.height,
+    };
+
+    // The rounded surface stops one caret height above the frame bottom.
+    body := Rectangle {
+        width: 100%;
+        height: parent.height - Theme.size-callout-caret-height;
+        border-radius: Theme.radius-menu-panel;
+        background: Theme.menu-fill;
+        border-width: Theme.size-hairline;
+        border-color: Theme.card-stroke;
+
+        // Hero caps (22 DIP) sit on the first line.
+        HorizontalLayout {
+            x: Theme.spacing-md;
+            y: Theme.spacing-sm;
+            width: parent.width - Theme.spacing-md * 2;
+            height: Theme.size-hero-key-cap;
+            spacing: Theme.spacing-sm;
+            alignment: start;
+
+            for key in root.keys: Keycap {
+                text: key;
+                variant: KeycapVariant.hero;
+                filled: true;
+                ink: Theme.text-primary;
+            }
+        }
+
+        // 6 + 22 + 6 = 34, the old callout line_y.
+        caption-line := Text {
+            x: Theme.spacing-md;
+            y: Theme.spacing-sm + Theme.size-hero-key-cap + Theme.spacing-sm;
+            width: parent.width - Theme.spacing-md * 2;
+            height: Theme.size-shortcut-popover-line;
+            text: root.caption;
+            font-family: "Segoe UI";
+            font-size: Theme.font-section;
+            color: root.conflict ? Theme.destructive : Theme.text-secondary;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        esc := Keycap {
+            x: parent.width - Theme.spacing-md - self.width;
+            y: parent.height - Theme.spacing-sm - self.height;
+            text: root.esc-label;
+            variant: KeycapVariant.compact;
+            filled: true;
+            ink: Theme.text-primary;
+        }
+    }
+
+    // Caret at the frame bottom: 15 x 7 DIP (size::CALLOUT_CARET_*), tip down.
+    Path {
+        x: (parent.width - Theme.size-callout-caret-width) / 2;
+        y: parent.height - Theme.size-callout-caret-height;
+        width: Theme.size-callout-caret-width;
+        height: Theme.size-callout-caret-height;
+        commands: "M 0 0 L 7.5 7 L 15 0 Z";
+        fill: Theme.menu-fill;
+    }
+}
