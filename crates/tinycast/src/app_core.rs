@@ -976,6 +976,11 @@ impl AppCore {
         crate::platform::tray::set_tooltip(self.host, &text);
     }
 
+    /// Checked rows in the uninstall screen's footer capsule.
+    pub fn uninstall_selection_count(&self) -> usize {
+        self.uninstall_selection.ids().count()
+    }
+
     fn uninstall_visible(&self) -> Vec<&tinycast_pure::uninstall::plan::UninstallCandidate> {
         let q = self.palette.query.to_lowercase();
         self.uninstall_candidates
@@ -1848,21 +1853,21 @@ impl AppCore {
                 {
                     continue;
                 }
-                let mark = if c.locked {
-                    "locked"
+                let checkbox = if c.locked {
+                    crate::features::uninstall::ui::coordinator::CHECKBOX_LOCKED
                 } else if self.uninstall_selection.contains(&c.id) {
-                    "on"
+                    crate::features::uninstall::ui::coordinator::CHECKBOX_ON
                 } else {
-                    "off"
+                    crate::features::uninstall::ui::coordinator::CHECKBOX_OFF
                 };
                 items.push(PaintItem::Row {
                     title: c.name.clone(),
                     alias: None,
-                    trailing: mark.to_string(),
+                    trailing: String::new(),
                     keycap: None,
                     icon_source: None,
                     symbol: None,
-                    checkbox: 0,
+                    checkbox,
                     selected: index == self.palette.selection,
                 });
                 index += 1;

@@ -21,6 +21,9 @@ const KIND_HEADER: i32 = 1;
 const KIND_CALC: i32 = 2;
 const KIND_EMOJI: i32 = 3;
 
+/// The uninstall list's locked rows draw a lock instead of a box.
+const CHECKBOX_LOCKED: u8 = 3;
+
 /// Rows kept above and below the viewport so a wheel notch never shows a gap.
 const OVERSCAN: f32 = 76.0;
 /// Decoded images kept for the current DPI and appearance.
@@ -143,6 +146,9 @@ fn to_row(
             row.keycap = keycap.as_deref().unwrap_or_default().into();
             row.symbol = glyph(symbol.as_deref());
             row.checkbox = i32::from(*checkbox);
+            if *checkbox == CHECKBOX_LOCKED {
+                row.symbol = glyph(Some("lock.fill"));
+            }
             row.selected = *selected;
             if let Some(source) = icon_source.as_deref() {
                 if let Some(image) = images.image(source, icons, dpi, appearance) {

@@ -46,6 +46,7 @@ pub fn fluent_for_sf(sf: &str) -> Option<&'static str> {
         "exclamationmark.circle.fill" => "\u{EA39}",
         "plus" => "\u{E710}",
         "folder" => "\u{E8B7}",
+        "lock.fill" => "\u{E72E}",
         "rectangle.stack" => "\u{E8B1}",
         "heart" => "\u{EB51}",
         "checkmark" => "\u{E73E}",

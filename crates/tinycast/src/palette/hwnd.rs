@@ -521,7 +521,15 @@ fn attach_filter(ui: &Palette, core: &AppCore) {
 /// Footer labels come from the mode; the actions chord is split into two caps.
 fn attach_footer(ui: &Palette, core: &AppCore) {
     let footer = core.footer_paint();
-    ui.set_primary_label(footer.primary_label.into());
+    // The uninstall screen states how many rows are checked in the same capsule.
+    let mut primary = footer.primary_label.to_string();
+    if core.palette.mode == PaletteMode::Uninstall {
+        let count = core.uninstall_selection_count();
+        if count > 0 {
+            primary = format!("{primary} ({count})");
+        }
+    }
+    ui.set_primary_label(primary.into());
     ui.set_actions_label(footer.actions_label.into());
     ui.set_primary_shortcut("↵".into());
     ui.set_primary_modifier("".into());
@@ -531,6 +539,7 @@ fn attach_footer(ui: &Palette, core: &AppCore) {
     ui.set_actions_modifier(modifier.into());
     ui.set_actions_shortcut(key.into());
     ui.set_show_actions(footer.show_action_group);
+    ui.set_primary_destructive(footer.primary_destructive);
 }
 
 /// The apps circle opens the same menu the footer circle always did.

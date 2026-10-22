@@ -25,6 +25,12 @@ pub fn primary_label() -> &'static str {
     "Uninstall"
 }
 
+/// The PaintItem::Row checkbox states, shared with ui/surfaces/palette.slint.
+/// 0 is "no box"; these are the three uninstall states.
+pub const CHECKBOX_OFF: u8 = 1;
+pub const CHECKBOX_ON: u8 = 2;
+pub const CHECKBOX_LOCKED: u8 = 3;
+
 pub fn default_selection(candidates: &[UninstallCandidate]) -> UninstallSelection {
     let removable: Vec<&str> = candidates
         .iter()
