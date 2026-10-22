@@ -1,9 +1,31 @@
 import { Theme, Motion } from "../theme.slint";
-import { Card } from "card.slint";
 import { IconSlot } from "row.slint";
 
-export component FormGroup inherits Card {
-    show-title: true;
+// The settings group card with a title and injected rows. Kept separate from
+// Card so children land in this component's own @children slot.
+export component FormGroup inherits Rectangle {
+    in property <string> title;
+
+    background: Theme.card-fill;
+    border-width: Theme.size-hairline;
+    border-color: Theme.card-stroke;
+    border-radius: Theme.radius-card;
+
+    VerticalLayout {
+        padding: Theme.spacing-xl;
+        spacing: Theme.spacing-sm;
+
+        if root.title != "": Text {
+            text: root.title;
+            font-family: "Segoe UI";
+            font-size: Theme.font-section;
+            font-weight: 500;
+            color: Theme.text-secondary;
+            overflow: elide;
+        }
+
+        @children
+    }
 }
 
 // 40 x 22 settings switch, thumb spring 0.14 / 320 ms.

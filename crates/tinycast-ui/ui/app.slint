@@ -1,10 +1,11 @@
-export { Theme, Motion } from "theme.slint";
+import { Theme, Motion } from "theme.slint";
+export { Theme, Motion }
 
 import { Panel, PanelHeader } from "primitives/panel.slint";
 import { IconSlot, Row, SectionHeader } from "primitives/row.slint";
 import { Keycap, KeycapVariant } from "primitives/keycap.slint";
 import { Footer } from "primitives/footer.slint";
-import { Menu } from "primitives/menu.slint";
+import { Menu, MenuItem } from "primitives/menu.slint";
 import { Scrollbar } from "primitives/scrollbar.slint";
 import { Card } from "primitives/card.slint";
 import { Checkbox, FormGroup, SidebarRow, Toggle } from "primitives/form.slint";
@@ -131,5 +132,301 @@ export component ProbeWindow inherits Window {
 
     init => {
         query.focus();
+    }
+}
+export struct GalleryRow {
+    title: string,
+    trailing: string,
+    keycap: string,
+    symbol: string,
+    selected: bool,
+}
+
+// Development-only sample sheet: every primitive, dark or light. All copy
+// arrives from examples/gallery.rs; no English lives here.
+export component GalleryWindow inherits Window {
+    in property <string> window-title;
+    in property <string> gallery-title;
+    in property <string> light-label;
+    in property <string> dark-label;
+    in property <string> panel-commands;
+    in property <string> search-symbol;
+    in property <string> placeholder;
+    in property <string> section-title;
+    in property <[GalleryRow]> rows;
+    in property <string> primary-label;
+    in property <string> actions-label;
+    in property <string> primary-shortcut;
+    in property <string> actions-shortcut;
+    in property <string> keycap-title;
+    in property <string> keycap-outline;
+    in property <string> keycap-filled;
+    in property <string> keycap-hero;
+    in property <string> settings-title;
+    in property <string> toggle-label;
+    in property <string> checkbox-label;
+    in property <string> sidebar-a;
+    in property <string> sidebar-b;
+    in property <string> sidebar-a-symbol;
+    in property <string> sidebar-b-symbol;
+    in property <string> menu-header;
+    in property <[MenuItem]> menu-items;
+    in property <string> scrollbar-title;
+    in property <string> dialog-title;
+    in property <string> dialog-message;
+    in property <string> dialog-accept;
+    in property <string> dialog-cancel;
+    in property <string> dialog-symbol;
+    in property <string> hud-message;
+    in property <string> hud-detail;
+    in property <string> hud-symbol;
+
+    in-out property <int> appearance: 0;
+    in-out property <bool> toggle-on: true;
+    in-out property <bool> checkbox-on: false;
+    callback toggle-appearance();
+
+    title: root.window-title;
+    width: 1260px;
+    height: 900px;
+    background: Theme.settings-detail;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+
+    VerticalLayout {
+        padding: Theme.spacing-xl;
+        spacing: Theme.spacing-xl;
+
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+
+            Text {
+                text: root.gallery-title;
+                font-family: "Segoe UI";
+                font-size: Theme.font-search;
+                font-weight: 600;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+            }
+
+            Rectangle { horizontal-stretch: 1; background: transparent; }
+
+            switch-button := Rectangle {
+                width: 104px;
+                height: Theme.size-bar-button-height;
+                border-radius: Theme.radius-bar-control;
+                background: Theme.control-surface;
+
+                Text {
+                    text: root.appearance == 0 ? root.light-label : root.dark-label;
+                    font-family: "Segoe UI";
+                    font-size: Theme.font-bar;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                TouchArea {
+                    clicked => { root.toggle-appearance(); }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: Theme.spacing-xxl;
+
+            VerticalLayout {
+                spacing: Theme.spacing-xl;
+
+                Panel {
+                    squircle-commands: root.panel-commands;
+
+                    PanelHeader {
+                        text: root.placeholder;
+                        placeholder: true;
+                        prominent: true;
+                        symbol: root.search-symbol;
+                    }
+
+                    SectionHeader {
+                        title: root.section-title;
+                        first: true;
+                    }
+
+                    for row[i] in root.rows: Row {
+                        title: row.title;
+                        trailing: row.trailing;
+                        keycap-text: row.keycap;
+                        symbol: row.symbol;
+                        selected: row.selected;
+                        hover-armed: true;
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: transparent;
+                    }
+
+                    Footer {
+                        primary-label: root.primary-label;
+                        actions-label: root.actions-label;
+                        primary-shortcut: root.primary-shortcut;
+                        actions-shortcut: root.actions-shortcut;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.spacing-lg;
+
+                    Text {
+                        text: root.keycap-title;
+                        font-family: "Segoe UI";
+                        font-size: Theme.font-row;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        Keycap { text: root.keycap-outline; }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        Keycap { text: root.keycap-filled; filled: true; }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        Keycap {
+                            text: root.keycap-hero;
+                            variant: KeycapVariant.hero;
+                        }
+                    }
+                }
+
+                Footer {
+                    primary-label: root.primary-label;
+                    actions-label: root.actions-label;
+                    primary-shortcut: root.primary-shortcut;
+                    actions-shortcut: root.actions-shortcut;
+                }
+            }
+
+            VerticalLayout {
+                width: 440px;
+                spacing: Theme.spacing-xl;
+
+                FormGroup {
+                    title: root.settings-title;
+                    height: 214px;
+
+                    VerticalLayout {
+                        spacing: Theme.spacing-sm;
+
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+
+                            Text {
+                                text: root.toggle-label;
+                                font-family: "Segoe UI";
+                                font-size: Theme.font-row;
+                                color: Theme.text-primary;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                Toggle {
+                                    checked: root.toggle-on;
+                                    toggled(value) => { root.toggle-on = value; }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+
+                            Checkbox {
+                                checked: root.checkbox-on;
+                                toggled(value) => { root.checkbox-on = value; }
+                            }
+
+                            Text {
+                                text: root.checkbox-label;
+                                font-family: "Segoe UI";
+                                font-size: Theme.font-row;
+                                color: Theme.text-primary;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                        }
+
+                        SidebarRow {
+                            label: root.sidebar-a;
+                            symbol: root.sidebar-a-symbol;
+                            selected: true;
+                        }
+
+                        SidebarRow {
+                            label: root.sidebar-b;
+                            symbol: root.sidebar-b-symbol;
+                        }
+                    }
+                }
+
+                Menu {
+                    items: root.menu-items;
+                    header: root.menu-header;
+                    selected: 0;
+                }
+
+                Rectangle {
+                    height: 90px;
+                    border-radius: Theme.radius-card;
+                    background: Theme.card-fill;
+                    border-width: Theme.size-hairline;
+                    border-color: Theme.card-stroke;
+
+                    HorizontalLayout {
+                        padding: Theme.spacing-lg;
+                        spacing: Theme.spacing-md;
+
+                        Text {
+                            text: root.scrollbar-title;
+                            font-family: "Segoe UI";
+                            font-size: Theme.font-row;
+                            color: Theme.text-secondary;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+
+                        Scrollbar {
+                            height: 62px;
+                            content-height: 800px;
+                            viewport-height: 62px;
+                            offset: 280px;
+                        }
+                    }
+                }
+
+                Dialog {
+                    title: root.dialog-title;
+                    message: root.dialog-message;
+                    accept-label: root.dialog-accept;
+                    cancel-label: root.dialog-cancel;
+                    symbol: root.dialog-symbol;
+                }
+
+                Hud {
+                    message: root.hud-message;
+                    detail: root.hud-detail;
+                    symbol: root.hud-symbol;
+                    requested-width: 400px;
+                }
+            }
+        }
     }
 }
