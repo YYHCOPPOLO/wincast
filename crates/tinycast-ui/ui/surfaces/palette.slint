@@ -38,22 +38,20 @@ component CalcBadge inherits Rectangle {
     in property <string> text;
 
     height: Theme.font-calc-badge + Theme.spacing-xs;
+    // A bare Rectangle has no preferred width; the label measures the pill.
+    width: badge-label.width + Theme.spacing-sm * 2;
     border-radius: Theme.radius-key-cap;
     background: Theme.control-surface;
 
-    HorizontalLayout {
-        padding-left: Theme.spacing-sm;
-        padding-right: Theme.spacing-sm;
-
-        Text {
-            text: root.text;
-            font-family: "Segoe UI";
-            font-size: Theme.font-calc-badge;
-            color: Theme.text-secondary;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            overflow: elide;
-        }
+    badge-label := Text {
+        x: Theme.spacing-sm;
+        y: 0;
+        height: parent.height;
+        text: root.text;
+        font-family: "Segoe UI";
+        font-size: Theme.font-calc-badge;
+        color: Theme.text-secondary;
+        vertical-alignment: center;
     }
 }
 
@@ -83,8 +81,9 @@ component CalcCard inherits Rectangle {
         : (root.hover-armed && card-touch.has-hover ? Theme.row-hover : Theme.card-fill);
 
     if root.is-error: HorizontalLayout {
-        padding-left: Theme.spacing-xxxl;
-        padding-right: Theme.spacing-xxxl;
+        // The error line starts where a column's text starts (old inner.x = 24).
+        padding-left: Theme.spacing-xl;
+        padding-right: Theme.spacing-xl;
         spacing: Theme.spacing-md;
 
         Text {

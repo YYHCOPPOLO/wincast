@@ -131,22 +131,23 @@ export component Row inherits Rectangle {
             overflow: elide;
         }
 
+        // A fixed pill, like Keycap: a bare Rectangle has no preferred width,
+        // so the label measures it.
         if root.alias != "": Rectangle {
             height: Theme.size-key-cap;
+            width: alias-label.width + Theme.spacing-md * 2;
             border-radius: Theme.radius-menu;
             background: Theme.control-surface;
 
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-
-                Text {
-                    text: root.alias;
-                    font-family: "Segoe UI";
-                    font-size: Theme.font-chip;
-                    color: Theme.text-primary;
-                    vertical-alignment: center;
-                }
+            alias-label := Text {
+                x: Theme.spacing-md;
+                y: 0;
+                height: parent.height;
+                text: root.alias;
+                font-family: "Segoe UI";
+                font-size: Theme.font-chip;
+                color: Theme.text-primary;
+                vertical-alignment: center;
             }
         }
 
