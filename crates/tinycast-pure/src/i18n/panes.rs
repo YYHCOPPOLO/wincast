@@ -624,6 +624,41 @@ pub fn pane_section_title(tab: SettingsTab, lang: UiLang) -> &'static str {
     settings_tab_title(tab, lang)
 }
 
+/// The 15 tabs that phase 8 fills still open; this is the one neutral line
+/// their page shows instead of invented controls.
+pub fn settings_placeholder_note(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "This page moves in the next stage.",
+        "此页将在下一阶段迁移。",
+    )
+}
+
+pub fn backup_storage_note(path: &str, lang: UiLang) -> String {
+    match lang {
+        UiLang::En => format!("Settings file: {path}"),
+        UiLang::ZhHans => format!("设置文件：{path}"),
+    }
+}
+
+/// Slint's AboutSlint badge equivalent (the std-widgets badge is not linked in
+/// this build): the mark plus the version the app is built with.
+pub fn about_made_with_slint(lang: UiLang) -> &'static str {
+    pick(lang, "Made with Slint 1.18.1", "使用 Slint 1.18.1 构建")
+}
+
+pub fn about_slint_license(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "Slint is used under the Slint Royalty-free 2.0 license.",
+        "Slint 依据 Slint 免版税许可 2.0 使用。",
+    )
+}
+
+pub fn about_slint_link(_lang: UiLang) -> &'static str {
+    "https://slint.dev/"
+}
+
 pub fn cancel_label(lang: UiLang) -> &'static str {
     chrome(Chrome::Cancel, lang)
 }

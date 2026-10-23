@@ -84,6 +84,23 @@ const GENERAL_ROWS: &[GeneralHit] = &[
     GeneralHit::AutoSwitchInput,
 ];
 
+/// The five row groups in page order, shared with the Slint settings host so
+/// the section order cannot drift from the Direct2D pane's.
+pub fn section_rows() -> [&'static [GeneralHit]; 5] {
+    [
+        PALETTE_ROWS,
+        SEARCH_ROWS,
+        HYPER_ROWS,
+        APPEARANCE_ROWS,
+        GENERAL_ROWS,
+    ]
+}
+
+/// The i18n row a hit draws.
+pub fn row_for(hit: GeneralHit) -> GeneralRow {
+    copy_row(hit)
+}
+
 pub fn general_sections(lang: UiLang) -> [&'static str; 5] {
     [
         general_section_title(GeneralSection::GlobalShortcuts, lang),
@@ -271,7 +288,7 @@ pub fn hyper_subtitle(raw: &str) -> &'static str {
     hyper_subtitle_lang(raw, UiLang::En)
 }
 
-fn hyper_subtitle_lang(raw: &str, lang: UiLang) -> &'static str {
+pub fn hyper_subtitle_lang(raw: &str, lang: UiLang) -> &'static str {
     match HyperKey::from_raw(raw) {
         HyperKey::CapsLock => general_hyper_caps_subtitle(lang),
         HyperKey::None => general_hyper_off(lang),

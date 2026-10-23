@@ -9,6 +9,10 @@
 //! Closing hides the window (Slint's default close response); the component is
 //! kept alive by `SettingsWindow`, so opening Settings again shows the same
 //! window with its current tab and scroll positions.
+//!
+//! Phase 7 fills General, Permissions, About and Backup. The other 15 tabs show
+//! a neutral placeholder page; phase 8 replaces those placeholders and brings
+//! the command/quicklink/directory editors back.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -16,23 +20,40 @@ use std::time::Duration;
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
-use tinycast_pure::i18n::{settings_section_title, settings_tab_title, UiLang};
+use tinycast_pure::hotkey::{CaptureOutcome, Modifiers};
+use tinycast_pure::i18n::{
+    about_made_with_slint, about_product, about_slint_license, about_slint_link, about_support,
+    about_window_title, backup_export, backup_import, backup_raycast, backup_storage_note, chrome,
+    general_appearance_trailing, general_language_trailing, general_pop_to_root_subtitle,
+    general_pop_to_root_trailing, general_ranking_subtitle, general_reset_label,
+    general_row_subtitle, general_row_title, general_section_title, hyper_key_title,
+    launcher_reset_confirm_message, launcher_reset_confirm_title, open_settings_action,
+    permission_subtitle, permission_title, reset_ranking_action, settings_placeholder_note,
+    settings_section_title, settings_tab_title, support_built_with_love, support_keeps_independent,
+    Chrome, GeneralSection, UiLang,
+};
 use tinycast_pure::layout::settings::{sidebar_content_height, sidebar_rows, SidebarRowKind};
 use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+};
 use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetWindowLongPtrW, GetWindowRect, IsWindow, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_TOP, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, WM_KEYDOWN, WM_KEYUP,
+    WM_NCDESTROY, WM_SYSKEYDOWN, WM_SYSKEYUP, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
 use crate::design_system::symbols::fluent_for_sf;
 use crate::ui_host::app_core as core_from_host;
 
 type Settings = tinycast_ui::SettingsWindow;
+type PageRow = tinycast_ui::SettingsPageRow;
+type SidebarRow = tinycast_ui::SettingsSidebarRow;
 
 const SUBCLASS_ID: usize = 0x53;
 /// winit creates the HWND on the first event-loop turn; poll until it exists.
@@ -42,6 +63,8 @@ const PARKED: i32 = -32_000;
 /// winit's `skip_taskbar` leaves this bit set, which would hide the settings
 /// window from the taskbar; the styles are corrected once the HWND exists.
 const WS_EX_APPWINDOW_BIT: isize = WS_EX_APPWINDOW.0 as isize;
+/// The one action the General page records in phase 7 (stage 8 adds the rest).
+const RECORDER_ACTION: &str = "hotkey.togglePalette";
 
 pub struct SettingsWindow {
     ui: Settings,
@@ -58,7 +81,14 @@ struct Inner {
     weak: slint::Weak<Settings>,
     /// The 23 sidebar rows (4 section headers and 19 tabs); the model is
     /// created once and updated in place so focus survives a refresh.
-    sidebar: Rc<VecModel<tinycast_ui::SettingsSidebarRow>>,
+    sidebar: Rc<VecModel<SidebarRow>>,
+    general: Rc<VecModel<PageRow>>,
+    permissions: Rc<VecModel<PageRow>>,
+    backup: Rc<VecModel<PageRow>>,
+    about: Rc<VecModel<PageRow>>,
+    /// The local shortcut recorder. It owns only the action name while a well
+    /// is listening; the capture itself runs from the HWND subclass.
+    recorder: crate::features::hotkeys::ui::recorder::Recorder,
     ready: bool,
     /// A show request that arrived before the HWND existed.
     pending_show: bool,
@@ -66,6 +96,8 @@ struct Inner {
     placed: bool,
     /// Focus lands on the selected tab only when the window becomes visible.
     visible: bool,
+    /// The real Slint HWND once `ready`; the file dialogs use it as owner.
+    hwnd: HWND,
     appearance: u8,
     /// The locale the sidebar labels were built for.
     lang: Option<UiLang>,
@@ -82,10 +114,16 @@ impl SettingsWindow {
             host,
             weak: ui.as_weak(),
             sidebar: Rc::new(VecModel::default()),
+            general: Rc::new(VecModel::default()),
+            permissions: Rc::new(VecModel::default()),
+            backup: Rc::new(VecModel::default()),
+            about: Rc::new(VecModel::default()),
+            recorder: crate::features::hotkeys::ui::recorder::Recorder::new(),
             ready: false,
             pending_show: false,
             placed: false,
             visible: false,
+            hwnd: HWND::default(),
             appearance,
             lang: None,
         }));
@@ -99,14 +137,20 @@ impl SettingsWindow {
             .set_sidebar_rows(ModelRc::from(unsafe { (*inner).sidebar.clone() }));
         window
             .ui
+            .set_general_rows(ModelRc::from(unsafe { (*inner).general.clone() }));
+        window
+            .ui
+            .set_permissions_rows(ModelRc::from(unsafe { (*inner).permissions.clone() }));
+        window
+            .ui
+            .set_backup_rows(ModelRc::from(unsafe { (*inner).backup.clone() }));
+        window
+            .ui
+            .set_about_rows(ModelRc::from(unsafe { (*inner).about.clone() }));
+        window
+            .ui
             .set_sidebar_content_height(sidebar_content_height());
-        let ptr = inner as usize;
-        window.ui.on_tab_selected(move |index| {
-            let inner = ptr as *mut Inner;
-            if !inner.is_null() {
-                tab_selected(inner, index);
-            }
-        });
+        window.register_callbacks(inner);
         // Closing hides the surface; the component and its state stay alive.
         let ptr = inner as usize;
         window.ui.window().on_close_requested(move || {
@@ -124,6 +168,51 @@ impl SettingsWindow {
         window.ui.show().map_err(crate::ui_host::platform_error)?;
         arm_init(inner);
         Ok(window)
+    }
+
+    fn register_callbacks(&self, inner: *mut Inner) {
+        let ptr = inner as usize;
+        self.ui.on_tab_selected(move |index| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                tab_selected(inner, index);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_general_row_activated(move |id| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                general_row_activated(inner, id);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_permissions_row_activated(move |id| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                permissions_row_activated(inner, id);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_backup_row_activated(move |id| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                backup_row_activated(inner, id);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_about_row_activated(move |id| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                about_row_activated(inner, id);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_slint_link_clicked(move || {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                open_slint_link(inner);
+            }
+        });
     }
 
     pub fn show(&self) {
@@ -148,6 +237,9 @@ impl SettingsWindow {
     }
 
     pub fn on_tab_changed(&self) {
+        // A tab change ends any shortcut capture, like the Direct2D window's
+        // reset_pane_state did.
+        stop_recording(self.inner, true);
         refresh(&self.ui, self.inner);
     }
 
@@ -174,6 +266,11 @@ impl Drop for SettingsWindow {
                     RemoveWindowSubclass(hwnd, SUBCLASSPROC::Some(settings_subclass), SUBCLASS_ID);
             }
             if !self.inner.is_null() {
+                // Quitting: drop the capture without touching AppCore, which is
+                // already being torn down by the tray's WM_DESTROY.
+                if (*self.inner).recorder.is_recording() {
+                    (*self.inner).recorder.cancel();
+                }
                 drop(Box::from_raw(self.inner));
                 self.inner = std::ptr::null_mut();
             }
@@ -227,6 +324,9 @@ fn init_window(ui: &Settings, inner: *mut Inner) -> bool {
     } {
         return false;
     }
+    unsafe {
+        (*inner).hwnd = hwnd;
+    }
     true
 }
 
@@ -255,6 +355,9 @@ fn show_impl(ui: &Settings, inner: *mut Inner) {
     if hwnd.is_invalid() {
         return;
     }
+    // A minimized window comes back restored, like the Direct2D window's
+    // ShowWindow(SW_RESTORE).
+    let _ = unsafe { ShowWindow(hwnd, SW_RESTORE) };
     // Showing re-applies winit's own extended style, so the taskbar bit has to
     // be set again afterwards.
     apply_taskbar_window(hwnd);
@@ -276,8 +379,8 @@ fn show_impl(ui: &Settings, inner: *mut Inner) {
     }
 }
 
-/// Pulls the selected tab out of AppCore and pushes the strings the shell
-/// draws. The sidebar and pages extend this in 7.2/7.3.
+/// Pulls AppCore's settings state into the surface. The models are updated in
+/// place: replacing them would recreate every row and drop keyboard focus.
 fn refresh(ui: &Settings, inner: *mut Inner) {
     let Some(core) = core_from_host(unsafe { (*inner).host }) else {
         return;
@@ -294,22 +397,58 @@ fn refresh(ui: &Settings, inner: *mut Inner) {
     let tab = core.settings_tab;
     let title = settings_tab_title(tab, lang);
     ui.set_window_title(title.into());
-    ui.set_heading(title.into());
     ui.set_selected_tab(tab as i32);
+    ui.set_page_kind(page_kind(tab));
+    ui.set_general_heading(settings_tab_title(SettingsTab::General, lang).into());
+    ui.set_permissions_heading(settings_tab_title(SettingsTab::Permissions, lang).into());
+    ui.set_backup_heading(settings_tab_title(SettingsTab::Backup, lang).into());
+    ui.set_about_heading(settings_tab_title(SettingsTab::About, lang).into());
+    ui.set_placeholder_heading(settings_tab_title(tab, lang).into());
+    ui.set_placeholder_note(settings_placeholder_note(lang).into());
+    ui.set_backup_footnote(
+        backup_storage_note(
+            &crate::app_settings::settings_path().display().to_string(),
+            lang,
+        )
+        .into(),
+    );
+
+    ui.set_about_product(about_product(lang).into());
+    ui.set_about_version(crate::features::settings::panes::about::version_line().into());
+    ui.set_about_tagline(support_keeps_independent(lang).into());
+    ui.set_about_heart(fluent_for_sf("heart").unwrap_or_default().into());
+    ui.set_about_disclosure_title(about_made_with_slint(lang).into());
+    ui.set_about_disclosure_note(about_slint_license(lang).into());
+    ui.set_about_disclosure_link(about_slint_link(lang).into());
+    ui.set_about_copyright(crate::features::settings::panes::about::copyright_line().into());
+
     if unsafe { (*inner).lang } != Some(lang) {
         unsafe {
             (*inner).lang = Some(lang);
         }
         sync_rows(unsafe { &(*inner).sidebar }, sidebar_model(lang));
     }
+    sync_rows(
+        unsafe { &(*inner).general },
+        general_model(unsafe { &*inner }, core),
+    );
+    sync_rows(unsafe { &(*inner).permissions }, permissions_model(lang));
+    sync_rows(unsafe { &(*inner).backup }, backup_model(lang));
+    sync_rows(unsafe { &(*inner).about }, about_model(lang));
+}
+
+fn refresh_inner(inner: *mut Inner) {
+    if let Some(ui) = ui_for(inner) {
+        refresh(&ui, inner);
+    }
 }
 
 /// One sidebar model row: a section header or a SettingsTab.
-fn sidebar_model(lang: UiLang) -> Vec<tinycast_ui::SettingsSidebarRow> {
+fn sidebar_model(lang: UiLang) -> Vec<SidebarRow> {
     sidebar_rows()
         .into_iter()
         .filter_map(|row| match row.kind {
-            SidebarRowKind::Header(section) => Some(tinycast_ui::SettingsSidebarRow {
+            SidebarRowKind::Header(section) => Some(SidebarRow {
                 kind: 0,
                 top: row.y,
                 height: row.height,
@@ -317,7 +456,7 @@ fn sidebar_model(lang: UiLang) -> Vec<tinycast_ui::SettingsSidebarRow> {
                 symbol: Default::default(),
                 tab: -1,
             }),
-            SidebarRowKind::Tab(tab) => Some(tinycast_ui::SettingsSidebarRow {
+            SidebarRowKind::Tab(tab) => Some(SidebarRow {
                 kind: 1,
                 top: row.y,
                 height: row.height,
@@ -327,6 +466,225 @@ fn sidebar_model(lang: UiLang) -> Vec<tinycast_ui::SettingsSidebarRow> {
             }),
         })
         .collect()
+}
+
+fn header_row(title: &str) -> PageRow {
+    PageRow {
+        kind: 0,
+        id: -1,
+        title: title.into(),
+        subtitle: Default::default(),
+        trailing: Default::default(),
+        control: 0,
+        checked: false,
+        active: false,
+        enabled: true,
+    }
+}
+
+fn action_row(id: i32, title: &str, subtitle: &str, trailing: &str, control: i32) -> PageRow {
+    PageRow {
+        kind: 1,
+        id,
+        title: title.into(),
+        subtitle: subtitle.into(),
+        trailing: trailing.into(),
+        control,
+        checked: false,
+        active: false,
+        enabled: true,
+    }
+}
+
+/// General: the same five groups, row order and trailing values the Direct2D
+/// pane drew; only the widgets are Slint now.
+fn general_model(inner: &Inner, core: &crate::app_core::AppCore) -> Vec<PageRow> {
+    use crate::features::settings::panes::general::{self, GeneralHit, GeneralState};
+
+    let lang = core.ui_lang();
+    let palette_binding = core
+        .hotkeys
+        .get(RECORDER_ACTION)
+        .map(tinycast_pure::hotkey::HotKeyBinding::label);
+    let state = GeneralState {
+        ranking_empty: core.ranking_is_empty(),
+        hyper: &core.settings.hyper_key,
+        hyper_shift: core.settings.hyper_includes_shift,
+        appearance: core.appearance_label(),
+        compact: core.settings.compact_mode,
+        favorites_in_compact: core.settings.show_favorites_in_compact,
+        follow_cursor: core.settings.open_on_cursor_screen,
+        draggable: core.settings.palette_draggable,
+        launch_at_login: core.settings.launch_at_login,
+        show_in_menu_bar: core.settings.show_in_menu_bar,
+        pop_to_root: core.settings.pop_to_root_timeout,
+        auto_switch: core.settings.auto_switch_input_source,
+        chrome: 0,
+        palette_binding: palette_binding.as_deref(),
+        recording_palette: inner.recorder.action.as_deref() == Some(RECORDER_ACTION),
+        lang,
+    };
+    let hyper_on = general::hyper_includes_shift_enabled(state.hyper);
+    let ranking_sub = general_ranking_subtitle(state.ranking_empty, lang);
+    let pop_sub = general_pop_to_root_subtitle(state.pop_to_root, lang);
+    let pop_trail = general_pop_to_root_trailing(state.pop_to_root, lang);
+    let appearance_trail = general_appearance_trailing(state.appearance, lang);
+    let language_trail = general_language_trailing(lang);
+    let reset_label = general_reset_label(lang);
+    let hyper_title = hyper_key_title(state.hyper, lang);
+    let hyper_sub = general::hyper_subtitle_lang(state.hyper, lang);
+    let well = crate::features::hotkeys::ui::recorder::well_caption_lang(
+        state.palette_binding,
+        state.recording_palette,
+        lang,
+    );
+
+    let sections = [
+        GeneralSection::GlobalShortcuts,
+        GeneralSection::Search,
+        GeneralSection::HyperKey,
+        GeneralSection::Appearance,
+        GeneralSection::General,
+    ];
+    let mut rows = Vec::new();
+    for (section, hits) in sections.into_iter().zip(general::section_rows()) {
+        rows.push(header_row(general_section_title(section, lang)));
+        for &hit in hits {
+            let row = general::row_for(hit);
+            let title = general_row_title(row, lang);
+            let static_sub = general_row_subtitle(row, lang).unwrap_or("");
+            let (subtitle, control, checked, trailing, enabled) = match hit {
+                GeneralHit::PaletteRecorder => {
+                    (static_sub.to_string(), 3, false, well.clone(), true)
+                }
+                GeneralHit::ResetRanking => (
+                    ranking_sub.to_string(),
+                    2,
+                    false,
+                    reset_label.to_string(),
+                    !state.ranking_empty,
+                ),
+                GeneralHit::HyperKey => (
+                    hyper_sub.to_string(),
+                    2,
+                    false,
+                    hyper_title.to_string(),
+                    true,
+                ),
+                GeneralHit::HyperShift => (
+                    static_sub.to_string(),
+                    1,
+                    state.hyper_shift && hyper_on,
+                    String::new(),
+                    hyper_on,
+                ),
+                GeneralHit::Appearance => (
+                    static_sub.to_string(),
+                    2,
+                    false,
+                    appearance_trail.to_string(),
+                    true,
+                ),
+                GeneralHit::Language => (
+                    static_sub.to_string(),
+                    2,
+                    false,
+                    language_trail.to_string(),
+                    true,
+                ),
+                GeneralHit::Compact => (
+                    static_sub.to_string(),
+                    1,
+                    state.compact,
+                    String::new(),
+                    true,
+                ),
+                GeneralHit::FavoritesInCompact => (
+                    static_sub.to_string(),
+                    1,
+                    state.favorites_in_compact,
+                    String::new(),
+                    state.compact,
+                ),
+                GeneralHit::FollowCursor => (
+                    static_sub.to_string(),
+                    1,
+                    state.follow_cursor,
+                    String::new(),
+                    true,
+                ),
+                GeneralHit::Draggable => (
+                    static_sub.to_string(),
+                    1,
+                    state.draggable,
+                    String::new(),
+                    true,
+                ),
+                GeneralHit::LaunchAtLogin => (
+                    static_sub.to_string(),
+                    1,
+                    state.launch_at_login,
+                    String::new(),
+                    true,
+                ),
+                GeneralHit::ShowInMenuBar => (
+                    static_sub.to_string(),
+                    1,
+                    state.show_in_menu_bar,
+                    String::new(),
+                    true,
+                ),
+                GeneralHit::PopToRoot => (pop_sub.clone(), 2, false, pop_trail.clone(), true),
+                GeneralHit::AutoSwitchInput => (
+                    static_sub.to_string(),
+                    1,
+                    state.auto_switch,
+                    String::new(),
+                    true,
+                ),
+            };
+            let mut page_row = action_row(hit as i32, title, &subtitle, &trailing, control);
+            page_row.checked = checked;
+            page_row.enabled = enabled;
+            page_row.active = hit == GeneralHit::PaletteRecorder && state.recording_palette;
+            rows.push(page_row);
+        }
+    }
+    rows
+}
+
+fn permissions_model(lang: UiLang) -> Vec<PageRow> {
+    let open = open_settings_action(lang);
+    (0..crate::features::settings::panes::permissions::ROWS.len())
+        .map(|index| {
+            action_row(
+                index as i32,
+                permission_title(index, lang),
+                permission_subtitle(index, lang),
+                open,
+                2,
+            )
+        })
+        .collect()
+}
+
+fn backup_model(lang: UiLang) -> Vec<PageRow> {
+    [
+        backup_export(lang),
+        backup_import(lang),
+        backup_raycast(lang),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, title)| action_row(index as i32, title, "", "", 2))
+    .collect()
+}
+
+fn about_model(lang: UiLang) -> Vec<PageRow> {
+    vec![
+        action_row(0, about_support(lang), support_built_with_love(lang), "", 2),
+        action_row(1, about_window_title(lang), "", "", 2),
+    ]
 }
 
 /// Updates a fixed-length model row by row: replacing the model would recreate
@@ -351,6 +709,16 @@ fn tab_from_index(index: i32) -> Option<SettingsTab> {
         .find(|tab| *tab as i32 == index)
 }
 
+fn page_kind(tab: SettingsTab) -> i32 {
+    match tab {
+        SettingsTab::General => 0,
+        SettingsTab::Permissions => 1,
+        SettingsTab::About => 2,
+        SettingsTab::Backup => 3,
+        _ => 4,
+    }
+}
+
 fn tab_selected(inner: *mut Inner, index: i32) {
     let Some(tab) = tab_from_index(index) else {
         return;
@@ -363,8 +731,220 @@ fn tab_selected(inner: *mut Inner, index: i32) {
     }
 }
 
+fn general_hit_from_id(id: i32) -> Option<crate::features::settings::panes::general::GeneralHit> {
+    crate::features::settings::panes::general::section_rows()
+        .iter()
+        .flat_map(|rows| rows.iter())
+        .copied()
+        .find(|hit| *hit as i32 == id)
+}
+
+fn general_row_activated(inner: *mut Inner, id: i32) {
+    use crate::features::settings::panes::general::{self, GeneralHit, GeneralToggle};
+    let Some(hit) = general_hit_from_id(id) else {
+        return;
+    };
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    match hit {
+        GeneralHit::PaletteRecorder => start_recording(inner),
+        GeneralHit::ResetRanking => confirm_reset_ranking(inner),
+        GeneralHit::HyperKey => unsafe { (*core).cycle_hyper_key() },
+        GeneralHit::HyperShift => unsafe {
+            if general::hyper_includes_shift_enabled(&(*core).settings.hyper_key) {
+                (*core).set_hyper_includes_shift(!(*core).settings.hyper_includes_shift);
+            }
+        },
+        GeneralHit::Appearance => unsafe { (*core).cycle_appearance() },
+        GeneralHit::Language => unsafe { (*core).cycle_ui_language() },
+        GeneralHit::Compact => unsafe { (*core).toggle_setting_bool(GeneralToggle::Compact) },
+        GeneralHit::FavoritesInCompact => unsafe {
+            (*core).toggle_setting_bool(GeneralToggle::FavoritesInCompact)
+        },
+        GeneralHit::FollowCursor => unsafe {
+            (*core).toggle_setting_bool(GeneralToggle::FollowCursor)
+        },
+        GeneralHit::Draggable => unsafe { (*core).toggle_setting_bool(GeneralToggle::Draggable) },
+        GeneralHit::LaunchAtLogin => unsafe {
+            (*core).toggle_setting_bool(GeneralToggle::LaunchAtLogin)
+        },
+        GeneralHit::ShowInMenuBar => unsafe {
+            (*core).toggle_setting_bool(GeneralToggle::ShowInMenuBar)
+        },
+        GeneralHit::PopToRoot => unsafe { (*core).cycle_pop_to_root() },
+        GeneralHit::AutoSwitchInput => unsafe {
+            (*core).toggle_setting_bool(GeneralToggle::AutoSwitch)
+        },
+    }
+}
+
+/// Reset ranking asks first, through the shared modal gate (no nested loop).
+fn confirm_reset_ranking(inner: *mut Inner) {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    if unsafe { (*core).ranking_is_empty() } {
+        return;
+    }
+    let lang = unsafe { (*core).ui_lang() };
+    let prompt = crate::surfaces::dialog::ConfirmPrompt {
+        title: launcher_reset_confirm_title(lang).into(),
+        message: launcher_reset_confirm_message(lang).into(),
+        accept: reset_ranking_action(lang).into(),
+        cancel: chrome(Chrome::Cancel, lang).into(),
+        destructive: false,
+    };
+    let host = unsafe { (*inner).host };
+    crate::surfaces::dialog::confirm(&prompt, move || {
+        if let Some(core) = core_from_host(host) {
+            unsafe {
+                (*core).reset_learned_ranking();
+            }
+        }
+    });
+}
+
+fn permissions_row_activated(_inner: *mut Inner, id: i32) {
+    let Some(row) = crate::features::settings::panes::permissions::ROWS.get(id as usize) else {
+        return;
+    };
+    let _ = crate::features::launcher::ui::coordinator::execute(
+        &crate::features::launcher::ui::coordinator::LaunchSpec::Uri(row.uri.to_string()),
+    );
+}
+
+fn backup_row_activated(inner: *mut Inner, id: i32) {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    let owner = {
+        let hwnd = unsafe { (*inner).hwnd };
+        if hwnd.is_invalid() {
+            unsafe { (*inner).host }
+        } else {
+            hwnd
+        }
+    };
+    match id {
+        0 => unsafe { (*core).export_settings(owner) },
+        1 => unsafe { (*core).import_settings(owner) },
+        2 => unsafe { (*core).import_raycast(owner) },
+        _ => {}
+    }
+}
+
+fn about_row_activated(inner: *mut Inner, id: i32) {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    match id {
+        0 => unsafe { (*core).show_support() },
+        1 => unsafe { (*core).show_about() },
+        _ => {}
+    }
+}
+
+fn open_slint_link(inner: *mut Inner) {
+    let lang = core_from_host(unsafe { (*inner).host })
+        .map(|core| unsafe { (*core).ui_lang() })
+        .unwrap_or_default();
+    let _ = crate::features::launcher::ui::coordinator::execute(
+        &crate::features::launcher::ui::coordinator::LaunchSpec::Uri(
+            about_slint_link(lang).to_string(),
+        ),
+    );
+}
+
+fn start_recording(inner: *mut Inner) {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    unsafe {
+        (*core).pause_global_hotkeys();
+        (*inner).recorder.begin(RECORDER_ACTION.into());
+    }
+    refresh_inner(inner);
+}
+
+/// Ends a capture. The stored binding is written by the caller; this only
+/// restores global hotkeys and repaints the well.
+fn stop_recording(inner: *mut Inner, resume_hotkeys: bool) {
+    let recording = unsafe { (*inner).recorder.is_recording() };
+    if !recording {
+        return;
+    }
+    unsafe {
+        (*inner).recorder.cancel();
+    }
+    if resume_hotkeys {
+        if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+            unsafe {
+                (*core).resume_global_hotkeys();
+            }
+        }
+    }
+    refresh_inner(inner);
+}
+
+/// Applies one capture outcome. Always consumes the key while recording.
+fn apply_capture(inner: *mut Inner, action: &str, outcome: CaptureOutcome) -> bool {
+    match outcome {
+        CaptureOutcome::Ignore => return true,
+        CaptureOutcome::Cancel => unsafe {
+            (*inner).recorder.cancel();
+        },
+        CaptureOutcome::Clear => {
+            unsafe {
+                (*inner).recorder.cancel();
+            }
+            if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                unsafe {
+                    (*core).set_hotkey(action, None);
+                }
+            }
+        }
+        CaptureOutcome::Commit(binding) => {
+            unsafe {
+                (*inner).recorder.cancel();
+            }
+            if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                unsafe {
+                    (*core).set_hotkey(action, Some(binding));
+                }
+            }
+        }
+    }
+    if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+        unsafe {
+            (*core).resume_global_hotkeys();
+        }
+    }
+    refresh_inner(inner);
+    true
+}
+
+fn current_modifiers() -> Modifiers {
+    unsafe {
+        Modifiers {
+            ctrl: GetKeyState(VK_CONTROL.0 as i32) < 0,
+            alt: GetKeyState(VK_MENU.0 as i32) < 0,
+            shift: GetKeyState(VK_SHIFT.0 as i32) < 0,
+            win: GetKeyState(VK_LWIN.0 as i32) < 0 || GetKeyState(VK_RWIN.0 as i32) < 0,
+        }
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 /// The close button only hides: any draft stays, and the window keeps its HWND.
 fn close_requested(inner: *mut Inner) {
+    stop_recording(inner, true);
     unsafe {
         (*inner).visible = false;
     }
@@ -442,10 +1022,44 @@ unsafe extern "system" fn settings_subclass(
     wparam: WPARAM,
     lparam: LPARAM,
     _uid: usize,
-    _data: usize,
+    data: usize,
 ) -> LRESULT {
+    let inner = data as *mut Inner;
     match msg {
-        windows::Win32::UI::WindowsAndMessaging::WM_NCDESTROY => {
+        // A shortcut capture runs here, on the native VK codes, so the old
+        // Recorder (chords and double-taps) still decides what a key means.
+        WM_KEYDOWN | WM_SYSKEYDOWN => {
+            if inner.is_null() || !(*inner).recorder.is_recording() {
+                return DefSubclassProc(hwnd, msg, wparam, lparam);
+            }
+            let Some(action) = (*inner).recorder.action.clone() else {
+                return DefSubclassProc(hwnd, msg, wparam, lparam);
+            };
+            let outcome =
+                (*inner)
+                    .recorder
+                    .on_keydown(wparam.0 as u16, current_modifiers(), now_ms());
+            if apply_capture(inner, &action, outcome) {
+                LRESULT(0)
+            } else {
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_KEYUP | WM_SYSKEYUP => {
+            if inner.is_null() || !(*inner).recorder.is_recording() {
+                return DefSubclassProc(hwnd, msg, wparam, lparam);
+            }
+            let Some(action) = (*inner).recorder.action.clone() else {
+                return DefSubclassProc(hwnd, msg, wparam, lparam);
+            };
+            let outcome = (*inner).recorder.on_keyup(wparam.0 as u16, now_ms());
+            if apply_capture(inner, &action, outcome) {
+                LRESULT(0)
+            } else {
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_NCDESTROY => {
             let _ = RemoveWindowSubclass(hwnd, SUBCLASSPROC::Some(settings_subclass), SUBCLASS_ID);
             DefSubclassProc(hwnd, msg, wparam, lparam)
         }

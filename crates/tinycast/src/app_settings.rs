@@ -344,7 +344,7 @@ impl AppSettings {
     }
 }
 
-fn settings_path() -> PathBuf {
+pub fn settings_path() -> PathBuf {
     paths::roaming_dir().join("settings.json")
 }
 

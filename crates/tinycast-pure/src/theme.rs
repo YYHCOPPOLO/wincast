@@ -176,6 +176,8 @@ pub mod size {
     pub const SETTINGS_SIDEBAR: f32 = 215.0;
     pub const SETTINGS_DETAIL_MINIMUM: f32 = 420.0;
     pub const SETTINGS_ROW_ICON: f32 = 20.0;
+    // One settings page row (design_system/settings.rs ROW_H).
+    pub const SETTINGS_ROW_HEIGHT: f32 = 52.0;
     pub const EDITOR_SHEET_WIDTH: f32 = 480.0;
     pub const FORM_LABEL_WIDTH: f32 = 110.0;
     pub const EDITOR_TEXT_HEIGHT: f32 = 120.0;

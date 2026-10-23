@@ -22,7 +22,7 @@ use super::appearance;
 use super::fill_squircle;
 use super::squircle::stroke_squircle;
 
-pub const ROW_H: f32 = 52.0;
+pub const ROW_H: f32 = theme::size::SETTINGS_ROW_HEIGHT;
 pub const TOGGLE_W: f32 = 40.0;
 pub const TOGGLE_H: f32 = 22.0;
 pub const HEADER_H: f32 = 22.0;

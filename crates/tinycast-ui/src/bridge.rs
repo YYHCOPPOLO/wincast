@@ -222,6 +222,7 @@ where
     t.set_size_settings_sidebar(theme::size::SETTINGS_SIDEBAR);
     t.set_size_settings_detail_minimum(theme::size::SETTINGS_DETAIL_MINIMUM);
     t.set_size_settings_row_icon(theme::size::SETTINGS_ROW_ICON);
+    t.set_size_settings_row_height(theme::size::SETTINGS_ROW_HEIGHT);
     t.set_size_editor_sheet_width(theme::size::EDITOR_SHEET_WIDTH);
     t.set_size_form_label_width(theme::size::FORM_LABEL_WIDTH);
     t.set_size_editor_text_height(theme::size::EDITOR_TEXT_HEIGHT);

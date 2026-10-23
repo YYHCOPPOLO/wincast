@@ -31,6 +31,9 @@ export component FormGroup inherits Rectangle {
 // 40 x 22 settings switch, thumb spring 0.14 / 320 ms.
 export component Toggle inherits Rectangle {
     in-out property <bool> checked: false;
+    // A settings row owns the click so one target toggles the whole row; the
+    // switch is display-only there. Standalone uses keep this true.
+    in property <bool> interactive: true;
     callback toggled(bool);
 
     width: Theme.size-toggle-width;
@@ -56,6 +59,7 @@ export component Toggle inherits Rectangle {
     }
 
     touch := TouchArea {
+        enabled: root.interactive;
         clicked => {
             root.checked = !root.checked;
             root.toggled(root.checked);
@@ -128,6 +132,118 @@ export component SidebarRow inherits Rectangle {
     changed focus-generation => {
         if (root.selected) {
             scope.focus();
+        }
+    }
+}
+// One settings page row: title and optional subtitle on the left, the trailing
+// control on the right. The row is the click target and a keyboard focus stop;
+// the switch is drawn from the model, never toggled locally.
+export component SettingsRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> trailing;
+    // 0 none, 1 switch, 2 trailing label, 3 shortcut well.
+    in property <int> control: 0;
+    in property <bool> checked: false;
+    // The shortcut well is listening for a chord.
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback activated();
+
+    height: Theme.size-settings-row-height;
+    border-radius: Theme.radius-row;
+    background: scope.has-focus ? Theme.selection
+        : (touch.has-hover ? Theme.row-hover : transparent);
+    border-width: scope.has-focus ? Theme.size-hairline : 0px;
+    border-color: Theme.text-tertiary;
+
+    scope := FocusScope {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == Key.Space) {
+                root.activated();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+
+        VerticalLayout {
+            alignment: center;
+            spacing: Theme.spacing-xxs;
+            horizontal-stretch: 1;
+
+            Text {
+                text: root.title;
+                font-family: "Segoe UI";
+                font-size: Theme.font-row;
+                color: root.enabled ? Theme.text-primary : Theme.text-tertiary;
+                overflow: elide;
+            }
+
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                font-family: "Segoe UI";
+                font-size: Theme.font-section;
+                color: root.enabled ? Theme.text-secondary : Theme.text-tertiary;
+                overflow: elide;
+            }
+        }
+
+        if root.control == 1: VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked: root.checked;
+                interactive: false;
+            }
+        }
+
+        if root.control == 2: Text {
+            text: root.trailing;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row-trailing;
+            color: root.enabled ? Theme.text-secondary : Theme.text-tertiary;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        if root.control == 3: Rectangle {
+            width: Theme.size-shortcut-recorder;
+            height: Theme.size-toggle-height + Theme.spacing-xxs;
+            border-radius: Theme.radius-menu;
+            background: Theme.control-surface;
+            border-width: Theme.size-hairline;
+            border-color: root.active ? Theme.text-secondary : Theme.border;
+
+            Text {
+                x: Theme.spacing-xs;
+                width: parent.width - Theme.spacing-xs * 2;
+                height: parent.height;
+                text: root.trailing;
+                font-family: "Segoe UI";
+                font-size: Theme.font-chip;
+                color: Theme.text-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            scope.focus();
+            root.activated();
         }
     }
 }
