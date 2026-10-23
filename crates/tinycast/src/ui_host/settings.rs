@@ -241,6 +241,9 @@ impl SettingsWindow {
         // reset_pane_state did.
         stop_recording(self.inner, true);
         refresh(&self.ui, self.inner);
+        if unsafe { (*self.inner).ready } {
+            reveal_selected_tab(&self.ui, self.inner);
+        }
     }
 
     /// Phase 7 has no alias or AI connection drafts; phase 8's editors will
@@ -370,6 +373,10 @@ fn show_impl(ui: &Settings, inner: *mut Inner) {
     unsafe {
         let _ = SetForegroundWindow(hwnd);
     }
+    // Slint's focus reveal depends on the first layout, which a window shown
+    // after a hide has not necessarily done; scroll the selected tab in
+    // explicitly so it is always on screen when Settings opens.
+    reveal_selected_tab(ui, inner);
     let first_show = !unsafe { (*inner).visible };
     unsafe {
         (*inner).visible = true;
@@ -377,6 +384,41 @@ fn show_impl(ui: &Settings, inner: *mut Inner) {
     if first_show {
         ui.invoke_focus_selected_tab();
     }
+    // The first layout after a hide/show can still clamp a scroll set in the
+    // same turn, so repeat it once the window has painted.
+    let ptr = inner as usize;
+    slint::Timer::single_shot(Duration::from_millis(40), move || {
+        let inner = ptr as *mut Inner;
+        if inner.is_null() || !unsafe { (*inner).ready } {
+            return;
+        }
+        if let Some(ui) = ui_for(inner) {
+            reveal_selected_tab(&ui, inner);
+        }
+    });
+}
+
+/// Puts the selected sidebar tab on screen: the sidebar is 56 DIP taller than
+/// the 700 DIP window, so Backup and About would otherwise open off-screen.
+fn reveal_selected_tab(ui: &Settings, inner: *mut Inner) {
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    let tab = unsafe { (*core).settings_tab };
+    let Some(row) = sidebar_rows()
+        .into_iter()
+        .find(|row| matches!(row.kind, SidebarRowKind::Tab(candidate) if candidate == tab))
+    else {
+        return;
+    };
+    // The window opens at its 700 DIP minimum, and a larger window shows even
+    // more of the sidebar; using the token avoids a stale size right after a
+    // show on another monitor.
+    let viewport = tinycast_pure::theme::size::SETTINGS_WINDOW.1;
+    let max = (sidebar_content_height() - viewport).max(0.0);
+    let target =
+        (row.y + row.height + tinycast_pure::theme::spacing::XL - viewport).clamp(0.0, max);
+    ui.set_sidebar_scroll(target);
 }
 
 /// Pulls AppCore's settings state into the surface. The models are updated in

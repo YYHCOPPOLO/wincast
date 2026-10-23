@@ -329,6 +329,9 @@ export component SettingsWindow inherits Window {
     in property <string> window-title;
     in property <[SettingsSidebarRow]> sidebar-rows;
     in property <length> sidebar-content-height: 0px;
+    // The host keeps the selected tab on screen when Settings opens or the tab
+    // changes; the wheel and keyboard still move it after that.
+    in-out property <length> sidebar-scroll: 0px;
     // The SettingsTab discriminant AppCore selected; the only selection source.
     in property <int> selected-tab: 0;
     // 0 General, 1 Permissions, 2 About, 3 Backup, 4 the placeholder tabs.
@@ -394,6 +397,7 @@ export component SettingsWindow inherits Window {
             interactive: true;
             content-width: self.width;
             content-height: Math.max(self.height, root.sidebar-content-height);
+            content-y <=> root.sidebar-scroll;
 
             for row in root.sidebar-rows: Rectangle {
                 x: 0;

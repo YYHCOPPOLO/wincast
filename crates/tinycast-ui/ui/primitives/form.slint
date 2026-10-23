@@ -131,6 +131,9 @@ export component SidebarRow inherits Rectangle {
 
     changed focus-generation => {
         if (root.selected) {
+            // Re-publishing matters: a row that already owns the focus would
+            // otherwise not be scrolled into view when Settings reopens.
+            scope.clear-focus();
             scope.focus();
         }
     }
