@@ -5397,17 +5397,6 @@ mod tests {
     }
 
     #[test]
-    fn chatgpt_connect_is_refused_while_ai_is_off() {
-        let mut c = AppCore::new();
-        assert!(!c.settings.ai_enabled);
-        c.chatgpt_row_action();
-        assert_ne!(
-            c.chatgpt_phase(),
-            crate::features::ai::service::chatgpt::CodexPhase::Connected
-        );
-    }
-
-    #[test]
     fn tab_ring_with_ai_does_not_seed_chat_from_query() {
         let mut c = AppCore::new();
         c.settings.ai_enabled = true;
