@@ -1,4 +1,5 @@
 pub mod modal;
+pub mod settings;
 pub mod snapshot;
 
 use windows::Win32::Foundation::HWND;

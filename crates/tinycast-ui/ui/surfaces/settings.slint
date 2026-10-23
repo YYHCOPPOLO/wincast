@@ -1,0 +1,58 @@
+// The settings window: a native-framed 900 × 700 page. The sidebar and the
+// detail column share the page fill; cards are surface. The sidebar rows and
+// the four base pages arrive in 7.2/7.3, the remaining pages in phase 8.
+import { Theme } from "../theme.slint";
+
+export component SettingsWindow inherits Window {
+    in property <string> window-title;
+    in property <string> heading;
+
+    title: root.window-title;
+    // Initial size; the old window could be resized, so it is a preferred size
+    // plus the minimum the old WM_GETMINMAXINFO enforced.
+    preferred-width: Theme.size-settings-window-width;
+    preferred-height: Theme.size-settings-window-height;
+    min-width: Theme.size-settings-sidebar + Theme.size-settings-detail-minimum;
+    min-height: Theme.size-settings-window-height;
+    background: Theme.page;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+
+    // The sidebar column. Its rows are added in 7.2; until then it is the page
+    // fill the 215 DIP column has to own.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: Theme.size-settings-sidebar;
+        height: root.height;
+        background: Theme.settings-sidebar;
+        clip: true;
+    }
+
+    // The 1 px rule sits inside the sidebar, so the detail column starts at 215.
+    Rectangle {
+        x: Theme.size-settings-sidebar - Theme.size-hairline;
+        y: 0;
+        width: Theme.size-hairline;
+        height: root.height;
+        background: Theme.separator;
+    }
+
+    Rectangle {
+        x: Theme.size-settings-sidebar;
+        y: 0;
+        width: root.width - Theme.size-settings-sidebar;
+        height: root.height;
+        background: Theme.settings-detail;
+        clip: true;
+
+        Text {
+            x: Theme.spacing-xxl;
+            y: Theme.spacing-xxl;
+            text: root.heading;
+            font-size: Theme.font-panel-title;
+            font-weight: 600;
+            color: Theme.text-primary;
+        }
+    }
+}
