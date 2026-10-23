@@ -108,8 +108,6 @@ where
     // The settings shell in phase 7 is a page: both columns share one background.
     t.set_settings_sidebar(rgba(theme::colors::page_rgba(appearance)));
     t.set_settings_detail(rgba(theme::colors::page_rgba(appearance)));
-    // `scrim` is still referenced by the surfaces 6.5.2/6.5.3 move to `surface`.
-    t.set_scrim(rgba(theme::colors::surface_rgba(appearance)));
 
     // Typography (`theme::typography`), in DIP.
     t.set_font_search(theme::typography::SEARCH_FIELD);

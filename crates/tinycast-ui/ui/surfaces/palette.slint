@@ -90,8 +90,12 @@ component CalcCard inherits Rectangle {
     width: root.slot-width - Theme.spacing-xl * 2;
     height: Theme.size-calc-card-height;
     border-radius: Theme.radius-card;
+    // On the now-opaque surface a plain cardFill would be the same white as the
+    // panel; the 1 px border keeps the tile visible, like every other card.
     background: root.selected ? Theme.selection
         : (root.hover-armed && card-touch.has-hover ? Theme.row-hover : Theme.card-fill);
+    border-width: Theme.size-hairline;
+    border-color: Theme.card-stroke;
 
     if root.is-error: HorizontalLayout {
         // The error line starts where a column's text starts (old inner.x = 24).

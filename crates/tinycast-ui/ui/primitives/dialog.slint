@@ -55,8 +55,9 @@ export component DialogButton inherits Rectangle {
     public function focus-button() { focus-scope.focus(); }
 }
 
-// A 20 DIP corner dialog surface: symbol tile, title, message, an optional
-// volume accessory, and two actions with Cancel leading.
+// A 16 DIP corner dialog surface: the flat surface fill and a 1 px border, a
+// symbol tile, title, message, an optional volume accessory, and two actions
+// with Cancel leading.
 export component Dialog inherits Rectangle {
     in property <string> title;
     in property <string> message;
@@ -78,7 +79,7 @@ export component Dialog inherits Rectangle {
 
     width: root.form ? Theme.size-dialog-width : Theme.size-dialog-compact-width;
     height: content.preferred-height;
-    background: Theme.scrim;
+    background: Theme.surface;
     border-radius: Theme.radius-dialog;
     border-width: Theme.size-hairline;
     border-color: Theme.border;

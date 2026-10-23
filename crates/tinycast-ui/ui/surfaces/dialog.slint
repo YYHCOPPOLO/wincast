@@ -31,12 +31,15 @@ export component DialogWindow inherits Window {
     title: "Tinycast";
     no-frame: true;
     always-on-top: true;
-    background: transparent;
+    // Opaque flat card: the window is the surface, the Dialog draws the border.
+    background: Theme.surface;
     default-font-family: "Segoe UI";
     default-font-size: Theme.font-row;
     width: card.width;
-    // Room for the entrance offset, so the card is never clipped while it rises.
-    height: card.height + Motion.dialog-offset;
+    // Exactly the card. The opaque window cannot carry a transparent strip for
+    // the entrance offset any more, so the rising first frames are clipped by
+    // the window instead of leaving a 3 DIP surface lip under the border.
+    height: card.height;
 
     forward-focus: keys;
 

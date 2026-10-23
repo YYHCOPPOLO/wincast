@@ -10,7 +10,9 @@ export component Hud inherits Rectangle {
     width: Math.min(root.requested-width, Theme.size-hud-max-width);
     height: Theme.size-bar-button-height + Theme.spacing-sm * 2;
     border-radius: self.height / 2;
-    background: Theme.scrim;
+    background: Theme.surface;
+    border-width: Theme.size-hairline;
+    border-color: Theme.border;
 
     HorizontalLayout {
         padding-left: Theme.spacing-xl;
