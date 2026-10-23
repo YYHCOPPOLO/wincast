@@ -1,5 +1,5 @@
-// The command palette. The squircle, the header, the rows and the chrome are
-// Slint; the search field itself is a native EDIT child the host parents to
+// The command palette. The flat surface, the header, the rows and the chrome
+// are Slint; the search field itself is a native EDIT child the host parents to
 // this window, so the placeholder is drawn here and shows through it.
 import { Theme, Motion } from "../theme.slint";
 import { Panel } from "../primitives/panel.slint";
@@ -376,8 +376,6 @@ component ChatLine inherits Rectangle {
 }
 
 export component PaletteWindow inherits Window {
-    // Squircle path commands for the current size, from tinycast_ui::squircle_commands.
-    in property <string> squircle-commands;
     in property <bool> expanded: false;
     // Fluent symbol for the current mode ("magnifyingglass", "chevron.left").
     in property <string> header-symbol;
@@ -478,7 +476,8 @@ export component PaletteWindow inherits Window {
     title: "Tinycast";
     no-frame: true;
     always-on-top: true;
-    background: transparent;
+    // Opaque: the window itself is the Magpie surface, the Panel draws the border.
+    background: Theme.surface;
     default-font-family: "Segoe UI";
     default-font-size: Theme.font-row;
     width: Theme.size-panel-width;
@@ -532,7 +531,6 @@ export component PaletteWindow inherits Window {
     }
 
     Panel {
-        squircle-commands: root.squircle-commands;
         expanded: root.expanded;
 
         // 44 DIP header: the mode glyph, the placeholder and the Tab hint.
@@ -738,15 +736,15 @@ export component PaletteWindow inherits Window {
                 }
             }
 
-            // Edge dissolve: the scrim fades the first and last visible rows.
+            // Edge dissolve: the surface fades the first and last visible rows.
             if root.scrollable: Rectangle {
                 y: 0;
                 width: root.split ? root.split-x : parent.width;
                 height: Math.min(root.fade-top, parent.height);
                 background: @linear-gradient(
                     180deg,
-                    Theme.scrim.with-alpha(root.fade-top-alpha) 0%,
-                    Theme.scrim.with-alpha(0) 100%,
+                    Theme.surface.with-alpha(root.fade-top-alpha) 0%,
+                    Theme.surface.with-alpha(0) 100%,
                 );
             }
 
@@ -756,8 +754,8 @@ export component PaletteWindow inherits Window {
                 height: Math.min(root.fade-bottom, parent.height);
                 background: @linear-gradient(
                     180deg,
-                    Theme.scrim.with-alpha(0) 0%,
-                    Theme.scrim.with-alpha(root.fade-bottom-alpha) 100%,
+                    Theme.surface.with-alpha(0) 0%,
+                    Theme.surface.with-alpha(root.fade-bottom-alpha) 100%,
                 );
             }
 

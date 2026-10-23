@@ -3047,9 +3047,13 @@ impl AppCore {
         let Some(anchor) = self.anchor else {
             return;
         };
-        let Some(hwnd) = self.palette_window.as_ref().map(|w| w.hwnd) else {
+        let Some(hwnd) = self.palette_window.as_ref().map(|w| w.hwnd()) else {
             return;
         };
+        // Before winit creates the HWND there is no DPI to convert with.
+        if hwnd.is_invalid() {
+            return;
+        }
         let frame = frame_for(anchor, self.expanded);
         let rect = physical::Rect::from_win32(dip_to_px(hwnd, frame));
         self.anchor_px = Some(physical::Point {

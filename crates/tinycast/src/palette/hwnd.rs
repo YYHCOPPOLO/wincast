@@ -31,7 +31,7 @@ use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetAncestor, GetForegroundWindow, GetWindowLongPtrW, KillTimer, PostMessageW,
+    GetAncestor, GetForegroundWindow, GetWindowLongPtrW, IsWindow, KillTimer, PostMessageW,
     SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, EN_CHANGE, GA_ROOT,
     GWLP_USERDATA, GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WA_INACTIVE, WM_ACTIVATE, WM_COMMAND,
@@ -71,7 +71,6 @@ type Palette = tinycast_ui::PaletteWindow;
 type MenuSignature = (OpenMenu, String, Vec<(String, Option<&'static str>, bool)>);
 
 pub struct PaletteWindow {
-    pub hwnd: HWND,
     ui: Palette,
     inner: *mut PaletteInner,
 }
@@ -124,11 +123,7 @@ impl PaletteWindow {
             ready: false,
             pending_show: None,
         }));
-        let window = Self {
-            hwnd: HWND::default(),
-            ui,
-            inner,
-        };
+        let window = Self { ui, inner };
         // The model is created once: the host replaces its contents, never it,
         // so a scroll position or a hover never resets with the data.
         window
@@ -294,7 +289,7 @@ impl PaletteWindow {
     /// so returning `false` lets `settle_hidden_palette` run right away.
     pub fn hide(&self) -> bool {
         unsafe {
-            let _ = KillTimer(self.hwnd, RESIGN_TIMER_ID);
+            let _ = KillTimer(self.hwnd(), RESIGN_TIMER_ID);
         }
         // The exit animation belongs to a visible window; a hide cuts it so a
         // quick re-show never finds a half-faded menu with no menu open.
@@ -306,13 +301,24 @@ impl PaletteWindow {
         false
     }
 
+    /// The real HWND, or an invalid handle until winit has created it. The
+    /// field it replaces was never assigned, so DPI and placement used to be
+    /// requested from HWND(0).
+    pub fn hwnd(&self) -> HWND {
+        window_hwnd(&self.ui).unwrap_or_default()
+    }
+
     pub fn set_expanded(&self, expanded: bool, anchor_px: physical::Point) {
         if !unsafe { (*self.inner).ready } {
             return;
         }
-        let frame = frame_at(expanded, anchor_px, unsafe { GetDpiForWindow(self.hwnd) });
+        let hwnd = self.hwnd();
+        if hwnd.is_invalid() {
+            return;
+        }
+        let frame = frame_at(expanded, anchor_px, unsafe { GetDpiForWindow(hwnd) });
         sync_size(&self.ui, expanded);
-        place(self.hwnd, frame);
+        place(hwnd, frame);
         refresh(&self.ui, self.inner);
         layout_search(&self.ui, self.inner);
     }
@@ -320,21 +326,20 @@ impl PaletteWindow {
 
 impl Drop for PaletteWindow {
     fn drop(&mut self) {
+        let hwnd = self.hwnd();
         unsafe {
-            if !self.hwnd.is_invalid() {
-                let _ = RemoveWindowSubclass(
-                    self.hwnd,
-                    SUBCLASSPROC::Some(palette_subclass),
-                    SUBCLASS_ID,
-                );
-                let _ = KillTimer(self.hwnd, RESIGN_TIMER_ID);
+            // The event loop may have destroyed the window first; only unhook a
+            // live HWND.
+            if !hwnd.is_invalid() && IsWindow(hwnd).as_bool() {
+                let _ =
+                    RemoveWindowSubclass(hwnd, SUBCLASSPROC::Some(palette_subclass), SUBCLASS_ID);
+                let _ = KillTimer(hwnd, RESIGN_TIMER_ID);
             }
             if !self.inner.is_null() {
                 drop(Box::from_raw(self.inner));
                 self.inner = std::ptr::null_mut();
             }
         }
-        self.hwnd = HWND::default();
     }
 }
 
@@ -447,21 +452,10 @@ fn frame_at(expanded: bool, anchor_px: physical::Point, dpi: u32) -> physical::R
     }
 }
 
-/// Keeps the Slint window size and the squircle path in step with the frame.
+/// Keeps the Slint window size in step with the frame. The window is opaque
+/// now, so there is no per-size squircle path to rebuild.
 fn sync_size(ui: &Palette, expanded: bool) {
-    let (w_dip, h_dip) = if expanded {
-        expanded_size()
-    } else {
-        compact_size()
-    };
     ui.set_expanded(expanded);
-    ui.set_squircle_commands(tinycast_ui::squircle_commands(
-        0.0,
-        0.0,
-        w_dip,
-        h_dip,
-        theme::radius::PANEL,
-    ));
 }
 
 fn layout_search(ui: &Palette, inner: *mut PaletteInner) {

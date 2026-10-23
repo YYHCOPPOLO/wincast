@@ -154,7 +154,6 @@ export component GalleryWindow inherits Window {
     in property <string> gallery-title;
     in property <string> light-label;
     in property <string> dark-label;
-    in property <string> panel-commands;
     in property <string> search-symbol;
     in property <string> placeholder;
     in property <string> section-title;
@@ -199,7 +198,7 @@ export component GalleryWindow inherits Window {
     title: root.window-title;
     width: 1260px;
     height: 900px;
-    background: Theme.settings-detail;
+    background: Theme.page;
     default-font-family: "Segoe UI";
     default-font-size: Theme.font-row;
 
@@ -249,8 +248,6 @@ export component GalleryWindow inherits Window {
                 spacing: Theme.spacing-xl;
 
                 Panel {
-                    squircle-commands: root.panel-commands;
-
                     PanelHeader {
                         text: root.placeholder;
                         placeholder: true;

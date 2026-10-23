@@ -40,34 +40,19 @@ export component PanelHeader inherits Rectangle {
     }
 }
 
-// Squircle surface: the Path commands come from tinycast_ui::squircle_commands.
-// The caller lays out a PanelHeader, content and Footer inside; the top pad is
-// the panel's 10 DIP header inset and there is no bar divider.
+// Opaque flat surface: the Magpie surface fill and a 1 px border. The window
+// behind it is opaque too, so nothing here is drawn as glass or a scrim. The
+// caller lays out a PanelHeader, content and Footer inside; the top pad is the
+// panel's 10 DIP header inset and there is no bar divider.
 export component Panel inherits Rectangle {
-    in property <string> squircle-commands;
     in property <bool> expanded: true;
 
     width: Theme.size-panel-width;
     height: expanded ? Theme.size-panel-height : Theme.size-compact-height;
-    background: transparent;
-
-    if root.squircle-commands == "": Rectangle {
-        width: 100%;
-        height: 100%;
-        border-radius: Theme.radius-panel;
-        background: Theme.scrim;
-    }
-
-    Path {
-        width: 100%;
-        height: 100%;
-        viewbox-x: 0;
-        viewbox-y: 0;
-        viewbox-width: root.width / 1px;
-        viewbox-height: root.height / 1px;
-        commands: root.squircle-commands;
-        fill: Theme.scrim;
-    }
+    background: Theme.surface;
+    border-radius: Theme.radius-panel;
+    border-width: Theme.size-hairline;
+    border-color: Theme.border;
 
     VerticalLayout {
         width: 100%;

@@ -46,8 +46,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_keycap_filled("Tab".into());
     ui.set_keycap_hero("Enter".into());
 
-    ui.set_panel_commands(tinycast_ui::squircle_commands(0.0, 0.0, 750.0, 475.0, 26.0));
-
     ui.set_settings_title("设置分组".into());
     ui.set_toggle_label("启用笔记".into());
     ui.set_checkbox_label("显示在启动器".into());
