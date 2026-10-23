@@ -57,7 +57,7 @@ impl HyperKey {
     pub fn title(self) -> &'static str {
         match self {
             HyperKey::None => "None",
-            HyperKey::CapsLock => "Caps Lock (⇪)",
+            HyperKey::CapsLock => "Caps Lock",
             HyperKey::RightControl => "Right Control",
             HyperKey::RightShift => "Right Shift",
             HyperKey::RightOption => "Right Alt",

@@ -395,7 +395,7 @@ pub fn hyper_key_title(raw: &str, lang: UiLang) -> &'static str {
     match (raw, lang) {
         ("none", UiLang::ZhHans) | ("", UiLang::ZhHans) => "关闭",
         ("none", _) | ("", _) => "None",
-        ("capsLock", _) => "Caps Lock (⇪)",
+        ("capsLock", _) => "Caps Lock",
         ("rightControl", UiLang::ZhHans) => "右 Ctrl",
         ("rightControl", _) => "Right Control",
         ("rightShift", UiLang::ZhHans) => "右 Shift",
