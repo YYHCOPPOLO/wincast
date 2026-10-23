@@ -409,15 +409,30 @@ pub mod colors {
         }
     }
 
-    /// Opaque-enough tint for a floating glass surface when no live blur sits
-    /// behind it (the palette menus). This is the fill the Direct2D menu painter
-    /// used; the Slint menu reads it through `Theme.menu-fill`.
-    pub fn glass_tint_rgba(appearance: u8) -> (f32, f32, f32, f32) {
-        if appearance == 0 {
-            (0.08, 0.08, 0.08, 0.94)
+    /// Opaque surfaces sampled from yetone/magpie. The palette menu (and the
+    /// recorder bubble) use `surface_rgba` and `surface_border_rgba` directly;
+    /// phase 6.5 extends the same flat tokens to the rest of the chrome.
+    pub const SURFACE_DARK: (f32, f32, f32) = (35.0 / 255.0, 35.0 / 255.0, 39.0 / 255.0);
+    pub const SURFACE_LIGHT: (f32, f32, f32) = (1.0, 1.0, 1.0);
+    pub const SURFACE_BORDER_DARK: (f32, f32, f32) = (51.0 / 255.0, 51.0 / 255.0, 57.0 / 255.0);
+    pub const SURFACE_BORDER_LIGHT: (f32, f32, f32) = (227.0 / 255.0, 227.0 / 255.0, 232.0 / 255.0);
+
+    pub fn surface_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        let (r, g, b) = if appearance == 0 {
+            SURFACE_DARK
         } else {
-            (0.98, 0.98, 0.98, 0.96)
-        }
+            SURFACE_LIGHT
+        };
+        (r, g, b, 1.0)
+    }
+
+    pub fn surface_border_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        let (r, g, b) = if appearance == 0 {
+            SURFACE_BORDER_DARK
+        } else {
+            SURFACE_BORDER_LIGHT
+        };
+        (r, g, b, 1.0)
     }
 }
 

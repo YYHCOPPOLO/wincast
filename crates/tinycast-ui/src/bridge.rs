@@ -79,7 +79,8 @@ where
         theme::colors::MENU_HOVER_DARK_ALPHA,
         theme::colors::MENU_HOVER_LIGHT_ALPHA,
     ));
-    t.set_menu_fill(rgba(theme::colors::glass_tint_rgba(appearance)));
+    t.set_menu_fill(solid(surface(appearance)));
+    t.set_menu_border(solid(surface_border(appearance)));
     t.set_control_hover(ink(
         appearance,
         theme::colors::CONTROL_HOVER_DARK_ALPHA,
@@ -404,6 +405,22 @@ fn rgba((red, green, blue, alpha): (f32, f32, f32, f32)) -> slint::Color {
 
 fn solid((red, green, blue): (f32, f32, f32)) -> slint::Color {
     slint::Color::from_rgb_f32(red, green, blue)
+}
+
+fn surface(appearance: u8) -> (f32, f32, f32) {
+    if appearance == 0 {
+        theme::colors::SURFACE_DARK
+    } else {
+        theme::colors::SURFACE_LIGHT
+    }
+}
+
+fn surface_border(appearance: u8) -> (f32, f32, f32) {
+    if appearance == 0 {
+        theme::colors::SURFACE_BORDER_DARK
+    } else {
+        theme::colors::SURFACE_BORDER_LIGHT
+    }
 }
 
 fn settings_sidebar(appearance: u8) -> (f32, f32, f32) {
