@@ -52,6 +52,11 @@ pub mod radius {
     pub const RECORDER_KEY_CAP: f32 = 4.0;
     /// `Radius.tooltip` (Theme.swift:59).
     pub const TOOLTIP: f32 = 8.0;
+    /// Slint-side Magpie shape: a flat 16 DIP card for panels, menus and
+    /// dialogs. The Direct2D constants above keep their upstream values until
+    /// phase 9 deletes that path.
+    pub const MAGPIE_PANEL: f32 = 16.0;
+    pub const MAGPIE_DIALOG: f32 = 16.0;
 }
 
 pub mod size {
@@ -409,30 +414,85 @@ pub mod colors {
         }
     }
 
-    /// Opaque surfaces sampled from yetone/magpie. The palette menu (and the
-    /// recorder bubble) use `surface_rgba` and `surface_border_rgba` directly;
-    /// phase 6.5 extends the same flat tokens to the rest of the chrome.
+    /// Opaque page/surface/muted ramp sampled from yetone/magpie. Every Slint
+    /// surface draws from these; the alpha ramp above stays for the Direct2D
+    /// surfaces that phase 9 replaces.
     pub const SURFACE_DARK: (f32, f32, f32) = (35.0 / 255.0, 35.0 / 255.0, 39.0 / 255.0);
     pub const SURFACE_LIGHT: (f32, f32, f32) = (1.0, 1.0, 1.0);
     pub const SURFACE_BORDER_DARK: (f32, f32, f32) = (51.0 / 255.0, 51.0 / 255.0, 57.0 / 255.0);
     pub const SURFACE_BORDER_LIGHT: (f32, f32, f32) = (227.0 / 255.0, 227.0 / 255.0, 232.0 / 255.0);
+    /// The page behind cards (settings, gallery).
+    pub const PAGE_DARK: (f32, f32, f32) = (26.0 / 255.0, 26.0 / 255.0, 30.0 / 255.0);
+    pub const PAGE_LIGHT: (f32, f32, f32) = (244.0 / 255.0, 244.0 / 255.0, 246.0 / 255.0);
+    /// Secondary surface for control bars, caps and pills.
+    pub const MUTED_DARK: (f32, f32, f32) = (45.0 / 255.0, 45.0 / 255.0, 51.0 / 255.0);
+    pub const MUTED_LIGHT: (f32, f32, f32) = (241.0 / 255.0, 241.0 / 255.0, 244.0 / 255.0);
+    /// Opaque ink ramp. Magpie's text is a solid grey, not an alpha over the fill.
+    pub const TEXT_DARK: (f32, f32, f32) = (237.0 / 255.0, 237.0 / 255.0, 241.0 / 255.0);
+    pub const TEXT_LIGHT: (f32, f32, f32) = (28.0 / 255.0, 28.0 / 255.0, 33.0 / 255.0);
+    pub const TEXT_SECONDARY_DARK: (f32, f32, f32) = (161.0 / 255.0, 161.0 / 255.0, 170.0 / 255.0);
+    pub const TEXT_SECONDARY_LIGHT: (f32, f32, f32) = (99.0 / 255.0, 99.0 / 255.0, 107.0 / 255.0);
+    pub const TEXT_TERTIARY_DARK: (f32, f32, f32) = (139.0 / 255.0, 139.0 / 255.0, 148.0 / 255.0);
+    pub const TEXT_TERTIARY_LIGHT: (f32, f32, f32) = (133.0 / 255.0, 133.0 / 255.0, 141.0 / 255.0);
+    /// Magpie's red: light uses the 600 step, dark the 400 step so it reads on
+    /// the dark surface.
+    pub const DESTRUCTIVE_DARK: (f32, f32, f32) = (248.0 / 255.0, 113.0 / 255.0, 113.0 / 255.0);
+    pub const DESTRUCTIVE_LIGHT: (f32, f32, f32) = (220.0 / 255.0, 38.0 / 255.0, 38.0 / 255.0);
+    /// Magpie's green, same 500/400 split.
+    pub const SUCCESS_DARK: (f32, f32, f32) = (74.0 / 255.0, 222.0 / 255.0, 128.0 / 255.0);
+    pub const SUCCESS_LIGHT: (f32, f32, f32) = (34.0 / 255.0, 197.0 / 255.0, 94.0 / 255.0);
+    /// Selection and hover are still translucent ink, just lighter than the
+    /// alpha ramp above: Light 5% / 3%, Dark 8% / 4%.
+    pub const MAGPIE_SELECTION_DARK_ALPHA: f32 = 0.08;
+    pub const MAGPIE_SELECTION_LIGHT_ALPHA: f32 = 0.05;
+    pub const MAGPIE_ROW_HOVER_DARK_ALPHA: f32 = 0.04;
+    pub const MAGPIE_ROW_HOVER_LIGHT_ALPHA: f32 = 0.03;
+    pub const MAGPIE_MENU_HOVER_DARK_ALPHA: f32 = 0.04;
+    pub const MAGPIE_MENU_HOVER_LIGHT_ALPHA: f32 = 0.03;
+
+    fn solid(
+        dark: (f32, f32, f32),
+        light: (f32, f32, f32),
+        appearance: u8,
+    ) -> (f32, f32, f32, f32) {
+        let (red, green, blue) = if appearance == 0 { dark } else { light };
+        (red, green, blue, 1.0)
+    }
 
     pub fn surface_rgba(appearance: u8) -> (f32, f32, f32, f32) {
-        let (r, g, b) = if appearance == 0 {
-            SURFACE_DARK
-        } else {
-            SURFACE_LIGHT
-        };
-        (r, g, b, 1.0)
+        solid(SURFACE_DARK, SURFACE_LIGHT, appearance)
     }
 
     pub fn surface_border_rgba(appearance: u8) -> (f32, f32, f32, f32) {
-        let (r, g, b) = if appearance == 0 {
-            SURFACE_BORDER_DARK
-        } else {
-            SURFACE_BORDER_LIGHT
-        };
-        (r, g, b, 1.0)
+        solid(SURFACE_BORDER_DARK, SURFACE_BORDER_LIGHT, appearance)
+    }
+
+    pub fn page_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(PAGE_DARK, PAGE_LIGHT, appearance)
+    }
+
+    pub fn muted_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(MUTED_DARK, MUTED_LIGHT, appearance)
+    }
+
+    pub fn text_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(TEXT_DARK, TEXT_LIGHT, appearance)
+    }
+
+    pub fn text_secondary_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(TEXT_SECONDARY_DARK, TEXT_SECONDARY_LIGHT, appearance)
+    }
+
+    pub fn text_tertiary_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(TEXT_TERTIARY_DARK, TEXT_TERTIARY_LIGHT, appearance)
+    }
+
+    pub fn destructive_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(DESTRUCTIVE_DARK, DESTRUCTIVE_LIGHT, appearance)
+    }
+
+    pub fn success_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(SUCCESS_DARK, SUCCESS_LIGHT, appearance)
     }
 }
 

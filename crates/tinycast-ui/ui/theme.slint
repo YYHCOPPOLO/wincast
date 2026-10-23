@@ -5,22 +5,29 @@
 export global Theme {
     in property <bool> dark;
 
-    // Colors (`theme::colors`, `theme::settings_chrome`).
-    in property <color> scrim;
+    // Colors. Page/surface/muted/border and the text ramp are the opaque Magpie
+    // values from `theme::colors`; selection and hover stay translucent ink.
+    in property <color> page;
+    in property <color> surface;
+    in property <color> surface-muted;
+    // The 1 px border of a panel, menu, dialog or card (`surface_border_rgba`).
+    in property <color> border;
     in property <color> selection;
     in property <color> row-hover;
     in property <color> text-primary;
-    // Destructive action ink (`theme::colors::DESTRUCTIVE`).
-    in property <color> destructive;
     in property <color> text-secondary;
     in property <color> text-tertiary;
+    // Destructive action ink: Magpie's 600 step on light, the 400 step on dark.
+    in property <color> destructive;
+    in property <color> success;
     in property <color> control-surface;
-    in property <color> border;
+    // Kept as aliases while the phase 6.5 surfaces migrate; both are the plain
+    // surface/border values, never a tint.
+    in property <color> scrim;
     in property <color> card-fill;
     in property <color> card-stroke;
     in property <color> separator;
     in property <color> menu-hover;
-    // Opaque Magpie surface and its 1 px border (`theme::colors::SURFACE_*`).
     in property <color> menu-fill;
     in property <color> menu-border;
     in property <color> control-hover;
@@ -28,12 +35,9 @@ export global Theme {
     in property <color> menu-symbol;
     in property <color> note-text;
     in property <color> icon-placeholder;
-    in property <color> sheen;
     in property <color> emoji-cell;
     in property <color> emoji-hover-border;
     in property <color> emoji-selection-border;
-    in property <color> dialog-dimming;
-    in property <color> tooltip-shadow;
     in property <color> composer-send;
     in property <color> drop-guide;
     in property <color> settings-sidebar;

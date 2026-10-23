@@ -21,66 +21,40 @@ where
 
     t.set_dark(appearance == 0);
 
-    // Colors (`theme::colors`, `theme::settings_chrome`).
-    t.set_scrim(rgba(theme::colors::scrim_rgba(appearance)));
+    // Colors: the opaque Magpie page/surface/muted/ink ramp, then the
+    // translucent selection and hover ink. Old `theme::colors` alpha stops stay
+    // for the Direct2D surfaces phase 9 replaces.
+    t.set_page(rgba(theme::colors::page_rgba(appearance)));
+    t.set_surface(rgba(theme::colors::surface_rgba(appearance)));
+    t.set_surface_muted(rgba(theme::colors::muted_rgba(appearance)));
+    t.set_border(rgba(theme::colors::surface_border_rgba(appearance)));
     t.set_selection(ink(
         appearance,
-        theme::colors::SELECTION_DARK_ALPHA,
-        theme::colors::SELECTION_LIGHT_ALPHA,
+        theme::colors::MAGPIE_SELECTION_DARK_ALPHA,
+        theme::colors::MAGPIE_SELECTION_LIGHT_ALPHA,
     ));
     t.set_row_hover(ink(
         appearance,
-        theme::colors::ROW_HOVER_DARK_ALPHA,
-        theme::colors::ROW_HOVER_LIGHT_ALPHA,
+        theme::colors::MAGPIE_ROW_HOVER_DARK_ALPHA,
+        theme::colors::MAGPIE_ROW_HOVER_LIGHT_ALPHA,
     ));
-    t.set_text_primary(ink(
-        appearance,
-        theme::colors::TEXT_PRIMARY_ALPHA,
-        theme::colors::TEXT_PRIMARY_ALPHA,
-    ));
-    t.set_destructive(rgba(theme::colors::DESTRUCTIVE));
-    t.set_text_secondary(ink(
-        appearance,
-        theme::colors::TEXT_SECONDARY_ALPHA,
-        theme::colors::TEXT_SECONDARY_ALPHA,
-    ));
-    t.set_text_tertiary(ink(
-        appearance,
-        theme::colors::TEXT_TERTIARY_DARK_ALPHA,
-        theme::colors::TEXT_TERTIARY_LIGHT_ALPHA,
-    ));
-    t.set_control_surface(ink(
-        appearance,
-        theme::colors::CONTROL_SURFACE_DARK_ALPHA,
-        theme::colors::CONTROL_SURFACE_LIGHT_ALPHA,
-    ));
-    t.set_border(ink(
-        appearance,
-        theme::colors::BORDER_DARK_ALPHA,
-        theme::colors::BORDER_LIGHT_ALPHA,
-    ));
-    t.set_card_fill(ink(
-        appearance,
-        theme::colors::CARD_FILL_DARK_ALPHA,
-        theme::colors::CARD_FILL_LIGHT_ALPHA,
-    ));
-    t.set_card_stroke(ink(
-        appearance,
-        theme::colors::CARD_STROKE_ALPHA,
-        theme::colors::CARD_STROKE_ALPHA,
-    ));
-    t.set_separator(ink(
-        appearance,
-        theme::colors::SEPARATOR_DARK_ALPHA,
-        theme::colors::SEPARATOR_LIGHT_ALPHA,
-    ));
+    t.set_text_primary(rgba(theme::colors::text_rgba(appearance)));
+    t.set_text_secondary(rgba(theme::colors::text_secondary_rgba(appearance)));
+    t.set_text_tertiary(rgba(theme::colors::text_tertiary_rgba(appearance)));
+    t.set_destructive(rgba(theme::colors::destructive_rgba(appearance)));
+    t.set_success(rgba(theme::colors::success_rgba(appearance)));
+    // Controls and cards are solid too: muted strip, surface card, border stroke.
+    t.set_control_surface(rgba(theme::colors::muted_rgba(appearance)));
+    t.set_card_fill(rgba(theme::colors::surface_rgba(appearance)));
+    t.set_card_stroke(rgba(theme::colors::surface_border_rgba(appearance)));
+    t.set_separator(rgba(theme::colors::surface_border_rgba(appearance)));
     t.set_menu_hover(ink(
         appearance,
-        theme::colors::MENU_HOVER_DARK_ALPHA,
-        theme::colors::MENU_HOVER_LIGHT_ALPHA,
+        theme::colors::MAGPIE_MENU_HOVER_DARK_ALPHA,
+        theme::colors::MAGPIE_MENU_HOVER_LIGHT_ALPHA,
     ));
-    t.set_menu_fill(solid(surface(appearance)));
-    t.set_menu_border(solid(surface_border(appearance)));
+    t.set_menu_fill(rgba(theme::colors::surface_rgba(appearance)));
+    t.set_menu_border(rgba(theme::colors::surface_border_rgba(appearance)));
     t.set_control_hover(ink(
         appearance,
         theme::colors::CONTROL_HOVER_DARK_ALPHA,
@@ -106,11 +80,6 @@ where
         theme::colors::ICON_PLACEHOLDER_ALPHA,
         theme::colors::ICON_PLACEHOLDER_ALPHA,
     ));
-    t.set_sheen(ink(
-        appearance,
-        theme::colors::SHEEN_ALPHA,
-        theme::colors::SHEEN_ALPHA,
-    ));
     t.set_emoji_cell(ink(
         appearance,
         theme::colors::EMOJI_CELL_DARK_ALPHA,
@@ -126,8 +95,6 @@ where
         theme::colors::EMOJI_SELECTION_BORDER_DARK_ALPHA,
         theme::colors::EMOJI_SELECTION_BORDER_LIGHT_ALPHA,
     ));
-    t.set_dialog_dimming(black(theme::colors::DIALOG_DIMMING_ALPHA));
-    t.set_tooltip_shadow(black(theme::colors::TOOLTIP_SHADOW_ALPHA));
     t.set_composer_send(ink(
         appearance,
         theme::colors::COMPOSER_SEND_ALPHA,
@@ -138,8 +105,11 @@ where
         theme::colors::DROP_GUIDE_ALPHA,
         theme::colors::DROP_GUIDE_ALPHA,
     ));
-    t.set_settings_sidebar(solid(settings_sidebar(appearance)));
-    t.set_settings_detail(solid(settings_detail(appearance)));
+    // The settings shell in phase 7 is a page: both columns share one background.
+    t.set_settings_sidebar(rgba(theme::colors::page_rgba(appearance)));
+    t.set_settings_detail(rgba(theme::colors::page_rgba(appearance)));
+    // `scrim` is still referenced by the surfaces 6.5.2/6.5.3 move to `surface`.
+    t.set_scrim(rgba(theme::colors::surface_rgba(appearance)));
 
     // Typography (`theme::typography`), in DIP.
     t.set_font_search(theme::typography::SEARCH_FIELD);
@@ -172,12 +142,12 @@ where
     t.set_spacing_chat_line(theme::spacing::CHAT_LINE);
 
     // Corner radii (`theme::radius`).
-    t.set_radius_panel(theme::radius::PANEL);
+    t.set_radius_panel(theme::radius::MAGPIE_PANEL);
     t.set_radius_row(theme::radius::ROW);
     t.set_radius_menu(theme::radius::MENU);
     t.set_radius_menu_row(theme::radius::MENU_ROW);
     t.set_radius_menu_panel(theme::radius::MENU_PANEL);
-    t.set_radius_dialog(theme::radius::DIALOG);
+    t.set_radius_dialog(theme::radius::MAGPIE_DIALOG);
     t.set_radius_dialog_surface(theme::radius::DIALOG_SURFACE);
     t.set_radius_dialog_symbol(theme::radius::DIALOG_SYMBOL);
     t.set_radius_emoji_cell(theme::radius::EMOJI_CELL);
@@ -395,48 +365,8 @@ fn ink(appearance: u8, dark_alpha: f32, light_alpha: f32) -> slint::Color {
     ))
 }
 
-fn black(alpha: f32) -> slint::Color {
-    slint::Color::from_argb_f32(alpha, 0.0, 0.0, 0.0)
-}
-
 fn rgba((red, green, blue, alpha): (f32, f32, f32, f32)) -> slint::Color {
     slint::Color::from_argb_f32(alpha, red, green, blue)
-}
-
-fn solid((red, green, blue): (f32, f32, f32)) -> slint::Color {
-    slint::Color::from_rgb_f32(red, green, blue)
-}
-
-fn surface(appearance: u8) -> (f32, f32, f32) {
-    if appearance == 0 {
-        theme::colors::SURFACE_DARK
-    } else {
-        theme::colors::SURFACE_LIGHT
-    }
-}
-
-fn surface_border(appearance: u8) -> (f32, f32, f32) {
-    if appearance == 0 {
-        theme::colors::SURFACE_BORDER_DARK
-    } else {
-        theme::colors::SURFACE_BORDER_LIGHT
-    }
-}
-
-fn settings_sidebar(appearance: u8) -> (f32, f32, f32) {
-    if appearance == 0 {
-        theme::settings_chrome::SIDEBAR_DARK
-    } else {
-        theme::settings_chrome::SIDEBAR_LIGHT
-    }
-}
-
-fn settings_detail(appearance: u8) -> (f32, f32, f32) {
-    if appearance == 0 {
-        theme::settings_chrome::DETAIL_DARK
-    } else {
-        theme::settings_chrome::DETAIL_LIGHT
-    }
 }
 
 /// Slint stores `duration` as whole milliseconds.
