@@ -65,6 +65,11 @@ const PREVIEW_CHARS: usize = 20_000;
 
 type Palette = tinycast_ui::PaletteWindow;
 
+/// Menu content that changes the Slint model: kind, header and every row.
+/// Selection is deliberately absent; it is a cheap property update that must
+/// not recreate rows under the pointer.
+type MenuSignature = (OpenMenu, String, Vec<(String, Option<&'static str>, bool)>);
+
 pub struct PaletteWindow {
     pub hwnd: HWND,
     ui: Palette,
@@ -87,6 +92,10 @@ struct PaletteInner {
     trailing: f32,
     /// Hover stays dark until the pointer actually moves over the palette.
     hover_armed: bool,
+    /// The menu content last pushed into the surface. Re-setting a model while
+    /// the menu is open recreates its rows under a stationary pointer, whose
+    /// fresh has-hover would feed pointer_move back into another rebuild.
+    menu_signature: Option<MenuSignature>,
     ready: bool,
     /// A show request that arrived before the HWND existed.
     pending_show: Option<physical::Rect>,
@@ -111,6 +120,7 @@ impl PaletteWindow {
             // Forces the first layout.
             trailing: -1.0,
             hover_armed: true,
+            menu_signature: None,
             ready: false,
             pending_show: None,
         }));
@@ -545,7 +555,7 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     ui.set_scroll_y(-scroll);
     ui.set_empty_text(empty.into());
     attach_footer(ui, core);
-    attach_menu(ui, core, expanded);
+    attach_menu(ui, inner, core, expanded);
     let changed = (unsafe { (*inner).trailing } - trailing).abs() > 0.01;
     if changed {
         unsafe {
@@ -604,46 +614,61 @@ fn attach_footer(ui: &Palette, core: &AppCore) {
 /// selection; leaving the last content in place lets the exit animation fade
 /// the menu it was showing instead of an empty shell. File-search filtering and
 /// emoji categories have no OpenMenu or data, so no menu is invented for them.
-fn attach_menu(ui: &Palette, core: &AppCore, expanded: bool) {
+fn attach_menu(ui: &Palette, inner: *mut PaletteInner, core: &AppCore, expanded: bool) {
     let Some(paint) = core.menu_paint().filter(|_| expanded) else {
         ui.set_menu_open(false);
         return;
     };
-    let has_header = !paint.header.is_empty();
-    let frame = menu_frame(
+    let signature: MenuSignature = (
         paint.kind,
-        theme::size::PANEL_WIDTH,
-        snapshot::panel_height(expanded),
-        paint.items.len(),
-        has_header,
+        paint.header.to_string(),
+        paint
+            .items
+            .iter()
+            .map(|item| (item.label.clone(), item.shortcut, item.is_destructive()))
+            .collect(),
     );
-    let items: Vec<tinycast_ui::MenuItem> = paint
-        .items
-        .iter()
-        .map(|item| {
-            // AppCore keeps "Ctrl+Enter" as one string; the menu draws one cap
-            // per token, exactly like the footer.
-            let caps: Vec<slint::SharedString> = item
-                .shortcut
-                .map(|shortcut| shortcut.split('+').map(slint::SharedString::from).collect())
-                .unwrap_or_default();
-            tinycast_ui::MenuItem {
-                label: item.label.as_str().into(),
-                shortcut: slint::ModelRc::new(slint::VecModel::from(caps)),
-                symbol: slint::SharedString::new(),
-                destructive: item.is_destructive(),
-                enabled: true,
-            }
-        })
-        .collect();
-    ui.set_menu_header(paint.header.into());
+    let changed = unsafe { (*inner).menu_signature.as_ref() } != Some(&signature);
+    if changed {
+        let has_header = !paint.header.is_empty();
+        let frame = menu_frame(
+            paint.kind,
+            theme::size::PANEL_WIDTH,
+            snapshot::panel_height(expanded),
+            paint.items.len(),
+            has_header,
+        );
+        let items: Vec<tinycast_ui::MenuItem> = paint
+            .items
+            .iter()
+            .map(|item| {
+                // AppCore keeps "Ctrl+Enter" as one string; the menu draws one cap
+                // per token, exactly like the footer.
+                let caps: Vec<slint::SharedString> = item
+                    .shortcut
+                    .map(|shortcut| shortcut.split('+').map(slint::SharedString::from).collect())
+                    .unwrap_or_default();
+                tinycast_ui::MenuItem {
+                    label: item.label.as_str().into(),
+                    shortcut: slint::ModelRc::new(slint::VecModel::from(caps)),
+                    symbol: slint::SharedString::new(),
+                    destructive: item.is_destructive(),
+                    enabled: true,
+                }
+            })
+            .collect();
+        ui.set_menu_header(paint.header.into());
+        ui.set_menu_items(slint::ModelRc::new(slint::VecModel::from(items)));
+        ui.set_menu_x(frame.x);
+        ui.set_menu_y(frame.y);
+        ui.set_menu_width(frame.w);
+        ui.set_menu_height(frame.h);
+        ui.set_menu_anchored_bottom(matches!(paint.kind, OpenMenu::Actions | OpenMenu::AppMenu));
+        unsafe {
+            (*inner).menu_signature = Some(signature);
+        }
+    }
     ui.set_menu_selected(paint.selection as i32);
-    ui.set_menu_items(slint::ModelRc::new(slint::VecModel::from(items)));
-    ui.set_menu_x(frame.x);
-    ui.set_menu_y(frame.y);
-    ui.set_menu_width(frame.w);
-    ui.set_menu_height(frame.h);
-    ui.set_menu_anchored_bottom(matches!(paint.kind, OpenMenu::Actions | OpenMenu::AppMenu));
     // Last, so the reveal animates content that is already in place.
     ui.set_menu_open(true);
 }
