@@ -1,11 +1,38 @@
 // The settings window: a native-framed 900 × 700 page. The sidebar and the
-// detail column share the page fill; cards are surface. The sidebar rows and
-// the four base pages arrive in 7.2/7.3, the remaining pages in phase 8.
+// detail column share the page fill; cards are surface.
+//
+// The sidebar is built from tinycast_pure::layout::settings::sidebar_rows, so
+// the 22 DIP section headers, 32 DIP tab rows and the 215 DIP column are the
+// same geometry the Direct2D window used. Both columns scroll; Slint reveals
+// the focused row inside its Flickable on its own.
 import { Theme } from "../theme.slint";
+import { Scrollbar } from "../primitives/scrollbar.slint";
+import { SidebarRow } from "../primitives/form.slint";
+
+// One row of the sidebar: kind 0 is a section header, kind 1 a SettingsTab.
+// tab carries the SettingsTab discriminant; headers use -1.
+export struct SettingsSidebarRow {
+    kind: int,
+    top: length,
+    height: length,
+    label: string,
+    symbol: string,
+    tab: int,
+}
 
 export component SettingsWindow inherits Window {
     in property <string> window-title;
     in property <string> heading;
+    in property <[SettingsSidebarRow]> sidebar-rows;
+    in property <length> sidebar-content-height: 0px;
+    // The SettingsTab discriminant AppCore selected; the only selection source.
+    in property <int> selected-tab: 0;
+
+    callback tab-selected(int);
+
+    // Bumped when the keyboard should land on the selected tab (on show, or
+    // after the host changes the tab without a click).
+    private property <int> focus-generation: 0;
 
     title: root.window-title;
     // Initial size; the old window could be resized, so it is a preferred size
@@ -18,8 +45,10 @@ export component SettingsWindow inherits Window {
     default-font-family: "Segoe UI";
     default-font-size: Theme.font-row;
 
-    // The sidebar column. Its rows are added in 7.2; until then it is the page
-    // fill the 215 DIP column has to own.
+    public function focus-selected-tab() {
+        root.focus-generation += 1;
+    }
+
     Rectangle {
         x: 0;
         y: 0;
@@ -27,6 +56,58 @@ export component SettingsWindow inherits Window {
         height: root.height;
         background: Theme.settings-sidebar;
         clip: true;
+
+        sidebar := Flickable {
+            x: 0;
+            y: 0;
+            width: 100%;
+            height: 100%;
+            interactive: true;
+            content-width: self.width;
+            content-height: Math.max(self.height, root.sidebar-content-height);
+
+            for row in root.sidebar-rows: Rectangle {
+                x: 0;
+                y: row.top;
+                width: 100%;
+                height: row.height;
+                background: transparent;
+
+                if row.kind == 0: Text {
+                    x: Theme.spacing-xl;
+                    width: parent.width - Theme.spacing-xl - Theme.spacing-md;
+                    height: parent.height;
+                    text: row.label;
+                    font-size: Theme.font-section;
+                    font-weight: 500;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                if row.kind == 1: SidebarRow {
+                    x: Theme.spacing-sm;
+                    width: parent.width - Theme.spacing-sm * 2;
+                    height: parent.height;
+                    label: row.label;
+                    symbol: row.symbol;
+                    selected: row.tab == root.selected-tab;
+                    focus-generation: root.focus-generation;
+                    clicked => { root.tab-selected(row.tab); }
+                }
+            }
+        }
+
+        Scrollbar {
+            x: parent.width - Theme.size-scrollbar-inset - self.width;
+            y: Theme.size-scrollbar-inset;
+            height: parent.height - Theme.size-scrollbar-inset * 2;
+            content-height: sidebar.content-height;
+            viewport-height: sidebar.height;
+            // content-y is negative while scrolled down; the rail wants a
+            // positive offset.
+            offset: -sidebar.content-y;
+        }
     }
 
     // The 1 px rule sits inside the sidebar, so the detail column starts at 215.

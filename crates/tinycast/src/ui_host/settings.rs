@@ -10,12 +10,15 @@
 //! kept alive by `SettingsWindow`, so opening Settings again shows the same
 //! window with its current tab and scroll positions.
 
+use std::rc::Rc;
 use std::time::Duration;
 
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
-use slint::ComponentHandle;
-use tinycast_pure::i18n::settings_tab_title;
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
+use tinycast_pure::i18n::{settings_section_title, settings_tab_title, UiLang};
+use tinycast_pure::layout::settings::{sidebar_content_height, sidebar_rows, SidebarRowKind};
+use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
@@ -26,6 +29,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
+use crate::design_system::symbols::fluent_for_sf;
 use crate::ui_host::app_core as core_from_host;
 
 type Settings = tinycast_ui::SettingsWindow;
@@ -52,12 +56,19 @@ struct Inner {
     host: HWND,
     /// Upgradeable handle for the init timer; does not keep the window alive.
     weak: slint::Weak<Settings>,
+    /// The 23 sidebar rows (4 section headers and 19 tabs); the model is
+    /// created once and updated in place so focus survives a refresh.
+    sidebar: Rc<VecModel<tinycast_ui::SettingsSidebarRow>>,
     ready: bool,
     /// A show request that arrived before the HWND existed.
     pending_show: bool,
     /// The first show centres the window; later shows keep where the user left it.
     placed: bool,
+    /// Focus lands on the selected tab only when the window becomes visible.
+    visible: bool,
     appearance: u8,
+    /// The locale the sidebar labels were built for.
+    lang: Option<UiLang>,
 }
 
 impl SettingsWindow {
@@ -70,16 +81,32 @@ impl SettingsWindow {
         let inner = Box::into_raw(Box::new(Inner {
             host,
             weak: ui.as_weak(),
+            sidebar: Rc::new(VecModel::default()),
             ready: false,
             pending_show: false,
             placed: false,
+            visible: false,
             appearance,
+            lang: None,
         }));
         let window = Self {
             ui,
             inner,
             hwnd: HWND::default(),
         };
+        window
+            .ui
+            .set_sidebar_rows(ModelRc::from(unsafe { (*inner).sidebar.clone() }));
+        window
+            .ui
+            .set_sidebar_content_height(sidebar_content_height());
+        let ptr = inner as usize;
+        window.ui.on_tab_selected(move |index| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                tab_selected(inner, index);
+            }
+        });
         // Closing hides the surface; the component and its state stay alive.
         let ptr = inner as usize;
         window.ui.window().on_close_requested(move || {
@@ -240,6 +267,13 @@ fn show_impl(ui: &Settings, inner: *mut Inner) {
     unsafe {
         let _ = SetForegroundWindow(hwnd);
     }
+    let first_show = !unsafe { (*inner).visible };
+    unsafe {
+        (*inner).visible = true;
+    }
+    if first_show {
+        ui.invoke_focus_selected_tab();
+    }
 }
 
 /// Pulls the selected tab out of AppCore and pushes the strings the shell
@@ -261,10 +295,80 @@ fn refresh(ui: &Settings, inner: *mut Inner) {
     let title = settings_tab_title(tab, lang);
     ui.set_window_title(title.into());
     ui.set_heading(title.into());
+    ui.set_selected_tab(tab as i32);
+    if unsafe { (*inner).lang } != Some(lang) {
+        unsafe {
+            (*inner).lang = Some(lang);
+        }
+        sync_rows(unsafe { &(*inner).sidebar }, sidebar_model(lang));
+    }
+}
+
+/// One sidebar model row: a section header or a SettingsTab.
+fn sidebar_model(lang: UiLang) -> Vec<tinycast_ui::SettingsSidebarRow> {
+    sidebar_rows()
+        .into_iter()
+        .filter_map(|row| match row.kind {
+            SidebarRowKind::Header(section) => Some(tinycast_ui::SettingsSidebarRow {
+                kind: 0,
+                top: row.y,
+                height: row.height,
+                label: settings_section_title(section, lang).into(),
+                symbol: Default::default(),
+                tab: -1,
+            }),
+            SidebarRowKind::Tab(tab) => Some(tinycast_ui::SettingsSidebarRow {
+                kind: 1,
+                top: row.y,
+                height: row.height,
+                label: settings_tab_title(tab, lang).into(),
+                symbol: fluent_for_sf(tab.system_image()).unwrap_or_default().into(),
+                tab: tab as i32,
+            }),
+        })
+        .collect()
+}
+
+/// Updates a fixed-length model row by row: replacing the model would recreate
+/// every delegate and throw the keyboard focus away.
+fn sync_rows<T: Clone + 'static>(model: &VecModel<T>, rows: Vec<T>) {
+    if model.row_count() != rows.len() {
+        model.set_vec(rows);
+        return;
+    }
+    for (index, row) in rows.into_iter().enumerate() {
+        model.set_row_data(index, row);
+    }
+}
+
+/// SettingsTab has no explicit index API; the discriminant is what the Slint
+/// sidebar carries, and the enum is fieldless.
+fn tab_from_index(index: i32) -> Option<SettingsTab> {
+    SettingsSection::all()
+        .iter()
+        .flat_map(|section| section.tabs())
+        .copied()
+        .find(|tab| *tab as i32 == index)
+}
+
+fn tab_selected(inner: *mut Inner, index: i32) {
+    let Some(tab) = tab_from_index(index) else {
+        return;
+    };
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        return;
+    };
+    unsafe {
+        (*core).select_settings_tab(tab);
+    }
 }
 
 /// The close button only hides: any draft stays, and the window keeps its HWND.
-fn close_requested(_inner: *mut Inner) {}
+fn close_requested(inner: *mut Inner) {
+    unsafe {
+        (*inner).visible = false;
+    }
+}
 
 /// WS_EX_APPWINDOW and the taskbar: winit sets skip_taskbar, so the settings
 /// window gets its own taskbar button only after clearing TOOLWINDOW.

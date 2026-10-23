@@ -63,17 +63,36 @@ export component Toggle inherits Rectangle {
     }
 }
 
-// 32 DIP settings sidebar row: 20 DIP icon slot, 13 DIP label.
+// 32 DIP settings sidebar row: 20 DIP icon slot, 13 DIP label. The row is a
+// keyboard focus stop: Tab reaches it, Enter/Space selects it, and the window
+// bumps focus-generation to hand it the keyboard when Settings opens.
 export component SidebarRow inherits Rectangle {
     in property <string> label;
     in property <string> symbol;
     in property <bool> selected: false;
+    in property <int> focus-generation: 0;
     callback clicked;
 
     height: Theme.size-sidebar-row;
     border-radius: Theme.radius-row;
     background: root.selected ? Theme.selection
         : (touch.has-hover ? Theme.row-hover : transparent);
+    border-width: scope.has-focus ? Theme.size-hairline : 0px;
+    border-color: Theme.text-tertiary;
+
+    scope := FocusScope {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == Key.Space) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
 
     HorizontalLayout {
         padding-left: Theme.spacing-md;
@@ -100,6 +119,15 @@ export component SidebarRow inherits Rectangle {
     }
 
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            scope.focus();
+            root.clicked();
+        }
+    }
+
+    changed focus-generation => {
+        if (root.selected) {
+            scope.focus();
+        }
     }
 }
