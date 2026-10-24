@@ -103,8 +103,15 @@ pub(super) struct Inner {
     /// The alias draft: which entry id it belongs to and its current text.
     pub(super) alias_target: Option<String>,
     pub(super) alias_draft: String,
-    /// The feature rows page (Quicklinks in 8.1; the rest in the next tasks).
+    /// The feature rows page (Quicklinks, the ten feature tabs and AI).
     pub(super) feature: SectionGroup,
+    /// The AI connection editor: which connection is open and its field
+    /// drafts. The drafts live here so a refresh never loses them.
+    pub(super) ai_editing: Option<usize>,
+    pub(super) ai_url: String,
+    pub(super) ai_model: String,
+    pub(super) ai_key: String,
+    pub(super) ai_error: Option<String>,
     /// The local shortcut recorder. It owns only the action name while a well
     /// is listening; the capture itself runs from the HWND subclass.
     pub(super) recorder: crate::features::hotkeys::ui::recorder::Recorder,
@@ -145,6 +152,11 @@ impl SettingsWindow {
             alias_target: None,
             alias_draft: String::new(),
             feature: SectionGroup::new(0),
+            ai_editing: None,
+            ai_url: String::new(),
+            ai_model: String::new(),
+            ai_key: String::new(),
+            ai_error: None,
             recorder: crate::features::hotkeys::ui::recorder::Recorder::new(),
             ready: false,
             pending_show: false,
@@ -319,6 +331,27 @@ impl SettingsWindow {
                 super::settings_pages::feature_row_activated(inner, id);
             }
         });
+        let ptr = inner as usize;
+        self.ui.on_feature_trailing_activated(move |id| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::feature_trailing_activated(inner, id);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_feature_text_edited(move |id, text| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::feature_text_edited(inner, id, text.to_string());
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_feature_text_accepted(move |id| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::feature_text_accepted(inner, id);
+            }
+        });
     }
 
     pub fn show(&self) {
@@ -347,16 +380,18 @@ impl SettingsWindow {
         // like the Direct2D window's reset_pane_state did.
         stop_recording(self.inner, true);
         super::settings_pages::tab_changed(self.inner);
+        // The AI editor never survives a tab change; commit_pending already
+        // wrote the draft before AppCore moved the tab.
         refresh(&self.ui, self.inner);
         if unsafe { (*self.inner).ready } {
             reveal_selected_tab(&self.ui, self.inner);
         }
     }
 
-    /// Phase 7 has no alias or AI connection drafts; phase 8's editors will
-    /// restore the real commit. The AppCore call site stays as it is.
+    /// A tab change commits the open AI connection draft first; a failed
+    /// commit keeps the tab (the error row stays visible on the page).
     pub fn commit_pending(&self) -> bool {
-        true
+        super::settings_pages::commit_pending(self.inner)
     }
 
     /// The real HWND once the event loop has created the Slint window.
@@ -600,6 +635,11 @@ fn refresh_inner(inner: *mut Inner) {
     }
 }
 
+/// Re-pushes the models after a dispatch changed only part of the state.
+pub(super) fn invalidate_inner(inner: *mut Inner) {
+    refresh_inner(inner);
+}
+
 /// One sidebar model row: a section header or a SettingsTab. Headers take the
 /// magpie label dress: Latin copy is uppercased (a no-op for Chinese).
 fn sidebar_model(lang: UiLang) -> Vec<SidebarRow> {
@@ -642,6 +682,8 @@ pub(super) fn action_row(
         checked: false,
         active: false,
         enabled: true,
+        tone: 0,
+        placeholder: Default::default(),
     }
 }
 
@@ -942,7 +984,7 @@ fn page_kind(tab: SettingsTab) -> i32 {
         | SettingsTab::SystemSettings
         | SettingsTab::SystemActions
         | SettingsTab::Commands => 4,
-        SettingsTab::Quicklinks => 5,
+        SettingsTab::Quicklinks | SettingsTab::Ai => 5,
         _ => 6,
     }
 }

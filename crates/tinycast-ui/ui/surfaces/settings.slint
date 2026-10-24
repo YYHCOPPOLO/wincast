@@ -23,7 +23,9 @@ export struct SettingsSidebarRow {
 }
 
 // One row of a settings page. id is the action the host runs.
-// control: 0 plain action row, 1 switch, 2 trailing label, 3 shortcut well.
+// control: 0 plain action row, 1 switch, 2 trailing label, 3 shortcut well,
+// 4 value select button, 5 single-line input, 6 status badge, 7 trailing
+// destructive text button.
 export struct SettingsPageRow {
     id: int,
     title: string,
@@ -33,6 +35,8 @@ export struct SettingsPageRow {
     checked: bool,
     active: bool,
     enabled: bool,
+    tone: int,
+    placeholder: string,
 }
 
 // One titled group of rows: the small spaced header, then one surface card
@@ -48,6 +52,9 @@ export struct SettingsPageSection {
 component RowCard inherits Rectangle {
     in property <[SettingsPageRow]> rows;
     callback row-activated(int);
+    callback row-trailing-activated(int);
+    callback row-text-edited(int, string);
+    callback row-text-accepted(int);
 
     background: Theme.card-fill;
     border-width: Theme.size-hairline;
@@ -78,8 +85,13 @@ component RowCard inherits Rectangle {
                 control: row.control;
                 checked: row.checked;
                 active: row.active;
+                tone: row.tone;
+                placeholder: row.placeholder;
                 enabled: row.enabled;
                 activated => { root.row-activated(row.id); }
+                trailing-activated => { root.row-trailing-activated(row.id); }
+                text-edited(text) => { root.row-text-edited(row.id, text); }
+                text-accepted(text) => { root.row-text-accepted(row.id); }
             }
         }
     }
@@ -92,6 +104,9 @@ component RowsPage inherits Rectangle {
     in property <string> footnote;
     in property <[SettingsPageSection]> sections;
     callback row-activated(int);
+    callback row-trailing-activated(int);
+    callback row-text-edited(int, string);
+    callback row-text-accepted(int);
 
     background: transparent;
 
@@ -133,6 +148,9 @@ component RowsPage inherits Rectangle {
                     RowCard {
                         rows: section.rows;
                         row-activated(id) => { root.row-activated(id); }
+                        row-trailing-activated(id) => { root.row-trailing-activated(id); }
+                        row-text-edited(id, text) => { root.row-text-edited(id, text); }
+                        row-text-accepted(id) => { root.row-text-accepted(id); }
                     }
 
                     if section.note != "": Text {
@@ -717,6 +735,9 @@ export component SettingsWindow inherits Window {
     callback launcher-filter-changed(string);
     callback launcher-list-scrolled();
     callback feature-row-activated(int);
+    callback feature-trailing-activated(int);
+    callback feature-text-edited(int, string);
+    callback feature-text-accepted(int);
 
     // Bumped when the keyboard should land on the selected tab (on show).
     private property <int> focus-generation: 0;
@@ -886,6 +907,9 @@ export component SettingsWindow inherits Window {
             heading: root.feature-heading;
             sections: root.feature-sections;
             row-activated(id) => { root.feature-row-activated(id); }
+            row-trailing-activated(id) => { root.feature-trailing-activated(id); }
+            row-text-edited(id, text) => { root.feature-text-edited(id, text); }
+            row-text-accepted(id) => { root.feature-text-accepted(id); }
         }
 
         PlaceholderPage {

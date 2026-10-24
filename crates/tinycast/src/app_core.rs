@@ -2034,7 +2034,7 @@ impl AppCore {
         tinycast_pure::i18n::UiLang::parse(&self.settings.ui_language)
     }
 
-    fn show_alert(&self, title: &str, message: &str) {
+    pub(crate) fn show_alert(&self, title: &str, message: &str) {
         crate::surfaces::dialog::alert(title, message, self.ui_lang());
     }
 

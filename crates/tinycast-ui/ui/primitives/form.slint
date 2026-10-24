@@ -1,6 +1,6 @@
 import { Theme, Motion } from "../theme.slint";
 import { IconSlot } from "row.slint";
-import { MagHeader } from "magpie.slint";
+import { MagBadge, MagHeader, MagInput, MagSelectButton, MagTextButton } from "magpie.slint";
 
 // The settings group: a small spaced title above one surface card with the
 // injected rows (magpie's `.row-head` label over its `.list` card).
@@ -150,13 +150,21 @@ export component SettingsRow inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
     in property <string> trailing;
-    // 0 none, 1 switch, 2 trailing label, 3 shortcut well.
+    // 0 plain action row, 1 switch, 2 trailing label, 3 shortcut well,
+    // 4 value select button, 5 single-line input, 6 status badge,
+    // 7 trailing destructive text button.
     in property <int> control: 0;
     in property <bool> checked: false;
-    // The shortcut well is listening for a chord.
+    // The shortcut well is listening for a chord; the badge picks its tone.
     in property <bool> active: false;
+    in property <int> tone: 0;
+    in property <string> placeholder;
     in property <bool> enabled: true;
     callback activated();
+    // The trailing destructive button (control 7) has its own hit target.
+    callback trailing-activated();
+    callback text-edited(string);
+    callback text-accepted(string);
 
     height: Theme.size-settings-row-height;
     border-radius: Theme.radius-row;
@@ -198,7 +206,7 @@ export component SettingsRow inherits Rectangle {
                 overflow: elide;
             }
 
-            if root.subtitle != "": Text {
+            if root.subtitle != "" && root.control != 5: Text {
                 text: root.subtitle;
                 font-family: "Segoe UI";
                 font-size: Theme.font-section;
@@ -245,10 +253,40 @@ export component SettingsRow inherits Rectangle {
                 overflow: elide;
             }
         }
+
+        // A value's pop-up button (magpie `.field`): the current value with a
+        // trailing chevron; the row's own click cycles or opens it.
+        if root.control == 4: MagSelectButton {
+            value: root.trailing;
+            enabled: root.enabled;
+        }
+
+        // A single-line field (magpie `.editor input`); the row title is the
+        // field label. The text lives in the model row's trailing.
+        if root.control == 5: MagInput {
+            width: Theme.size-shortcut-recorder * 2 + Theme.spacing-xl;
+            text-value: root.trailing;
+            placeholder: root.placeholder;
+            enabled: root.enabled;
+            edited(text) => { root.text-edited(text); }
+            accepted(text) => { root.text-accepted(text); }
+        }
+
+        if root.control == 6: MagBadge {
+            label: root.trailing;
+            tone: root.tone;
+        }
+
+        if root.control == 7: MagTextButton {
+            label: root.trailing;
+            danger: true;
+            enabled: root.enabled;
+            clicked => { root.trailing-activated(); }
+        }
     }
 
     touch := TouchArea {
-        enabled: root.enabled;
+        enabled: root.enabled && root.control != 5;
         clicked => {
             scope.focus();
             root.activated();
