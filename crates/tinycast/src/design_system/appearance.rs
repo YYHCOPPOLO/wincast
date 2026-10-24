@@ -24,8 +24,12 @@ pub fn search_background_colorref(appearance: u8) -> COLORREF {
     colorref(tinycast_pure::theme::colors::card2_rgba(appearance))
 }
 
+/// Empty-field hint ink: `--fg-2` reads clearly on card-2 in both appearances;
+/// the tertiary step was too faint at the 20 DIP search size.
 pub fn placeholder_colorref(appearance: u8) -> COLORREF {
-    colorref(tinycast_pure::theme::colors::text_tertiary_rgba(appearance))
+    colorref(tinycast_pure::theme::colors::text_secondary_rgba(
+        appearance,
+    ))
 }
 
 fn colorref((red, green, blue, _): (f32, f32, f32, f32)) -> COLORREF {

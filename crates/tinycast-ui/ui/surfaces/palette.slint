@@ -482,8 +482,9 @@ export component PaletteWindow inherits Window {
     title: "Tinycast";
     no-frame: true;
     always-on-top: true;
-    // Opaque: the window itself is the Magpie surface, the Panel draws the border.
-    background: Theme.surface;
+    // Transparent only outside the Panel's 26 DIP corners: the Panel paints
+    // the opaque surface and border, so the window silhouette stays rounded.
+    background: transparent;
     default-font-family: "Segoe UI";
     default-font-size: Theme.font-row;
     width: Theme.size-panel-width;
@@ -801,13 +802,19 @@ export component PaletteWindow inherits Window {
                 background: transparent;
 
                 VerticalLayout {
+                    width: 100%;
+                    height: 100%;
                     alignment: center;
                     spacing: Theme.spacing-md;
 
-                    GlyphIcon {
-                        size: Theme.size-empty-results-glyph;
-                        name: root.empty-symbol;
-                        ink: Theme.text-tertiary;
+                    HorizontalLayout {
+                        alignment: center;
+
+                        GlyphIcon {
+                            size: Theme.size-empty-results-glyph;
+                            name: root.empty-symbol;
+                            ink: Theme.text-tertiary;
+                        }
                     }
 
                     Text {

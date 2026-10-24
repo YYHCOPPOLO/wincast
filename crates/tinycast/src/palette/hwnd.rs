@@ -22,20 +22,21 @@ use tinycast_pure::palette_placement::{compact_size, expanded_size};
 use tinycast_pure::theme;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    GetStockObject, ScreenToClient, SetBkColor, SetBkMode, SetDCBrushColor, SetTextColor, DC_BRUSH,
-    HDC, OPAQUE,
+    CreateRoundRectRgn, DeleteObject, GetStockObject, ScreenToClient, SetBkColor, SetBkMode,
+    SetDCBrushColor, SetTextColor, SetWindowRgn, DC_BRUSH, HDC, OPAQUE,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass, SUBCLASSPROC,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetAncestor, GetForegroundWindow, GetWindowLongPtrW, IsWindow, KillTimer, PostMessageW,
-    SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, EN_CHANGE, GA_ROOT,
-    GWLP_USERDATA, GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WA_INACTIVE, WM_ACTIVATE, WM_COMMAND,
-    WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DPICHANGED, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_TIMER, WS_EX_TOOLWINDOW,
+    GetAncestor, GetClientRect, GetForegroundWindow, GetWindowLongPtrW, IsWindow, KillTimer,
+    PostMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, EN_CHANGE,
+    GA_ROOT, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WA_INACTIVE, WM_ACTIVATE,
+    WM_COMMAND, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DPICHANGED, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_SIZE, WM_TIMER,
+    WS_CAPTION, WS_EX_TOOLWINDOW,
 };
 
 use super::edit::SearchEdit;
@@ -485,9 +486,42 @@ fn frame_at(expanded: bool, anchor_px: physical::Point, dpi: u32) -> physical::R
 }
 
 /// Keeps the Slint window size in step with the frame. The window is opaque
-/// now, so there is no per-size squircle path to rebuild.
+/// now, so the rounded silhouette is cut with a window region instead of
+/// per-pixel alpha; `apply_rounded_region` rebuilds it for the new size.
 fn sync_size(ui: &Palette, expanded: bool) {
     ui.set_expanded(expanded);
+}
+
+/// Shape the opaque window like the Slint `Panel`.
+///
+/// The palette clears winit's DWM blur-behind so the native search EDIT keeps
+/// painting (and scrolling avoids the alpha compositor). Without that effect the
+/// window has no per-pixel alpha: the transparent area outside the Panel's
+/// rounded corners shows the render target's black clear colour as four square
+/// wedges. A rounded window region removes those wedges while leaving the
+/// native child control fully composited. The radius is the same
+/// `theme::radius::MAGPIE_PANEL` token the Slint surface draws with.
+fn apply_rounded_region(hwnd: HWND) {
+    unsafe {
+        let mut rect = windows::Win32::Foundation::RECT::default();
+        if GetClientRect(hwnd, &mut rect).is_err() {
+            return;
+        }
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+        if width <= 0 || height <= 0 {
+            return;
+        }
+        let radius_px = dip_scalar_to_px(theme::radius::MAGPIE_PANEL, GetDpiForWindow(hwnd)).max(1);
+        let region = CreateRoundRectRgn(0, 0, width + 1, height + 1, radius_px * 2, radius_px * 2);
+        if region.is_invalid() {
+            return;
+        }
+        // SetWindowRgn owns the region on success; only a failed call leaks it.
+        if SetWindowRgn(hwnd, region, true) == 0 {
+            let _ = DeleteObject(region);
+        }
+    }
 }
 
 fn layout_search(ui: &Palette, inner: *mut PaletteInner) {
@@ -947,7 +981,9 @@ fn window_hwnd(ui: &Palette) -> Option<HWND> {
             let RawWindowHandle::Win32(win32) = handle.as_raw() else {
                 return None;
             };
-            Some(HWND(win32.hwnd.get() as *mut core::ffi::c_void))
+            let hwnd = HWND(win32.hwnd.get() as *mut core::ffi::c_void);
+            crate::ui_host::clear_backdrop(hwnd);
+            Some(hwnd)
         })
         .flatten()
 }
@@ -965,16 +1001,30 @@ fn place(hwnd: HWND, frame: physical::Rect) {
             SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOZORDER,
         );
     }
+    // SetWindowPos sends WM_SIZE, but the subclass may not be installed when
+    // the first show parks the window; rebuilding here keeps both paths exact.
+    apply_rounded_region(hwnd);
 }
 
 /// `WS_EX_TOOLWINDOW` and the taskbar: winit sets `skip_taskbar`, which does not
 /// clear `APPWINDOW`, so the style is corrected once the HWND exists.
+///
+/// The caption bit is cleared as well. Winit implements `no-frame` by keeping
+/// `WS_CAPTION` and swallowing `WM_NCCALCSIZE`, but once the rounded HWND
+/// region is installed DWM paints that caption again across the search row.
+/// Removing the bit is what winit's own frameless branch does, and the palette
+/// needs no system frame.
 fn apply_tool_window(hwnd: HWND) {
     unsafe {
         let before = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let next = (before | WS_EX_TOOLWINDOW.0 as isize) & !WS_EX_APPWINDOW_BIT;
         if next != before {
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next);
+        }
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        let stripped = style & !(WS_CAPTION.0 as isize);
+        if stripped != style {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, stripped);
         }
         let _ = SetWindowPos(
             hwnd,
@@ -986,6 +1036,10 @@ fn apply_tool_window(hwnd: HWND) {
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
         );
     }
+    // Showing the window re-applies winit's decorated style, and the style
+    // change drops the region. Set it last so the rounded silhouette survives
+    // the show path; a resize still refreshes it from `WM_SIZE`.
+    apply_rounded_region(hwnd);
 }
 
 fn core_from_host(host: HWND) -> Option<*mut AppCore> {
@@ -1174,7 +1228,18 @@ unsafe extern "system" fn palette_subclass(
                     (*core).relayout_palette();
                 }
             }
-            DefSubclassProc(hwnd, msg, wparam, lparam)
+            let result = DefSubclassProc(hwnd, msg, wparam, lparam);
+            apply_rounded_region(hwnd);
+            result
+        }
+        // Slint resizes the HWND when the surface switches compact/expanded;
+        // the opaque corner wedges must follow the new client rect.
+        WM_SIZE => {
+            // Let winit resize its surface before the clip changes, so the
+            // first frame after the resize already has the new shape.
+            let result = DefSubclassProc(hwnd, msg, wparam, lparam);
+            apply_rounded_region(hwnd);
+            result
         }
         WM_NCDESTROY => {
             let _ = RemoveWindowSubclass(hwnd, SUBCLASSPROC::Some(palette_subclass), SUBCLASS_ID);

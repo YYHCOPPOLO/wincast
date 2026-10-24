@@ -24,6 +24,15 @@ export component NotesWindow inherits Window {
     preferred-width: Theme.size-note-window-width;
     preferred-height: Theme.size-note-window-height;
 
+    // Opaque page under the native body and the footer.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: Theme.page;
+    }
+
     // Title bar: 52 DIP. The title keeps the 120 DIP inset clear on both
     // sides (`size-note-title-inset`); the capsule rides the trailing gutter.
     Rectangle {

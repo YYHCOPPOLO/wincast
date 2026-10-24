@@ -31,6 +31,14 @@ export component EditorWindow inherits Window {
     default-font-family: "Segoe UI";
     default-font-size: Theme.font-row;
 
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: Theme.page;
+    }
+
     // The window-level keys: Esc cancels wherever the focus sits; Enter in a
     // field reaches the field's own `accepted` first.
     scope := Rectangle {

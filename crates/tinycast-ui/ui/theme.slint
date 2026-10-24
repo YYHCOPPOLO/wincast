@@ -7,8 +7,13 @@ export global Theme {
 
     // Colors. Page/surface/muted/border and the text ramp are the opaque Magpie
     // values from `theme::colors`; selection and hover stay translucent ink.
-    in property <color> page;
-    in property <color> surface;
+    // Opaque creation defaults. The window background is read before the host
+    // runs `apply_appearance`; a transparent default makes winit create the
+    // window with DWM blur-behind, which hides native EDIT children and forces
+    // every frame through an alpha composite. The bridge replaces these with
+    // the real appearance tokens immediately after construction.
+    in property <color> page: #f4f4f6;
+    in property <color> surface: #ffffff;
     in property <color> surface-muted;
     // The 1 px border of a panel, menu, dialog or card (`surface_border_rgba`).
     in property <color> border;

@@ -2,7 +2,7 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     DeleteObject, DrawTextW, GetDC, InvalidateRect, ReleaseDC, SelectObject, SetBkMode,
-    SetTextColor, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_TOP, HFONT, HGDIOBJ,
+    SetTextColor, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, HFONT, HGDIOBJ,
     TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -28,6 +28,12 @@ use crate::app_core::AppCore;
 use crate::platform::screens::dip_scalar_to_px;
 
 pub const SEARCH_FONT_DIP: f32 = 20.0;
+/// The native field is only the text line, centred inside the 40 DIP Slint
+/// chrome. A full-height EDIT paints its text at the top instead of centring
+/// it, which reads as "not vertically centred" next to the search glyph.
+const SEARCH_EDIT_HEIGHT_DIP: f32 = 28.0;
+/// Left/right text inset inside the native field (`EM_SETMARGINS`).
+const SEARCH_TEXT_INSET_DIP: f32 = 8.0;
 
 const EDIT_ID: usize = 100;
 const SUBCLASS_ID: usize = 1;
@@ -76,12 +82,6 @@ impl SearchEdit {
             )?;
             // Let WM_CTLCOLOREDIT supply our opaque light/dark field colors.
             let _ = windows::Win32::UI::Controls::SetWindowTheme(hwnd, w!(""), w!(""));
-            let _ = SendMessageW(
-                hwnd,
-                EM_SETMARGINS,
-                WPARAM((EC_LEFTMARGIN | EC_RIGHTMARGIN) as usize),
-                LPARAM(0),
-            );
             // EM_SETCUEBANNER is forbidden: cue text jumps under IME composition.
             let _ = SetWindowSubclass(
                 hwnd,
@@ -107,17 +107,26 @@ impl SearchEdit {
                 self.apply_font(dpi);
             }
             let (x, y, w, h) = search_field_dip_with_trailing(trailing);
-            // Keep the opaque child inside the rounded Slint field's border.
-            let field_h = tinycast_pure::theme::size::MAGPIE_SEARCH_HEIGHT
-                - tinycast_pure::theme::size::HAIRLINE * 2.0;
+            // Keep the opaque child inside the rounded Slint field's border and
+            // centre the text line in the 40 DIP chrome.
+            let box_y = y + (h - tinycast_pure::theme::size::MAGPIE_SEARCH_HEIGHT) / 2.0;
+            let edit_y = box_y
+                + (tinycast_pure::theme::size::MAGPIE_SEARCH_HEIGHT - SEARCH_EDIT_HEIGHT_DIP) / 2.0;
             let _ = SetWindowPos(
                 self.hwnd,
                 HWND_TOP,
                 dip_scalar_to_px(x, dpi),
-                dip_scalar_to_px(y + (h - field_h) / 2.0, dpi),
+                dip_scalar_to_px(edit_y, dpi),
                 dip_scalar_to_px(w, dpi),
-                dip_scalar_to_px(field_h, dpi),
+                dip_scalar_to_px(SEARCH_EDIT_HEIGHT_DIP, dpi),
                 SWP_NOACTIVATE,
+            );
+            let margin = dip_scalar_to_px(SEARCH_TEXT_INSET_DIP, dpi) as isize;
+            let _ = SendMessageW(
+                self.hwnd,
+                EM_SETMARGINS,
+                WPARAM((EC_LEFTMARGIN | EC_RIGHTMARGIN) as usize),
+                LPARAM((margin & 0xffff) | ((margin & 0xffff) << 16)),
             );
         }
     }
@@ -309,7 +318,7 @@ unsafe fn draw_placeholder(hwnd: HWND, host: HWND) {
         hdc,
         &mut text,
         &mut rect,
-        DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS,
     );
     SetBkMode(
         hdc,

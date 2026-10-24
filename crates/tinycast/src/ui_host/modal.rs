@@ -359,7 +359,9 @@ fn window_hwnd(ui: &Dialog) -> Option<HWND> {
             let RawWindowHandle::Win32(win32) = handle.as_raw() else {
                 return None;
             };
-            Some(HWND(win32.hwnd.get() as *mut core::ffi::c_void))
+            let hwnd = HWND(win32.hwnd.get() as *mut core::ffi::c_void);
+            crate::ui_host::clear_backdrop(hwnd);
+            Some(hwnd)
         })
         .flatten()
 }

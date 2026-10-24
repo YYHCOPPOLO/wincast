@@ -369,10 +369,14 @@ export component MagEmptyState inherits Rectangle {
         alignment: center;
         spacing: Theme.spacing-md;
 
-        if root.glyph != "": GlyphIcon {
-            size: Theme.size-note-empty-glyph;
-            name: root.glyph;
-            ink: Theme.faint;
+        if root.glyph != "": HorizontalLayout {
+            alignment: center;
+
+            GlyphIcon {
+                size: Theme.size-note-empty-glyph;
+                name: root.glyph;
+                ink: Theme.faint;
+            }
         }
 
         Text {

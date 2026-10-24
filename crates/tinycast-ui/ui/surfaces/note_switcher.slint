@@ -26,6 +26,16 @@ export component NoteSwitcherWindow inherits Window {
     width: Theme.size-note-switcher-width;
     height: Theme.size-note-switcher-height;
 
+    // Opaque surface under the search row and the list; the native EDIT is a
+    // child of this window and needs an opaque sibling surface behind it.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: Theme.surface;
+    }
+
     // Search row: 34 DIP (`size-note-search-height`); the native EDIT child
     // sits here, so the surface draws only the row itself.
     Rectangle {
@@ -59,10 +69,14 @@ export component NoteSwitcherWindow inherits Window {
                 alignment: center;
                 spacing: Theme.spacing-md;
 
-                GlyphIcon {
-                    size: Theme.size-note-empty-glyph;
-                    name: root.empty-glyph;
-                    ink: Theme.faint;
+                HorizontalLayout {
+                    alignment: center;
+
+                    GlyphIcon {
+                        size: Theme.size-note-empty-glyph;
+                        name: root.empty-glyph;
+                        ink: Theme.faint;
+                    }
                 }
 
                 Text {

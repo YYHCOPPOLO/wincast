@@ -25,6 +25,14 @@ export component OnboardingWindow inherits Window {
     preferred-width: 520px;
     preferred-height: 400px;
 
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: Theme.page;
+    }
+
     private property <float> step-reveal: 0;
 
     // Each step re-enters a state, so the 200 ms fade plays on every change.

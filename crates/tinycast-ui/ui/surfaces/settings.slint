@@ -807,6 +807,17 @@ export component SettingsWindow inherits Window {
     default-font-family: Theme.font-family;
     default-font-size: Theme.font-row;
 
+    // Opaque page under both columns. The window background is only the clear
+    // color once a transparent window flag is involved; an explicit rectangle
+    // keeps the settings surface stable when DWM blur is disabled.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: Theme.page;
+    }
+
     public function focus-selected-tab() {
         root.focus-generation += 1;
     }
