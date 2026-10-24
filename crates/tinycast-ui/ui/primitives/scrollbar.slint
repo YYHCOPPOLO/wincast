@@ -1,7 +1,7 @@
-import { Theme, Motion } from "../theme.slint";
+import { Theme } from "../theme.slint";
 
 // Thin overlay rail: 6 DIP at rest, 10 DIP under the pointer, 28 DIP minimum
-// thumb. The spring is the thin-scrollbar morph (response 0.28, damping 0.85).
+// thumb.
 export component Scrollbar inherits Rectangle {
     in property <length> content-height;
     in property <length> viewport-height;
@@ -18,9 +18,8 @@ export component Scrollbar inherits Rectangle {
     visible: root.content-height > root.viewport-height;
 
     animate width {
-        // motion.rs: damping 0.85 -> bounce = 0.15. Slint requires a literal.
-        duration: Motion.scrollbar-spring;
-        easing: spring(0.15);
+        duration: 120ms;
+        easing: ease-out;
     }
 
     // `visible: false` still evaluates the bindings, so every divisor is guarded.
@@ -47,10 +46,11 @@ export component Scrollbar inherits Rectangle {
             : Theme.scrollbar-rest-alpha,
         );
 
+        // The thumb tracks the wheel directly: a short ease-out smooths wheel
+        // steps without the spring's bounce, which read as lag then a jump.
         animate y, height {
-            // motion.rs: damping 0.85 -> bounce = 0.15. Slint requires a literal.
-            duration: Motion.scrollbar-spring;
-            easing: spring(0.15);
+            duration: 96ms;
+            easing: ease-out;
         }
     }
 

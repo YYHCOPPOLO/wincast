@@ -65,6 +65,7 @@ export component Toggle inherits Rectangle {
 
     touch := TouchArea {
         enabled: root.interactive;
+        mouse-cursor: MouseCursor.pointer;
         clicked => {
             root.checked = !root.checked;
             root.toggled(root.checked);
@@ -128,6 +129,7 @@ export component SidebarRow inherits Rectangle {
     }
 
     touch := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
         clicked => {
             scope.focus();
             root.clicked();
@@ -171,8 +173,9 @@ export component SettingsRow inherits Rectangle {
 
     height: Theme.size-settings-row-height;
     border-radius: Theme.radius-row;
-    background: scope.has-focus ? Theme.selection
-        : (touch.has-hover ? Theme.row-hover : transparent);
+    // No hover fill: the row is quiet until focused; the trailing control
+    // shows its own affordance and takes the pointer cursor.
+    background: scope.has-focus ? Theme.selection : transparent;
     border-width: scope.has-focus ? Theme.size-hairline : 0px;
     border-color: Theme.text-tertiary;
 
@@ -254,6 +257,21 @@ export component SettingsRow inherits Rectangle {
                 horizontal-alignment: center;
                 vertical-alignment: center;
                 overflow: elide;
+            }
+
+            // The well is its own affordance: pointer cursor and the same
+            // activation the row click performs, with the callout anchored to
+            // the well itself.
+            well-area := TouchArea {
+                mouse-cursor: MouseCursor.pointer;
+                clicked => {
+                    scope.focus();
+                    root.well-revealed(
+                        self.absolute-position.x + self.width / 2,
+                        self.absolute-position.y,
+                    );
+                    root.activated();
+                }
             }
         }
 
