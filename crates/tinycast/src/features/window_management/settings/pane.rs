@@ -94,12 +94,11 @@ fn catalog_layout() -> CatalogLayout {
     catalog_layout_lang(tinycast_pure::i18n::UiLang::En)
 }
 
-fn catalog_layout_lang(lang: tinycast_pure::i18n::UiLang) -> CatalogLayout {
+fn catalog_layout_lang(_lang: tinycast_pure::i18n::UiLang) -> CatalogLayout {
     let mut y = toggles_bottom() + theme::spacing::XL;
     let mut commands = Vec::new();
     let all = WindowCommandId::all();
-    for (group, cmds) in group_blocks() {
-        debug_assert!(!tinycast_pure::i18n::window_group_title(group, lang).is_empty());
+    for (_group, cmds) in group_blocks() {
         y += HEADER_H;
         for id in cmds {
             let index = all.iter().position(|c| *c == id).unwrap_or(0);

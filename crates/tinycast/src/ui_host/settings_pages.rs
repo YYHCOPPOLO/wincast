@@ -432,7 +432,7 @@ fn feature_model(
                 .iter()
                 .enumerate()
                 .map(|(index, path)| {
-                    super::settings::action_row(20 + index as i32, path, "", "", 0)
+                    super::settings::action_row(100 + index as i32, path, "", "", 0)
                 })
                 .collect();
             scope_rows.extend(folders.drain(..));
@@ -449,7 +449,7 @@ fn feature_model(
                 .iter()
                 .enumerate()
                 .map(|(index, pattern)| {
-                    super::settings::action_row(40 + index as i32, pattern, "", "", 0)
+                    super::settings::action_row(200 + index as i32, pattern, "", "", 0)
                 })
                 .collect();
             ignore_rows.extend(ignores.drain(..));
@@ -473,7 +473,7 @@ fn feature_model(
             let mut apps: Vec<PageRow> = disabled
                 .iter()
                 .enumerate()
-                .map(|(index, app)| super::settings::action_row(20 + index as i32, app, "", "", 0))
+                .map(|(index, app)| super::settings::action_row(100 + index as i32, app, "", "", 0))
                 .collect();
             apps.push(super::settings::action_row(
                 30,
@@ -749,8 +749,10 @@ pub(super) fn intro_activated(ptr: *mut Inner, id: i32) {
 }
 
 /// The feature rows page dispatch. Ids: 10+ are the tab's own switches and
-/// cycling values; 20+i/40+i remove a file-search scope/ignore pattern;
-/// 100+i are AI connections; 200+ are the AI connection editor rows.
+/// cycling values; 30/50 are the file-search Add-folder / Add-ignore rows and
+/// 30 the clipboard Add-app row; list rows use collision-free bases — 100+i
+/// file-search scopes, AI connections, clipboard apps and quicklinks; 200+i
+/// file-search ignore patterns; 200+ the AI connection editor rows.
 pub(super) fn feature_row_activated(ptr: *mut Inner, id: i32) {
     let Some(core) = core_of(ptr) else {
         return;
@@ -859,8 +861,8 @@ pub(super) fn feature_row_activated(ptr: *mut Inner, id: i32) {
                 10 => {
                     (*core).set_file_search_enabled(!(*core).settings.file_search_enabled);
                 }
-                index if (20..40).contains(&index) => {
-                    (*core).remove_file_search_scope((index - 20) as usize);
+                index if (100..200).contains(&index) => {
+                    (*core).remove_file_search_scope((index - 100) as usize);
                 }
                 30 => {
                     if let Some(path) =
@@ -869,8 +871,8 @@ pub(super) fn feature_row_activated(ptr: *mut Inner, id: i32) {
                         (*core).add_file_search_scope(path);
                     }
                 }
-                index if (40..50).contains(&index) => {
-                    (*core).remove_file_search_ignore((index - 40) as usize);
+                index if (200..300).contains(&index) => {
+                    (*core).remove_file_search_ignore((index - 200) as usize);
                 }
                 50 => {
                     // The ignore-pattern prompt is the Slint sheet now; the
@@ -908,8 +910,8 @@ pub(super) fn feature_row_activated(ptr: *mut Inner, id: i32) {
 
             SettingsTab::Clipboard => match id {
                 10 => (*core).cycle_clipboard_retention(),
-                index if (20..30).contains(&index) => {
-                    (*core).remove_clipboard_disabled_app((index - 20) as usize);
+                index if (100..200).contains(&index) => {
+                    (*core).remove_clipboard_disabled_app((index - 100) as usize);
                 }
                 30 => {
                     if let Some(stem) =
