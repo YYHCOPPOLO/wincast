@@ -1,0 +1,142 @@
+// The floating message/volume HUD. The window is the opaque Magpie surface:
+// a capsule for copy, a speaker card for volume. It never takes focus and the
+// pointer passes through it (the host applies `WS_EX_NOACTIVATE |
+// WS_EX_TRANSPARENT` once the HWND exists). Entry: 180 ms ease-out reveal —
+// the volume card also scales 0.94 → 1, the message capsule fades only, like
+// the Direct2D `OverlayAnim` (`present` vs `present_fade`). Exit: 120 ms,
+// opacity only (`exit-fade`, the same property the dialog card fades with).
+// The dwell lives with the host (`duration-message-hud` / `duration-volume-hud`).
+import { Theme, Motion } from "../theme.slint";
+import { Hud } from "../primitives/hud.slint";
+
+export component HudWindow inherits Window {
+    in property <string> message;
+    in property <string> symbol;
+    // The volume card replaces the capsule.
+    in property <bool> volume: false;
+    in property <float> level: 0;
+    in property <bool> muted: false;
+    in property <string> volume-readout;
+    in property <string> volume-symbol;
+
+    // The host raises `presented` when the window is shown; leaving it (only
+    // once hidden) snaps the reveal back so the next entry animates again.
+    in-out property <bool> presented: false;
+    // 1 normally, 0 during the exit fade: the only thing the exit animates.
+    in-out property <float> exit-fade: 1;
+
+    private property <float> reveal: 0;
+
+    // The size the native window needs; the host reads these after every
+    // present because the copy (and therefore the width) changes per show.
+    out property <length> card-width:
+        root.volume ? Theme.size-hud-width : capsule.width;
+    out property <length> card-height:
+        root.volume ? Theme.size-hud-height : capsule.height;
+
+    title: "Tinycast";
+    no-frame: true;
+    always-on-top: true;
+    // Opaque flat surface: the window is the card, the border rides the edge.
+    background: Theme.surface;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+    width: root.card-width;
+    height: root.card-height;
+
+    states [
+        shown when root.presented: {
+            reveal: 1;
+            in {
+                animate reveal {
+                    duration: Theme.duration-enter;
+                    // `tinycast_pure::motion` `Ease::Out`.
+                    easing: cubic-bezier(0, 0, 0.58, 1);
+                }
+            }
+        }
+    ]
+
+    animate exit-fade {
+        duration: Theme.duration-exit;
+        // `tinycast_pure::motion` `Ease::In`.
+        easing: cubic-bezier(0.42, 0, 1, 1);
+    }
+
+    // The message capsule: fade only, no scale (`present_fade` upstream).
+    capsule := Hud {
+        visible: !root.volume;
+        requested-width: capsule.fitted-width;
+        message: root.message;
+        symbol: root.symbol;
+        opacity: root.reveal * root.exit-fade;
+    }
+
+    // The volume card: fade and scale in, like the Direct2D HUD's `present`.
+    volume-card := Rectangle {
+        visible: root.volume;
+        border-radius: Theme.radius-dialog;
+        background: Theme.surface;
+        border-width: Theme.size-hairline;
+        border-color: Theme.border;
+        opacity: root.reveal * root.exit-fade;
+        transform-scale: Motion.enter-scale
+            + (1 - Motion.enter-scale) * root.reveal;
+
+        VerticalLayout {
+            padding-left: Theme.spacing-xl;
+            padding-right: Theme.spacing-xl;
+            spacing: Theme.spacing-lg;
+            alignment: center;
+
+            Text {
+                text: root.volume-symbol;
+                font-family: "Segoe Fluent Icons";
+                font-size: Theme.size-dialog-icon;
+                color: Theme.text-primary;
+                horizontal-alignment: center;
+            }
+
+            // Track left, readout right: absolute so the 6 DIP bar keeps its
+            // height inside the 16 DIP knob row (a stretch child would be
+            // flattened by the row's own alignment).
+            Rectangle {
+                height: Theme.size-volume-knob;
+
+                track := Rectangle {
+                    x: 0;
+                    y: (parent.height - self.height) / 2;
+                    width: parent.width - Theme.size-volume-readout - Theme.spacing-md;
+                    height: Theme.size-volume-track;
+                    border-radius: self.height / 2;
+                    background: Theme.control-surface;
+
+                    fill := Rectangle {
+                        x: 0;
+                        width: track.width * Math.min(Math.max(root.level, 0.0), 1.0);
+                        height: track.height;
+                        border-radius: self.height / 2;
+                        background: root.muted ? Theme.faint : Theme.text-primary;
+
+                        animate width {
+                            duration: Theme.duration-exit;
+                            easing: ease-out;
+                        }
+                    }
+                }
+
+                Text {
+                    x: parent.width - Theme.size-volume-readout;
+                    width: Theme.size-volume-readout;
+                    height: parent.height;
+                    text: root.volume-readout;
+                    font-size: Theme.font-row-trailing;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+}

@@ -1,4 +1,5 @@
 pub mod editor;
+pub mod hud;
 pub mod modal;
 pub mod settings;
 mod settings_pages;

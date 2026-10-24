@@ -70,7 +70,8 @@ use crate::platform::clock::{local_naive_unix, unix_now};
 use crate::platform::messages::{TIMER_CALENDAR, TIMER_SUPPORT, WM_QUIT_APP};
 use crate::platform::paths;
 use crate::platform::screens::{cursor_target_screen, dip_to_px, dip_to_px_with_dpi};
-use crate::surfaces::{MessageHud, SettingsWindow, StubWindow};
+use crate::surfaces::{SettingsWindow, StubWindow};
+use crate::ui_host::hud::MessageHud;
 
 pub struct AppCore {
     pub palette: PaletteState,

@@ -1,11 +1,20 @@
 import { Theme } from "../theme.slint";
 
-// A capsule HUD: 40 DIP tall, never wider than 420 DIP.
+// A capsule HUD: fixed token height, never wider than 420 DIP. `fitted-width`
+// reports the text-fitted width so a host window can size itself to the copy.
 export component Hud inherits Rectangle {
     in property <string> message;
     in property <string> detail;
     in property <string> symbol;
     in property <length> requested-width: Theme.size-hud-max-width;
+
+    // Text plus the paddings and the optional icon slot: the width the capsule
+    // needs before the 420 DIP cap. (`design_system::hud::message_size` was the
+    // Direct2D source of this measurement.)
+    out property <length> fitted-width:
+        Theme.spacing-xl * 2
+        + (root.symbol == "" ? 0px : Theme.size-menu-icon + Theme.spacing-md)
+        + msg.preferred-width;
 
     width: Math.min(root.requested-width, Theme.size-hud-max-width);
     height: Theme.size-bar-button-height + Theme.spacing-sm * 2;
@@ -19,26 +28,30 @@ export component Hud inherits Rectangle {
         padding-right: Theme.spacing-xl;
         spacing: Theme.spacing-md;
 
-        if root.symbol != "": Rectangle {
-            width: Theme.size-menu-icon;
-            height: Theme.size-menu-icon;
-            border-radius: Theme.radius-thumbnail;
-            background: Theme.control-surface;
+        if root.symbol != "": VerticalLayout {
+            alignment: center;
 
-            Text {
-                text: root.symbol;
-                font-family: "Segoe Fluent Icons";
-                font-size: Theme.font-row-trailing;
-                color: Theme.text-secondary;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+            Rectangle {
+                width: Theme.size-menu-icon;
+                height: Theme.size-menu-icon;
+                border-radius: Theme.radius-thumbnail;
+                background: Theme.control-surface;
+
+                Text {
+                    text: root.symbol;
+                    font-family: "Segoe Fluent Icons";
+                    font-size: Theme.font-row-trailing;
+                    color: Theme.text-secondary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
             }
         }
 
-        VerticalLayout {
+        row := VerticalLayout {
             alignment: center;
 
-            Text {
+            msg := Text {
                 text: root.message;
                 font-family: "Segoe UI";
                 font-size: Theme.font-row;
