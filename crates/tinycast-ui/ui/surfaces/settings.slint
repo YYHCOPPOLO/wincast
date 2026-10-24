@@ -481,7 +481,10 @@ component LauncherItemsPage inherits Rectangle {
                     list-flick := Flickable {
                         x: Theme.size-hairline;
                         y: Theme.size-settings-row-height;
-                        width: parent.width - Theme.size-hairline * 2;
+                        // Reserve the whole pointer target, not only the
+                        // visible thumb, so the rail cannot cover a checkbox.
+                        width: parent.width - Theme.size-hairline
+                            - Theme.size-scrollbar-inset - Theme.size-scrollbar-hover-zone;
                         // Leave the rounded bottom corners outside the
                         // rectangular viewport; text stays on the window's
                         // physical pixel grid without a rounded clip layer.
@@ -635,20 +638,24 @@ component LauncherItemsPage inherits Rectangle {
                         height: parent.height - Theme.size-settings-row-height - Theme.radius-magpie-card;
                         label: root.empty-label;
                     }
-
-                    Scrollbar {
-                        x: parent.width - Theme.size-scrollbar-inset - self.width;
-                        y: Theme.size-settings-row-height + Theme.size-scrollbar-inset;
-                        height: parent.height - Theme.size-settings-row-height
-                            - Theme.radius-magpie-card - Theme.size-scrollbar-inset * 2;
-                        content-height: Math.max(list-flick.height, root.items-content-height);
-                        viewport-height: list-flick.height;
-                        offset: -root.list-scroll;
-                        scroll-to(offset) => { root.list-scroll = -offset; }
-                    }
                 }
             }
         }
+    }
+
+    // The catalog rail follows the scrolled card visually, but is a sibling
+    // of page-flick so its pointer gestures cannot be delayed or stolen by
+    // the outer page when a long Commands introduction overflows.
+    Scrollbar {
+        x: list-card.absolute-position.x - root.absolute-position.x
+            + list-card.width - Theme.size-scrollbar-inset - self.width;
+        y: list-flick.absolute-position.y - root.absolute-position.y
+            + Theme.size-scrollbar-inset;
+        height: list-flick.height - Theme.size-scrollbar-inset * 2;
+        content-height: Math.max(list-flick.height, root.items-content-height);
+        viewport-height: list-flick.height;
+        offset: -root.list-scroll;
+        scroll-to(offset) => { root.list-scroll = -offset; }
     }
 
     Scrollbar {
@@ -663,12 +670,12 @@ component LauncherItemsPage inherits Rectangle {
 
     // Trailing columns, right to left: checkbox, optional well, alias. Fixed
     // widths keep every column on one vertical line down the list. The origin
-    // is the list card, whose contents the rows share.
-    out property <length> alias-column-x: list-card.width - Theme.spacing-xl
+    // is the catalog content, excluding the scrollbar's reserved gutter.
+    out property <length> alias-column-x: list-flick.width - Theme.spacing-xl
         - Theme.size-checkbox - Theme.spacing-md
         - Theme.size-shortcut-recorder - Theme.spacing-md
         - Theme.size-shortcut-recorder;
-    out property <length> hotkey-column-x: list-card.width - Theme.spacing-xl
+    out property <length> hotkey-column-x: list-flick.width - Theme.spacing-xl
         - Theme.size-checkbox - Theme.spacing-md
         - Theme.size-shortcut-recorder;
 }
