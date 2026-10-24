@@ -237,13 +237,6 @@ impl AppCore {
         self.apply_calendar_clock();
         self.sync_hotkeys();
         crate::platform::tray::set_icon_visible(self.host, self.settings.show_in_menu_bar);
-        if self.hud.is_none() && !self.host.is_invalid() {
-            self.hud = MessageHud::create(self.host).ok();
-        }
-        if self.qa_panel.is_none() && !self.host.is_invalid() {
-            self.qa_panel =
-                crate::features::quick_actions::ui::result::ResultPanel::create(self.host).ok();
-        }
     }
 
     pub fn cycle_clipboard_retention(&mut self) {
@@ -1023,6 +1016,12 @@ impl AppCore {
 
     pub fn show_support(&mut self) {
         self.support_mark_asked();
+        // Created on first show: every parked Slint window holds a femtovg
+        // context, and an idle tray app should not pay for windows it may
+        // never open.
+        if self.support_surface.is_none() && !self.host.is_invalid() {
+            self.support_surface = crate::surfaces::SupportWindow::create(self.host).ok();
+        }
         if let Some(window) = &self.support_surface {
             window.show();
         }
@@ -1052,6 +1051,9 @@ impl AppCore {
     }
 
     pub fn show_about(&mut self) {
+        if self.about_surface.is_none() && !self.host.is_invalid() {
+            self.about_surface = crate::surfaces::AboutWindow::create(self.host).ok();
+        }
         if let Some(window) = &self.about_surface {
             window.show();
         }
@@ -1075,6 +1077,9 @@ impl AppCore {
     fn maybe_onboarding(&mut self) {
         if onboarding_done_path().exists() {
             return;
+        }
+        if self.onboarding_window.is_none() && !self.host.is_invalid() {
+            self.onboarding_window = crate::surfaces::OnboardingWindow::create(self.host).ok();
         }
         if let Some(window) = &self.onboarding_window {
             window.show();
@@ -2154,6 +2159,12 @@ impl AppCore {
     }
 
     pub fn open_settings(&mut self) {
+        // Created on first open; see the comment in platform::run.
+        if self.settings_window.is_none() && !self.host.is_invalid() {
+            if let Ok(window) = crate::surfaces::SettingsWindow::create(self.host) {
+                self.settings_window = Some(window);
+            }
+        }
         if let Some(window) = &self.settings_window {
             window.show();
         }
@@ -3986,8 +3997,13 @@ impl AppCore {
                     if let Some(panel) = &self.qa_panel {
                         panel.show(action.progress_title(), "");
                     }
-                } else if let Some(hud) = &self.hud {
-                    hud.show(action.progress_title());
+                } else {
+                    if self.hud.is_none() && !self.host.is_invalid() {
+                        self.hud = MessageHud::create(self.host).ok();
+                    }
+                    if let Some(hud) = &self.hud {
+                        hud.show(action.progress_title());
+                    }
                 }
             }
             Err(err) => {

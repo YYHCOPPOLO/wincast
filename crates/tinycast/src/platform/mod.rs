@@ -39,10 +39,10 @@ pub fn run() -> windows::core::Result<()> {
     let mut core = crate::app_core::AppCore::new();
     let host = tray::create(&mut core)?;
     core.palette_window = Some(crate::palette::PaletteWindow::create(host)?);
-    core.settings_window = Some(crate::surfaces::SettingsWindow::create(host)?);
-    core.support_surface = crate::surfaces::SupportWindow::create(host).ok();
-    core.about_surface = crate::surfaces::AboutWindow::create(host).ok();
-    core.onboarding_window = crate::surfaces::OnboardingWindow::create(host).ok();
+    // Settings, Support, About, Onboarding, the HUD and the quick-action panel
+    // are created on first show instead: each parked Slint window keeps a
+    // femtovg context alive, and the idle tray footprint should pay for the
+    // palette alone.
     core.set_host(host);
     // Installs the low-level keyboard hook on this thread; its callbacks and the
     // posted tray messages keep arriving while the Slint loop runs.
