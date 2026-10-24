@@ -1,8 +1,10 @@
 import { Theme } from "../theme.slint";
 
-// 16 DIP checkbox. The caller sizes the row slot; this component only draws
-// the box. "interactive: false" is for rows that own the click themselves
-// (the uninstall list toggles through AppCore's pointer path, never here).
+// Magpie's checkbox (`app.css` `input[type="checkbox"]`): a 14 DIP box with a
+// hairline edge; checked fills accent with the accent-fg check. The caller
+// sizes the row slot; this component only draws the box. "interactive: false"
+// is for rows that own the click themselves (the uninstall list toggles
+// through AppCore's pointer path, never here).
 export component Checkbox inherits Rectangle {
     in-out property <bool> checked: false;
     in property <bool> interactive: true;
@@ -10,17 +12,17 @@ export component Checkbox inherits Rectangle {
 
     width: Theme.size-checkbox;
     height: Theme.size-checkbox;
-    border-radius: Theme.radius-glyph;
+    border-radius: Theme.radius-magpie-control / 2;
     border-width: Theme.size-hairline;
-    border-color: root.checked ? Theme.text-primary : Theme.border;
-    background: root.checked ? Theme.text-primary : transparent;
+    border-color: root.checked ? Theme.accent : Theme.faint;
+    background: root.checked ? Theme.accent : Theme.surface;
 
     Path {
         width: 100%;
         height: 100%;
-        commands: "M 4 8 L 7 11 L 12 5";
-        stroke: Theme.settings-detail;
-        stroke-width: Theme.size-hairline * 1.5;
+        commands: "M 3.5 7 L 6 9.5 L 10.5 4";
+        stroke: Theme.accent-fg;
+        stroke-width: Theme.size-hairline * 1.6;
         fill: transparent;
         visible: root.checked;
     }

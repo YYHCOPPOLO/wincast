@@ -8,6 +8,7 @@
 import { Theme } from "../theme.slint";
 import { Scrollbar } from "../primitives/scrollbar.slint";
 import { SettingsRow, SidebarRow } from "../primitives/form.slint";
+import { MagHeader } from "../primitives/magpie.slint";
 
 // One row of the sidebar: kind 0 is a section header, kind 1 a SettingsTab.
 // tab carries the SettingsTab discriminant; headers use -1.
@@ -20,27 +21,33 @@ export struct SettingsSidebarRow {
     tab: int,
 }
 
-// One row of a settings page: kind 0 is a section header (title is the
-// section name), kind 1 is a control row. id is the action the host runs.
+// One row of a settings page. id is the action the host runs.
+// control: 0 plain action row, 1 switch, 2 trailing label, 3 shortcut well.
 export struct SettingsPageRow {
-    kind: int,
     id: int,
     title: string,
     subtitle: string,
     trailing: string,
-    // 0 none, 1 switch, 2 trailing label, 3 shortcut well.
     control: int,
     checked: bool,
     active: bool,
     enabled: bool,
 }
 
-// A heading plus one surface card of rows, scrolled as a whole. General,
+// One titled group of rows: the small spaced header, then one surface card
+// whose rows are separated by 1 px rules, then the group's footer note.
+export struct SettingsPageSection {
+    title: string,
+    note: string,
+    rows: [SettingsPageRow],
+}
+
+// A heading plus titled surface cards of rows, scrolled as a whole. General,
 // Permissions and Backup share it; 15 placeholder tabs do not use a card.
 component RowsPage inherits Rectangle {
     in property <string> heading;
     in property <string> footnote;
-    in property <[SettingsPageRow]> rows;
+    in property <[SettingsPageSection]> sections;
     callback row-activated(int);
 
     background: transparent;
@@ -63,7 +70,7 @@ component RowsPage inherits Rectangle {
                 x: Theme.spacing-xxl;
                 y: Theme.spacing-xxl;
                 width: parent.width - Theme.spacing-xxl * 2;
-                spacing: Theme.spacing-md;
+                spacing: Theme.spacing-section;
 
                 Text {
                     text: root.heading;
@@ -73,54 +80,61 @@ component RowsPage inherits Rectangle {
                     overflow: elide;
                 }
 
-                Rectangle {
-                    background: Theme.card-fill;
-                    border-width: Theme.size-hairline;
-                    border-color: Theme.card-stroke;
-                    border-radius: Theme.radius-card;
+                for section in root.sections: VerticalLayout {
+                    spacing: Theme.spacing-section-header-bottom;
 
-                    VerticalLayout {
-                        padding: Theme.spacing-md;
-                        spacing: 0px;
+                    if section.title != "": MagHeader {
+                        text-label: section.title;
+                    }
 
-                        for row in root.rows: Rectangle {
-                            height: row.kind == 0
-                                ? Theme.size-section-header-height
-                                : Theme.size-settings-row-height;
-                            background: transparent;
+                    Rectangle {
+                        background: Theme.card-fill;
+                        border-width: Theme.size-hairline;
+                        border-color: Theme.card-stroke;
+                        border-radius: Theme.radius-magpie-card;
+                        clip: true;
 
-                            if row.kind == 0: Text {
-                                x: Theme.spacing-md;
-                                width: parent.width - Theme.spacing-md * 2;
-                                height: parent.height;
-                                text: row.title;
-                                font-size: Theme.font-section;
-                                font-weight: 500;
-                                color: Theme.text-secondary;
-                                vertical-alignment: center;
-                                overflow: elide;
-                            }
+                        VerticalLayout {
+                            spacing: 0px;
 
-                            if row.kind == 1: SettingsRow {
-                                x: 0;
-                                width: parent.width;
-                                height: parent.height;
-                                title: row.title;
-                                subtitle: row.subtitle;
-                                trailing: row.trailing;
-                                control: row.control;
-                                checked: row.checked;
-                                active: row.active;
-                                enabled: row.enabled;
-                                activated => { root.row-activated(row.id); }
+                            for row[i] in section.rows: Rectangle {
+                                height: Theme.size-settings-row-height;
+                                background: transparent;
+
+                                if i > 0: Rectangle {
+                                    y: 0;
+                                    height: Theme.size-hairline;
+                                    background: Theme.separator;
+                                }
+
+                                SettingsRow {
+                                    y: Theme.size-hairline;
+                                    width: parent.width;
+                                    height: parent.height - Theme.size-hairline;
+                                    title: row.title;
+                                    subtitle: row.subtitle;
+                                    trailing: row.trailing;
+                                    control: row.control;
+                                    checked: row.checked;
+                                    active: row.active;
+                                    enabled: row.enabled;
+                                    activated => { root.row-activated(row.id); }
+                                }
                             }
                         }
+                    }
+
+                    if section.note != "": Text {
+                        text: section.note;
+                        font-size: Theme.font-chip;
+                        color: Theme.text-tertiary;
+                        wrap: word-wrap;
                     }
                 }
 
                 if root.footnote != "": Text {
                     text: root.footnote;
-                    font-size: Theme.font-section;
+                    font-size: Theme.font-chip;
                     color: Theme.text-tertiary;
                     wrap: word-wrap;
                 }
@@ -221,21 +235,35 @@ component AboutPage inherits Rectangle {
                     background: Theme.card-fill;
                     border-width: Theme.size-hairline;
                     border-color: Theme.card-stroke;
-                    border-radius: Theme.radius-card;
+                    border-radius: Theme.radius-magpie-card;
+                    clip: true;
 
                     VerticalLayout {
-                        padding: Theme.spacing-md;
                         spacing: 0px;
 
-                        for row in root.rows: SettingsRow {
-                            title: row.title;
-                            subtitle: row.subtitle;
-                            trailing: row.trailing;
-                            control: row.control;
-                            checked: row.checked;
-                            active: row.active;
-                            enabled: row.enabled;
-                            activated => { root.row-activated(row.id); }
+                        for row[i] in root.rows: Rectangle {
+                            height: Theme.size-settings-row-height;
+                            background: transparent;
+
+                            if i > 0: Rectangle {
+                                y: 0;
+                                height: Theme.size-hairline;
+                                background: Theme.separator;
+                            }
+
+                            SettingsRow {
+                                y: Theme.size-hairline;
+                                width: parent.width;
+                                height: parent.height - Theme.size-hairline;
+                                title: row.title;
+                                subtitle: row.subtitle;
+                                trailing: row.trailing;
+                                control: row.control;
+                                checked: row.checked;
+                                active: row.active;
+                                enabled: row.enabled;
+                                activated => { root.row-activated(row.id); }
+                            }
                         }
                     }
                 }
@@ -244,10 +272,10 @@ component AboutPage inherits Rectangle {
                     background: Theme.card-fill;
                     border-width: Theme.size-hairline;
                     border-color: Theme.card-stroke;
-                    border-radius: Theme.radius-card;
+                    border-radius: Theme.radius-magpie-card;
 
                     VerticalLayout {
-                        padding: Theme.spacing-md;
+                        padding: Theme.spacing-xl;
                         spacing: Theme.spacing-sm;
 
                         Text {
@@ -336,9 +364,9 @@ export component SettingsWindow inherits Window {
     in property <int> selected-tab: 0;
     // 0 General, 1 Permissions, 2 About, 3 Backup, 4 the placeholder tabs.
     in property <int> page-kind: 0;
-    in property <[SettingsPageRow]> general-rows;
-    in property <[SettingsPageRow]> permissions-rows;
-    in property <[SettingsPageRow]> backup-rows;
+    in property <[SettingsPageSection]> general-sections;
+    in property <[SettingsPageSection]> permissions-sections;
+    in property <[SettingsPageSection]> backup-sections;
     in property <[SettingsPageRow]> about-rows;
     in property <string> general-heading;
     in property <string> permissions-heading;
@@ -406,16 +434,12 @@ export component SettingsWindow inherits Window {
                 height: row.height;
                 background: transparent;
 
-                if row.kind == 0: Text {
+                if row.kind == 0: MagHeader {
                     x: Theme.spacing-xl;
                     width: parent.width - Theme.spacing-xl - Theme.spacing-md;
                     height: parent.height;
-                    text: row.label;
-                    font-size: Theme.font-section;
-                    font-weight: 500;
-                    color: Theme.text-secondary;
+                    text-label: row.label;
                     vertical-alignment: center;
-                    overflow: elide;
                 }
 
                 if row.kind == 1: SidebarRow {
@@ -457,7 +481,7 @@ export component SettingsWindow inherits Window {
             height: 100%;
             visible: root.page-kind == 0;
             heading: root.general-heading;
-            rows: root.general-rows;
+            sections: root.general-sections;
             row-activated(id) => { root.general-row-activated(id); }
         }
 
@@ -466,7 +490,7 @@ export component SettingsWindow inherits Window {
             height: 100%;
             visible: root.page-kind == 1;
             heading: root.permissions-heading;
-            rows: root.permissions-rows;
+            sections: root.permissions-sections;
             row-activated(id) => { root.permissions-row-activated(id); }
         }
 
@@ -475,7 +499,7 @@ export component SettingsWindow inherits Window {
             height: 100%;
             visible: root.page-kind == 3;
             heading: root.backup-heading;
-            rows: root.backup-rows;
+            sections: root.backup-sections;
             footnote: root.backup-footnote;
             row-activated(id) => { root.backup-row-activated(id); }
         }

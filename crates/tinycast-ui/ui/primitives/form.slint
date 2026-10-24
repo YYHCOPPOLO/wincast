@@ -1,34 +1,39 @@
 import { Theme, Motion } from "../theme.slint";
 import { IconSlot } from "row.slint";
+import { MagHeader } from "magpie.slint";
 
-// The settings group card with a title and injected rows. Kept separate from
-// Card so children land in this component's own @children slot.
+// The settings group: a small spaced title above one surface card with the
+// injected rows (magpie's `.row-head` label over its `.list` card).
 export component FormGroup inherits Rectangle {
     in property <string> title;
 
-    background: Theme.card-fill;
-    border-width: Theme.size-hairline;
-    border-color: Theme.card-stroke;
-    border-radius: Theme.radius-card;
+    background: transparent;
 
     VerticalLayout {
-        padding: Theme.spacing-xl;
-        spacing: Theme.spacing-sm;
+        spacing: Theme.spacing-section-header-bottom;
 
-        if root.title != "": Text {
-            text: root.title;
-            font-family: "Segoe UI";
-            font-size: Theme.font-section;
-            font-weight: 500;
-            color: Theme.text-secondary;
-            overflow: elide;
+        if root.title != "": MagHeader {
+            text-label: root.title;
         }
 
-        @children
+        Rectangle {
+            background: Theme.card-fill;
+            border-width: Theme.size-hairline;
+            border-color: Theme.card-stroke;
+            border-radius: Theme.radius-magpie-card;
+
+            VerticalLayout {
+                padding: Theme.spacing-xl;
+                spacing: Theme.spacing-sm;
+
+                @children
+            }
+        }
     }
 }
 
-// 40 x 22 settings switch, thumb spring 0.14 / 320 ms.
+// The iOS-style settings switch (magpie `library.css` `.lib-switch`): a
+// 32 x 19 track whose on fill is the primary ink, thumb spring 0.14 / 320 ms.
 export component Toggle inherits Rectangle {
     in-out property <bool> checked: false;
     // A settings row owns the click so one target toggles the whole row; the
@@ -39,9 +44,7 @@ export component Toggle inherits Rectangle {
     width: Theme.size-toggle-width;
     height: Theme.size-toggle-height;
     border-radius: self.height / 2;
-    background: root.checked ? Theme.text-primary : Theme.control-surface;
-    border-width: root.checked ? 0px : Theme.size-hairline;
-    border-color: Theme.border;
+    background: root.checked ? Theme.text-primary : Theme.border;
 
     thumb := Rectangle {
         x: root.checked ? root.width - self.width - Theme.spacing-xxs : Theme.spacing-xxs;
@@ -49,7 +52,9 @@ export component Toggle inherits Rectangle {
         width: root.height - Theme.spacing-xs;
         height: self.width;
         border-radius: self.width / 2;
-        background: root.checked ? Theme.settings-detail : Theme.text-secondary;
+        background: root.checked
+            ? (Theme.dark ? Theme.page : Theme.surface)
+            : Theme.toggle-thumb;
 
         animate x {
             // motion.rs: damping 0.86 -> bounce = 0.14. Slint requires a literal.
@@ -176,8 +181,8 @@ export component SettingsRow inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
+        padding-left: Theme.spacing-xl;
+        padding-right: Theme.spacing-xl;
         spacing: Theme.spacing-md;
 
         VerticalLayout {
@@ -221,11 +226,11 @@ export component SettingsRow inherits Rectangle {
 
         if root.control == 3: Rectangle {
             width: Theme.size-shortcut-recorder;
-            height: Theme.size-toggle-height + Theme.spacing-xxs;
-            border-radius: Theme.radius-menu;
-            background: Theme.control-surface;
+            height: Theme.size-magpie-field;
+            border-radius: Theme.radius-magpie-control;
+            background: Theme.surface;
             border-width: Theme.size-hairline;
-            border-color: root.active ? Theme.text-secondary : Theme.border;
+            border-color: root.active ? Theme.accent : Theme.border;
 
             Text {
                 x: Theme.spacing-xs;

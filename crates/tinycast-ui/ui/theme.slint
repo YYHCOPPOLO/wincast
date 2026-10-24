@@ -39,6 +39,8 @@ export global Theme {
     in property <color> amber-soft;
     in property <color> seg-track;
     in property <color> seg-thumb;
+    // The switch thumb while off (literal white in both appearances).
+    in property <color> toggle-thumb;
     in property <color> control-surface;
     // Card/menu surfaces repeat the plain surface/border pair, never a tint.
     in property <color> card-fill;
@@ -105,6 +107,10 @@ export global Theme {
     in property <length> radius-glyph;
     in property <length> radius-attachment-chip;
     in property <length> radius-card;
+    // Magpie settings vocabulary: the list card (.list, 12) and the control
+    // corners (.field/.editor input, 8).
+    in property <length> radius-magpie-card;
+    in property <length> radius-magpie-control;
     in property <length> radius-key-cap;
     in property <length> radius-recorder-key-cap;
     in property <length> radius-tooltip;
@@ -174,6 +180,11 @@ export global Theme {
     in property <length> size-settings-detail-minimum;
     in property <length> size-settings-row-icon;
     in property <length> size-settings-row-height;
+    // Magpie control heights: value select button (.field, 25), single-line
+    // form input (.editor input, 27) and the dense list row (36).
+    in property <length> size-magpie-field;
+    in property <length> size-magpie-input;
+    in property <length> size-magpie-list-item;
     in property <length> size-editor-sheet-width;
     in property <length> size-form-label-width;
     in property <length> size-editor-text-height;

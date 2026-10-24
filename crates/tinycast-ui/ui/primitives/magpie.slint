@@ -1,0 +1,395 @@
+import { Theme } from "../theme.slint";
+
+// The Magpie control vocabulary for the settings pages, ported item by item
+// from magpie's app.css (`.label`, `.field`, `.chip`, `.status`, `.editor
+// input`, the add-provider tiles and the empty state). No colour or magic
+// size lives here: everything reads Theme, which the bridge fills from
+// tinycast_pure::theme.
+
+// The small spaced section label (app.css `.label`: 11, 600, +5% tracking,
+// uppercase). Slint has no text-transform, so the host uppercases Latin copy
+// before it lands here.
+export component MagHeader inherits Text {
+    in property <string> text-label;
+    text: root.text-label;
+    font-family: "Segoe UI";
+    font-size: Theme.font-section;
+    font-weight: 600;
+    color: Theme.text-tertiary;
+    letter-spacing: Theme.font-section * 0.05;
+    overflow: elide;
+}
+
+// A value's pop-up button (app.css `.field` + the panel hairline): leading
+// icon, the value, a trailing chevron; hover fills pill-hover, the open state
+// takes the accent edge.
+export component MagSelectButton inherits Rectangle {
+    in property <string> value;
+    in property <string> symbol;
+    in property <bool> open: false;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    height: Theme.size-magpie-field;
+    min-width: Theme.size-magpie-field * 4;
+    border-radius: Theme.radius-magpie-control;
+    background: touch.has-hover && root.enabled ? Theme.pill-hover : Theme.surface;
+    border-width: Theme.size-hairline;
+    border-color: root.open ? Theme.accent : Theme.border;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-xs;
+        spacing: Theme.spacing-xs;
+
+        if root.symbol != "": Text {
+            text: root.symbol;
+            font-family: "Segoe Fluent Icons";
+            font-size: Theme.font-header-icon;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.value;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row-trailing;
+            font-weight: 500;
+            color: root.enabled ? Theme.text-primary : Theme.text-tertiary;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+
+        Text {
+            text: "\u{E70D}";
+            font-family: "Segoe Fluent Icons";
+            font-size: Theme.font-calc-badge;
+            color: touch.has-hover ? Theme.text-secondary : Theme.faint;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A quiet pill chip (app.css `.mchip`): muted surface, hover pill-hover, and
+// an optional coloured status dot (app.css `.chip .lib`).
+export component MagChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> has-dot: false;
+    in property <color> dot;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    height: Theme.size-magpie-input;
+    border-radius: self.height / 2;
+    background: touch.has-hover && root.enabled ? Theme.pill-hover : Theme.surface-muted;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-xs;
+
+        if root.has-dot: Rectangle {
+            width: Theme.size-hairline * 5;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: root.dot;
+        }
+
+        Text {
+            text: root.label;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row-trailing;
+            color: root.enabled ? Theme.fg-2 : Theme.faint;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A status badge (app.css `.status.ok/.err/.warn`): coloured ink over its
+// soft tile. tone 0 success, 1 destructive, 2 amber.
+export component MagBadge inherits Rectangle {
+    in property <string> label;
+    in property <int> tone: 0;
+
+    height: Theme.size-magpie-input;
+    border-radius: self.height / 2;
+    background: root.tone == 0 ? Theme.green-soft
+        : root.tone == 1 ? Theme.red-soft
+        : Theme.amber-soft;
+
+    Text {
+        x: Theme.spacing-md;
+        width: parent.width - Theme.spacing-md * 2;
+        height: parent.height;
+        text: root.label;
+        font-family: "Segoe UI";
+        font-size: Theme.font-row-trailing;
+        font-weight: 500;
+        color: root.tone == 0 ? Theme.success
+            : root.tone == 1 ? Theme.destructive
+            : Theme.amber;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+// The quiet text button (app.css `.text`): ctl-fg ink on the surface, hover
+// fills the pill; the danger variant reads red over red-soft on hover.
+export component MagTextButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    height: Theme.size-magpie-input;
+    border-radius: Theme.radius-magpie-control;
+    background: touch.has-hover && root.enabled
+        ? (root.danger ? Theme.red-soft : Theme.surface-muted)
+        : transparent;
+
+    Text {
+        x: Theme.spacing-sm;
+        width: parent.width - Theme.spacing-sm * 2;
+        height: parent.height;
+        text: root.label;
+        font-family: "Segoe UI";
+        font-size: Theme.font-row-trailing;
+        color: root.enabled
+            ? (root.danger && touch.has-hover ? Theme.destructive : Theme.ctl-fg)
+            : Theme.faint;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// The primary action (app.css `.text.primary`): accent fill, accent-fg ink.
+export component MagPrimaryButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    height: Theme.size-magpie-input;
+    border-radius: Theme.radius-magpie-control;
+    background: root.enabled ? Theme.accent : Theme.surface-muted;
+
+    Text {
+        x: Theme.spacing-md;
+        width: parent.width - Theme.spacing-md * 2;
+        height: parent.height;
+        text: root.label;
+        font-family: "Segoe UI";
+        font-size: Theme.font-row-trailing;
+        font-weight: 500;
+        color: root.enabled ? Theme.accent-fg : Theme.faint;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// The single-line form input (app.css `.editor input`): hairline edge on the
+// card, 8 DIP corners, accent edge plus a 3 DIP soft halo while focused. The
+// halo is an outer fill because Slint has no box-shadow spread.
+export component MagInput inherits Rectangle {
+    in property <string> text-value;
+    in property <string> placeholder;
+    in property <bool> enabled: true;
+    out property <bool> focused: input.has-focus;
+    callback edited(string);
+    callback accepted(string);
+
+    height: Theme.size-magpie-input;
+    border-radius: Theme.radius-magpie-control;
+    background: input.has-focus ? Theme.accent-soft : transparent;
+    clip: false;
+
+    field := Rectangle {
+        x: input.has-focus ? Theme.spacing-xs : 0px;
+        y: input.has-focus ? Theme.spacing-xs : 0px;
+        width: parent.width - (input.has-focus ? Theme.spacing-xs : 0px) * 2;
+        height: parent.height - (input.has-focus ? Theme.spacing-xs : 0px) * 2;
+        border-radius: Theme.radius-magpie-control;
+        background: Theme.surface;
+        border-width: Theme.size-hairline;
+        border-color: input.has-focus ? Theme.accent : Theme.border;
+
+        input := TextInput {
+            x: Theme.spacing-sm;
+            width: parent.width - Theme.spacing-sm * 2;
+            height: parent.height;
+            text: root.text-value;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row-trailing;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+            single-line: true;
+            enabled: root.enabled;
+            edited => { root.edited(self.text); }
+            accepted => { root.accepted(self.text); }
+        }
+
+        if input.text == "" && !input.has-focus: Text {
+            x: Theme.spacing-sm;
+            width: parent.width - Theme.spacing-sm * 2;
+            height: parent.height;
+            text: root.placeholder;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row-trailing;
+            color: Theme.faint;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+// One tile of a card grid (the add-provider sheet): hairline card, leading
+// icon, title, muted subtitle, a check once configured.
+export component MagGridCell inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> symbol;
+    in property <bool> configured: false;
+    in property <bool> dashed: false;
+    callback clicked;
+
+    height: Theme.size-magpie-input * 2 + Theme.spacing-sm;
+    border-radius: Theme.radius-magpie-card;
+    background: Theme.card-fill;
+    border-width: Theme.size-hairline;
+    border-color: root.dashed ? Theme.faint
+        : touch.has-hover ? Theme.text-tertiary
+        : Theme.border;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        if root.symbol != "": Text {
+            width: Theme.size-settings-row-icon;
+            text: root.symbol;
+            font-family: "Segoe Fluent Icons";
+            font-size: Theme.font-header-icon;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: Theme.spacing-xxs;
+            horizontal-stretch: 1;
+
+            Text {
+                text: root.title;
+                font-family: "Segoe UI";
+                font-size: Theme.font-row-trailing;
+                font-weight: 500;
+                color: Theme.text-primary;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.subtitle;
+                font-family: "Segoe UI";
+                font-size: Theme.font-chip;
+                color: Theme.text-tertiary;
+                overflow: elide;
+            }
+        }
+
+        if root.configured: Text {
+            width: Theme.font-header-icon;
+            text: "\u{E73E}";
+            font-family: "Segoe Fluent Icons";
+            font-size: Theme.font-calc-badge;
+            color: Theme.success;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// The empty state (app.css `.set-none` and the panes' quiet glyphs): a muted
+// glyph, one line of copy, and an optional text action.
+export component MagEmptyState inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    in property <string> action;
+    callback action-clicked;
+
+    height: Theme.size-empty-results-glyph + Theme.font-row * 3;
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Theme.spacing-md;
+
+        if root.glyph != "": Text {
+            text: root.glyph;
+            font-family: "Segoe Fluent Icons";
+            font-size: Theme.size-note-empty-glyph;
+            color: Theme.faint;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            font-family: "Segoe UI";
+            font-size: Theme.font-row;
+            color: Theme.text-tertiary;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        if root.action != "": HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: empty-btn.preferred-width + Theme.spacing-lg * 2;
+                height: Theme.size-magpie-input;
+                border-radius: Theme.radius-magpie-control;
+                background: empty-touch.has-hover ? Theme.surface-muted : transparent;
+
+                empty-btn := Text {
+                    text: root.action;
+                    font-family: "Segoe UI";
+                    font-size: Theme.font-row-trailing;
+                    color: Theme.ctl-fg;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                empty-touch := TouchArea {
+                    clicked => { root.action-clicked(); }
+                }
+            }
+        }
+    }
+}

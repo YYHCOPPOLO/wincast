@@ -60,6 +60,8 @@ where
     t.set_amber_soft(rgba(theme::colors::amber_soft_rgba(appearance)));
     t.set_seg_track(rgba(theme::colors::seg_track_rgba(appearance)));
     t.set_seg_thumb(rgba(theme::colors::seg_thumb_rgba(appearance)));
+    // The switch thumb while off: literal white in both appearances.
+    t.set_toggle_thumb(rgba(theme::colors::toggle_thumb_rgba(appearance)));
     // Controls and cards are solid too: muted strip, surface card, border stroke.
     t.set_control_surface(rgba(theme::colors::muted_rgba(appearance)));
     t.set_card_fill(rgba(theme::colors::surface_rgba(appearance)));
@@ -174,6 +176,8 @@ where
     t.set_radius_key_cap(theme::radius::KEY_CAP);
     t.set_radius_recorder_key_cap(theme::radius::RECORDER_KEY_CAP);
     t.set_radius_tooltip(theme::radius::TOOLTIP);
+    t.set_radius_magpie_card(theme::radius::MAGPIE_CARD);
+    t.set_radius_magpie_control(theme::radius::MAGPIE_CONTROL);
 
     // Sizes (`theme::size`).
     t.set_size_panel_width(theme::size::PANEL_WIDTH);
@@ -240,6 +244,9 @@ where
     t.set_size_settings_detail_minimum(theme::size::SETTINGS_DETAIL_MINIMUM);
     t.set_size_settings_row_icon(theme::size::SETTINGS_ROW_ICON);
     t.set_size_settings_row_height(theme::size::SETTINGS_ROW_HEIGHT);
+    t.set_size_magpie_field(theme::size::MAGPIE_FIELD_HEIGHT);
+    t.set_size_magpie_input(theme::size::MAGPIE_INPUT_HEIGHT);
+    t.set_size_magpie_list_item(theme::size::MAGPIE_LIST_ITEM);
     t.set_size_editor_sheet_width(theme::size::EDITOR_SHEET_WIDTH);
     t.set_size_form_label_width(theme::size::FORM_LABEL_WIDTH);
     t.set_size_editor_text_height(theme::size::EDITOR_TEXT_HEIGHT);

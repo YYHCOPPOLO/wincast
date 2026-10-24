@@ -57,6 +57,10 @@ pub mod radius {
     /// phase 9 deletes that path.
     pub const MAGPIE_PANEL: f32 = 16.0;
     pub const MAGPIE_DIALOG: f32 = 16.0;
+    /// Magpie settings list card (`app.css` `.list`: 12).
+    pub const MAGPIE_CARD: f32 = 12.0;
+    /// Magpie controls (`app.css` `.field` 6-7, inputs 7, wells 8): 8.
+    pub const MAGPIE_CONTROL: f32 = 8.0;
 }
 
 pub mod size {
@@ -139,10 +143,17 @@ pub mod size {
     pub const EMPTY_RESULTS_GLYPH: f32 = 32.0;
     pub const MARKDOWN_LIST_MARKER: f32 = 20.0;
     pub const MARKDOWN_QUOTE_BAR: f32 = 2.0;
-    pub const CHECKBOX: f32 = 16.0;
-    /// Settings switch (`design_system/settings.rs` `TOGGLE_W/H`).
-    pub const TOGGLE_WIDTH: f32 = 40.0;
-    pub const TOGGLE_HEIGHT: f32 = 22.0;
+    /// Magpie checkbox (`app.css` `input[type="checkbox"]`): 14.
+    pub const CHECKBOX: f32 = 14.0;
+    /// Settings switch (magpie `library.css` `.lib-switch`): 32 x 19.
+    pub const TOGGLE_WIDTH: f32 = 32.0;
+    pub const TOGGLE_HEIGHT: f32 = 19.0;
+    /// Magpie value select button (`app.css` `.field`): 25.
+    pub const MAGPIE_FIELD_HEIGHT: f32 = 25.0;
+    /// Magpie single-line form input (`app.css` `.editor input`): 27.
+    pub const MAGPIE_INPUT_HEIGHT: f32 = 27.0;
+    /// Dense settings list row (the old panes' 36 DIP item rows).
+    pub const MAGPIE_LIST_ITEM: f32 = 36.0;
     /// Settings sidebar tab row; `layout::settings` reuses this token.
     pub const SIDEBAR_ROW_HEIGHT: f32 = 32.0;
     pub const CLIPBOARD_LIST_WIDTH: f32 = 290.0;
@@ -177,7 +188,8 @@ pub mod size {
     pub const SETTINGS_DETAIL_MINIMUM: f32 = 420.0;
     pub const SETTINGS_ROW_ICON: f32 = 20.0;
     // One settings page row (design_system/settings.rs ROW_H).
-    pub const SETTINGS_ROW_HEIGHT: f32 = 52.0;
+    /// Settings page row (magpie `app.css` `.row` window min-height): 48.
+    pub const SETTINGS_ROW_HEIGHT: f32 = 48.0;
     pub const EDITOR_SHEET_WIDTH: f32 = 480.0;
     pub const FORM_LABEL_WIDTH: f32 = 110.0;
     pub const EDITOR_TEXT_HEIGHT: f32 = 120.0;
@@ -442,6 +454,9 @@ pub mod colors {
     pub const DESTRUCTIVE_LIGHT: (f32, f32, f32) = (214.0 / 255.0, 69.0 / 255.0, 69.0 / 255.0);
     pub const SUCCESS_DARK: (f32, f32, f32) = (111.0 / 255.0, 217.0 / 255.0, 155.0 / 255.0);
     pub const SUCCESS_LIGHT: (f32, f32, f32) = (24.0 / 255.0, 154.0 / 255.0, 88.0 / 255.0);
+    /// The switch thumb while off (`library.css` `.lib-switch i`): literal white
+    /// in both appearances, unlike the on-thumb which flips to the page fill.
+    pub const TOGGLE_THUMB: (f32, f32, f32) = (1.0, 1.0, 1.0);
     /// Magpie's accent trio: the indigo ink, its soft tile fill, and the ink
     /// that sits on an accent-filled control (`app.css` `--accent*`).
     pub const ACCENT_DARK: (f32, f32, f32) = (165.0 / 255.0, 180.0 / 255.0, 252.0 / 255.0);
@@ -538,6 +553,11 @@ pub mod colors {
 
     pub fn success_rgba(appearance: u8) -> (f32, f32, f32, f32) {
         solid(SUCCESS_DARK, SUCCESS_LIGHT, appearance)
+    }
+
+    pub fn toggle_thumb_rgba(_appearance: u8) -> (f32, f32, f32, f32) {
+        let (r, g, b) = TOGGLE_THUMB;
+        (r, g, b, 1.0)
     }
 
     pub fn accent_rgba(appearance: u8) -> (f32, f32, f32, f32) {

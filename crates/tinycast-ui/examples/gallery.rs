@@ -81,6 +81,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_recorder_esc("esc".into());
     ui.set_recorder_reveal(true);
 
+    // The Magpie settings vocabulary, one sample per primitive.
+    ui.set_magpie_header("全局快捷键".into());
+    ui.set_magpie_select("跟随系统".into());
+    ui.set_magpie_chip("已接入".into());
+    ui.set_magpie_badge_ok("已连接".into());
+    ui.set_magpie_badge_warn("限流中".into());
+    ui.set_magpie_action("打开设置…".into());
+    ui.set_magpie_danger("移除".into());
+    ui.set_magpie_input_hint("搜索应用…".into());
+    ui.set_magpie_cell_title("Claude 订阅".into());
+    ui.set_magpie_cell_subtitle("Pro · Max · Team".into());
+    ui.set_magpie_cell_symbol("\u{E945}".into());
+    ui.set_magpie_empty("没有匹配的应用".into());
+    ui.set_magpie_empty_action("添加应用…".into());
+
     let weak = ui.as_weak();
     ui.on_toggle_appearance(move || {
         if let Some(ui) = weak.upgrade() {

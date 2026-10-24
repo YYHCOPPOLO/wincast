@@ -26,11 +26,11 @@ use tinycast_pure::i18n::{
     about_window_title, backup_export, backup_import, backup_raycast, backup_storage_note, chrome,
     general_appearance_trailing, general_language_trailing, general_pop_to_root_subtitle,
     general_pop_to_root_trailing, general_ranking_subtitle, general_reset_label,
-    general_row_subtitle, general_row_title, general_section_title, hyper_key_title,
-    launcher_reset_confirm_message, launcher_reset_confirm_title, open_settings_action,
-    permission_subtitle, permission_title, reset_ranking_action, settings_placeholder_note,
-    settings_section_title, settings_tab_title, support_built_with_love, support_keeps_independent,
-    Chrome, GeneralSection, UiLang,
+    general_row_subtitle, general_row_title, general_section_footer, general_section_title,
+    hyper_key_title, launcher_reset_confirm_message, launcher_reset_confirm_title,
+    open_settings_action, permission_subtitle, permission_title, reset_ranking_action,
+    settings_placeholder_note, settings_section_title, settings_tab_title, support_built_with_love,
+    support_keeps_independent, Chrome, GeneralSection, UiLang,
 };
 use tinycast_pure::layout::settings::{sidebar_content_height, sidebar_rows, SidebarRowKind};
 use tinycast_pure::settings_tab::{SettingsSection, SettingsTab};
@@ -53,6 +53,7 @@ use crate::ui_host::app_core as core_from_host;
 
 type Settings = tinycast_ui::SettingsWindow;
 type PageRow = tinycast_ui::SettingsPageRow;
+type PageSection = tinycast_ui::SettingsPageSection;
 type SidebarRow = tinycast_ui::SettingsSidebarRow;
 
 const SUBCLASS_ID: usize = 0x53;
@@ -82,9 +83,12 @@ struct Inner {
     /// The 23 sidebar rows (4 section headers and 19 tabs); the model is
     /// created once and updated in place so focus survives a refresh.
     sidebar: Rc<VecModel<SidebarRow>>,
-    general: Rc<VecModel<PageRow>>,
-    permissions: Rc<VecModel<PageRow>>,
-    backup: Rc<VecModel<PageRow>>,
+    /// The titled row groups of the section pages. Each group's row models
+    /// keep their identity across refreshes, so the delegates (and keyboard
+    /// focus) are never recreated.
+    general: SectionGroup,
+    permissions: SectionGroup,
+    backup: SectionGroup,
     about: Rc<VecModel<PageRow>>,
     /// The local shortcut recorder. It owns only the action name while a well
     /// is listening; the capture itself runs from the HWND subclass.
@@ -114,9 +118,9 @@ impl SettingsWindow {
             host,
             weak: ui.as_weak(),
             sidebar: Rc::new(VecModel::default()),
-            general: Rc::new(VecModel::default()),
-            permissions: Rc::new(VecModel::default()),
-            backup: Rc::new(VecModel::default()),
+            general: SectionGroup::new(5),
+            permissions: SectionGroup::new(1),
+            backup: SectionGroup::new(1),
             about: Rc::new(VecModel::default()),
             recorder: crate::features::hotkeys::ui::recorder::Recorder::new(),
             ready: false,
@@ -137,13 +141,13 @@ impl SettingsWindow {
             .set_sidebar_rows(ModelRc::from(unsafe { (*inner).sidebar.clone() }));
         window
             .ui
-            .set_general_rows(ModelRc::from(unsafe { (*inner).general.clone() }));
+            .set_general_sections(ModelRc::from(unsafe { (*inner).general.sections.clone() }));
+        window.ui.set_permissions_sections(ModelRc::from(unsafe {
+            (*inner).permissions.sections.clone()
+        }));
         window
             .ui
-            .set_permissions_rows(ModelRc::from(unsafe { (*inner).permissions.clone() }));
-        window
-            .ui
-            .set_backup_rows(ModelRc::from(unsafe { (*inner).backup.clone() }));
+            .set_backup_sections(ModelRc::from(unsafe { (*inner).backup.sections.clone() }));
         window
             .ui
             .set_about_rows(ModelRc::from(unsafe { (*inner).about.clone() }));
@@ -470,12 +474,12 @@ fn refresh(ui: &Settings, inner: *mut Inner) {
         }
         sync_rows(unsafe { &(*inner).sidebar }, sidebar_model(lang));
     }
-    sync_rows(
-        unsafe { &(*inner).general },
-        general_model(unsafe { &*inner }, core),
-    );
-    sync_rows(unsafe { &(*inner).permissions }, permissions_model(lang));
-    sync_rows(unsafe { &(*inner).backup }, backup_model(lang));
+    // The section pages: titles, notes and rows all refresh in place.
+    unsafe {
+        (*inner).general.sync(general_model(&*inner, core));
+        (*inner).permissions.sync(permissions_model(lang));
+        (*inner).backup.sync(backup_model(lang));
+    }
     sync_rows(unsafe { &(*inner).about }, about_model(lang));
 }
 
@@ -485,7 +489,8 @@ fn refresh_inner(inner: *mut Inner) {
     }
 }
 
-/// One sidebar model row: a section header or a SettingsTab.
+/// One sidebar model row: a section header or a SettingsTab. Headers take the
+/// magpie label dress: Latin copy is uppercased (a no-op for Chinese).
 fn sidebar_model(lang: UiLang) -> Vec<SidebarRow> {
     sidebar_rows()
         .into_iter()
@@ -494,7 +499,7 @@ fn sidebar_model(lang: UiLang) -> Vec<SidebarRow> {
                 kind: 0,
                 top: row.y,
                 height: row.height,
-                label: settings_section_title(section, lang).into(),
+                label: settings_section_title(section, lang).to_uppercase().into(),
                 symbol: Default::default(),
                 tab: -1,
             }),
@@ -510,23 +515,8 @@ fn sidebar_model(lang: UiLang) -> Vec<SidebarRow> {
         .collect()
 }
 
-fn header_row(title: &str) -> PageRow {
-    PageRow {
-        kind: 0,
-        id: -1,
-        title: title.into(),
-        subtitle: Default::default(),
-        trailing: Default::default(),
-        control: 0,
-        checked: false,
-        active: false,
-        enabled: true,
-    }
-}
-
 fn action_row(id: i32, title: &str, subtitle: &str, trailing: &str, control: i32) -> PageRow {
     PageRow {
-        kind: 1,
         id,
         title: title.into(),
         subtitle: subtitle.into(),
@@ -538,9 +528,57 @@ fn action_row(id: i32, title: &str, subtitle: &str, trailing: &str, control: i32
     }
 }
 
+/// A fixed set of titled groups on one page. The section structs are
+/// refreshed in place while each group's row model keeps its identity, so the
+/// row delegates — and their keyboard focus — survive every refresh.
+struct SectionGroup {
+    sections: Rc<VecModel<PageSection>>,
+    rows: Vec<Rc<VecModel<PageRow>>>,
+}
+
+impl SectionGroup {
+    fn new(count: usize) -> Self {
+        let rows: Vec<Rc<VecModel<PageRow>>> =
+            (0..count).map(|_| Rc::new(VecModel::default())).collect();
+        let sections = Rc::new(VecModel::from(
+            rows.iter()
+                .map(|model| PageSection {
+                    title: Default::default(),
+                    note: Default::default(),
+                    rows: ModelRc::from(model.clone()),
+                })
+                .collect::<Vec<_>>(),
+        ));
+        Self { sections, rows }
+    }
+
+    /// One part per group: title, footer note, then the rows.
+    fn sync(&self, parts: Vec<(String, String, Vec<PageRow>)>) {
+        for (index, model) in self.rows.iter().enumerate() {
+            let Some((title, note, rows)) = parts.get(index) else {
+                break;
+            };
+            sync_rows(model, rows.clone());
+            self.sections.set_row_data(
+                index,
+                PageSection {
+                    title: title.into(),
+                    note: note.into(),
+                    rows: ModelRc::from(model.clone()),
+                },
+            );
+        }
+    }
+}
+
 /// General: the same five groups, row order and trailing values the Direct2D
-/// pane drew; only the widgets are Slint now.
-fn general_model(inner: &Inner, core: &crate::app_core::AppCore) -> Vec<PageRow> {
+/// pane drew, plus the magpie section dress (title above the card, the two
+/// footer notes the old window drew under Global Shortcuts and Search). Only
+/// the widgets are Slint now.
+fn general_model(
+    inner: &Inner,
+    core: &crate::app_core::AppCore,
+) -> Vec<(String, String, Vec<PageRow>)> {
     use crate::features::settings::panes::general::{self, GeneralHit, GeneralState};
 
     let lang = core.ui_lang();
@@ -588,9 +626,13 @@ fn general_model(inner: &Inner, core: &crate::app_core::AppCore) -> Vec<PageRow>
         GeneralSection::Appearance,
         GeneralSection::General,
     ];
-    let mut rows = Vec::new();
+    let mut groups = Vec::new();
     for (section, hits) in sections.into_iter().zip(general::section_rows()) {
-        rows.push(header_row(general_section_title(section, lang)));
+        let title = general_section_title(section, lang).to_uppercase();
+        let note = general_section_footer(section, lang)
+            .unwrap_or("")
+            .to_string();
+        let mut rows = Vec::new();
         for &hit in hits {
             let row = general::row_for(hit);
             let title = general_row_title(row, lang);
@@ -685,19 +727,20 @@ fn general_model(inner: &Inner, core: &crate::app_core::AppCore) -> Vec<PageRow>
                     true,
                 ),
             };
-            let mut page_row = action_row(hit as i32, title, &subtitle, &trailing, control);
+            let mut page_row = action_row(hit as i32, &title, &subtitle, &trailing, control);
             page_row.checked = checked;
             page_row.enabled = enabled;
             page_row.active = hit == GeneralHit::PaletteRecorder && state.recording_palette;
             rows.push(page_row);
         }
+        groups.push((title, note, rows));
     }
-    rows
+    groups
 }
 
-fn permissions_model(lang: UiLang) -> Vec<PageRow> {
+fn permissions_model(lang: UiLang) -> Vec<(String, String, Vec<PageRow>)> {
     let open = open_settings_action(lang);
-    (0..crate::features::settings::panes::permissions::ROWS.len())
+    let rows = (0..crate::features::settings::panes::permissions::ROWS.len())
         .map(|index| {
             action_row(
                 index as i32,
@@ -707,11 +750,12 @@ fn permissions_model(lang: UiLang) -> Vec<PageRow> {
                 2,
             )
         })
-        .collect()
+        .collect();
+    vec![(String::new(), String::new(), rows)]
 }
 
-fn backup_model(lang: UiLang) -> Vec<PageRow> {
-    [
+fn backup_model(lang: UiLang) -> Vec<(String, String, Vec<PageRow>)> {
+    let rows = [
         backup_export(lang),
         backup_import(lang),
         backup_raycast(lang),
@@ -719,7 +763,8 @@ fn backup_model(lang: UiLang) -> Vec<PageRow> {
     .into_iter()
     .enumerate()
     .map(|(index, title)| action_row(index as i32, title, "", "", 2))
-    .collect()
+    .collect();
+    vec![(String::new(), String::new(), rows)]
 }
 
 fn about_model(lang: UiLang) -> Vec<PageRow> {

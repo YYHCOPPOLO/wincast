@@ -11,6 +11,16 @@ import { Scrollbar } from "primitives/scrollbar.slint";
 import { Card } from "primitives/card.slint";
 import { FormGroup, SidebarRow, Toggle } from "primitives/form.slint";
 import { Checkbox } from "primitives/checkbox.slint";
+import {
+    MagBadge,
+    MagChip,
+    MagEmptyState,
+    MagGridCell,
+    MagHeader,
+    MagInput,
+    MagSelectButton,
+    MagTextButton,
+} from "primitives/magpie.slint";
 import { Dialog } from "primitives/dialog.slint";
 import { Hud } from "primitives/hud.slint";
 import { PaletteWindow } from "surfaces/palette.slint";
@@ -189,6 +199,20 @@ export component GalleryWindow inherits Window {
     in property <string> recorder-caption;
     in property <[string]> recorder-keys;
     in property <string> recorder-esc;
+    in property <string> magpie-header;
+    in property <string> magpie-select;
+    in property <string> magpie-chip;
+    in property <string> magpie-badge-ok;
+    in property <string> magpie-badge-warn;
+    in property <string> magpie-action;
+    in property <string> magpie-danger;
+    in property <string> magpie-input-hint;
+    in property <string> magpie-cell-title;
+    in property <string> magpie-cell-subtitle;
+    in property <string> magpie-empty;
+    in property <string> magpie-empty-action;
+    in property <string> magpie-cell-symbol;
+    in-out property <string> magpie-input-text;
     in-out property <bool> recorder-reveal: true;
 
     in-out property <int> appearance: 0;
@@ -466,6 +490,50 @@ export component GalleryWindow inherits Window {
                     detail: root.hud-detail;
                     symbol: root.hud-symbol;
                     requested-width: 400px;
+                }
+
+                // The Magpie settings vocabulary: spaced header, value select,
+                // chips, badges, quiet and primary actions, hairline input,
+                // a grid tile and the empty state.
+                VerticalLayout {
+                    spacing: Theme.spacing-md;
+
+                    MagHeader { text-label: root.magpie-header; }
+
+                    MagSelectButton { value: root.magpie-select; }
+
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+
+                        MagChip { label: root.magpie-chip; has-dot: true; dot: Theme.success; }
+                        MagBadge { label: root.magpie-badge-ok; tone: 0; }
+                        MagBadge { label: root.magpie-badge-warn; tone: 2; }
+                    }
+
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+
+                        MagTextButton { label: root.magpie-action; }
+                        MagTextButton { label: root.magpie-danger; danger: true; }
+                    }
+
+                    MagInput {
+                        placeholder: root.magpie-input-hint;
+                        text-value <=> root.magpie-input-text;
+                    }
+
+                    MagGridCell {
+                        title: root.magpie-cell-title;
+                        subtitle: root.magpie-cell-subtitle;
+                        symbol: root.magpie-cell-symbol;
+                        configured: true;
+                    }
+
+                    MagEmptyState {
+                        glyph: "\u{E721}";
+                        label: root.magpie-empty;
+                        action: root.magpie-empty-action;
+                    }
                 }
             }
         }
