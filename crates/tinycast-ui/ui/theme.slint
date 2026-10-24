@@ -17,9 +17,28 @@ export global Theme {
     in property <color> text-primary;
     in property <color> text-secondary;
     in property <color> text-tertiary;
-    // Destructive action ink: Magpie's 600 step on light, the 400 step on dark.
+    // Destructive/success ink: Magpie's `--red`/`--green` from app.css.
     in property <color> destructive;
     in property <color> success;
+    // Accent trio (`--accent*`), the picker's solid selected fill (`--sel`),
+    // the second card step (`--card-2`), the remaining ink steps (`--fg-2`,
+    // `--faint`, `--ctl-fg`), hovered pill fill (`--pill-hover`), status amber
+    // and the soft badge tiles (`--*-soft`), and the segmented-control pair.
+    in property <color> accent;
+    in property <color> accent-soft;
+    in property <color> accent-fg;
+    in property <color> sel;
+    in property <color> card-2;
+    in property <color> fg-2;
+    in property <color> faint;
+    in property <color> ctl-fg;
+    in property <color> pill-hover;
+    in property <color> amber;
+    in property <color> green-soft;
+    in property <color> red-soft;
+    in property <color> amber-soft;
+    in property <color> seg-track;
+    in property <color> seg-thumb;
     in property <color> control-surface;
     // Card/menu surfaces repeat the plain surface/border pair, never a tint.
     in property <color> card-fill;

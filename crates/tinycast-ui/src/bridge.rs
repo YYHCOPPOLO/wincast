@@ -43,6 +43,23 @@ where
     t.set_text_tertiary(rgba(theme::colors::text_tertiary_rgba(appearance)));
     t.set_destructive(rgba(theme::colors::destructive_rgba(appearance)));
     t.set_success(rgba(theme::colors::success_rgba(appearance)));
+    // The full Magpie ramp: accent, picker selection, card-2, the lower ink
+    // steps, pill hover, amber and the soft badge tiles, segment track/thumb.
+    t.set_accent(rgba(theme::colors::accent_rgba(appearance)));
+    t.set_accent_soft(rgba(theme::colors::accent_soft_rgba(appearance)));
+    t.set_accent_fg(rgba(theme::colors::accent_fg_rgba(appearance)));
+    t.set_sel(rgba(theme::colors::sel_rgba(appearance)));
+    t.set_card_2(rgba(theme::colors::card2_rgba(appearance)));
+    t.set_fg_2(rgba(theme::colors::fg2_rgba(appearance)));
+    t.set_faint(rgba(theme::colors::faint_rgba(appearance)));
+    t.set_ctl_fg(rgba(theme::colors::ctl_fg_rgba(appearance)));
+    t.set_pill_hover(rgba(theme::colors::pill_hover_rgba(appearance)));
+    t.set_amber(rgba(theme::colors::amber_rgba(appearance)));
+    t.set_green_soft(rgba(theme::colors::green_soft_rgba(appearance)));
+    t.set_red_soft(rgba(theme::colors::red_soft_rgba(appearance)));
+    t.set_amber_soft(rgba(theme::colors::amber_soft_rgba(appearance)));
+    t.set_seg_track(rgba(theme::colors::seg_track_rgba(appearance)));
+    t.set_seg_thumb(rgba(theme::colors::seg_thumb_rgba(appearance)));
     // Controls and cards are solid too: muted strip, surface card, border stroke.
     t.set_control_surface(rgba(theme::colors::muted_rgba(appearance)));
     t.set_card_fill(rgba(theme::colors::surface_rgba(appearance)));

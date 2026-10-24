@@ -436,13 +436,56 @@ pub mod colors {
     pub const TEXT_SECONDARY_LIGHT: (f32, f32, f32) = (99.0 / 255.0, 99.0 / 255.0, 107.0 / 255.0);
     pub const TEXT_TERTIARY_DARK: (f32, f32, f32) = (139.0 / 255.0, 139.0 / 255.0, 148.0 / 255.0);
     pub const TEXT_TERTIARY_LIGHT: (f32, f32, f32) = (133.0 / 255.0, 133.0 / 255.0, 141.0 / 255.0);
-    /// Magpie's red: light uses the 600 step, dark the 400 step so it reads on
-    /// the dark surface.
-    pub const DESTRUCTIVE_DARK: (f32, f32, f32) = (248.0 / 255.0, 113.0 / 255.0, 113.0 / 255.0);
-    pub const DESTRUCTIVE_LIGHT: (f32, f32, f32) = (220.0 / 255.0, 38.0 / 255.0, 38.0 / 255.0);
-    /// Magpie's green, same 500/400 split.
-    pub const SUCCESS_DARK: (f32, f32, f32) = (74.0 / 255.0, 222.0 / 255.0, 128.0 / 255.0);
-    pub const SUCCESS_LIGHT: (f32, f32, f32) = (34.0 / 255.0, 197.0 / 255.0, 94.0 / 255.0);
+    /// Magpie's red and green (`app.css` `--red` / `--green`): a calmer 600-ish
+    /// step on light, a pastel 300-ish step on dark.
+    pub const DESTRUCTIVE_DARK: (f32, f32, f32) = (242.0 / 255.0, 139.0 / 255.0, 130.0 / 255.0);
+    pub const DESTRUCTIVE_LIGHT: (f32, f32, f32) = (214.0 / 255.0, 69.0 / 255.0, 69.0 / 255.0);
+    pub const SUCCESS_DARK: (f32, f32, f32) = (111.0 / 255.0, 217.0 / 255.0, 155.0 / 255.0);
+    pub const SUCCESS_LIGHT: (f32, f32, f32) = (24.0 / 255.0, 154.0 / 255.0, 88.0 / 255.0);
+    /// Magpie's accent trio: the indigo ink, its soft tile fill, and the ink
+    /// that sits on an accent-filled control (`app.css` `--accent*`).
+    pub const ACCENT_DARK: (f32, f32, f32) = (165.0 / 255.0, 180.0 / 255.0, 252.0 / 255.0);
+    pub const ACCENT_LIGHT: (f32, f32, f32) = (79.0 / 255.0, 70.0 / 255.0, 229.0 / 255.0);
+    pub const ACCENT_SOFT_DARK: (f32, f32, f32) = (43.0 / 255.0, 44.0 / 255.0, 71.0 / 255.0);
+    pub const ACCENT_SOFT_LIGHT: (f32, f32, f32) = (238.0 / 255.0, 237.0 / 255.0, 253.0 / 255.0);
+    pub const ACCENT_FG_DARK: (f32, f32, f32) = (20.0 / 255.0, 20.0 / 255.0, 42.0 / 255.0);
+    pub const ACCENT_FG_LIGHT: (f32, f32, f32) = (1.0, 1.0, 1.0);
+    /// The picker's solid selected-row fill, distinct from the translucent
+    /// list selection above (`app.css` `--sel`).
+    pub const SEL_DARK: (f32, f32, f32) = (51.0 / 255.0, 52.0 / 255.0, 90.0 / 255.0);
+    pub const SEL_LIGHT: (f32, f32, f32) = (236.0 / 255.0, 235.0 / 255.0, 251.0 / 255.0);
+    /// Second card step behind an expanded editor (`app.css` `--card-2`).
+    pub const CARD2_DARK: (f32, f32, f32) = (31.0 / 255.0, 31.0 / 255.0, 35.0 / 255.0);
+    pub const CARD2_LIGHT: (f32, f32, f32) = (249.0 / 255.0, 249.0 / 255.0, 251.0 / 255.0);
+    /// The remaining ink steps (`app.css` `--fg-2`, `--faint`, `--ctl-fg`).
+    /// `--fg`/`--muted`/`--ctl-fg` map to text/destructive names above;
+    /// fg-2 and faint complete the ramp.
+    pub const FG2_DARK: (f32, f32, f32) = (185.0 / 255.0, 185.0 / 255.0, 193.0 / 255.0);
+    pub const FG2_LIGHT: (f32, f32, f32) = (75.0 / 255.0, 75.0 / 255.0, 83.0 / 255.0);
+    pub const FAINT_DARK: (f32, f32, f32) = (86.0 / 255.0, 86.0 / 255.0, 95.0 / 255.0);
+    pub const FAINT_LIGHT: (f32, f32, f32) = (185.0 / 255.0, 185.0 / 255.0, 194.0 / 255.0);
+    pub const CTL_FG_DARK: (f32, f32, f32) = (161.0 / 255.0, 161.0 / 255.0, 170.0 / 255.0);
+    pub const CTL_FG_LIGHT: (f32, f32, f32) = (99.0 / 255.0, 99.0 / 255.0, 107.0 / 255.0);
+    /// Hovered pill/chip fill; the rest state is `MUTED_*` (`--pill-hover`).
+    pub const PILL_HOVER_DARK: (f32, f32, f32) = (54.0 / 255.0, 54.0 / 255.0, 61.0 / 255.0);
+    pub const PILL_HOVER_LIGHT: (f32, f32, f32) = (233.0 / 255.0, 233.0 / 255.0, 238.0 / 255.0);
+    /// Status colours: magpie's amber plus the soft tile behind each badge
+    /// (`--amber`, `--green-soft`, `--red-soft`, `--amber-soft`).
+    pub const AMBER_DARK: (f32, f32, f32) = (242.0 / 255.0, 181.0 / 255.0, 68.0 / 255.0);
+    pub const AMBER_LIGHT: (f32, f32, f32) = (180.0 / 255.0, 83.0 / 255.0, 9.0 / 255.0);
+    pub const GREEN_SOFT_DARK: (f32, f32, f32) = (30.0 / 255.0, 58.0 / 255.0, 43.0 / 255.0);
+    pub const GREEN_SOFT_LIGHT: (f32, f32, f32) = (228.0 / 255.0, 246.0 / 255.0, 236.0 / 255.0);
+    pub const RED_SOFT_DARK: (f32, f32, f32) = (69.0 / 255.0, 39.0 / 255.0, 42.0 / 255.0);
+    pub const RED_SOFT_LIGHT: (f32, f32, f32) = (251.0 / 255.0, 233.0 / 255.0, 233.0 / 255.0);
+    pub const AMBER_SOFT_DARK: (f32, f32, f32) = (63.0 / 255.0, 50.0 / 255.0, 32.0 / 255.0);
+    pub const AMBER_SOFT_LIGHT: (f32, f32, f32) = (251.0 / 255.0, 240.0 / 255.0, 223.0 / 255.0);
+    /// The header's segmented view switch (`--seg-track` / `--seg-thumb`).
+    /// Dark is translucent white ink over the header fill, exactly as authored.
+    pub const SEG_TRACK_DARK: (f32, f32, f32, f32) = (1.0, 1.0, 1.0, 0.035);
+    pub const SEG_TRACK_LIGHT: (f32, f32, f32, f32) =
+        (230.0 / 255.0, 230.0 / 255.0, 235.0 / 255.0, 1.0);
+    pub const SEG_THUMB_DARK: (f32, f32, f32, f32) = (1.0, 1.0, 1.0, 0.15);
+    pub const SEG_THUMB_LIGHT: (f32, f32, f32, f32) = (1.0, 1.0, 1.0, 1.0);
     /// Selection and hover are still translucent ink, just lighter than the
     /// alpha ramp above: Light 5% / 3%, Dark 8% / 4%.
     pub const MAGPIE_SELECTION_DARK_ALPHA: f32 = 0.08;
@@ -495,6 +538,80 @@ pub mod colors {
 
     pub fn success_rgba(appearance: u8) -> (f32, f32, f32, f32) {
         solid(SUCCESS_DARK, SUCCESS_LIGHT, appearance)
+    }
+
+    pub fn accent_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(ACCENT_DARK, ACCENT_LIGHT, appearance)
+    }
+
+    pub fn accent_soft_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(ACCENT_SOFT_DARK, ACCENT_SOFT_LIGHT, appearance)
+    }
+
+    pub fn accent_fg_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(ACCENT_FG_DARK, ACCENT_FG_LIGHT, appearance)
+    }
+
+    pub fn sel_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(SEL_DARK, SEL_LIGHT, appearance)
+    }
+
+    pub fn card2_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(CARD2_DARK, CARD2_LIGHT, appearance)
+    }
+
+    pub fn fg2_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(FG2_DARK, FG2_LIGHT, appearance)
+    }
+
+    pub fn faint_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(FAINT_DARK, FAINT_LIGHT, appearance)
+    }
+
+    pub fn ctl_fg_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(CTL_FG_DARK, CTL_FG_LIGHT, appearance)
+    }
+
+    pub fn pill_hover_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(PILL_HOVER_DARK, PILL_HOVER_LIGHT, appearance)
+    }
+
+    pub fn amber_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(AMBER_DARK, AMBER_LIGHT, appearance)
+    }
+
+    pub fn green_soft_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(GREEN_SOFT_DARK, GREEN_SOFT_LIGHT, appearance)
+    }
+
+    pub fn red_soft_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(RED_SOFT_DARK, RED_SOFT_LIGHT, appearance)
+    }
+
+    pub fn amber_soft_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(AMBER_SOFT_DARK, AMBER_SOFT_LIGHT, appearance)
+    }
+
+    /// The segmented-control pair keeps its authored alpha, so this returns the
+    /// stored 4-tuple instead of forcing 1.0 like `solid`.
+    fn layered(
+        dark: (f32, f32, f32, f32),
+        light: (f32, f32, f32, f32),
+        appearance: u8,
+    ) -> (f32, f32, f32, f32) {
+        if appearance == 0 {
+            dark
+        } else {
+            light
+        }
+    }
+
+    pub fn seg_track_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        layered(SEG_TRACK_DARK, SEG_TRACK_LIGHT, appearance)
+    }
+
+    pub fn seg_thumb_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        layered(SEG_THUMB_DARK, SEG_THUMB_LIGHT, appearance)
     }
 }
 
