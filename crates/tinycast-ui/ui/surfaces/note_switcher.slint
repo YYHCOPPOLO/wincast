@@ -1,0 +1,114 @@
+// The note switcher: a 300×240 frameless popup under the notes title bar. The
+// search row hosts a native EDIT child (the IME needs it); the list below is
+// this surface — 36 DIP rows, the picker selection fill, and a 96 DIP empty
+// state when nothing matches.
+import { Theme } from "../theme.slint";
+
+export struct NoteEntry {
+    title: string,
+}
+
+export component NoteSwitcherWindow inherits Window {
+    in property <[NoteEntry]> entries;
+    in property <int> selected: -1;
+    in property <string> empty-label;
+    in property <string> empty-glyph;
+
+    callback picked(int);
+
+    title: "Tinycast";
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.surface;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+    width: Theme.size-note-switcher-width;
+    height: Theme.size-note-switcher-height;
+
+    // Search row: 34 DIP (`size-note-search-height`); the native EDIT child
+    // sits here, so the surface draws only the row itself.
+    Rectangle {
+        y: 0;
+        width: parent.width;
+        height: Theme.size-note-search-height;
+        background: transparent;
+    }
+
+    Rectangle {
+        y: Theme.size-note-search-height;
+        width: parent.width;
+        height: Theme.size-hairline;
+        background: Theme.border;
+    }
+
+    // The list area. Empty shows the 96 DIP quiet state
+    // (`size-note-switcher-empty-height`); otherwise the rows.
+    area := Rectangle {
+        y: Theme.size-note-search-height + Theme.size-hairline;
+        width: parent.width;
+        height: parent.height - self.y - Theme.spacing-sm;
+
+        if root.entries.length == 0: Rectangle {
+            width: parent.width;
+            height: Theme.size-note-switcher-empty-height;
+            y: (parent.height - self.height) / 2;
+            background: transparent;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: Theme.spacing-md;
+
+                Text {
+                    text: root.empty-glyph;
+                    font-family: "Segoe Fluent Icons";
+                    font-size: Theme.size-note-empty-glyph;
+                    color: Theme.faint;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: root.empty-label;
+                    color: Theme.text-tertiary;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // The rows live in a Flickable that is always present (the host moves
+        // `list-offset` to keep the selection visible); the empty state covers
+        // it when nothing matches.
+        flick := Flickable {
+            visible: root.entries.length > 0;
+            x: Theme.spacing-sm;
+            width: parent.width - Theme.spacing-sm * 2;
+            height: parent.height;
+
+            for entry[i] in root.entries: Rectangle {
+                y: i * Theme.size-magpie-list-item;
+                width: parent.width;
+                height: Theme.size-magpie-list-item;
+                border-radius: Theme.radius-magpie-control;
+                background: i == root.selected ? Theme.sel
+                    : (list-touch.has-hover ? Theme.row-hover : transparent);
+
+                Text {
+                    x: Theme.spacing-sm;
+                    width: parent.width - Theme.spacing-sm * 2;
+                    height: parent.height;
+                    text: entry.title;
+                    color: Theme.text-primary;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                list-touch := TouchArea {
+                    clicked => { root.picked(i); }
+                }
+            }
+        }
+    }
+
+    // The host moves this so the keyboard selection stays in view.
+    in-out property <length> list-offset <=> flick.content-y;
+}

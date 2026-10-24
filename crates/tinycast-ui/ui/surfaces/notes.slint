@@ -1,0 +1,106 @@
+// The Notes window chrome: a 52 DIP title bar (title centred between the
+// insets, three glyph slots in a capsule), a body area the native RichEdit
+// child covers, and a 28 DIP footer with the character count. The window is a
+// normal captioned window; the body and the search keep native EDIT children
+// (the IME needs them), everything else is this surface.
+import { Theme } from "../theme.slint";
+
+export component NotesWindow inherits Window {
+    in property <string> note-title;
+    in property <string> footer-count;
+    in property <string> create-symbol;
+    in property <string> switcher-symbol;
+    in property <string> folder-symbol;
+
+    callback create-clicked();
+    callback switcher-clicked();
+    callback folder-clicked();
+
+    title: "Tinycast";
+    background: Theme.page;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+    preferred-width: Theme.size-note-window-width;
+    preferred-height: Theme.size-note-window-height;
+
+    // Title bar: 52 DIP. The title keeps the 120 DIP inset clear on both
+    // sides (`size-note-title-inset`); the capsule rides the trailing gutter.
+    Rectangle {
+        height: Theme.size-note-titlebar;
+        background: transparent;
+
+        Text {
+            x: Theme.size-note-title-inset;
+            width: parent.width - Theme.size-note-title-inset * 2;
+            height: parent.height;
+            text: root.note-title;
+            font-weight: 600;
+            color: Theme.text-primary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        // The three 28 DIP slots of the Direct2D capsule (`cap_w = slot * 3 +
+        // XS * 2`); each slot is its own click target.
+        capsule := Rectangle {
+            x: parent.width - Theme.spacing-md - self.width;
+            y: (parent.height - Theme.size-bar-button-height) / 2;
+            width: 28px * 3 + Theme.spacing-xs * 2;
+            height: Theme.size-bar-button-height;
+            border-radius: self.height / 2;
+            background: Theme.surface-muted;
+
+            for slot[i] in [
+                { symbol: root.create-symbol, title: "create" },
+                { symbol: root.switcher-symbol, title: "switcher" },
+                { symbol: root.folder-symbol, title: "folder" },
+            ]: Rectangle {
+                x: 28px * i + (i > 0 ? Theme.spacing-xs * i : 0px);
+                width: 28px;
+                height: parent.height;
+
+                Text {
+                    // Centred glyph: `size-note-glyph` inside the slot.
+                    x: (parent.width - Theme.size-note-glyph) / 2;
+                    y: (parent.height - Theme.size-note-glyph) / 2;
+                    width: Theme.size-note-glyph;
+                    height: Theme.size-note-glyph;
+                    text: slot.symbol;
+                    font-family: "Segoe Fluent Icons";
+                    font-size: Theme.size-note-glyph;
+                    color: Theme.text-secondary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                touch := TouchArea {
+                    clicked => {
+                        if (i == 0) {
+                            root.create-clicked();
+                        } else if (i == 1) {
+                            root.switcher-clicked();
+                        } else {
+                            root.folder-clicked();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Body: the native RichEdit child covers this area; the surface draws
+    // nothing here. The placeholder cue is a native STATIC above the edit.
+
+    // Footer: the character count, centred in the 28 DIP bar.
+    Text {
+        y: parent.height - Theme.size-note-footer;
+        width: parent.width;
+        height: Theme.size-note-footer;
+        text: root.footer-count;
+        color: Theme.text-tertiary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
