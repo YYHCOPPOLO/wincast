@@ -281,13 +281,17 @@ pub fn paint_items(
             }
             LauncherListItem::Row(entry) => {
                 let fav_slot = favorite_slot_for(sections, entry, sel);
+                let source = icon_source(entry);
                 out.push(PaintItem::Row {
                     title: entry.name.clone(),
                     alias: entry.fields.user_alias.clone(),
                     trailing: kind_label(entry.kind, lang).to_string(),
                     keycap: keycap_label(entry, fav_slot),
-                    icon_source: icon_source(entry),
-                    symbol: None,
+                    // The kind glyph is the standing fallback: it only shows
+                    // while the icon is missing or still decoding, so no row
+                    // ever ships an empty icon slot.
+                    symbol: Some(kind_glyph(entry.kind).to_string()),
+                    icon_source: source,
                     checkbox: 0,
                     selected: sel == selection,
                 });
@@ -296,6 +300,22 @@ pub fn paint_items(
         }
     }
     out
+}
+
+/// The SF name a row shows when its icon source is missing; the snapshot
+/// layer turns it into the Segoe Fluent code point.
+fn kind_glyph(kind: tinycast_pure::app_entry::AppKind) -> &'static str {
+    use tinycast_pure::app_entry::AppKind;
+    match kind {
+        AppKind::Application => "square.grid.2x2",
+        AppKind::SystemSettings => "gearshape",
+        AppKind::Quicklink => "link",
+        AppKind::Snippet => "curlybraces",
+        AppKind::SystemAction => "bolt",
+        AppKind::WindowCommand => "macwindow",
+        AppKind::CustomCommand => "terminal",
+        AppKind::Command => "info.circle",
+    }
 }
 
 fn favorite_slot_for(

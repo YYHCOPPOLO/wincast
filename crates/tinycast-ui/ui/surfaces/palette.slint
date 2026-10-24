@@ -79,7 +79,9 @@ component CalcCard inherits Rectangle {
     in property <string> arrow-symbol;
     in property <bool> is-error: false;
     in property <bool> selected: false;
-    in property <bool> hover-armed: false;
+    // The host computes the hover (pointer position over the slice), so a
+    // rebuild cannot leave a stale delegate hover on the wrong row.
+    in property <bool> hovered: false;
     // The list column width; a component cannot read its parent.
     in property <length> slot-width;
 
@@ -93,7 +95,7 @@ component CalcCard inherits Rectangle {
     // On the now-opaque surface a plain cardFill would be the same white as the
     // panel; the 1 px border keeps the tile visible, like every other card.
     background: root.selected ? Theme.selection
-        : (root.hover-armed && card-touch.has-hover ? Theme.row-hover : Theme.card-fill);
+        : (root.hovered ? Theme.row-hover : Theme.card-fill);
     border-width: Theme.size-hairline;
     border-color: Theme.card-stroke;
 
@@ -398,6 +400,9 @@ export component PaletteWindow inherits Window {
     in property <[ChatRow]> chat-rows;
     in property <string> thinking-label;
     in property <bool> hover-armed: false;
+    // The row the pointer is over, from the host: a slice rebuild must not
+    // leave a stale delegate hover on the wrong row.
+    in property <int> hover-index: -1;
     in property <string> empty-text;
     // Glyph above the empty text, the same fluent magnifier in every mode.
     in property <string> empty-symbol;
@@ -447,6 +452,10 @@ export component PaletteWindow inherits Window {
 
     callback header-clicked();
     callback row-clicked(int, length, length);
+    // The clipboard preview: copy the whole item, or hand Esc back to the
+    // palette's key path (the native field owns it while the list is up).
+    callback copy-preview-all();
+    callback preview-escape();
     callback filter-clicked();
     callback scrolled(length);
     callback apps-clicked();
@@ -541,6 +550,23 @@ export component PaletteWindow inherits Window {
         Rectangle {
             height: Theme.size-header-height;
             background: transparent;
+
+            // The search field's chrome (magpie's picker input): the native
+            // EDIT floats over this box and paints only its text, so the box
+            // supplies the visible field — card-2 fill, line-2 hairline.
+            Rectangle {
+                x: Theme.spacing-md;
+                y: (parent.height - self.height) / 2;
+                width: Math.min(
+                    root.field-right + Theme.spacing-md,
+                    root.width - Theme.spacing-md,
+                ) - Theme.spacing-md;
+                height: Theme.size-magpie-search;
+                border-radius: Theme.radius-row;
+                background: Theme.card-2;
+                border-width: Theme.size-hairline;
+                border-color: Theme.line-2;
+            }
 
             Text {
                 x: Theme.spacing-md * 2;
@@ -651,7 +677,7 @@ export component PaletteWindow inherits Window {
                         icon: row.icon;
                         icon-ready: row.icon-ready;
                         selected: row.selected;
-                        hover-armed: root.hover-armed;
+                        hovered: root.hover-armed && i == root.hover-index;
                         clicked(x, y) => { root.row-clicked(i, x, y); }
                     }
 
@@ -665,7 +691,7 @@ export component PaletteWindow inherits Window {
                         arrow-symbol: root.arrow-symbol;
                         is-error: row.is-error;
                         selected: row.selected;
-                        hover-armed: root.hover-armed;
+                        hovered: root.hover-armed && i == root.hover-index;
                         clicked(x, y) => { root.row-clicked(i, x, y); }
                     }
 
@@ -728,15 +754,45 @@ export component PaletteWindow inherits Window {
                     preview-body.height + Theme.spacing-xl * 2,
                 );
 
-                preview-body := Text {
+                // Read-only but selectable: drag to mark exactly the span to
+                // copy, Ctrl+C copies it (or the whole item when nothing is
+                // marked); Esc returns the keyboard to the search field.
+                preview-scope := FocusScope {
                     x: Theme.spacing-xl;
                     y: Theme.spacing-xl;
                     width: parent.width - Theme.spacing-xl * 2;
-                    text: root.preview-text;
-                    wrap: word-wrap;
-                    font-family: "Segoe UI";
-                    font-size: Theme.font-row;
-                    color: Theme.text-primary;
+                    height: preview-body.height;
+
+                    preview-body := TextInput {
+                        width: 100%;
+                        height: self.preferred-height;
+                        text: root.preview-text;
+                        wrap: word-wrap;
+                        read-only: true;
+                        single-line: false;
+                        font-family: "Segoe UI";
+                        font-size: Theme.font-row;
+                        color: Theme.text-primary;
+                        selection-background-color: Theme.selection;
+                        selection-foreground-color: Theme.text-primary;
+                    }
+
+                    key-pressed(event) => {
+                        if (event.modifiers.control && (event.text == "c" || event.text == "C")) {
+                            if (preview-body.cursor-position-byte-offset
+                                != preview-body.anchor-position-byte-offset) {
+                                preview-body.copy();
+                            } else {
+                                root.copy-preview-all();
+                            }
+                            return accept;
+                        }
+                        if (event.text == Key.Escape) {
+                            root.preview-escape();
+                            return accept;
+                        }
+                        reject
+                    }
                 }
             }
 

@@ -87,7 +87,7 @@ pub fn paint_items(
                 trailing: trailing.to_string(),
                 keycap: None,
                 icon_source: None,
-                symbol: None,
+                symbol: Some("doc.on.clipboard".into()),
                 checkbox: 0,
                 selected: i == selection,
             }

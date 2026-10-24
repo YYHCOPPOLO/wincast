@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use tinycast_pure::palette_menu::{menu_frame, menu_row_rect, OpenMenu};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
@@ -91,6 +91,10 @@ struct PaletteInner {
     trailing: f32,
     /// Hover stays dark until the pointer actually moves over the palette.
     hover_armed: bool,
+    /// Last pointer position in window DIP. The hover row is computed from it
+    /// on every move and after every slice rebuild, so a rebuilt delegate can
+    /// never keep a stale hover on the wrong row.
+    mouse: Option<(f32, f32)>,
     /// The menu content last pushed into the surface. Re-setting a model while
     /// the menu is open recreates its rows under a stationary pointer, whose
     /// fresh has-hover would feed pointer_move back into another rebuild.
@@ -119,6 +123,7 @@ impl PaletteWindow {
             // Forces the first layout.
             trailing: -1.0,
             hover_armed: true,
+            mouse: None,
             menu_signature: None,
             ready: false,
             pending_show: None,
@@ -137,6 +142,33 @@ impl PaletteWindow {
             let inner = ptr as *mut PaletteInner;
             if !inner.is_null() {
                 row_clicked(inner, index, x, y);
+            }
+        });
+        let ptr = inner as usize;
+        window.ui.on_copy_preview_all(move || {
+            let inner = ptr as *mut PaletteInner;
+            if inner.is_null() {
+                return;
+            }
+            if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                let text = unsafe { (*core).clipboard_preview().unwrap_or_default() };
+                if !text.is_empty() {
+                    let _ = crate::platform::clipboard::write_text_marked(&text);
+                }
+            }
+        });
+        let ptr = inner as usize;
+        window.ui.on_preview_escape(move || {
+            let inner = ptr as *mut PaletteInner;
+            if inner.is_null() {
+                return;
+            }
+            if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                // Same path as Esc in the native field: clear the query, or
+                // hide the palette when the query is already empty.
+                unsafe {
+                    (*core).handle_key(0x1B);
+                }
             }
         });
         let ptr = inner as usize;
@@ -429,7 +461,9 @@ fn show_frame(ui: &Palette, inner: *mut PaletteInner, frame: physical::Rect) {
     ui.set_hover_armed(false);
     unsafe {
         (*inner).hover_armed = false;
+        (*inner).mouse = None;
     }
+    ui.set_hover_index(-1);
     refresh(ui, inner);
     layout_search(ui, inner);
     if let Some(edit) = unsafe { (*inner).edit.as_ref() } {
@@ -467,6 +501,42 @@ fn layout_search(ui: &Palette, inner: *mut PaletteInner) {
 }
 
 /// Pulls the whole screen out of `AppCore` and pushes it into the surface.
+/// Publishes the model row the pointer is over, or -1. Rows are matched in
+/// the slice the host itself built, so the highlight always sits on the row
+/// under the pointer even right after a scroll rebuild.
+fn update_hover(ui: &Palette, inner: *mut PaletteInner) {
+    let Some((x, y)) = (unsafe { (*inner).mouse }) else {
+        ui.set_hover_index(-1);
+        return;
+    };
+    // The list starts under the compact bar; the header band is not a row.
+    if y < theme::size::COMPACT_HEIGHT {
+        ui.set_hover_index(-1);
+        return;
+    }
+    let Some(core) = core_from_host(unsafe { (*inner).host }) else {
+        ui.set_hover_index(-1);
+        return;
+    };
+    let split = ui.get_split();
+    if split && x >= theme::size::CLIPBOARD_LIST_WIDTH {
+        // Over the preview pane: the wheel, not a row, lives there.
+        ui.set_hover_index(-1);
+        return;
+    }
+    let scroll = unsafe { (*core).list_scroll() };
+    let absolute = y - theme::size::COMPACT_HEIGHT + scroll;
+    let mut index = -1;
+    for (i, row) in unsafe { (*inner).model.iter().enumerate() } {
+        // Section headers (kind 1) are not hover targets.
+        if row.kind != 1 && absolute >= row.top && absolute < row.top + row.height {
+            index = i as i32;
+            break;
+        }
+    }
+    ui.set_hover_index(index);
+}
+
 fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     let Some(core) = core_from_host(unsafe { (*inner).host }) else {
         return;
@@ -533,6 +603,7 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
         appearance,
     );
     inner_mut.model.set_vec(visible.rows);
+    update_hover(ui, inner);
     // AI mode: the transcript replaces the list. Heights come from the layout
     // module, so the rows and AppCore's clamp share one model.
     let messages = core.ai_chat_messages();
@@ -1013,17 +1084,45 @@ unsafe extern "system" fn palette_subclass(
         WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
             let result = DefSubclassProc(hwnd, msg, wparam, lparam);
             if !inner.is_null() {
-                if let Some(edit) = (*inner).edit.as_ref() {
-                    edit.focus();
+                // Clicks over the clipboard preview belong to its selectable
+                // text: the field must not steal the focus back from it.
+                let over_preview = (*inner)
+                    .weak
+                    .upgrade()
+                    .map(|ui| {
+                        ui.get_split() && {
+                            let dpi = GetDpiForWindow(hwnd);
+                            let scale = if dpi == 0 { 1.0 } else { 96.0 / dpi as f32 };
+                            let pos = lparam.0 as u32;
+                            let x = (pos & 0xffff) as i16 as f32 * scale;
+                            x >= theme::size::CLIPBOARD_LIST_WIDTH
+                        }
+                    })
+                    .unwrap_or(false);
+                if !over_preview {
+                    if let Some(edit) = (*inner).edit.as_ref() {
+                        edit.focus();
+                    }
                 }
             }
             result
         }
         WM_MOUSEMOVE => {
-            if !inner.is_null() && !(*inner).hover_armed {
-                (*inner).hover_armed = true;
+            if !inner.is_null() {
+                if !(*inner).hover_armed {
+                    (*inner).hover_armed = true;
+                    if let Some(ui) = (*inner).weak.upgrade() {
+                        ui.set_hover_armed(true);
+                    }
+                }
+                let dpi = GetDpiForWindow(hwnd);
+                let scale = if dpi == 0 { 1.0 } else { 96.0 / dpi as f32 };
+                let pos = lparam.0 as u32;
+                let x = (pos & 0xffff) as i16 as f32 * scale;
+                let y = ((pos >> 16) & 0xffff) as i16 as f32 * scale;
+                (*inner).mouse = Some((x, y));
                 if let Some(ui) = (*inner).weak.upgrade() {
-                    ui.set_hover_armed(true);
+                    update_hover(&ui, inner);
                 }
             }
             DefSubclassProc(hwnd, msg, wparam, lparam)
