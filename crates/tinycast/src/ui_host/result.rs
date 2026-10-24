@@ -71,11 +71,7 @@ impl ResultPanel {
             exit_timer: Timer::default(),
         };
         // The header glyph does not follow the locale.
-        panel.ui.set_symbol(
-            crate::design_system::symbols::fluent_for_sf("sparkles")
-                .unwrap_or("")
-                .into(),
-        );
+        panel.ui.set_symbol("sparkles".into());
         panel.apply_locale();
         let weak = panel.ui.as_weak();
         arm_init(weak);

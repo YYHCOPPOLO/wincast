@@ -3,6 +3,7 @@
 // the Support window — the remind-later checkbox (the About window carries the
 // Slint disclosure instead). Normal captioned windows on the page background.
 import { Theme } from "../theme.slint";
+import { GlyphIcon } from "../primitives/icons.slint";
 import { Checkbox } from "../primitives/checkbox.slint";
 
 export component SupportWindow inherits Window {
@@ -41,13 +42,10 @@ export component SupportWindow inherits Window {
         border-radius: 18px;
         background: Theme.accent-soft;
 
-        Text {
-            text: "\u{EB51}";
-            font-family: "Segoe Fluent Icons";
-            font-size: 32px;
-            color: Theme.accent;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+        GlyphIcon {
+            size: 44px;
+            name: "heart";
+            ink: Theme.accent;
         }
     }
 

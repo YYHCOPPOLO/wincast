@@ -24,7 +24,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, WM_KEYDOWN, WM_KEYUP, WM_NCDESTROY,
 };
 
-use crate::design_system::symbols::fluent_for_sf;
 use crate::features::hotkeys::ui::recorder::Recorder;
 use crate::ui_host::app_core as core_from_host;
 
@@ -256,13 +255,12 @@ fn apply_chrome(ptr: usize) {
         ui.set_title_label(onboarding_title(step, lang).into());
         ui.set_subtitle_label(onboarding_subtitle(step, lang).into());
         ui.set_hero_symbol(
-            fluent_for_sf(match step {
+            (match step {
                 1 => "lock.shield",
                 2 => "wand.and.sparkles",
                 3 => "checkmark",
                 _ => "magnifyingglass",
             })
-            .unwrap_or("")
             .into(),
         );
         ui.set_continue_label(

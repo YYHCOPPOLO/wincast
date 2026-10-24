@@ -82,7 +82,7 @@ fn open(
         message: prompt.message.clone(),
         accept: prompt.accept.clone(),
         cancel: prompt.cancel.clone(),
-        symbol: fluent(symbol),
+        symbol: symbol.to_string(),
         destructive: prompt.destructive,
         show_cancel: !prompt.cancel.is_empty(),
         // Confirmations are the compact card; form dialogs arrive with the
@@ -91,13 +91,6 @@ fn open(
         volume,
     };
     modal::open(request, on_accept)
-}
-
-/// SF Symbol name to the Segoe Fluent glyph the card draws.
-fn fluent(symbol: &str) -> String {
-    crate::design_system::symbols::fluent_for_sf(symbol)
-        .unwrap_or(symbol)
-        .to_string()
 }
 
 #[cfg(test)]

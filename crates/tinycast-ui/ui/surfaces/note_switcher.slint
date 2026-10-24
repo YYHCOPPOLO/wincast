@@ -3,6 +3,7 @@
 // this surface — 36 DIP rows, the picker selection fill, and a 96 DIP empty
 // state when nothing matches.
 import { Theme } from "../theme.slint";
+import { GlyphIcon } from "../primitives/icons.slint";
 
 export struct NoteEntry {
     title: string,
@@ -58,12 +59,10 @@ export component NoteSwitcherWindow inherits Window {
                 alignment: center;
                 spacing: Theme.spacing-md;
 
-                Text {
-                    text: root.empty-glyph;
-                    font-family: "Segoe Fluent Icons";
-                    font-size: Theme.size-note-empty-glyph;
-                    color: Theme.faint;
-                    horizontal-alignment: center;
+                GlyphIcon {
+                    size: Theme.size-note-empty-glyph;
+                    name: root.empty-glyph;
+                    ink: Theme.faint;
                 }
 
                 Text {

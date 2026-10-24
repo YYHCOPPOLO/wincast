@@ -48,7 +48,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_NCDESTROY, WM_SYSKEYDOWN, WM_SYSKEYUP, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
-use crate::design_system::symbols::fluent_for_sf;
 use crate::ui_host::app_core as core_from_host;
 
 pub(super) type Settings = tinycast_ui::SettingsWindow;
@@ -610,7 +609,7 @@ fn refresh(ui: &Settings, inner: *mut Inner) {
     ui.set_about_product(about_product(lang).into());
     ui.set_about_version(crate::features::settings::panes::about::version_line().into());
     ui.set_about_tagline(support_keeps_independent(lang).into());
-    ui.set_about_heart(fluent_for_sf("heart").unwrap_or_default().into());
+    ui.set_about_heart("heart".into());
     ui.set_about_disclosure_title(about_made_with_slint(lang).into());
     ui.set_about_disclosure_note(about_slint_license(lang).into());
     ui.set_about_disclosure_link(about_slint_link(lang).into());
@@ -715,7 +714,7 @@ fn sidebar_model(lang: UiLang) -> Vec<SidebarRow> {
                 top: row.y,
                 height: row.height,
                 label: settings_tab_title(tab, lang).into(),
-                symbol: fluent_for_sf(tab.system_image()).unwrap_or_default().into(),
+                symbol: tab.system_image().into(),
                 tab: tab as i32,
             }),
         })

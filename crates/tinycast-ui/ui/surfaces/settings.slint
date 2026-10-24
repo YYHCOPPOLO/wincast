@@ -11,6 +11,7 @@ import { SettingsRow, SidebarRow } from "../primitives/form.slint";
 import { Checkbox } from "../primitives/checkbox.slint";
 import { RecorderBubble } from "../primitives/recorder.slint";
 import { MagEmptyState, MagHeader, MagInput } from "../primitives/magpie.slint";
+import { GlyphIcon } from "../primitives/icons.slint";
 
 // One row of the sidebar: kind 0 is a section header, kind 1 a SettingsTab.
 // tab carries the SettingsTab discriminant; headers use -1.
@@ -243,12 +244,10 @@ component AboutPage inherits Rectangle {
                     overflow: elide;
                 }
 
-                Text {
-                    text: root.heart;
-                    font-family: "Segoe Fluent Icons";
-                    font-size: Theme.size-dialog-symbol-container;
-                    color: Theme.text-primary;
-                    horizontal-alignment: center;
+                GlyphIcon {
+                    size: Theme.size-dialog-symbol-container;
+                    name: root.heart;
+                    ink: Theme.text-primary;
                 }
 
                 Text {

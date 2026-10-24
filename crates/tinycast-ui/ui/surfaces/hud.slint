@@ -7,6 +7,7 @@
 // opacity only (`exit-fade`, the same property the dialog card fades with).
 // The dwell lives with the host (`duration-message-hud` / `duration-volume-hud`).
 import { Theme, Motion } from "../theme.slint";
+import { GlyphIcon } from "../primitives/icons.slint";
 import { Hud } from "../primitives/hud.slint";
 
 export component HudWindow inherits Window {
@@ -89,12 +90,10 @@ export component HudWindow inherits Window {
             spacing: Theme.spacing-lg;
             alignment: center;
 
-            Text {
-                text: root.volume-symbol;
-                font-family: "Segoe Fluent Icons";
-                font-size: Theme.size-dialog-icon;
-                color: Theme.text-primary;
-                horizontal-alignment: center;
+            GlyphIcon {
+                size: Theme.size-dialog-icon;
+                name: root.volume-symbol;
+                ink: Theme.text-primary;
             }
 
             // Track left, readout right: absolute so the 6 DIP bar keeps its

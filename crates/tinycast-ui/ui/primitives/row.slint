@@ -1,4 +1,5 @@
 import { Theme } from "../theme.slint";
+import { GlyphIcon } from "icons.slint";
 import { Keycap } from "keycap.slint";
 import { Checkbox } from "checkbox.slint";
 
@@ -20,13 +21,11 @@ export component IconSlot inherits Rectangle {
         source: root.source;
         image-fit: contain;
     }
-    if !ready && root.symbol != "": Text {
-        text: root.symbol;
-        font-family: "Segoe Fluent Icons";
-        font-size: Theme.font-header-icon;
-        color: Theme.text-secondary;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    if !ready && root.symbol != "": GlyphIcon {
+        width: 100%;
+        height: 100%;
+        size: Theme.font-header-icon + 3px;
+        name: root.symbol;
     }
 }
 
@@ -90,13 +89,12 @@ export component Row inherits Rectangle {
                 height: Theme.size-result-row-icon;
                 background: transparent;
 
-                if root.checkbox == 3: Text {
-                    text: root.symbol;
-                    font-family: "Segoe Fluent Icons";
-                    font-size: Theme.font-header-icon;
-                    color: Theme.text-tertiary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                if root.checkbox == 3: GlyphIcon {
+                    width: 100%;
+                    height: 100%;
+                    size: Theme.font-header-icon + 3px;
+                    name: root.symbol;
+                    ink: Theme.text-tertiary;
                 }
 
                 if root.checkbox != 3: Checkbox {

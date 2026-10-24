@@ -42,7 +42,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::edit::SearchEdit;
 use super::physical;
 use crate::app_core::AppCore;
-use crate::design_system::symbols::fluent_for_sf;
 use crate::features::launcher::ui::list::IconCache;
 use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
@@ -555,9 +554,9 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     } else {
         "chevron.left"
     };
-    ui.set_header_symbol(fluent_for_sf(header_symbol).unwrap_or_default().into());
-    ui.set_empty_symbol(fluent_for_sf("magnifyingglass").unwrap_or_default().into());
-    ui.set_arrow_symbol(fluent_for_sf("arrow.right").unwrap_or_default().into());
+    ui.set_header_symbol(header_symbol.into());
+    ui.set_empty_symbol("magnifyingglass".into());
+    ui.set_arrow_symbol("arrow.right".into());
     ui.set_placeholder(core.search_placeholder().into());
     ui.set_show_placeholder(should_draw_placeholder(&core.palette));
     let hint = core.tab_hint().unwrap_or("");

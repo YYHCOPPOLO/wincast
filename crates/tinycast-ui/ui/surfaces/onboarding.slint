@@ -4,6 +4,7 @@
 // fades the content in over `duration-onboarding` (200 ms, ease-in-out), like
 // the Direct2D `Reveal` did.
 import { Theme } from "../theme.slint";
+import { GlyphIcon } from "../primitives/icons.slint";
 
 export component OnboardingWindow inherits Window {
     in property <int> step: 0;
@@ -83,13 +84,10 @@ export component OnboardingWindow inherits Window {
                 border-radius: Theme.radius-dialog;
                 background: Theme.surface-muted;
 
-                Text {
-                    text: root.hero-symbol;
-                    font-family: "Segoe Fluent Icons";
-                    font-size: 32px;
-                    color: Theme.text-primary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                GlyphIcon {
+                    size: 44px;
+                    name: root.hero-symbol;
+                    ink: Theme.text-primary;
                 }
             }
         }

@@ -12,7 +12,6 @@ use tinycast_pure::layout::list as chat_layout;
 use tinycast_pure::theme;
 use tinycast_ui::{ChatRow, PaletteRow};
 
-use crate::design_system::symbols::fluent_for_sf;
 use crate::features::launcher::ui::list::{
     slot_height, slots_of, IconCache, IconPixels, PaintItem,
 };
@@ -250,12 +249,9 @@ pub fn chat_rows(messages: &[ChatMessage], notice: Option<&str>) -> Vec<ChatRow>
     rows
 }
 
-/// SF Symbol name → the Segoe Fluent codepoint Slint draws.
+/// The icon's logical name, as the surface's GlyphIcon set knows it.
 fn glyph(symbol: Option<&str>) -> SharedString {
-    symbol
-        .and_then(fluent_for_sf)
-        .map(SharedString::from)
-        .unwrap_or_default()
+    symbol.map(SharedString::from).unwrap_or_default()
 }
 
 fn base(kind: i32, top: f32, height: f32) -> PaletteRow {

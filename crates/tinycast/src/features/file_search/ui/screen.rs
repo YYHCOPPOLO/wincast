@@ -44,7 +44,7 @@ pub fn paint_items(
                 keycap: None,
                 icon_source: Some(hit.path.replace('/', "\\")),
                 // A directory keeps its type visible when the shell icon is still decoding.
-                symbol: hit.is_directory.then(|| "folder".to_string()),
+                symbol: Some(if hit.is_directory { "folder" } else { "doc" }.to_string()),
                 checkbox: 0,
                 selected: i == selection,
             })

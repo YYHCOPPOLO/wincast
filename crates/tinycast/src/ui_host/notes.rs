@@ -41,7 +41,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_VISIBLE, WS_VSCROLL,
 };
 
-use crate::design_system::symbols::fluent_for_sf;
 use crate::platform::paths;
 use crate::platform::screens::dip_scalar_to_px;
 use crate::ui_host::app_core as core_from_host;
@@ -123,7 +122,7 @@ impl NotesWindow {
             .unwrap_or(UiLang::ZhHans);
         let entries = Rc::new(VecModel::default());
         switcher.set_entries(slint::ModelRc::from(entries.clone()));
-        switcher.set_empty_glyph(fluent_glyph("rectangle.stack").into());
+        switcher.set_empty_glyph("rectangle.stack".into());
         let cue_brush = unsafe { CreateSolidBrush(note_bg_colorref(appearance)) };
         let inner = Box::into_raw(Box::new(Inner {
             host,
@@ -1049,18 +1048,14 @@ fn window_text(hwnd: HWND) -> String {
     }
 }
 
-fn fluent_glyph(name: &str) -> &'static str {
-    fluent_for_sf(name).unwrap_or("")
-}
-
 /// The chrome strings come from i18n on create and on every locale change.
 fn apply_chrome(inner: *mut Inner) {
     unsafe {
         let lang = (*inner).lang;
         if let Some(ui) = (*inner).notes.upgrade() {
-            ui.set_create_symbol(fluent_glyph("plus").into());
-            ui.set_switcher_symbol(fluent_glyph("rectangle.stack").into());
-            ui.set_folder_symbol(fluent_glyph("folder").into());
+            ui.set_create_symbol("plus".into());
+            ui.set_switcher_symbol("rectangle.stack".into());
+            ui.set_folder_symbol("folder".into());
             ui.set_footer_count((*inner).body_len.to_string().into());
             ui.set_note_title((*inner).pending_title.clone().into());
         }

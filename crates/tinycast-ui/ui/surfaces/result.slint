@@ -5,6 +5,7 @@
 // scale; exit: 120 ms, opacity only. The panel never takes focus; the host's
 // low-level hook routes Esc / Enter / Ctrl+C.
 import { Theme, Motion } from "../theme.slint";
+import { GlyphIcon } from "../primitives/icons.slint";
 import { DialogButton } from "../primitives/dialog.slint";
 
 export component ResultWindow inherits Window {
@@ -86,13 +87,9 @@ export component ResultWindow inherits Window {
             height: root.header-height - Theme.spacing-xl - Theme.spacing-lg;
             spacing: Theme.spacing-sm;
 
-            if root.symbol != "": Text {
-                width: Math.max(Theme.size-quick-action-header-icon, 18px);
-                text: root.symbol;
-                font-family: "Segoe Fluent Icons";
-                font-size: Math.max(Theme.size-quick-action-header-icon, 18px);
-                color: Theme.text-secondary;
-                vertical-alignment: center;
+            if root.symbol != "": GlyphIcon {
+                size: Math.max(Theme.size-quick-action-header-icon + 4px, 18px);
+                name: root.symbol;
             }
 
             Text {

@@ -1,5 +1,5 @@
 import { Theme, Motion } from "../theme.slint";
-import { IconSlot } from "row.slint";
+import { GlyphIcon } from "icons.slint";
 import { MagBadge, MagHeader, MagInput, MagSelectButton, MagTextButton } from "magpie.slint";
 
 // The settings group: a small spaced title above one surface card with the
@@ -111,9 +111,9 @@ export component SidebarRow inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
-            IconSlot {
-                slot: Theme.size-settings-row-icon;
-                symbol: root.symbol;
+            GlyphIcon {
+                size: 15px;
+                name: root.symbol;
             }
         }
 

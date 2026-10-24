@@ -1,4 +1,5 @@
 import { Theme } from "../theme.slint";
+import { GlyphIcon } from "icons.slint";
 
 // One dialog action: Cancel is outlined, the primary action is filled. Enter
 // and Space activate the focused action; the ring shows which one has focus.
@@ -112,13 +113,9 @@ export component Dialog inherits Rectangle {
             border-radius: Theme.radius-dialog-symbol;
             background: Theme.control-surface;
 
-            Text {
-                text: root.symbol;
-                font-family: "Segoe Fluent Icons";
-                font-size: Theme.size-dialog-symbol;
-                color: Theme.text-secondary;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+            GlyphIcon {
+                size: Theme.size-dialog-symbol;
+                name: root.symbol;
             }
         }
 

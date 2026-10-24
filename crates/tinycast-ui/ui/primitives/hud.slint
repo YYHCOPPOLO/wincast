@@ -1,4 +1,5 @@
 import { Theme } from "../theme.slint";
+import { GlyphIcon } from "icons.slint";
 
 // A capsule HUD: fixed token height, never wider than 420 DIP. `fitted-width`
 // reports the text-fitted width so a host window can size itself to the copy.
@@ -37,13 +38,9 @@ export component Hud inherits Rectangle {
                 border-radius: Theme.radius-thumbnail;
                 background: Theme.control-surface;
 
-                Text {
-                    text: root.symbol;
-                    font-family: "Segoe Fluent Icons";
-                    font-size: Theme.font-row-trailing;
-                    color: Theme.text-secondary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                GlyphIcon {
+                    size: Theme.size-dialog-icon;
+                    name: root.symbol;
                 }
             }
         }

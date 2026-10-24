@@ -4,6 +4,7 @@
 // normal captioned window; the body and the search keep native EDIT children
 // (the IME needs them), everything else is this surface.
 import { Theme } from "../theme.slint";
+import { GlyphIcon } from "../primitives/icons.slint";
 
 export component NotesWindow inherits Window {
     in property <string> note-title;
@@ -60,18 +61,12 @@ export component NotesWindow inherits Window {
                 width: 28px;
                 height: parent.height;
 
-                Text {
+                GlyphIcon {
                     // Centred glyph: `size-note-glyph` inside the slot.
                     x: (parent.width - Theme.size-note-glyph) / 2;
                     y: (parent.height - Theme.size-note-glyph) / 2;
-                    width: Theme.size-note-glyph;
-                    height: Theme.size-note-glyph;
-                    text: slot.symbol;
-                    font-family: "Segoe Fluent Icons";
-                    font-size: Theme.size-note-glyph;
-                    color: Theme.text-secondary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                    size: Theme.size-note-glyph;
+                    name: slot.symbol;
                 }
 
                 touch := TouchArea {

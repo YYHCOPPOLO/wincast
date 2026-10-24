@@ -2,6 +2,7 @@
 // are Slint; the search field itself is a native EDIT child the host parents to
 // this window, so the placeholder is drawn here and shows through it.
 import { Theme, Motion } from "../theme.slint";
+import { GlyphIcon } from "../primitives/icons.slint";
 import { Panel } from "../primitives/panel.slint";
 import { Menu, MenuItem } from "../primitives/menu.slint";
 import { Keycap } from "../primitives/keycap.slint";
@@ -105,12 +106,9 @@ component CalcCard inherits Rectangle {
         padding-right: Theme.spacing-xl;
         spacing: Theme.spacing-md;
 
-        Text {
-            text: root.error-symbol;
-            font-family: "Segoe Fluent Icons";
-            font-size: Theme.font-header-icon;
-            color: Theme.text-secondary;
-            vertical-alignment: center;
+        GlyphIcon {
+            size: Theme.font-header-icon + 3px;
+            name: root.error-symbol;
         }
 
         Text {
@@ -160,12 +158,10 @@ component CalcCard inherits Rectangle {
         VerticalLayout {
             alignment: center;
 
-            Text {
-                text: root.arrow-symbol;
-                font-family: "Segoe Fluent Icons";
-                font-size: Theme.font-header-icon;
-                color: Theme.text-tertiary;
-                vertical-alignment: center;
+            GlyphIcon {
+                size: Theme.font-header-icon + 3px;
+                name: root.arrow-symbol;
+                ink: Theme.text-tertiary;
             }
         }
 
@@ -568,16 +564,11 @@ export component PaletteWindow inherits Window {
                 border-color: Theme.line-2;
             }
 
-            Text {
-                x: Theme.spacing-md * 2;
-                width: Theme.size-header-icon-slot;
-                height: parent.height;
-                text: root.header-symbol;
-                font-family: "Segoe Fluent Icons";
-                font-size: Theme.font-header-icon;
-                color: Theme.text-secondary;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+            GlyphIcon {
+                x: Theme.spacing-md * 2 + (Theme.size-header-icon-slot - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                size: Theme.size-header-icon-slot - 4px;
+                name: root.header-symbol;
             }
 
             if root.show-placeholder: Text {
@@ -829,12 +820,10 @@ export component PaletteWindow inherits Window {
                     alignment: center;
                     spacing: Theme.spacing-md;
 
-                    Text {
-                        text: root.empty-symbol;
-                        font-family: "Segoe Fluent Icons";
-                        font-size: Theme.size-empty-results-glyph;
-                        color: Theme.text-tertiary;
-                        horizontal-alignment: center;
+                    GlyphIcon {
+                        size: Theme.size-empty-results-glyph;
+                        name: root.empty-symbol;
+                        ink: Theme.text-tertiary;
                     }
 
                     Text {

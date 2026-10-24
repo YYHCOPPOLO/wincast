@@ -25,7 +25,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::design_system::appearance;
-use crate::design_system::symbols::fluent_for_sf;
 use crate::platform::screens::{dip_scalar_to_px, screens_px};
 
 type Surface = tinycast_ui::HudWindow;
@@ -79,8 +78,7 @@ impl MessageHud {
     pub fn show_message(&self, message: &str, tone: DialogTone) {
         self.apply_appearance();
         self.ui.set_message(message.into());
-        self.ui
-            .set_symbol(fluent_for_sf(tone_symbol(tone)).unwrap_or("").into());
+        self.ui.set_symbol(tone_symbol(tone).into());
         self.ui.set_volume(false);
         self.present(false);
     }
@@ -93,12 +91,11 @@ impl MessageHud {
         self.ui
             .set_volume_readout(crate::design_system::hud::volume_readout(level, muted).into());
         self.ui.set_volume_symbol(
-            fluent_for_sf(if muted {
+            if muted {
                 "speaker.slash.fill"
             } else {
                 "speaker.wave.2"
-            })
-            .unwrap_or("")
+            }
             .into(),
         );
         self.present(true);

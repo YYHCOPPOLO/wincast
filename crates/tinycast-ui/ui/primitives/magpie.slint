@@ -1,4 +1,5 @@
 import { Theme } from "../theme.slint";
+import { GlyphIcon } from "icons.slint";
 
 // The Magpie control vocabulary for the settings pages, ported item by item
 // from magpie's app.css (`.label`, `.field`, `.chip`, `.status`, `.editor
@@ -48,12 +49,9 @@ export component MagSelectButton inherits Rectangle {
         padding-right: Theme.spacing-xs;
         spacing: Theme.spacing-xs;
 
-        if root.symbol != "": Text {
-            text: root.symbol;
-            font-family: "Segoe Fluent Icons";
-            font-size: Theme.font-header-icon;
-            color: Theme.text-secondary;
-            vertical-alignment: center;
+        if root.symbol != "": GlyphIcon {
+            size: Theme.font-header-icon + 3px;
+            name: root.symbol;
         }
 
         value-text := Text {
@@ -67,12 +65,10 @@ export component MagSelectButton inherits Rectangle {
             overflow: elide;
         }
 
-        Text {
-            text: "\u{E70D}";
-            font-family: "Segoe Fluent Icons";
-            font-size: Theme.font-calc-badge;
-            color: touch.has-hover ? Theme.text-secondary : Theme.faint;
-            vertical-alignment: center;
+        GlyphIcon {
+            size: Theme.font-calc-badge + 4px;
+            name: "chevron.down";
+            ink: touch.has-hover ? Theme.text-secondary : Theme.faint;
         }
     }
 
@@ -317,13 +313,9 @@ export component MagGridCell inherits Rectangle {
         padding-right: Theme.spacing-md;
         spacing: Theme.spacing-sm;
 
-        if root.symbol != "": Text {
-            width: Theme.size-settings-row-icon;
-            text: root.symbol;
-            font-family: "Segoe Fluent Icons";
-            font-size: Theme.font-header-icon;
-            color: Theme.text-secondary;
-            vertical-alignment: center;
+        if root.symbol != "": GlyphIcon {
+            size: Theme.font-header-icon + 3px;
+            name: root.symbol;
         }
 
         VerticalLayout {
@@ -349,13 +341,10 @@ export component MagGridCell inherits Rectangle {
             }
         }
 
-        if root.configured: Text {
-            width: Theme.font-header-icon;
-            text: "\u{E73E}";
-            font-family: "Segoe Fluent Icons";
-            font-size: Theme.font-calc-badge;
-            color: Theme.success;
-            vertical-alignment: center;
+        if root.configured: GlyphIcon {
+            size: Theme.font-calc-badge + 4px;
+            name: "checkmark";
+            ink: Theme.success;
         }
     }
 
@@ -380,12 +369,10 @@ export component MagEmptyState inherits Rectangle {
         alignment: center;
         spacing: Theme.spacing-md;
 
-        if root.glyph != "": Text {
-            text: root.glyph;
-            font-family: "Segoe Fluent Icons";
-            font-size: Theme.size-note-empty-glyph;
-            color: Theme.faint;
-            horizontal-alignment: center;
+        if root.glyph != "": GlyphIcon {
+            size: Theme.size-note-empty-glyph;
+            name: root.glyph;
+            ink: Theme.faint;
         }
 
         Text {
