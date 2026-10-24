@@ -154,6 +154,9 @@ pub mod size {
     pub const MAGPIE_INPUT_HEIGHT: f32 = 27.0;
     /// Dense settings list row (the old panes' 36 DIP item rows).
     pub const MAGPIE_LIST_ITEM: f32 = 36.0;
+    /// The palette's search field box (magpie picker input): 40 in the 44
+    /// DIP header band.
+    pub const MAGPIE_SEARCH_HEIGHT: f32 = 40.0;
     /// Settings sidebar tab row; `layout::settings` reuses this token.
     pub const SIDEBAR_ROW_HEIGHT: f32 = 32.0;
     pub const CLIPBOARD_LIST_WIDTH: f32 = 290.0;
@@ -472,6 +475,10 @@ pub mod colors {
     /// list selection above (`app.css` `--sel`).
     pub const SEL_DARK: (f32, f32, f32) = (51.0 / 255.0, 52.0 / 255.0, 90.0 / 255.0);
     pub const SEL_LIGHT: (f32, f32, f32) = (236.0 / 255.0, 235.0 / 255.0, 251.0 / 255.0);
+    /// The weaker rule (`app.css` `--line-2`): an input's hairline, versus the
+    /// main `--line` a card or panel uses.
+    pub const LINE2_DARK: (f32, f32, f32) = (44.0 / 255.0, 44.0 / 255.0, 50.0 / 255.0);
+    pub const LINE2_LIGHT: (f32, f32, f32) = (236.0 / 255.0, 236.0 / 255.0, 240.0 / 255.0);
     /// Second card step behind an expanded editor (`app.css` `--card-2`).
     pub const CARD2_DARK: (f32, f32, f32) = (31.0 / 255.0, 31.0 / 255.0, 35.0 / 255.0);
     pub const CARD2_LIGHT: (f32, f32, f32) = (249.0 / 255.0, 249.0 / 255.0, 251.0 / 255.0);
@@ -577,6 +584,10 @@ pub mod colors {
 
     pub fn sel_rgba(appearance: u8) -> (f32, f32, f32, f32) {
         solid(SEL_DARK, SEL_LIGHT, appearance)
+    }
+
+    pub fn line2_rgba(appearance: u8) -> (f32, f32, f32, f32) {
+        solid(LINE2_DARK, LINE2_LIGHT, appearance)
     }
 
     pub fn card2_rgba(appearance: u8) -> (f32, f32, f32, f32) {

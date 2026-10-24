@@ -28,6 +28,8 @@ export global Theme {
     in property <color> accent-soft;
     in property <color> accent-fg;
     in property <color> sel;
+    // The weaker input hairline (`--line-2`), versus `border` (`--line`).
+    in property <color> line-2;
     in property <color> card-2;
     in property <color> fg-2;
     in property <color> faint;
@@ -184,6 +186,7 @@ export global Theme {
     // form input (.editor input, 27) and the dense list row (36).
     in property <length> size-magpie-field;
     in property <length> size-magpie-input;
+    in property <length> size-magpie-search;
     in property <length> size-magpie-list-item;
     in property <length> size-editor-sheet-width;
     in property <length> size-form-label-width;

@@ -49,6 +49,7 @@ where
     t.set_accent_soft(rgba(theme::colors::accent_soft_rgba(appearance)));
     t.set_accent_fg(rgba(theme::colors::accent_fg_rgba(appearance)));
     t.set_sel(rgba(theme::colors::sel_rgba(appearance)));
+    t.set_line_2(rgba(theme::colors::line2_rgba(appearance)));
     t.set_card_2(rgba(theme::colors::card2_rgba(appearance)));
     t.set_fg_2(rgba(theme::colors::fg2_rgba(appearance)));
     t.set_faint(rgba(theme::colors::faint_rgba(appearance)));
@@ -246,6 +247,7 @@ where
     t.set_size_settings_row_height(theme::size::SETTINGS_ROW_HEIGHT);
     t.set_size_magpie_field(theme::size::MAGPIE_FIELD_HEIGHT);
     t.set_size_magpie_input(theme::size::MAGPIE_INPUT_HEIGHT);
+    t.set_size_magpie_search(theme::size::MAGPIE_SEARCH_HEIGHT);
     t.set_size_magpie_list_item(theme::size::MAGPIE_LIST_ITEM);
     t.set_size_editor_sheet_width(theme::size::EDITOR_SHEET_WIDTH);
     t.set_size_form_label_width(theme::size::FORM_LABEL_WIDTH);
