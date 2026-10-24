@@ -1,6 +1,6 @@
 // The command palette. The flat surface, the header, the rows and the chrome
 // are Slint; the search field itself is a native EDIT child the host parents to
-// this window, so the placeholder is drawn here and shows through it.
+// this window. That child paints its own opaque field and empty-field hint.
 import { Theme, Motion } from "../theme.slint";
 import { GlyphIcon } from "../primitives/icons.slint";
 import { Panel } from "../primitives/panel.slint";
@@ -381,9 +381,6 @@ export component PaletteWindow inherits Window {
     in property <bool> expanded: false;
     // Fluent symbol for the current mode ("magnifyingglass", "chevron.left").
     in property <string> header-symbol;
-    // Placeholder from PaletteMode::placeholder; only drawn for an empty query.
-    in property <string> placeholder;
-    in property <bool> show-placeholder: false;
     // "Opens the AI chat" hint; empty unless expanded and actually available.
     in property <string> tab-hint;
     // DIP reserved to the right of the native field (compact favourites, pills, hint).
@@ -548,8 +545,8 @@ export component PaletteWindow inherits Window {
             background: transparent;
 
             // The search field's chrome (magpie's picker input): the native
-            // EDIT floats over this box and paints only its text, so the box
-            // supplies the visible field — card-2 fill, line-2 hairline.
+            // EDIT fills its own rectangular interior with the same card-2
+            // color; this box supplies the rounded edge and line-2 hairline.
             Rectangle {
                 x: Theme.spacing-md;
                 y: (parent.height - self.height) / 2;
@@ -569,19 +566,6 @@ export component PaletteWindow inherits Window {
                 y: (parent.height - self.height) / 2;
                 size: Theme.size-header-icon-slot - 4px;
                 name: root.header-symbol;
-            }
-
-            if root.show-placeholder: Text {
-                x: root.field-x;
-                y: 0;
-                width: root.field-right - root.field-x;
-                height: parent.height;
-                text: root.placeholder;
-                font-family: "Segoe UI";
-                font-size: Theme.font-search;
-                color: Theme.text-tertiary;
-                vertical-alignment: center;
-                overflow: elide;
             }
 
             if root.tab-hint != "": Rectangle {

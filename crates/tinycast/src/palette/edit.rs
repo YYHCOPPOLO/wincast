@@ -1,8 +1,12 @@
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Gdi::{DeleteObject, HFONT};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    DeleteObject, DrawTextW, GetDC, InvalidateRect, ReleaseDC, SelectObject, SetBkMode,
+    SetTextColor, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_TOP, HFONT, HGDIOBJ,
+    TRANSPARENT,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::{EM_GETSEL, EM_REPLACESEL, EM_SETMARGINS};
+use windows::Win32::UI::Controls::{EM_GETRECT, EM_GETSEL, EM_REPLACESEL, EM_SETMARGINS};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::Ime::{
     ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, GCS_COMPSTR, GCS_RESULTSTR,
@@ -15,9 +19,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IsWindow,
     SendMessageW, SetWindowPos, SetWindowTextW, ShowWindow, EC_LEFTMARGIN, EC_RIGHTMARGIN,
     ES_AUTOHSCROLL, ES_LEFT, GWLP_USERDATA, HWND_TOP, SWP_NOACTIVATE, SW_HIDE, SW_SHOWNA,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR, WM_ERASEBKGND, WM_IME_COMPOSITION,
-    WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_MOUSEWHEEL, WM_NCDESTROY, WM_SETFONT, WS_CHILD, WS_VISIBLE,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR, WM_GETFONT, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+    WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEWHEEL,
+    WM_NCDESTROY, WM_PAINT, WM_SETFONT, WS_CHILD, WS_VISIBLE,
 };
 
 use crate::app_core::AppCore;
@@ -70,8 +74,7 @@ impl SearchEdit {
                 hinstance,
                 None,
             )?;
-            // Visual styles ignore WM_CTLCOLOREDIT; empty theme lets the parent
-            // return a hollow brush so the D2D scrim/placeholder show through.
+            // Let WM_CTLCOLOREDIT supply our opaque light/dark field colors.
             let _ = windows::Win32::UI::Controls::SetWindowTheme(hwnd, w!(""), w!(""));
             let _ = SendMessageW(
                 hwnd,
@@ -104,13 +107,16 @@ impl SearchEdit {
                 self.apply_font(dpi);
             }
             let (x, y, w, h) = search_field_dip_with_trailing(trailing);
+            // Keep the opaque child inside the rounded Slint field's border.
+            let field_h = tinycast_pure::theme::size::MAGPIE_SEARCH_HEIGHT
+                - tinycast_pure::theme::size::HAIRLINE * 2.0;
             let _ = SetWindowPos(
                 self.hwnd,
                 HWND_TOP,
                 dip_scalar_to_px(x, dpi),
-                dip_scalar_to_px(y, dpi),
+                dip_scalar_to_px(y + (h - field_h) / 2.0, dpi),
                 dip_scalar_to_px(w, dpi),
-                dip_scalar_to_px(h, dpi),
+                dip_scalar_to_px(field_h, dpi),
                 SWP_NOACTIVATE,
             );
         }
@@ -133,6 +139,12 @@ impl SearchEdit {
         wide.push(0);
         unsafe {
             let _ = SetWindowTextW(self.hwnd, PCWSTR(wide.as_ptr()));
+        }
+    }
+
+    pub fn invalidate(&self) {
+        unsafe {
+            let _ = InvalidateRect(self.hwnd, None, true);
         }
     }
 
@@ -262,6 +274,52 @@ fn ctrl_down() -> bool {
     unsafe { GetKeyState(VK_CONTROL.0 as i32) < 0 }
 }
 
+/// Draw the hint in the native child's backing store, using the EDIT's own
+/// font and formatting rectangle so it shares the typed text's baseline.
+/// EM_SETCUEBANNER is deliberately avoided: IME composition owns the cue state.
+unsafe fn draw_placeholder(hwnd: HWND, host: HWND) {
+    let Some(core) = core_from_host(host) else {
+        return;
+    };
+    if GetWindowTextLengthW(hwnd) != 0
+        || !tinycast_pure::palette_state::should_draw_placeholder(&(*core).palette)
+    {
+        return;
+    }
+    let mut text: Vec<u16> = (*core).search_placeholder().encode_utf16().collect();
+    let hdc = GetDC(hwnd);
+    if hdc.is_invalid() {
+        return;
+    }
+    let mut rect = RECT::default();
+    let _ = SendMessageW(
+        hwnd,
+        EM_GETRECT,
+        WPARAM(0),
+        LPARAM(&mut rect as *mut _ as isize),
+    );
+    let font = SendMessageW(hwnd, WM_GETFONT, WPARAM(0), LPARAM(0));
+    let old_font = SelectObject(hdc, HGDIOBJ(font.0 as *mut core::ffi::c_void));
+    let old_color = SetTextColor(
+        hdc,
+        crate::design_system::appearance::placeholder_colorref((*core).appearance_key()),
+    );
+    let old_mode = SetBkMode(hdc, TRANSPARENT);
+    DrawTextW(
+        hdc,
+        &mut text,
+        &mut rect,
+        DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS,
+    );
+    SetBkMode(
+        hdc,
+        windows::Win32::Graphics::Gdi::BACKGROUND_MODE(old_mode as u32),
+    );
+    SetTextColor(hdc, old_color);
+    SelectObject(hdc, old_font);
+    ReleaseDC(hwnd, hdc);
+}
+
 unsafe extern "system" fn edit_subclass(
     hwnd: HWND,
     msg: u32,
@@ -272,9 +330,11 @@ unsafe extern "system" fn edit_subclass(
 ) -> LRESULT {
     let host = HWND(dwrefdata as *mut core::ffi::c_void);
     match msg {
-        // The control paints only its text: the parent returns a hollow brush so
-        // the Slint scrim shows through, and the caret stays visible.
-        WM_ERASEBKGND => LRESULT(1),
+        WM_PAINT => {
+            let result = DefSubclassProc(hwnd, msg, wparam, lparam);
+            draw_placeholder(hwnd, host);
+            result
+        }
         WM_KEYDOWN => {
             if let Some(core) = core_from_host(host) {
                 let menu_open = (*core).menu_is_open();

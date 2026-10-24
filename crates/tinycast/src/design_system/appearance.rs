@@ -17,11 +17,21 @@ pub fn resolved() -> u8 {
 /// so the field's text and caret read on the card-2 field box in both
 /// appearances. COLORREF is 0x00BBGGRR.
 pub fn ink_colorref(appearance: u8) -> COLORREF {
-    if appearance == 0 {
-        // Dark fg #EDEDF1.
-        COLORREF(0x00F1EDED)
-    } else {
-        // Light fg #1C1C21.
-        COLORREF(0x0021_1C1C)
-    }
+    colorref(tinycast_pure::theme::colors::text_rgba(appearance))
+}
+
+pub fn search_background_colorref(appearance: u8) -> COLORREF {
+    colorref(tinycast_pure::theme::colors::card2_rgba(appearance))
+}
+
+pub fn placeholder_colorref(appearance: u8) -> COLORREF {
+    colorref(tinycast_pure::theme::colors::text_tertiary_rgba(appearance))
+}
+
+fn colorref((red, green, blue, _): (f32, f32, f32, f32)) -> COLORREF {
+    COLORREF(
+        (red * 255.0).round() as u32
+            | ((green * 255.0).round() as u32) << 8
+            | ((blue * 255.0).round() as u32) << 16,
+    )
 }

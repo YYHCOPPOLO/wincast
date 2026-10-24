@@ -3,9 +3,8 @@
 //!
 //! Everything user-visible inside the frame is a Slint surface; the search
 //! field stays a Win32 `EDIT` so the IME candidate window docks to a real
-//! caret (phase 0 probe, conclusion 2). The `EDIT` paints only text and caret:
-//! `WM_CTLCOLOREDIT` hands it a hollow brush so the scrim and the Slint
-//! placeholder show through.
+//! caret (phase 0 probe, conclusion 2). The `EDIT` paints an opaque themed
+//! background, its text, caret and empty-field hint.
 //!
 //! winit only creates its HWND once the event loop runs, so `create` shows the
 //! window off-screen and finishes the setup on a short timer: window styles,
@@ -20,11 +19,11 @@ use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use tinycast_pure::palette_menu::{menu_frame, menu_row_rect, OpenMenu};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
-use tinycast_pure::palette_state::should_draw_placeholder;
 use tinycast_pure::theme;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    GetStockObject, ScreenToClient, SetBkMode, SetTextColor, HDC, NULL_BRUSH, TRANSPARENT,
+    GetStockObject, ScreenToClient, SetBkColor, SetBkMode, SetDCBrushColor, SetTextColor, DC_BRUSH,
+    HDC, OPAQUE,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{
@@ -35,8 +34,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, EN_CHANGE, GA_ROOT,
     GWLP_USERDATA, GWL_EXSTYLE, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WA_INACTIVE, WM_ACTIVATE, WM_COMMAND,
-    WM_CTLCOLOREDIT, WM_DPICHANGED, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_MOUSEACTIVATE,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_TIMER, WS_EX_TOOLWINDOW,
+    WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DPICHANGED, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_TIMER, WS_EX_TOOLWINDOW,
 };
 
 use super::edit::SearchEdit;
@@ -557,8 +556,9 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     ui.set_header_symbol(header_symbol.into());
     ui.set_empty_symbol("magnifyingglass".into());
     ui.set_arrow_symbol("arrow.right".into());
-    ui.set_placeholder(core.search_placeholder().into());
-    ui.set_show_placeholder(should_draw_placeholder(&core.palette));
+    if let Some(edit) = unsafe { (*inner).edit.as_ref() } {
+        edit.invalidate();
+    }
     let hint = core.tab_hint().unwrap_or("");
     ui.set_tab_hint(hint.into());
     // The native field shrinks by whatever sits to its right, the hint included.
@@ -1047,8 +1047,10 @@ unsafe extern "system" fn palette_subclass(
             }
             DefSubclassProc(hwnd, msg, wparam, lparam)
         }
-        // The EDIT paints only its text; the scrim and placeholder are Slint.
-        WM_CTLCOLOREDIT => {
+        // A native child cannot rely on the parent's GPU surface being in its
+        // backing store. Fill it explicitly with the same color as the Slint
+        // field chrome instead of exposing whatever was behind the palette.
+        WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC => {
             let hdc = HDC(wparam.0 as *mut core::ffi::c_void);
             let appearance = if inner.is_null() {
                 1
@@ -1057,12 +1059,16 @@ unsafe extern "system" fn palette_subclass(
                     .map(|core| (*core).appearance_key())
                     .unwrap_or(1)
             };
-            SetBkMode(hdc, TRANSPARENT);
+            let background =
+                crate::design_system::appearance::search_background_colorref(appearance);
+            SetBkMode(hdc, OPAQUE);
+            SetBkColor(hdc, background);
+            SetDCBrushColor(hdc, background);
             SetTextColor(
                 hdc,
                 crate::design_system::appearance::ink_colorref(appearance),
             );
-            LRESULT(GetStockObject(NULL_BRUSH).0 as isize)
+            LRESULT(GetStockObject(DC_BRUSH).0 as isize)
         }
         WM_MOUSEWHEEL => {
             if !inner.is_null() {
