@@ -1,3 +1,4 @@
+pub(crate) mod clip_images;
 pub mod editor;
 pub mod hud;
 pub mod modal;

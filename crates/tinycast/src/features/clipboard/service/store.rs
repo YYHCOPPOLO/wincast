@@ -55,6 +55,23 @@ pub struct ClipboardStore {
 }
 
 impl ClipboardStore {
+    /// Open the store at `dir`, first copying a legacy store from `legacy`
+    /// when `dir` has no database yet. The old directory is left in place as a
+    /// backup; the copy is used from then on. Paths are moved with the store
+    /// because rows keep absolute image paths.
+    pub fn open_with_legacy(dir: PathBuf, legacy: PathBuf) -> Self {
+        if dir != legacy {
+            let legacy_present = legacy.join("clipboard.sqlite3").is_file();
+            let migrated = migrate_store(&legacy, &dir);
+            // Never lose a readable history to a failed copy: if the new
+            // location could not take it, keep using the legacy store.
+            if legacy_present && !migrated && !dir.join("clipboard.sqlite3").exists() {
+                return Self::open(legacy);
+            }
+        }
+        Self::open(dir)
+    }
+
     pub fn open(dir: PathBuf) -> Self {
         let mut store = Self {
             conn: None,
@@ -548,6 +565,110 @@ fn checked_directory(path: &Path) -> Result<(), String> {
     let metadata = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if !metadata.is_dir() || is_reparse(&metadata) {
         return Err(format!("Invalid clipboard directory: {}", path.display()));
+    }
+    Ok(())
+}
+
+/// Copy a legacy store into `dest` when `dest` has no database yet. The copy
+/// is staged beside the destination and renamed into place, so a failed copy
+/// never leaves a half-written store that a later launch would trust.
+fn migrate_store(legacy: &Path, dest: &Path) -> bool {
+    let legacy_db = legacy.join("clipboard.sqlite3");
+    if dest.join("clipboard.sqlite3").exists() || !legacy_db.is_file() {
+        return false;
+    }
+    let (Some(parent), Some(name)) = (dest.parent(), dest.file_name()) else {
+        return false;
+    };
+    if !parent.is_dir() {
+        return false;
+    }
+    let staging = parent.join(format!(".{}.migrating", name.to_string_lossy()));
+    let _ = std::fs::remove_dir_all(&staging);
+    if std::fs::create_dir(&staging).is_err() {
+        return false;
+    }
+
+    let copied = (|| -> std::io::Result<()> {
+        std::fs::copy(&legacy_db, staging.join("clipboard.sqlite3"))?;
+        // Copy the WAL: committed rows still in it must survive. The -shm file
+        // is transient and SQLite rebuilds it for the new process.
+        let wal = legacy.join("clipboard.sqlite3-wal");
+        if wal.is_file() {
+            std::fs::copy(&wal, staging.join("clipboard.sqlite3-wal"))?;
+        }
+        copy_directory(&legacy.join("images"), &staging.join("images"))?;
+        Ok(())
+    })();
+    if copied.is_err() {
+        let _ = std::fs::remove_dir_all(&staging);
+        return false;
+    }
+
+    // Rows store absolute image paths from the legacy store, so point them at
+    // the copied files. Matching by file name avoids depending on whether the
+    // old row used a canonical (`\\?\`) path or a plain drive path.
+    let new_images = std::fs::canonicalize(parent)
+        .map(|canonical| canonical.join(name).join("images"))
+        .unwrap_or_else(|_| dest.join("images"));
+    if rewrite_image_paths(&staging.join("clipboard.sqlite3"), &new_images).is_err() {
+        let _ = std::fs::remove_dir_all(&staging);
+        return false;
+    }
+
+    if dest.exists() {
+        let _ = std::fs::remove_dir_all(&staging);
+        return false;
+    }
+    if std::fs::rename(&staging, dest).is_err() {
+        let _ = std::fs::remove_dir_all(&staging);
+        return false;
+    }
+    true
+}
+
+fn copy_directory(src: &Path, dest: &Path) -> std::io::Result<()> {
+    if !src.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dest)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            continue;
+        }
+        let target = dest.join(entry.file_name());
+        if kind.is_dir() {
+            copy_directory(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+fn rewrite_image_paths(db: &Path, images: &Path) -> rusqlite::Result<()> {
+    let conn = Connection::open(db)?;
+    let mut select =
+        conn.prepare("SELECT rowid, image_path FROM items WHERE image_path IS NOT NULL")?;
+    let rows = select
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(select);
+    for (rowid, path) in rows {
+        let Some(name) = Path::new(&path).file_name() else {
+            continue;
+        };
+        let target = images.join(name);
+        if target.is_file() {
+            conn.execute(
+                "UPDATE items SET image_path = ?1 WHERE rowid = ?2",
+                params![target.to_string_lossy(), rowid],
+            )?;
+        }
     }
     Ok(())
 }

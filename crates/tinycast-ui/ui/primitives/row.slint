@@ -64,6 +64,10 @@ export component Row inherits Rectangle {
     in property <int> checkbox: 0;
     in property <image> icon;
     in property <bool> icon-ready: false;
+    // A tall clipboard image row: the leading slot is a 52 DIP thumbnail.
+    in property <bool> image-row: false;
+    // The host's slot height: 38 DIP normally, 64 for a clipboard image.
+    in property <length> row-height: Theme.size-row-height;
     in property <bool> selected: false;
     // The host computes the hover (pointer position over the slice), so a
     // rebuild cannot leave a stale delegate hover on the wrong row.
@@ -71,7 +75,7 @@ export component Row inherits Rectangle {
 
     callback clicked(length, length);
 
-    height: Theme.size-row-height;
+    height: root.row-height;
     border-radius: Theme.radius-row;
     background: root.selected ? Theme.selection
         : (root.hovered ? Theme.row-hover : transparent);
@@ -108,7 +112,24 @@ export component Row inherits Rectangle {
 
         if root.checkbox == 0: VerticalLayout {
             alignment: center;
-            IconSlot {
+            if root.image-row && root.icon-ready: Rectangle {
+                width: root.row-height - Theme.spacing-sm * 2;
+                height: self.width;
+                border-radius: Theme.radius-thumbnail;
+                clip: true;
+                background: Theme.control-surface;
+
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: root.icon;
+                    // Match the macOS thumbnail: fill the rounded tile rather
+                    // than letterboxing a wide screenshot into it.
+                    image-fit: cover;
+                }
+            }
+
+            if !root.image-row || !root.icon-ready: IconSlot {
                 source: root.icon;
                 ready: root.icon-ready;
                 symbol: root.symbol;

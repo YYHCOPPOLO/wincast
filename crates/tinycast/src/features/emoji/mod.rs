@@ -68,7 +68,13 @@ pub fn hit_index(items: &[PaintItem], x: f32, y: f32, scroll: f32, panel_w: f32)
     for item in items {
         let slot = match item {
             PaintItem::Header { .. } => SlotKind::Header,
-            PaintItem::Row { .. } => SlotKind::Row,
+            PaintItem::Row { thumbnail, .. } => {
+                if thumbnail.is_some() {
+                    SlotKind::ImageRow
+                } else {
+                    SlotKind::Row
+                }
+            }
             PaintItem::Calc { .. } => SlotKind::Calc,
             PaintItem::EmojiRow {
                 glyphs, columns, ..

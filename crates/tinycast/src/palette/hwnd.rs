@@ -45,6 +45,7 @@ use crate::app_core::AppCore;
 use crate::features::launcher::ui::list::IconCache;
 use crate::platform::messages::WM_RESIGN_PALETTE;
 use crate::platform::screens::dip_scalar_to_px;
+use crate::ui_host::clip_images::ClipImages;
 use crate::ui_host::snapshot::{self, RowImages};
 
 const SUBCLASS_ID: usize = 1;
@@ -61,6 +62,24 @@ const PARKED: i32 = -32_000;
 /// pathological paste (a whole log file) is capped so Slint text shaping stays
 /// bounded. 20k characters is several screens of wrapped text.
 const PREVIEW_CHARS: usize = 20_000;
+
+/// The pixels the preview's fitted image can occupy: the split pane minus the
+/// 12 DIP card inset on every side.
+fn preview_image_pixels(dpi: u32) -> (u32, u32) {
+    let scale = dpi as f32 / 96.0;
+    let width = theme::size::PANEL_WIDTH
+        - theme::size::CLIPBOARD_LIST_WIDTH
+        - theme::size::HAIRLINE
+        - theme::spacing::XL * 2.0;
+    let height = theme::size::PANEL_HEIGHT
+        - theme::size::COMPACT_HEIGHT
+        - theme::size::BOTTOM_BAR_HEIGHT
+        - theme::spacing::XL * 2.0;
+    (
+        (width * scale).round().max(1.0) as u32,
+        (height * scale).round().max(1.0) as u32,
+    )
+}
 
 type Palette = tinycast_ui::PaletteWindow;
 
@@ -85,6 +104,7 @@ struct PaletteInner {
     chat: Rc<VecModel<tinycast_ui::ChatRow>>,
     icons: IconCache,
     images: RowImages,
+    clips: ClipImages,
     appearance: u8,
     /// DIP reserved to the right of the native field, last applied.
     trailing: f32,
@@ -118,6 +138,7 @@ impl PaletteWindow {
             chat: Rc::new(VecModel::default()),
             icons: IconCache::new(),
             images: RowImages::new(),
+            clips: ClipImages::new(),
             appearance,
             // Forces the first layout.
             trailing: -1.0,
@@ -626,12 +647,25 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     };
     let dpi = unsafe { GetDpiForWindow(window_hwnd(ui).unwrap_or_default()) };
     let inner_mut = unsafe { &mut *inner };
+    let preview_image = if split {
+        core.clipboard_preview_image().and_then(|path| {
+            let (width, height) = preview_image_pixels(dpi);
+            inner_mut
+                .clips
+                .image(&path.to_string_lossy(), width, height)
+        })
+    } else {
+        None
+    };
+    ui.set_preview_image_ready(preview_image.is_some());
+    ui.set_preview_image(preview_image.unwrap_or_default());
     let visible = snapshot::visible_rows(
         &items,
         scroll,
         view,
         &mut inner_mut.icons,
         &mut inner_mut.images,
+        &mut inner_mut.clips,
         dpi,
         appearance,
     );

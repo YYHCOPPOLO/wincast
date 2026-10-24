@@ -160,6 +160,9 @@ pub mod size {
     /// Settings sidebar tab row; `layout::settings` reuses this token.
     pub const SIDEBAR_ROW_HEIGHT: f32 = 32.0;
     pub const CLIPBOARD_LIST_WIDTH: f32 = 290.0;
+    /// A clipboard image row: tall enough for the 52 DIP thumbnail plus the
+    /// row's 6 DIP vertical padding.
+    pub const CLIPBOARD_IMAGE_ROW_HEIGHT: f32 = 64.0;
     /// `Size.emojiGridInset` (Theme.swift:160).
     pub const EMOJI_GRID_INSET: f32 = 16.0;
     pub const EMOJI_CELL: f32 = 56.0;

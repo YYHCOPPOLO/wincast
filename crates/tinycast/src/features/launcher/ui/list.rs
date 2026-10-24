@@ -30,6 +30,7 @@ const ICON_CACHE_MAX: usize = 8 * 1024 * 1024;
 pub enum SlotKind {
     Header,
     Row,
+    ImageRow,
     Calc,
     EmojiRow { cells: usize, columns: usize },
 }
@@ -45,6 +46,9 @@ pub enum PaintItem {
         trailing: String,
         keycap: Option<String>,
         icon_source: Option<String>,
+        /// A raster image for the leading slot; makes the row the taller
+        /// clipboard image slot.
+        thumbnail: Option<String>,
         /// SF Symbol name for the leading slot when the row has no icon.
         symbol: Option<String>,
         /// 0 none, 1 off, 2 on, 3 locked (the uninstall list's 16 DIP box).
@@ -148,6 +152,7 @@ pub fn slot_height(kind: SlotKind) -> f32 {
     match kind {
         SlotKind::Header => SECTION_HEADER_HEIGHT,
         SlotKind::Row => ROW_HEIGHT,
+        SlotKind::ImageRow => theme::size::CLIPBOARD_IMAGE_ROW_HEIGHT,
         SlotKind::Calc => theme::size::CALC_CARD_HEIGHT,
         SlotKind::EmojiRow { .. } => tinycast_pure::emoji::CELL_DIP,
     }
@@ -158,7 +163,13 @@ pub fn slots_of(items: &[PaintItem]) -> Vec<SlotKind> {
         .iter()
         .map(|item| match item {
             PaintItem::Header { .. } => SlotKind::Header,
-            PaintItem::Row { .. } => SlotKind::Row,
+            PaintItem::Row { thumbnail, .. } => {
+                if thumbnail.is_some() {
+                    SlotKind::ImageRow
+                } else {
+                    SlotKind::Row
+                }
+            }
             PaintItem::Calc { .. } => SlotKind::Calc,
             PaintItem::EmojiRow {
                 glyphs, columns, ..
@@ -180,7 +191,7 @@ pub fn row_y(slots: &[SlotKind], selectable: usize) -> Option<(f32, f32)> {
     for slot in slots {
         let h = slot_height(*slot);
         match *slot {
-            SlotKind::Row | SlotKind::Calc => {
+            SlotKind::Row | SlotKind::ImageRow | SlotKind::Calc => {
                 if idx == selectable {
                     return Some((y, h));
                 }
@@ -235,7 +246,7 @@ pub fn selectable_at_y(
         if y >= cursor && y < cursor + h {
             return match slot {
                 SlotKind::Header => None,
-                SlotKind::Row | SlotKind::Calc => Some(selectable),
+                SlotKind::Row | SlotKind::ImageRow | SlotKind::Calc => Some(selectable),
                 SlotKind::EmojiRow { cells, .. } => {
                     if *cells == 0 {
                         None
@@ -246,7 +257,7 @@ pub fn selectable_at_y(
             };
         }
         match slot {
-            SlotKind::Row | SlotKind::Calc => selectable += 1,
+            SlotKind::Row | SlotKind::ImageRow | SlotKind::Calc => selectable += 1,
             SlotKind::EmojiRow { cells, .. } => selectable += *cells,
             SlotKind::Header => {}
         }
@@ -292,6 +303,7 @@ pub fn paint_items(
                     // ever ships an empty icon slot.
                     symbol: Some(kind_glyph(entry.kind).to_string()),
                     icon_source: source,
+                    thumbnail: None,
                     checkbox: 0,
                     selected: sel == selection,
                 });

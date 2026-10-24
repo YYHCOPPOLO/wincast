@@ -10,6 +10,28 @@ pub fn local_dir() -> PathBuf {
     known_dir("LOCALAPPDATA")
 }
 
+/// The directory holding the running `tinycast.exe`: the install the user
+/// chose. Packaged installs must not be pinned to this machine's daily path,
+/// so the executable itself is the only source of truth.
+#[cfg(not(test))]
+pub fn install_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|parent| parent.to_path_buf()))
+        .unwrap_or_else(local_dir)
+}
+
+#[cfg(test)]
+pub fn install_dir() -> PathBuf {
+    local_dir()
+}
+
+/// Clipboard history and its image cache: `<install>\data`, so they travel
+/// with the install instead of living in AppData.
+pub fn clipboard_dir() -> PathBuf {
+    install_dir().join("data")
+}
+
 #[cfg(not(test))]
 fn known_dir(var: &str) -> PathBuf {
     std::env::var_os(var)

@@ -15,6 +15,7 @@ use tinycast_ui::{ChatRow, PaletteRow};
 use crate::features::launcher::ui::list::{
     slot_height, slots_of, IconCache, IconPixels, PaintItem,
 };
+use crate::ui_host::clip_images::ClipImages;
 
 /// Row kind numbers shared with `ui/surfaces/palette.slint`.
 const KIND_ROW: i32 = 0;
@@ -94,6 +95,7 @@ pub fn visible_rows(
     view: f32,
     icons: &mut IconCache,
     images: &mut RowImages,
+    clips: &mut ClipImages,
     dpi: u32,
     appearance: u8,
 ) -> VisibleList {
@@ -106,7 +108,9 @@ pub fn visible_rows(
     for (item, slot) in items.iter().zip(slots.iter()) {
         let height = slot_height(*slot);
         if y + height >= top && y <= bottom {
-            rows.push(to_row(item, y, height, icons, images, dpi, appearance));
+            rows.push(to_row(
+                item, y, height, icons, images, clips, dpi, appearance,
+            ));
         }
         y += height;
         if y > bottom {
@@ -125,6 +129,7 @@ fn to_row(
     height: f32,
     icons: &mut IconCache,
     images: &mut RowImages,
+    clips: &mut ClipImages,
     dpi: u32,
     appearance: u8,
 ) -> PaletteRow {
@@ -140,6 +145,7 @@ fn to_row(
             trailing,
             keycap,
             icon_source,
+            thumbnail,
             symbol,
             checkbox,
             selected,
@@ -156,8 +162,20 @@ fn to_row(
                 row.symbol = glyph(Some("lock.fill"));
             }
             row.selected = *selected;
+            row.image_row = thumbnail.is_some();
             if let Some(source) = icon_source.as_deref() {
                 if let Some(image) = images.image(source, icons, dpi, appearance) {
+                    row.icon = image;
+                    row.icon_ready = true;
+                }
+            }
+            if let Some(path) = thumbnail.as_deref() {
+                let thumb_dip = theme::size::CLIPBOARD_IMAGE_ROW_HEIGHT - theme::spacing::SM * 2.0;
+                let thumb_px = ((thumb_dip * dpi as f32 / 96.0).ceil() as u32).max(1);
+                // The surface fills the square tile (`cover`), so decode a
+                // larger box: a wide screenshot must not be upscaled to cover.
+                let box_px = thumb_px * 3;
+                if let Some(image) = clips.image(path, box_px, box_px) {
                     row.icon = image;
                     row.icon_ready = true;
                 }
@@ -273,6 +291,7 @@ fn base(kind: i32, top: f32, height: f32) -> PaletteRow {
         checkbox: 0,
         icon: Default::default(),
         icon_ready: false,
+        image_row: false,
         selected: false,
         top,
         height,

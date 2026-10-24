@@ -12,6 +12,16 @@ pub fn filter_trailing_width() -> f32 {
     theme::spacing::MD + FILTER_BUTTON_WIDTH
 }
 
+/// The header trailing the search field gives up to keep the filter button
+/// clear of it. The field's chrome reaches one `MD` past the native edit and
+/// the button sits `XXL` off the panel edge, so reserving only
+/// `filter_trailing_width` (button plus one `MD`) leaves the two pills
+/// touching; the field must also give up the difference to the button's
+/// `XXL` gutter.
+pub fn filter_header_trailing_width() -> f32 {
+    filter_trailing_width() + theme::spacing::XXL - theme::spacing::MD
+}
+
 pub fn filter_button_rect(panel_w: f32) -> DipRect {
     let h = theme::size::BAR_BUTTON_HEIGHT;
     DipRect {
@@ -58,6 +68,33 @@ pub fn empty_message_lang(
     tinycast_pure::i18n::clipboard_empty(key, lang)
 }
 
+/// A clipboard entry's one-line list label. Newlines and runs of whitespace
+/// collapse to a single space: a multi-line clip must stay inside its 38 DIP
+/// row instead of drawing over the rows below it.
+fn row_title(text: &str) -> String {
+    const MAX_CHARS: usize = 200;
+    let mut title = String::with_capacity(text.len().min(MAX_CHARS * 3));
+    let mut chars = 0usize;
+    for c in text.chars() {
+        if chars == MAX_CHARS {
+            break;
+        }
+        if c.is_whitespace() {
+            if chars > 0 && !title.ends_with(' ') {
+                title.push(' ');
+                chars += 1;
+            }
+        } else {
+            title.push(c);
+            chars += 1;
+        }
+    }
+    while title.ends_with(' ') {
+        title.pop();
+    }
+    title
+}
+
 pub fn paint_items(
     rows: &[ClipboardItem],
     selection: usize,
@@ -66,15 +103,19 @@ pub fn paint_items(
     rows.iter()
         .enumerate()
         .map(|(i, item)| {
-            let title = match item.kind {
-                ClipKind::Image => format!("[{}]", tinycast_pure::i18n::clipboard_image(lang)),
-                ClipKind::Text => item
-                    .text
-                    .as_deref()
-                    .unwrap_or("")
-                    .chars()
-                    .take(80)
-                    .collect(),
+            let (title, thumbnail, symbol) = match item.kind {
+                ClipKind::Image => (
+                    format!("[{}]", tinycast_pure::i18n::clipboard_image(lang)),
+                    item.image_path
+                        .as_ref()
+                        .map(|path| path.to_string_lossy().into_owned()),
+                    "photo",
+                ),
+                ClipKind::Text => (
+                    row_title(item.text.as_deref().unwrap_or("")),
+                    None,
+                    "doc.on.clipboard",
+                ),
             };
             let trailing = if item.is_pinned() {
                 tinycast_pure::i18n::clipboard_pinned(lang)
@@ -87,7 +128,8 @@ pub fn paint_items(
                 trailing: trailing.to_string(),
                 keycap: None,
                 icon_source: None,
-                symbol: Some("doc.on.clipboard".into()),
+                thumbnail,
+                symbol: Some(symbol.into()),
                 checkbox: 0,
                 selected: i == selection,
             }

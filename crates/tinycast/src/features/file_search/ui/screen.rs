@@ -43,6 +43,7 @@ pub fn paint_items(
                 trailing: hit.parent.clone(),
                 keycap: None,
                 icon_source: Some(hit.path.replace('/', "\\")),
+                thumbnail: None,
                 // A directory keeps its type visible when the shell icon is still decoding.
                 symbol: Some(if hit.is_directory { "folder" } else { "doc" }.to_string()),
                 checkbox: 0,

@@ -38,7 +38,7 @@ use crate::app_settings::AppSettings;
 use crate::features::calculator::service::rates::CurrencyRateStore;
 use crate::features::calculator::ui::{card, coordinator as calc_coordinator};
 use crate::features::clipboard::service::manager as clip_manager;
-use crate::features::clipboard::service::store::{ClipboardFilter, ClipboardStore};
+use crate::features::clipboard::service::store::{ClipKind, ClipboardFilter, ClipboardStore};
 use crate::features::clipboard::ui::screen as clip_screen;
 use crate::features::custom_commands::service::store::CustomCommandStore;
 use crate::features::custom_commands::ui::coordinator as custom_coordinator;
@@ -162,7 +162,10 @@ impl AppCore {
             settings: AppSettings::load(),
             currency_rates: CurrencyRateStore::new(),
             calc_history: CalculatorHistoryStore::load(store_path("calculator-history.json")),
-            clipboard: ClipboardStore::open(crate::platform::paths::local_dir()),
+            clipboard: ClipboardStore::open_with_legacy(
+                crate::platform::paths::clipboard_dir(),
+                crate::platform::paths::local_dir(),
+            ),
             clipboard_filter: ClipboardFilter::All,
             snippet_repo: SnippetRepository::in_roaming(),
             snippet_records: Vec::new(),
@@ -320,7 +323,7 @@ impl AppCore {
             return compact;
         }
         if self.palette.mode == PaletteMode::Clipboard {
-            clip_screen::filter_trailing_width()
+            clip_screen::filter_header_trailing_width()
         } else if self.palette.mode == PaletteMode::Ai {
             crate::features::ai::ui::screen::model_trailing_width()
         } else {
@@ -397,6 +400,20 @@ impl AppCore {
             rows.get(self.palette.selection),
             self.ui_lang(),
         ))
+    }
+
+    /// The selected clipboard item when it is an image; the palette decodes it
+    /// into the preview pane instead of showing the stored path.
+    pub fn clipboard_preview_image(&self) -> Option<std::path::PathBuf> {
+        if self.palette.mode != PaletteMode::Clipboard || self.clipboard.last_error().is_some() {
+            return None;
+        }
+        let rows = self
+            .clipboard
+            .search(&self.palette.query, self.clipboard_filter);
+        rows.get(self.palette.selection)
+            .filter(|item| item.kind == ClipKind::Image)
+            .and_then(|item| item.image_path.clone())
     }
 
     pub fn empty_results_text(&self) -> Option<&'static str> {
@@ -1972,6 +1989,7 @@ impl AppCore {
                     trailing: String::new(),
                     keycap: None,
                     icon_source: None,
+                    thumbnail: None,
                     // Quicklinks have no file icon; the link glyph keeps the slot readable.
                     symbol: Some("link".into()),
                     checkbox: 0,
@@ -2027,6 +2045,7 @@ impl AppCore {
                     trailing: String::new(),
                     keycap: None,
                     icon_source: None,
+                    thumbnail: None,
                     symbol: None,
                     checkbox,
                     selected: index == self.palette.selection,
@@ -2049,6 +2068,7 @@ impl AppCore {
                     ),
                     keycap: None,
                     icon_source: None,
+                    thumbnail: None,
                     symbol: Some("calendar".into()),
                     checkbox: 0,
                     selected: i == self.palette.selection,
@@ -2097,6 +2117,7 @@ impl AppCore {
                     ),
                     keycap: None,
                     icon_source: None,
+                    thumbnail: None,
                     symbol: Some("calendar".into()),
                     checkbox: 0,
                     selected: self.palette.selection == 0,
@@ -4483,6 +4504,7 @@ impl AppCore {
                 trailing: entry.result,
                 keycap: None,
                 icon_source: None,
+                thumbnail: None,
                 symbol: None,
                 checkbox: 0,
                 selected: self.palette.selection == index,

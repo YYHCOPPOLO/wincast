@@ -30,6 +30,9 @@ export struct PaletteRow {
     checkbox: int,
     icon: image,
     icon-ready: bool,
+    // A tall clipboard image row: the leading slot draws the 52 DIP thumbnail
+    // instead of the 26 DIP glyph.
+    image-row: bool,
     selected: bool,
     top: length,
     height: length,
@@ -422,6 +425,10 @@ export component PaletteWindow inherits Window {
     in property <bool> split: false;
     in property <length> split-x: 0px;
     in property <string> preview-text;
+    // An image capture fills the preview pane; when it decodes, the text
+    // fallback (the file path or the storage error) stays hidden.
+    in property <image> preview-image;
+    in property <bool> preview-image-ready: false;
     // Clipboard type filter; the host passes rect/title/open from AppCore.
     in property <bool> filter-visible: false;
     in property <string> filter-label;
@@ -498,9 +505,13 @@ export component PaletteWindow inherits Window {
     title: "Tinycast";
     no-frame: true;
     always-on-top: true;
-    // Transparent only outside the Panel's 26 DIP corners: the Panel paints
-    // the opaque surface and border, so the window silhouette stays rounded.
-    background: transparent;
+    // The host cuts the real silhouette with a rounded window region and the
+    // window is opaque after its DWM blur-behind is cleared. Clear the Slint
+    // canvas to the surface colour: a transparent canvas shows the renderer's
+    // black clear colour in the half-pixel left over when 750 DIP does not land
+    // on a whole physical pixel (125%/150% scaling), which reads as a dark
+    // border-right along the panel edge.
+    background: Theme.surface;
     default-font-family: "Segoe UI";
     default-font-size: Theme.font-row;
     width: Theme.size-panel-width;
@@ -660,6 +671,8 @@ export component PaletteWindow inherits Window {
                     }
 
                     if row.kind == 0: Row {
+                        row-height: row.height;
+                        image-row: row.image-row;
                         title: row.title;
                         alias: row.alias;
                         trailing: row.trailing;
@@ -734,7 +747,34 @@ export component PaletteWindow inherits Window {
                 background: Theme.separator;
             }
 
-            if root.split: Flickable {
+            if root.split && root.preview-image-ready: Rectangle {
+                x: root.split-x + Theme.size-hairline;
+                y: 0;
+                width: parent.width - root.split-x - Theme.size-hairline;
+                height: 100%;
+                background: transparent;
+
+                Rectangle {
+                    x: Theme.spacing-xl;
+                    y: Theme.spacing-xl;
+                    width: parent.width - Theme.spacing-xl * 2;
+                    height: parent.height - Theme.spacing-xl * 2;
+                    border-radius: Theme.radius-card;
+                    border-width: Theme.size-hairline;
+                    border-color: Theme.card-stroke;
+                    background: Theme.card-fill;
+                    clip: true;
+
+                    Image {
+                        width: 100%;
+                        height: 100%;
+                        source: root.preview-image;
+                        image-fit: contain;
+                    }
+                }
+            }
+
+            if root.split && !root.preview-image-ready: Flickable {
                 x: root.split-x + Theme.size-hairline;
                 y: 0;
                 width: parent.width - root.split-x - Theme.size-hairline;
