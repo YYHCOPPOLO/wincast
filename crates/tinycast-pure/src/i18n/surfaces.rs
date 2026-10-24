@@ -121,6 +121,22 @@ pub fn support_remind_later(lang: UiLang) -> &'static str {
     pick(lang, "Remind me later", "稍后提醒")
 }
 
+pub fn update_title(lang: UiLang) -> &'static str {
+    pick(lang, "Check for Updates", "检查更新")
+}
+
+pub fn update_checking(lang: UiLang) -> &'static str {
+    pick(lang, "Checking for updates…", "正在检查更新…")
+}
+
+/// The available-update card copy; the notes body stays with the feed.
+pub fn update_available_note(version: &str, lang: UiLang) -> String {
+    match lang {
+        UiLang::En => format!("Tinycast {version} is available."),
+        UiLang::ZhHans => format!("Tinycast {version} 可用。"),
+    }
+}
+
 pub fn update_up_to_date(lang: UiLang) -> &'static str {
     pick(lang, "You're up to date.", "已是最新版本。")
 }

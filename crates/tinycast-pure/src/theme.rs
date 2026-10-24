@@ -208,6 +208,9 @@ pub mod size {
     pub const DIALOG_SYMBOL_CONTAINER: f32 = 52.0;
     pub const DIALOG_ICON: f32 = 32.0;
     pub const CAMERA_PREVIEW: (f32, f32) = (420.0, 236.0);
+    /// The Support/About window: client size and the heart tile.
+    pub const SUPPORT_WINDOW: (f32, f32) = (460.0, 360.0);
+    pub const SUPPORT_ICON: f32 = 76.0;
     pub const QUICK_ACTION_PANEL: f32 = 520.0;
     pub const QUICK_ACTION_HEADER_ICON: f32 = 14.0;
     pub const QUICK_ACTION_SCROLL_FADE: f32 = 40.0;

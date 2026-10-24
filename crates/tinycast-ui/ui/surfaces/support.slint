@@ -1,0 +1,170 @@
+// The Support and About windows: one flat card, 460×360, with the heart tile,
+// title and subtitle, the accent Support action, the checkout note, and — on
+// the Support window — the remind-later checkbox (the About window carries the
+// Slint disclosure instead). Normal captioned windows on the page background.
+import { Theme } from "../theme.slint";
+import { Checkbox } from "../primitives/checkbox.slint";
+
+export component SupportWindow inherits Window {
+    // True renders the About variant: product copy and the Slint disclosure.
+    in property <bool> about-kind: false;
+    in property <string> caption;
+    in property <string> title-label;
+    in property <string> subtitle-label;
+    in property <string> support-label;
+    in property <string> checkout-label;
+    // Support only.
+    in property <string> remind-label;
+    in-out property <bool> remind-on: true;
+    // About only.
+    in property <string> slint-label;
+    in property <string> slint-link-label;
+
+    callback support-clicked();
+    callback remind-toggled(bool);
+    callback slint-link-clicked();
+
+    title: root.caption;
+    background: Theme.page;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+    preferred-width: Theme.size-support-window-width;
+    preferred-height: Theme.size-support-window-height;
+
+    // The heart tile: `size-support-icon` at the top, 18 DIP corners (the
+    // Direct2D paint's geometry), accent-soft with the accent heart.
+    Rectangle {
+        x: (parent.width - Theme.size-support-icon) / 2;
+        y: Theme.spacing-md;
+        width: Theme.size-support-icon;
+        height: Theme.size-support-icon;
+        border-radius: 18px;
+        background: Theme.accent-soft;
+
+        Text {
+            text: "\u{EB51}";
+            font-family: "Segoe Fluent Icons";
+            font-size: 32px;
+            color: Theme.accent;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    Text {
+        x: Theme.spacing-xxl;
+        y: Theme.size-support-icon + Theme.spacing-xl;
+        width: parent.width - Theme.spacing-xxl * 2;
+        height: 28px;
+        text: root.title-label;
+        font-size: Theme.font-panel-title;
+        font-weight: 600;
+        color: Theme.text-primary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    Text {
+        x: Theme.spacing-xxl;
+        y: Theme.size-support-icon + 44px;
+        width: parent.width - Theme.spacing-xxl * 2;
+        height: 40px;
+        text: root.subtitle-label;
+        color: Theme.text-secondary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+        overflow: elide;
+    }
+
+    // The Support action: 46 DIP, accent fill, accent-fg ink.
+    Rectangle {
+        x: Theme.spacing-xxl;
+        y: Theme.size-support-icon + 96px;
+        width: parent.width - Theme.spacing-xxl * 2;
+        height: 46px;
+        border-radius: Theme.radius-magpie-card;
+        background: touch.has-hover ? Theme.pill-hover : Theme.accent;
+
+        Text {
+            text: root.support-label;
+            font-weight: 500;
+            color: Theme.accent-fg;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        touch := TouchArea {
+            clicked => { root.support-clicked(); }
+        }
+    }
+
+    Text {
+        x: Theme.spacing-xxl;
+        y: Theme.size-support-icon + 96px + 46px + Theme.spacing-md;
+        width: parent.width - Theme.spacing-xxl * 2;
+        height: 18px;
+        text: root.checkout-label;
+        font-size: Theme.font-section;
+        color: Theme.text-tertiary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    // Support: the remind-later checkbox row. About: the Slint disclosure.
+    if !root.about-kind: HorizontalLayout {
+        x: Theme.spacing-xxl;
+        y: parent.height - Theme.spacing-xxl - 24px;
+        width: 280px;
+        height: 24px;
+        spacing: Theme.spacing-md;
+        alignment: start;
+
+        Checkbox {
+            checked: root.remind-on;
+            toggled(value) => { root.remind-toggled(value); }
+        }
+
+        Text {
+            text: root.remind-label;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    if root.about-kind: Rectangle {
+        x: Theme.spacing-xxl;
+        y: parent.height - Theme.spacing-xxl - 24px;
+        width: parent.width - Theme.spacing-xxl * 2;
+        height: 24px;
+        background: transparent;
+
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            Text {
+                text: root.slint-label;
+                font-size: Theme.font-section;
+                color: Theme.text-tertiary;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.slint-link-label;
+                font-size: Theme.font-section;
+                color: Theme.ctl-fg;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        TouchArea {
+            clicked => { root.slint-link-clicked(); }
+        }
+    }
+}

@@ -8,6 +8,7 @@ pub mod result;
 pub mod settings;
 mod settings_pages;
 pub mod snapshot;
+pub mod support;
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, GWLP_USERDATA};

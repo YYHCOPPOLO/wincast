@@ -11,7 +11,6 @@ pub(crate) mod paths;
 pub mod screens;
 mod single_instance;
 pub(crate) mod tray;
-pub(crate) mod window;
 pub(crate) mod winhttp;
 
 pub fn run() -> windows::core::Result<()> {
@@ -41,7 +40,6 @@ pub fn run() -> windows::core::Result<()> {
     let host = tray::create(&mut core)?;
     core.palette_window = Some(crate::palette::PaletteWindow::create(host)?);
     core.settings_window = Some(crate::surfaces::SettingsWindow::create(host)?);
-    core.about_window = None;
     core.support_surface = crate::surfaces::SupportWindow::create(host).ok();
     core.about_surface = crate::surfaces::AboutWindow::create(host).ok();
     core.onboarding_window = crate::surfaces::OnboardingWindow::create(host).ok();

@@ -236,6 +236,23 @@ pub fn complete_external(accepted: bool) {
     }
 }
 
+/// Rewrites the copy of the live card. The update check opens one card as
+/// its progress display and rewrites it with the outcome; a no-op when no
+/// card is up (the user closed it before the check finished).
+pub fn update_copy(heading: &str, message: &str) -> bool {
+    MODAL.with(|modal| {
+        let modal = modal.borrow_mut();
+        match modal.host.as_ref() {
+            Some(host) => {
+                host.ui.set_heading(heading.into());
+                host.ui.set_message(message.into());
+                true
+            }
+            None => false,
+        }
+    })
+}
+
 impl DialogHost {
     fn create(request: DialogRequest) -> Option<Self> {
         let ui = Dialog::new().ok()?;

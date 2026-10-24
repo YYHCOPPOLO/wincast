@@ -263,6 +263,9 @@ where
     t.set_size_dialog_icon(theme::size::DIALOG_ICON);
     t.set_size_camera_preview_width(theme::size::CAMERA_PREVIEW.0);
     t.set_size_camera_preview_height(theme::size::CAMERA_PREVIEW.1);
+    t.set_size_support_window_width(theme::size::SUPPORT_WINDOW.0);
+    t.set_size_support_window_height(theme::size::SUPPORT_WINDOW.1);
+    t.set_size_support_icon(theme::size::SUPPORT_ICON);
     t.set_size_quick_action_panel(theme::size::QUICK_ACTION_PANEL);
     t.set_size_quick_action_header_icon(theme::size::QUICK_ACTION_HEADER_ICON);
     t.set_size_quick_action_scroll_fade(theme::size::QUICK_ACTION_SCROLL_FADE);

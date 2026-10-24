@@ -70,7 +70,7 @@ use crate::platform::clock::{local_naive_unix, unix_now};
 use crate::platform::messages::{TIMER_CALENDAR, TIMER_SUPPORT, WM_QUIT_APP};
 use crate::platform::paths;
 use crate::platform::screens::{cursor_target_screen, dip_to_px, dip_to_px_with_dpi};
-use crate::surfaces::{SettingsWindow, StubWindow};
+use crate::surfaces::SettingsWindow;
 use crate::ui_host::hud::MessageHud;
 
 pub struct AppCore {
@@ -78,8 +78,6 @@ pub struct AppCore {
     pub palette_visible: bool,
     pub palette_window: Option<PaletteWindow>,
     pub settings_window: Option<SettingsWindow>,
-    pub about_window: Option<StubWindow>,
-    pub support_window: Option<StubWindow>,
     pub about_surface: Option<crate::surfaces::AboutWindow>,
     pub support_surface: Option<crate::surfaces::SupportWindow>,
     pub onboarding_window: Option<crate::surfaces::OnboardingWindow>,
@@ -139,8 +137,6 @@ impl AppCore {
             palette_visible: false,
             palette_window: None,
             settings_window: None,
-            about_window: None,
-            support_window: None,
             about_surface: None,
             support_surface: None,
             onboarding_window: None,
@@ -1029,8 +1025,6 @@ impl AppCore {
         self.support_mark_asked();
         if let Some(window) = &self.support_surface {
             window.show();
-        } else if let Some(window) = &self.support_window {
-            window.show();
         }
         self.schedule_support_pump();
     }
@@ -1059,8 +1053,6 @@ impl AppCore {
 
     pub fn show_about(&mut self) {
         if let Some(window) = &self.about_surface {
-            window.show();
-        } else if let Some(window) = &self.about_window {
             window.show();
         }
     }
@@ -3912,27 +3904,35 @@ impl AppCore {
             dialog_open: crate::surfaces::dialog::is_up(),
             palette_visible: self.palette_visible,
         };
-        match crate::surfaces::updates::check_for_updates(activity, self.ui_lang()) {
-            crate::surfaces::updates::UpdateUi::Hidden
-            | crate::surfaces::updates::UpdateUi::Deferred => {}
-            crate::surfaces::updates::UpdateUi::Hud(message) => {
-                if self.hud.is_none() && !self.host.is_invalid() {
-                    self.hud = MessageHud::create(self.host).ok();
-                }
-                if let Some(hud) = &self.hud {
-                    hud.show(message);
-                }
-            }
-            crate::surfaces::updates::UpdateUi::Offer { version, notes } => {
-                if self.hud.is_none() && !self.host.is_invalid() {
-                    self.hud = MessageHud::create(self.host).ok();
-                }
-                if let Some(hud) = &self.hud {
-                    hud.show(&format!("Update {version} available."));
-                }
-                let _ = notes;
-            }
+        // The cheap guards stay on this thread; the (potentially slow) feed
+        // read runs one tick later, while one card shows the progress and is
+        // then rewritten with the outcome.
+        if !crate::features::updates::service::feed::command_visible() {
+            return;
         }
+        if tinycast_pure::update::readiness(activity).is_some() {
+            return;
+        }
+        let lang = self.ui_lang();
+        let title = tinycast_pure::i18n::update_title(lang);
+        if !crate::surfaces::dialog::alert(&title, tinycast_pure::i18n::update_checking(lang), lang)
+        {
+            return;
+        }
+        slint::Timer::single_shot(std::time::Duration::from_millis(16), move || {
+            let ui = crate::surfaces::updates::to_ui(
+                crate::features::updates::service::feed::check_now(),
+                lang,
+            );
+            let message = match &ui {
+                crate::surfaces::updates::UpdateUi::Hud(message) => (*message).to_string(),
+                crate::surfaces::updates::UpdateUi::Offer { version, .. } => {
+                    tinycast_pure::i18n::update_available_note(version, lang)
+                }
+                _ => return,
+            };
+            crate::ui_host::modal::update_copy(&title, &message);
+        });
     }
 
     pub fn run_quick_action(&mut self, action: tinycast_pure::ai::QuickAction) {

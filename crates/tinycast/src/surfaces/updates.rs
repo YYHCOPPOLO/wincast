@@ -1,4 +1,6 @@
-//! Check for Updates: empty feed is a HUD, never a crash.
+//! Check for Updates: empty feed is a message card, never a crash. The card
+//! shows the progress copy first and the host rewrites it with the outcome,
+//! so the mapping here stays pure.
 
 use tinycast_pure::i18n::UiLang;
 use tinycast_pure::update::{readiness, UpdateActivity};
@@ -12,7 +14,13 @@ pub fn check_for_updates(activity: UpdateActivity, lang: UiLang) -> UpdateUi {
     if readiness(activity).is_some() {
         return UpdateUi::Deferred;
     }
-    match check_now() {
+    to_ui(check_now(), lang)
+}
+
+/// The card copy for one feed outcome: the only user-visible surface of the
+/// update check (`UpdateUi::Hud` carries the message either way).
+pub fn to_ui(outcome: FeedOutcome, lang: UiLang) -> UpdateUi {
+    match outcome {
         FeedOutcome::Empty => UpdateUi::Hud(tinycast_pure::i18n::update_none_configured(lang)),
         FeedOutcome::Current => UpdateUi::Hud(tinycast_pure::i18n::update_up_to_date(lang)),
         FeedOutcome::Available { version, notes, .. } => UpdateUi::Offer {
