@@ -13,7 +13,7 @@ import { GlyphIcon } from "icons.slint";
 export component MagHeader inherits Text {
     in property <string> text-label;
     text: root.text-label;
-    font-family: "Segoe UI";
+    font-family: Theme.font-family;
     font-size: Theme.font-section;
     font-weight: 600;
     color: Theme.text-tertiary;
@@ -56,7 +56,7 @@ export component MagSelectButton inherits Rectangle {
 
         value-text := Text {
             text: root.value;
-            font-family: "Segoe UI";
+            font-family: Theme.font-family;
             font-size: Theme.font-row-trailing;
             font-weight: 500;
             color: root.enabled ? Theme.text-primary : Theme.text-tertiary;
@@ -108,7 +108,7 @@ export component MagChip inherits Rectangle {
 
         chip-text := Text {
             text: root.label;
-            font-family: "Segoe UI";
+            font-family: Theme.font-family;
             font-size: Theme.font-row-trailing;
             color: root.enabled ? Theme.fg-2 : Theme.faint;
             vertical-alignment: center;
@@ -141,7 +141,7 @@ export component MagBadge inherits Rectangle {
         width: parent.width - Theme.spacing-md * 2;
         height: parent.height;
         text: root.label;
-        font-family: "Segoe UI";
+        font-family: Theme.font-family;
         font-size: Theme.font-row-trailing;
         font-weight: 500;
         color: root.tone == 0 ? Theme.success
@@ -173,7 +173,7 @@ export component MagTextButton inherits Rectangle {
         width: parent.width - Theme.spacing-sm * 2;
         height: parent.height;
         text: root.label;
-        font-family: "Segoe UI";
+        font-family: Theme.font-family;
         font-size: Theme.font-row-trailing;
         color: root.enabled
             ? (root.danger && touch.has-hover ? Theme.destructive : Theme.ctl-fg)
@@ -206,7 +206,7 @@ export component MagPrimaryButton inherits Rectangle {
         width: parent.width - Theme.spacing-md * 2;
         height: parent.height;
         text: root.label;
-        font-family: "Segoe UI";
+        font-family: Theme.font-family;
         font-size: Theme.font-row-trailing;
         font-weight: 500;
         color: root.enabled ? Theme.accent-fg : Theme.faint;
@@ -266,7 +266,7 @@ export component MagInput inherits Rectangle {
             width: parent.width - Theme.spacing-sm * 2;
             height: parent.height;
             text: root.text-value;
-            font-family: "Segoe UI";
+            font-family: Theme.font-family;
             font-size: Theme.font-row-trailing;
             color: Theme.text-primary;
             vertical-alignment: center;
@@ -281,7 +281,7 @@ export component MagInput inherits Rectangle {
             width: parent.width - Theme.spacing-sm * 2;
             height: parent.height;
             text: root.placeholder;
-            font-family: "Segoe UI";
+            font-family: Theme.font-family;
             font-size: Theme.font-row-trailing;
             color: Theme.faint;
             vertical-alignment: center;
@@ -325,7 +325,7 @@ export component MagGridCell inherits Rectangle {
 
             Text {
                 text: root.title;
-                font-family: "Segoe UI";
+                font-family: Theme.font-family;
                 font-size: Theme.font-row-trailing;
                 font-weight: 500;
                 color: Theme.text-primary;
@@ -334,7 +334,7 @@ export component MagGridCell inherits Rectangle {
 
             Text {
                 text: root.subtitle;
-                font-family: "Segoe UI";
+                font-family: Theme.font-family;
                 font-size: Theme.font-chip;
                 color: Theme.text-tertiary;
                 overflow: elide;
@@ -377,7 +377,7 @@ export component MagEmptyState inherits Rectangle {
 
         Text {
             text: root.label;
-            font-family: "Segoe UI";
+            font-family: Theme.font-family;
             font-size: Theme.font-row;
             color: Theme.text-tertiary;
             horizontal-alignment: center;
@@ -395,7 +395,7 @@ export component MagEmptyState inherits Rectangle {
 
                 empty-btn := Text {
                     text: root.action;
-                    font-family: "Segoe UI";
+                    font-family: Theme.font-family;
                     font-size: Theme.font-row-trailing;
                     color: Theme.ctl-fg;
                     horizontal-alignment: center;

@@ -587,6 +587,15 @@ fn refresh(ui: &Settings, inner: *mut Inner) {
         tinycast_ui::apply_appearance(ui, appearance);
     }
     let lang = core.ui_lang();
+    // Slint's font fallback is independent of the old DirectWrite chain.
+    // Request the actual CJK UI face for Chinese instead of relying on the
+    // generic fallback of Segoe UI (which has no Chinese glyphs).
+    let family = match lang {
+        UiLang::ZhHans => tinycast_pure::typeface::CJK[0],
+        UiLang::En => tinycast_pure::typeface::LATIN_FALLBACK,
+    };
+    ui.global::<tinycast_ui::Theme>()
+        .set_font_family(family.into());
     let tab = core.settings_tab;
     let title = settings_tab_title(tab, lang);
     ui.set_window_title(title.into());

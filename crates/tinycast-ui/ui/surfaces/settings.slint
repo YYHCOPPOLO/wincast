@@ -67,9 +67,12 @@ component RowCard inherits Rectangle {
     border-width: Theme.size-hairline;
     border-color: Theme.card-stroke;
     border-radius: Theme.radius-magpie-card;
-    clip: true;
+    // Rounded clipping resamples all child text through a texture in femtovg.
+    // Keep the rounded background and render the inset rows directly instead.
 
     VerticalLayout {
+        x: Theme.spacing-xs;
+        width: parent.width - Theme.spacing-xs * 2;
         spacing: 0px;
 
         for row[i] in root.rows: Rectangle {
@@ -453,10 +456,11 @@ component LauncherItemsPage inherits Rectangle {
                     border-width: Theme.size-hairline;
                     border-color: Theme.card-stroke;
                     border-radius: Theme.radius-magpie-card;
-                    clip: true;
 
                     SettingsRow {
-                        width: 100%;
+                        x: Theme.spacing-xs;
+                        y: 0;
+                        width: parent.width - Theme.spacing-xs * 2;
                         height: Theme.size-settings-row-height;
                         title: root.enable-title;
                         subtitle: root.enable-subtitle;
@@ -473,13 +477,15 @@ component LauncherItemsPage inherits Rectangle {
                     border-width: Theme.size-hairline;
                     border-color: Theme.card-stroke;
                     border-radius: Theme.radius-magpie-card;
-                    clip: true;
 
                     list-flick := Flickable {
-                        x: 0;
+                        x: Theme.size-hairline;
                         y: Theme.size-settings-row-height;
-                        width: 100%;
-                        height: parent.height - Theme.size-settings-row-height;
+                        width: parent.width - Theme.size-hairline * 2;
+                        // Leave the rounded bottom corners outside the
+                        // rectangular viewport; text stays on the window's
+                        // physical pixel grid without a rounded clip layer.
+                        height: parent.height - Theme.size-settings-row-height - Theme.radius-magpie-card;
                         interactive: true;
                         content-width: self.width;
                         content-height: Math.max(self.height, root.items-content-height);
@@ -604,7 +610,7 @@ component LauncherItemsPage inherits Rectangle {
                         y: 0;
                         width: 100%;
                         height: Theme.size-settings-row-height;
-                        background: Theme.card-fill;
+                        background: transparent;
 
                         Rectangle {
                             y: parent.height - Theme.size-hairline;
@@ -626,7 +632,7 @@ component LauncherItemsPage inherits Rectangle {
                     if root.items-content-height <= 0px: MagEmptyState {
                         y: Theme.size-settings-row-height;
                         width: 100%;
-                        height: parent.height - Theme.size-settings-row-height;
+                        height: parent.height - Theme.size-settings-row-height - Theme.radius-magpie-card;
                         label: root.empty-label;
                     }
 
@@ -634,7 +640,7 @@ component LauncherItemsPage inherits Rectangle {
                         x: parent.width - Theme.size-scrollbar-inset - self.width;
                         y: Theme.size-settings-row-height + Theme.size-scrollbar-inset;
                         height: parent.height - Theme.size-settings-row-height
-                            - Theme.size-scrollbar-inset * 2;
+                            - Theme.radius-magpie-card - Theme.size-scrollbar-inset * 2;
                         content-height: Math.max(list-flick.height, root.items-content-height);
                         viewport-height: list-flick.height;
                         offset: -root.list-scroll;
@@ -791,7 +797,7 @@ export component SettingsWindow inherits Window {
     min-width: Theme.size-settings-sidebar + Theme.size-settings-detail-minimum;
     min-height: Theme.size-settings-window-height;
     background: Theme.page;
-    default-font-family: "Segoe UI";
+    default-font-family: Theme.font-family;
     default-font-size: Theme.font-row;
 
     public function focus-selected-tab() {

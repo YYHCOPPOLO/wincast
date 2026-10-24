@@ -119,7 +119,7 @@ export component SidebarRow inherits Rectangle {
 
         Text {
             text: root.label;
-            font-family: "Segoe UI";
+            font-family: Theme.font-family;
             font-size: Theme.font-row;
             color: Theme.text-primary;
             vertical-alignment: center;
@@ -208,7 +208,7 @@ export component SettingsRow inherits Rectangle {
 
             Text {
                 text: root.title;
-                font-family: "Segoe UI";
+                font-family: Theme.font-family;
                 font-size: Theme.font-row;
                 color: root.enabled ? Theme.text-primary : Theme.text-tertiary;
                 overflow: elide;
@@ -216,7 +216,7 @@ export component SettingsRow inherits Rectangle {
 
             if root.subtitle != "" && root.control != 5: Text {
                 text: root.subtitle;
-                font-family: "Segoe UI";
+                font-family: Theme.font-family;
                 font-size: Theme.font-section;
                 color: root.enabled ? Theme.text-secondary : Theme.text-tertiary;
                 overflow: elide;
@@ -233,7 +233,7 @@ export component SettingsRow inherits Rectangle {
 
         if root.control == 2: Text {
             text: root.trailing;
-            font-family: "Segoe UI";
+            font-family: Theme.font-family;
             font-size: Theme.font-row-trailing;
             color: root.enabled ? Theme.text-secondary : Theme.text-tertiary;
             vertical-alignment: center;
@@ -253,7 +253,7 @@ export component SettingsRow inherits Rectangle {
                 width: parent.width - Theme.spacing-xs * 2;
                 height: parent.height;
                 text: root.trailing;
-                font-family: "Segoe UI";
+                font-family: Theme.font-family;
                 font-size: Theme.font-chip;
                 color: Theme.text-primary;
                 horizontal-alignment: center;
