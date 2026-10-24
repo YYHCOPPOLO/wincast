@@ -33,15 +33,6 @@ pub fn gdi_font_family() -> &'static str {
     typeface::CJK[0]
 }
 
-pub fn ui_text_format(
-    dwrite: &IDWriteFactory,
-    size: f32,
-    weight: DWRITE_FONT_WEIGHT,
-    locale: &str,
-) -> windows::core::Result<IDWriteTextFormat> {
-    create_ui_format(dwrite, size, weight, locale)
-}
-
 pub fn create_gdi_ui_font(height: i32) -> HFONT {
     for family in [
         gdi_font_family(),

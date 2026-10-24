@@ -1,22 +1,14 @@
 //! Settings → General: shortcuts, search, Hyper, appearance, launch.
 
 use tinycast_pure::i18n::{
-    general_appearance_trailing, general_hyper_caps_subtitle, general_hyper_off,
-    general_language_trailing, general_pop_to_root_subtitle, general_pop_to_root_trailing,
-    general_ranking_subtitle, general_reset_label, general_row_subtitle, general_row_title,
-    general_section_footer, general_section_title, GeneralRow, GeneralSection, UiLang,
+    general_hyper_caps_subtitle, general_hyper_off, general_row_title, general_section_footer,
+    general_section_title, GeneralRow, GeneralSection, UiLang,
 };
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_ROUNDED_RECT};
-use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
-};
 
-use crate::design_system::settings::{self as ds, GroupedSection, RowTrailing, CARD_PAD, ROW_H};
+use crate::design_system::settings::{self as ds, GroupedSection, CARD_PAD, ROW_H};
 use crate::features::hotkeys::service::hyper::HyperKey;
-use crate::features::launcher::settings::items::Formats;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GeneralToggle {
@@ -333,186 +325,6 @@ pub fn cycle_pop_to_root(current: i64) -> i64 {
         30 => 60,
         _ => 0,
     }
-}
-
-pub fn paint(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    state: &GeneralState<'_>,
-    width: f32,
-    scroll: f32,
-) -> windows::core::Result<()> {
-    let lang = state.lang;
-    let ranking_sub = general_ranking_subtitle(state.ranking_empty, lang);
-    let pop_sub = general_pop_to_root_subtitle(state.pop_to_root, lang);
-    let pop_trail = general_pop_to_root_trailing(state.pop_to_root, lang);
-    let appearance_trail = general_appearance_trailing(state.appearance, lang);
-    let language_trail = general_language_trailing(lang);
-    let reset_label = general_reset_label(lang);
-    let hyper_on = hyper_includes_shift_enabled(state.hyper);
-    let hyper_title = tinycast_pure::i18n::hyper_key_title(state.hyper, lang);
-    let hyper_sub = hyper_subtitle_lang(state.hyper, lang);
-    let mut y = ds::CARD_INSET - scroll;
-    for (kind, header, footer, rows) in section_specs(lang) {
-        let section = grouped_at(y, width, kind, header, footer, rows.len());
-        ds::paint_grouped_section(
-            target,
-            formats.header,
-            formats.caption,
-            &section,
-            state.chrome,
-        )?;
-        let card = section.card_rect();
-        for (i, hit) in rows.iter().copied().enumerate() {
-            let rect = row_rect(card, i);
-            let pad_x = rect.x + CARD_PAD;
-            let row = copy_row(hit);
-            let title = general_row_title(row, lang);
-            let static_sub = general_row_subtitle(row, lang).unwrap_or("");
-            let (sub, enabled, trailing) = match hit {
-                GeneralHit::PaletteRecorder => (static_sub, true, RowTrailing::None),
-                GeneralHit::ResetRanking => (
-                    ranking_sub,
-                    !state.ranking_empty,
-                    RowTrailing::Label(reset_label),
-                ),
-                GeneralHit::HyperKey => (hyper_sub, true, RowTrailing::Label(hyper_title)),
-                GeneralHit::HyperShift => (
-                    static_sub,
-                    hyper_on,
-                    RowTrailing::Toggle(state.hyper_shift && hyper_on),
-                ),
-                GeneralHit::Appearance => (static_sub, true, RowTrailing::Label(appearance_trail)),
-                GeneralHit::Language => (static_sub, true, RowTrailing::Label(language_trail)),
-                GeneralHit::Compact => (static_sub, true, RowTrailing::Toggle(state.compact)),
-                GeneralHit::FavoritesInCompact => (
-                    static_sub,
-                    state.compact,
-                    RowTrailing::Toggle(state.favorites_in_compact),
-                ),
-                GeneralHit::FollowCursor => {
-                    (static_sub, true, RowTrailing::Toggle(state.follow_cursor))
-                }
-                GeneralHit::Draggable => (static_sub, true, RowTrailing::Toggle(state.draggable)),
-                GeneralHit::LaunchAtLogin => {
-                    (static_sub, true, RowTrailing::Toggle(state.launch_at_login))
-                }
-                GeneralHit::ShowInMenuBar => (
-                    static_sub,
-                    true,
-                    RowTrailing::Toggle(state.show_in_menu_bar),
-                ),
-                GeneralHit::PopToRoot => (
-                    pop_sub.as_str(),
-                    true,
-                    RowTrailing::Label(pop_trail.as_str()),
-                ),
-                GeneralHit::AutoSwitchInput => {
-                    (static_sub, true, RowTrailing::Toggle(state.auto_switch))
-                }
-            };
-            ds::paint_settings_row(
-                target,
-                formats.body,
-                formats.caption,
-                title,
-                sub,
-                rect.y,
-                width,
-                pad_x,
-                enabled,
-                state.chrome,
-                trailing,
-            )?;
-            if hit == GeneralHit::PaletteRecorder {
-                let listening = state.recording_palette;
-                let caption = crate::features::hotkeys::ui::recorder::well_caption_lang(
-                    state.palette_binding,
-                    listening,
-                    lang,
-                );
-                paint_recorder_well(
-                    target,
-                    formats,
-                    rect,
-                    &caption,
-                    listening || state.palette_binding.filter(|s| !s.is_empty()).is_none(),
-                    listening,
-                    state.chrome,
-                )?;
-            }
-        }
-        y = section.next_y();
-    }
-    Ok(())
-}
-
-fn paint_recorder_well(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    row: DipRect,
-    label: &str,
-    placeholder: bool,
-    listening: bool,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let well = crate::features::hotkeys::ui::recorder::well_in_row(row);
-    let rect = D2D_RECT_F {
-        left: well.x,
-        top: well.y,
-        right: well.x + well.w,
-        bottom: well.y + well.h,
-    };
-    let fill = unsafe { target.CreateSolidColorBrush(&ds::ramp_color(appearance, 0.06), None)? };
-    let stroke = unsafe {
-        target.CreateSolidColorBrush(
-            &if listening {
-                D2D1_COLOR_F {
-                    r: 0.0,
-                    g: 0.47,
-                    b: 0.83,
-                    a: 1.0,
-                }
-            } else {
-                ds::ramp_color(appearance, theme::colors::CARD_STROKE_ALPHA)
-            },
-            None,
-        )?
-    };
-    let rounded = D2D1_ROUNDED_RECT {
-        rect,
-        radiusX: theme::radius::MENU,
-        radiusY: theme::radius::MENU,
-    };
-    unsafe {
-        target.FillRoundedRectangle(&rounded, &fill);
-        target.DrawRoundedRectangle(&rounded, &stroke, theme::size::HAIRLINE, None);
-    }
-    let ink = if placeholder {
-        ds::tertiary_ink(appearance)
-    } else {
-        ds::primary_ink(appearance)
-    };
-    let brush = unsafe { target.CreateSolidColorBrush(&ink, None)? };
-    let wide: Vec<u16> = label.encode_utf16().collect();
-    unsafe {
-        let _ = formats.body.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        target.DrawText(
-            &wide,
-            formats.body,
-            &D2D_RECT_F {
-                left: well.x + theme::spacing::XS,
-                top: well.y + crate::design_system::text::BUTTON_OPTICAL_NUDGE_Y,
-                right: well.x + well.w - theme::spacing::XS,
-                bottom: well.y + well.h,
-            },
-            &brush,
-            windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL,
-        );
-        let _ = formats.body.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-    }
-    Ok(())
 }
 
 #[cfg(test)]

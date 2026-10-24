@@ -1,10 +1,8 @@
 //! Settings → Calendar: enable (consent), auto-join, join window, camera preview.
 
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::ID2D1RenderTarget;
 
 use crate::design_system::settings as ds;
-use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
 
@@ -63,89 +61,6 @@ pub fn cycle_join_window(minutes: i64) -> i64 {
         10 => 15,
         _ => 1,
     }
-}
-
-pub fn paint(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    enabled: bool,
-    auto_join: bool,
-    camera: bool,
-    join_minutes: i64,
-    width: f32,
-    scroll: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let (section, _, _) = ds::feature_switch_section(
-        width,
-        ds::CARD_INSET - scroll,
-        tinycast_pure::i18n::pane_section_title(
-            tinycast_pure::settings_tab::SettingsTab::Calendar,
-            formats.lang,
-        ),
-        false,
-    );
-    let mut section = section;
-    section.body_h = ds::CARD_PAD * 2.0 + ROW_H * 4.0;
-    ds::paint_grouped_section(
-        target,
-        formats.header,
-        formats.caption,
-        &section,
-        appearance,
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::calendar_enable_title(formats.lang),
-        tinycast_pure::i18n::calendar_enable_subtitle(formats.lang),
-        row_y(0) - scroll,
-        width,
-        true,
-        appearance,
-        ds::RowTrailing::Toggle(enabled),
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::calendar_auto_join(formats.lang),
-        tinycast_pure::i18n::calendar_auto_join_sub(formats.lang),
-        row_y(1) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::Toggle(auto_join),
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::calendar_camera(formats.lang),
-        tinycast_pure::i18n::calendar_camera_sub(formats.lang),
-        row_y(2) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::Toggle(camera),
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::calendar_join_window(formats.lang),
-        "",
-        row_y(3) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::Label(tinycast_pure::i18n::calendar_join_minutes(
-            join_minutes,
-            formats.lang,
-        )),
-    )?;
-    Ok(())
 }
 
 #[cfg(test)]

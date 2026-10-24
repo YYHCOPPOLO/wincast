@@ -1,9 +1,7 @@
 //! Settings → Snippets: feature switch (keyword-expansion consent) and launcher visibility.
 
-use windows::Win32::Graphics::Direct2D::ID2D1RenderTarget;
-
-use crate::design_system::settings::{self as ds, RowTrailing};
-use crate::features::launcher::settings::items::{ConfirmCopy, Formats};
+use crate::design_system::settings as ds;
+use crate::features::launcher::settings::items::ConfirmCopy;
 
 pub const ENABLE_TITLE: &str = "Snippets";
 pub const ENABLE_SUBTITLE: &str =
@@ -54,62 +52,6 @@ pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<SnippetsHit> {
         }
     }
     None
-}
-
-pub fn paint(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    enabled: bool,
-    show_in_launcher: bool,
-    width: f32,
-    scroll: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let (section, enable, show) = ds::feature_switch_section(
-        width,
-        ds::CARD_INSET - scroll,
-        tinycast_pure::i18n::pane_section_title(
-            tinycast_pure::settings_tab::SettingsTab::Snippets,
-            formats.lang,
-        ),
-        true,
-    );
-    ds::paint_grouped_section(
-        target,
-        formats.header,
-        formats.caption,
-        &section,
-        appearance,
-    )?;
-    ds::paint_settings_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::snippets_enable_title(formats.lang),
-        tinycast_pure::i18n::snippets_enable_subtitle(formats.lang),
-        enable.y,
-        width,
-        enable.x + ds::CARD_PAD,
-        true,
-        appearance,
-        RowTrailing::Toggle(enabled),
-    )?;
-    if let Some(show) = show {
-        ds::paint_settings_row(
-            target,
-            formats.body,
-            formats.caption,
-            tinycast_pure::i18n::show_in_launcher(formats.lang),
-            tinycast_pure::i18n::snippets_show_subtitle(formats.lang),
-            show.y,
-            width,
-            show.x + ds::CARD_PAD,
-            enabled,
-            appearance,
-            RowTrailing::Toggle(show_in_launcher),
-        )?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

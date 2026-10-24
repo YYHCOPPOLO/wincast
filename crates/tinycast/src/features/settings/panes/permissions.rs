@@ -3,12 +3,7 @@
 use tinycast_pure::i18n::{open_settings_action, permission_title, UiLang};
 use tinycast_pure::palette_placement::DipRect;
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
-use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
-use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
-use crate::design_system::settings as ds;
-use crate::features::launcher::settings::items::Formats;
 use crate::features::settings::focus::{content_item, FocusRole};
 
 const ROW_H: f32 = 56.0;
@@ -100,75 +95,6 @@ pub fn keyboard_items(
             )
         })
         .collect()
-}
-
-pub fn paint(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    width: f32,
-    scroll: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let origin = -scroll;
-    let pad = theme::spacing::XL;
-    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
-    let muted_brush =
-        unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-    for (i, _) in ROWS.iter().enumerate() {
-        let y = 24.0 + i as f32 * ROW_H + origin;
-        let title: Vec<u16> = tinycast_pure::i18n::permission_title(i, formats.lang)
-            .encode_utf16()
-            .collect();
-        let sub: Vec<u16> = tinycast_pure::i18n::permission_subtitle(i, formats.lang)
-            .encode_utf16()
-            .collect();
-        let open: Vec<u16> = tinycast_pure::i18n::open_settings_action(formats.lang)
-            .encode_utf16()
-            .collect();
-        unsafe {
-            target.DrawText(
-                &title,
-                formats.body,
-                &D2D_RECT_F {
-                    left: pad,
-                    top: y,
-                    right: width - pad - 130.0,
-                    bottom: y + 28.0,
-                },
-                &brush,
-                D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                DWRITE_MEASURING_MODE_NATURAL,
-            );
-            target.DrawText(
-                &sub,
-                formats.caption,
-                &D2D_RECT_F {
-                    left: pad,
-                    top: y + 28.0,
-                    right: width - pad - 130.0,
-                    bottom: y + ROW_H - 4.0,
-                },
-                &muted_brush,
-                D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                DWRITE_MEASURING_MODE_NATURAL,
-            );
-            let open_r = open_rect(i, width);
-            target.DrawText(
-                &open,
-                formats.body,
-                &D2D_RECT_F {
-                    left: open_r.x,
-                    top: y + 16.0,
-                    right: open_r.x + open_r.w,
-                    bottom: y + 40.0,
-                },
-                &brush,
-                D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                DWRITE_MEASURING_MODE_NATURAL,
-            );
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

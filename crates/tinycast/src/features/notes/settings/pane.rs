@@ -1,9 +1,6 @@
 //! Settings → Notes: feature switch.
 
-use windows::Win32::Graphics::Direct2D::ID2D1RenderTarget;
-
-use crate::design_system::settings::{self as ds, RowTrailing};
-use crate::features::launcher::settings::items::Formats;
+use crate::design_system::settings as ds;
 
 pub const ENABLE_TITLE: &str = "Enable Notes";
 pub const ENABLE_SUBTITLE: &str =
@@ -32,46 +29,6 @@ pub fn hit(_x: f32, y: f32, scroll: f32) -> Option<NotesHit> {
     } else {
         None
     }
-}
-
-pub fn paint(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    enabled: bool,
-    width: f32,
-    scroll: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let (section, enable, _) = ds::feature_switch_section(
-        width,
-        ds::CARD_INSET - scroll,
-        tinycast_pure::i18n::pane_section_title(
-            tinycast_pure::settings_tab::SettingsTab::Notes,
-            formats.lang,
-        ),
-        false,
-    );
-    ds::paint_grouped_section(
-        target,
-        formats.header,
-        formats.caption,
-        &section,
-        appearance,
-    )?;
-    ds::paint_settings_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::notes_enable_title(formats.lang),
-        tinycast_pure::i18n::notes_enable_subtitle(formats.lang),
-        enable.y,
-        width,
-        enable.x + ds::CARD_PAD,
-        true,
-        appearance,
-        RowTrailing::Toggle(enabled),
-    )?;
-    Ok(())
 }
 
 #[cfg(test)]

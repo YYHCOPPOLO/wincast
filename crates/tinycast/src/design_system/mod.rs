@@ -1,19 +1,8 @@
 pub mod appearance;
-pub mod chat;
 pub mod fonts;
-pub mod host;
 pub mod hud;
-pub mod keycap;
-pub mod motion;
-pub mod panel;
-pub mod row;
-pub mod scrollbar;
 pub mod settings;
-pub mod squircle;
 pub mod symbols;
 pub mod text;
 
 pub use fonts::Fonts;
-pub use keycap::paint_keycap;
-pub use row::paint_row_fill;
-pub use squircle::fill_squircle;

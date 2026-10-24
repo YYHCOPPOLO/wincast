@@ -1,11 +1,9 @@
 pub mod dialog;
-mod hud;
 mod notes;
 mod onboarding;
 mod settings;
 mod support;
 pub mod updates;
-pub use hud::MessageHud;
 pub use notes::NotesWindow;
 pub use onboarding::OnboardingWindow;
 pub use settings::SettingsWindow;

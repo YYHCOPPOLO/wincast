@@ -3,13 +3,10 @@
 use tinycast_pure::ai::{validate_url, AiConnection, EndpointError, ModelSelection, ProviderKind};
 use tinycast_pure::i18n::UiLang;
 use tinycast_pure::theme;
-use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
-use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
-use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 
 use crate::design_system::settings as ds;
 use crate::features::ai::service::chatgpt::CodexPhase;
-use crate::features::launcher::settings::items::{Formats, Rect};
+use crate::features::launcher::settings::items::Rect;
 
 const ROW_H: f32 = 52.0;
 const FIXED_ROWS: usize = 8;
@@ -346,336 +343,20 @@ fn codex_title_lang(phase: CodexPhase, lang: tinycast_pure::i18n::UiLang) -> &'s
     }
 }
 
-pub fn paint(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    enabled: bool,
-    web_search: bool,
-    system_prompt: bool,
-    opens_to: i64,
-    retention: i64,
-    default_model: Option<&ModelSelection>,
-    connections: &[AiConnection],
-    codex: CodexPhase,
-    editing: Option<usize>,
-    key_saved: bool,
-    error: Option<&str>,
-    width: f32,
-    scroll: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let lang = formats.lang;
-    let (section, _, _) = ds::feature_switch_section(
-        width,
-        ds::CARD_INSET - scroll,
-        tinycast_pure::i18n::pane_section_title(tinycast_pure::settings_tab::SettingsTab::Ai, lang),
-        false,
-    );
-    ds::paint_grouped_section(
-        target,
-        formats.header,
-        formats.caption,
-        &section,
-        appearance,
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::ai_enable_title(lang),
-        tinycast_pure::i18n::ai_enable_subtitle(lang),
-        row_y(0) - scroll,
-        width,
-        true,
-        appearance,
-        ds::RowTrailing::Toggle(enabled),
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::ai_web_search_title(lang),
-        tinycast_pure::i18n::ai_web_search_subtitle(lang),
-        row_y(1) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::Toggle(web_search),
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::ai_system_prompt_title(lang),
-        tinycast_pure::i18n::ai_system_prompt_subtitle(lang),
-        row_y(2) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::Toggle(system_prompt),
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::ai_opens_to_title(lang),
-        "",
-        row_y(3) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::Label(tinycast_pure::i18n::ai_opens_to_value(opens_to != 0, lang)),
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::ai_keep_conversations(lang),
-        "",
-        row_y(4) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::Label(tinycast_pure::i18n::ai_retention_value(retention, lang)),
-    )?;
-    let model = default_model_title_lang(default_model, connections, lang);
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::ai_default_model(lang),
-        "",
-        row_y(5) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::Label(&model),
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::ai_chatgpt_subscription(lang),
-        "",
-        row_y(6) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::Label(codex_title_lang(codex, lang)),
-    )?;
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::ai_add_connection(lang),
-        tinycast_pure::i18n::ai_add_connection_sub(lang),
-        row_y(7) - scroll,
-        width,
-        enabled,
-        appearance,
-        ds::RowTrailing::None,
-    )?;
-    let remove = tinycast_pure::i18n::remove_label(lang);
-    for (i, conn) in connections.iter().enumerate() {
-        let top = connection_row_top(i, editing) - scroll;
-        ds::paint_form_row(
-            target,
-            formats.body,
-            formats.caption,
-            &conn.title(),
-            conn.provider.title(),
-            top,
-            width,
-            true,
-            appearance,
-            ds::RowTrailing::None,
-        )?;
-        paint_remove_control(target, formats, remove, remove_rect(width, top), appearance)?;
-        if editing == Some(i) {
-            let editor_top = top + ROW_H + theme::spacing::SM;
-            paint_editor_label(
-                target,
-                formats,
-                tinycast_pure::i18n::ai_provider(lang),
-                conn.provider.title(),
-                editor_top,
-                0,
-                width,
-                appearance,
-            )?;
-            paint_editor_label(
-                target,
-                formats,
-                tinycast_pure::i18n::ai_base_url(lang),
-                "",
-                editor_top,
-                1,
-                width,
-                appearance,
-            )?;
-            paint_editor_label(
-                target,
-                formats,
-                tinycast_pure::i18n::ai_model_id(lang),
-                "",
-                editor_top,
-                2,
-                width,
-                appearance,
-            )?;
-            paint_editor_label(
-                target,
-                formats,
-                tinycast_pure::i18n::ai_api_key(lang),
-                "",
-                editor_top,
-                3,
-                width,
-                appearance,
-            )?;
-            let hint = error.unwrap_or_else(|| key_status_lang(key_saved, lang));
-            let discard = discard_rect(width, editor_top);
-            paint_editor_hint(
-                target,
-                formats,
-                hint,
-                editor_top,
-                (discard.x - theme::spacing::SM).max(ds::content_pad()),
-                appearance,
-            )?;
-            paint_remove_control(
-                target,
-                formats,
-                tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang),
-                discard,
-                appearance,
-            )?;
-        }
-    }
-    Ok(())
-}
-
-fn paint_remove_control(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    label: &str,
-    rect: tinycast_pure::palette_placement::DipRect,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-    let wide: Vec<u16> = label.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &wide,
-            formats.caption,
-            &D2D_RECT_F {
-                left: rect.x,
-                top: rect.y,
-                right: rect.x + rect.w,
-                bottom: rect.y + rect.h,
-            },
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    Ok(())
-}
-
-fn editor_label_rect(top: f32, row: usize) -> D2D_RECT_F {
-    let pad = ds::content_pad();
-    let y = top + row as f32 * EDITOR_ROW_H;
-    D2D_RECT_F {
-        left: pad,
-        top: y,
-        right: pad + theme::size::FORM_LABEL_WIDTH,
-        bottom: y + EDITOR_ROW_H,
-    }
-}
-
-fn paint_editor_label(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    title: &str,
-    trailing: &str,
-    top: f32,
-    row: usize,
-    width: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
-    let title_w: Vec<u16> = title.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &title_w,
-            formats.body,
-            &editor_label_rect(top, row),
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    if !trailing.is_empty() {
-        let pad = ds::content_pad();
-        let field_x = pad + theme::size::FORM_LABEL_WIDTH + theme::spacing::LG;
-        let muted = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-        let t: Vec<u16> = trailing.encode_utf16().collect();
-        let y = top + row as f32 * EDITOR_ROW_H;
-        unsafe {
-            target.DrawText(
-                &t,
-                formats.caption,
-                &D2D_RECT_F {
-                    left: field_x,
-                    top: y,
-                    right: width - pad,
-                    bottom: y + EDITOR_ROW_H,
-                },
-                &muted,
-                D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                DWRITE_MEASURING_MODE_NATURAL,
-            );
-        }
-    }
-    Ok(())
-}
-
-fn paint_editor_hint(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    hint: &str,
-    top: f32,
-    right: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    if hint.is_empty() {
-        return Ok(());
-    }
-    let pad = ds::content_pad();
-    let y = top + EDITOR_ROWS as f32 * EDITOR_ROW_H;
-    let muted = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-    let t: Vec<u16> = hint.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &t,
-            formats.caption,
-            &D2D_RECT_F {
-                left: pad,
-                top: y,
-                right,
-                bottom: y + HINT_H,
-            },
-            &muted,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn editor_label_rect(top: f32, row: usize) -> tinycast_pure::palette_placement::DipRect {
+        let pad = ds::content_pad();
+        let y = top + row as f32 * EDITOR_ROW_H;
+        tinycast_pure::palette_placement::DipRect {
+            x: pad,
+            y,
+            w: theme::size::FORM_LABEL_WIDTH,
+            h: EDITOR_ROW_H,
+        }
+    }
 
     #[test]
     fn pane_has_no_apple_intelligence_copy() {
@@ -777,7 +458,7 @@ mod tests {
         assert!(rects.model.y + rects.model.h <= rects.key.y + 0.01);
         assert!(rects.key.x + rects.key.w <= width - pad + 0.01);
         let label = editor_label_rect(0.0, 1);
-        assert!(label.right <= rects.url.x + 0.01);
+        assert!(label.x + label.w <= rects.url.x + 0.01);
     }
 
     #[test]

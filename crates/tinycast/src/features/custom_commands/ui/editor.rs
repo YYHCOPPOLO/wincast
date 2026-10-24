@@ -48,7 +48,11 @@ pub fn editor_colors(
     windows::Win32::Foundation::COLORREF,
     windows::Win32::Foundation::COLORREF,
 ) {
-    let (r, g, b) = crate::design_system::settings::detail_rgb(appearance);
+    let (r, g, b) = if appearance == 0 {
+        tinycast_pure::theme::settings_chrome::DETAIL_DARK
+    } else {
+        tinycast_pure::theme::settings_chrome::DETAIL_LIGHT
+    };
     let bg = windows::Win32::Foundation::COLORREF(
         ((b * 255.0) as u32) << 16 | ((g * 255.0) as u32) << 8 | (r * 255.0) as u32,
     );

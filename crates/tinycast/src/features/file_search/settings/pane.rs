@@ -2,9 +2,6 @@
 
 use tinycast_pure::theme;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
-use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
-use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Shell::{
     FileOpenDialog, IFileOpenDialog, IShellItem, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS,
@@ -12,7 +9,6 @@ use windows::Win32::UI::Shell::{
 };
 
 use crate::design_system::settings as ds;
-use crate::features::launcher::settings::items::Formats;
 
 const ROW_H: f32 = 52.0;
 const ITEM_H: f32 = 36.0;
@@ -110,187 +106,7 @@ pub fn hit(
     None
 }
 
-pub fn paint(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    enabled: bool,
-    scopes: &[String],
-    ignores: &[String],
-    width: f32,
-    scroll: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let lang = formats.lang;
-    let (section, _, _) = ds::feature_switch_section(
-        width,
-        ds::CARD_INSET - scroll,
-        tinycast_pure::i18n::pane_section_title(
-            tinycast_pure::settings_tab::SettingsTab::FileSearch,
-            lang,
-        ),
-        false,
-    );
-    ds::paint_grouped_section(
-        target,
-        formats.header,
-        formats.caption,
-        &section,
-        appearance,
-    )?;
-    let origin = -scroll;
-    let l = layout(scopes.len(), ignores.len());
-    ds::paint_form_row(
-        target,
-        formats.body,
-        formats.caption,
-        tinycast_pure::i18n::file_search_enable_title(lang),
-        tinycast_pure::i18n::file_search_enable_subtitle(lang),
-        l.enable + origin,
-        width,
-        true,
-        appearance,
-        ds::RowTrailing::Toggle(enabled),
-    )?;
-    header(
-        target,
-        formats,
-        tinycast_pure::i18n::file_search_folders(lang),
-        24.0,
-        ds::switch_section_next_y(false) + origin,
-        width,
-        appearance,
-    )?;
-    for (i, scope) in scopes.iter().enumerate() {
-        paint_item(
-            target,
-            formats,
-            scope,
-            tinycast_pure::i18n::remove_label(lang),
-            l.scopes[i] + origin,
-            width,
-            appearance,
-        )?;
-    }
-    paint_item(
-        target,
-        formats,
-        tinycast_pure::i18n::file_search_add_folder(lang),
-        "",
-        l.add_folder + origin,
-        width,
-        appearance,
-    )?;
-    header(
-        target,
-        formats,
-        tinycast_pure::i18n::file_search_ignore(lang),
-        24.0,
-        l.add_folder + ITEM_H + theme::spacing::SM + origin,
-        width,
-        appearance,
-    )?;
-    for (i, pattern) in ignores.iter().enumerate() {
-        paint_item(
-            target,
-            formats,
-            pattern,
-            tinycast_pure::i18n::remove_label(lang),
-            l.ignores[i] + origin,
-            width,
-            appearance,
-        )?;
-    }
-    paint_item(
-        target,
-        formats,
-        tinycast_pure::i18n::file_search_add_ignore(lang),
-        "",
-        l.add_ignore + origin,
-        width,
-        appearance,
-    )?;
-    Ok(())
-}
-
-fn header(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    text: &str,
-    x: f32,
-    y: f32,
-    width: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let brush = unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-    let wide: Vec<u16> = text.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &wide,
-            formats.header,
-            &D2D_RECT_F {
-                left: x,
-                top: y,
-                right: width - 24.0,
-                bottom: y + 20.0,
-            },
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    Ok(())
-}
-
-fn paint_item(
-    target: &ID2D1RenderTarget,
-    formats: &Formats<'_>,
-    title: &str,
-    trailing: &str,
-    y: f32,
-    width: f32,
-    appearance: u8,
-) -> windows::core::Result<()> {
-    let pad = theme::spacing::XL;
-    let brush = unsafe { target.CreateSolidColorBrush(&ds::primary_ink(appearance), None)? };
-    let title_wide: Vec<u16> = title.encode_utf16().collect();
-    unsafe {
-        target.DrawText(
-            &title_wide,
-            formats.body,
-            &D2D_RECT_F {
-                left: pad,
-                top: y,
-                right: width - pad * 2.0 - 64.0,
-                bottom: y + ITEM_H - 4.0,
-            },
-            &brush,
-            D2D1_DRAW_TEXT_OPTIONS_CLIP,
-            DWRITE_MEASURING_MODE_NATURAL,
-        );
-    }
-    if !trailing.is_empty() {
-        let muted_brush =
-            unsafe { target.CreateSolidColorBrush(&ds::secondary_ink(appearance), None)? };
-        let t: Vec<u16> = trailing.encode_utf16().collect();
-        unsafe {
-            target.DrawText(
-                &t,
-                formats.caption,
-                &D2D_RECT_F {
-                    left: width - pad - 64.0,
-                    top: y,
-                    right: width - pad,
-                    bottom: y + ITEM_H - 4.0,
-                },
-                &muted_brush,
-                D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                DWRITE_MEASURING_MODE_NATURAL,
-            );
-        }
-    }
-    Ok(())
-}
-
+/// The native folder picker the Slint settings page still calls for "Add folder".
 pub fn pick_folder(owner: HWND) -> Option<String> {
     unsafe {
         let dlg: IFileOpenDialog =
