@@ -8,7 +8,8 @@
 import { Theme } from "../theme.slint";
 import { Scrollbar } from "../primitives/scrollbar.slint";
 import { SettingsRow, SidebarRow } from "../primitives/form.slint";
-import { MagHeader } from "../primitives/magpie.slint";
+import { Checkbox } from "../primitives/checkbox.slint";
+import { MagEmptyState, MagHeader, MagInput } from "../primitives/magpie.slint";
 
 // One row of the sidebar: kind 0 is a section header, kind 1 a SettingsTab.
 // tab carries the SettingsTab discriminant; headers use -1.
@@ -40,6 +41,48 @@ export struct SettingsPageSection {
     title: string,
     note: string,
     rows: [SettingsPageRow],
+}
+
+// One surface card whose rows are separated by 1 px rules (magpie `.list`).
+// Shared by every page that shows action rows.
+component RowCard inherits Rectangle {
+    in property <[SettingsPageRow]> rows;
+    callback row-activated(int);
+
+    background: Theme.card-fill;
+    border-width: Theme.size-hairline;
+    border-color: Theme.card-stroke;
+    border-radius: Theme.radius-magpie-card;
+    clip: true;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        for row[i] in root.rows: Rectangle {
+            height: Theme.size-settings-row-height;
+            background: transparent;
+
+            if i > 0: Rectangle {
+                y: 0;
+                height: Theme.size-hairline;
+                background: Theme.separator;
+            }
+
+            SettingsRow {
+                y: Theme.size-hairline;
+                width: parent.width;
+                height: parent.height - Theme.size-hairline;
+                title: row.title;
+                subtitle: row.subtitle;
+                trailing: row.trailing;
+                control: row.control;
+                checked: row.checked;
+                active: row.active;
+                enabled: row.enabled;
+                activated => { root.row-activated(row.id); }
+            }
+        }
+    }
 }
 
 // A heading plus titled surface cards of rows, scrolled as a whole. General,
@@ -87,41 +130,9 @@ component RowsPage inherits Rectangle {
                         text-label: section.title;
                     }
 
-                    Rectangle {
-                        background: Theme.card-fill;
-                        border-width: Theme.size-hairline;
-                        border-color: Theme.card-stroke;
-                        border-radius: Theme.radius-magpie-card;
-                        clip: true;
-
-                        VerticalLayout {
-                            spacing: 0px;
-
-                            for row[i] in section.rows: Rectangle {
-                                height: Theme.size-settings-row-height;
-                                background: transparent;
-
-                                if i > 0: Rectangle {
-                                    y: 0;
-                                    height: Theme.size-hairline;
-                                    background: Theme.separator;
-                                }
-
-                                SettingsRow {
-                                    y: Theme.size-hairline;
-                                    width: parent.width;
-                                    height: parent.height - Theme.size-hairline;
-                                    title: row.title;
-                                    subtitle: row.subtitle;
-                                    trailing: row.trailing;
-                                    control: row.control;
-                                    checked: row.checked;
-                                    active: row.active;
-                                    enabled: row.enabled;
-                                    activated => { root.row-activated(row.id); }
-                                }
-                            }
-                        }
+                    RowCard {
+                        rows: section.rows;
+                        row-activated(id) => { root.row-activated(id); }
                     }
 
                     if section.note != "": Text {
@@ -321,8 +332,293 @@ component AboutPage inherits Rectangle {
     }
 }
 
-// The 15 tabs phase 8 fills: the tab title and one neutral i18n line, no fake
-// controls.
+// One sliced row of the launcher pages: name, inline alias, the hotkey well
+// and the visibility checkbox. `index` is the position in the host's filtered
+// list (the slice only carries the visible rows); `top` places the row inside
+// the scrolling container.
+export struct LauncherItemRow {
+    index: int,
+    top: length,
+    height: length,
+    name: string,
+    alias: string,
+    hotkey: string,
+    visible: bool,
+    recording: bool,
+    has-hotkey: bool,
+}
+
+// Applications, System Settings, System Actions and Commands: the enable
+// switch, the filter, and the alias/visibility/hotkey table. The list keeps a
+// visible slice in the model while the host owns the full count, exactly like
+// the palette list.
+component LauncherItemsPage inherits Rectangle {
+    in property <string> heading;
+    in property <[SettingsPageSection]> intro;
+    in property <string> enable-title;
+    in property <string> enable-subtitle;
+    in property <bool> kind-on;
+    in property <string> filter-hint;
+    in-out property <string> filter-text;
+    in property <[LauncherItemRow]> items;
+    in property <length> items-content-height;
+    in property <string> empty-label;
+    in property <string> alias-hint;
+    // The alias editor overlays the active row: -1 hides it. The column is
+    // fixed for every row, so x comes from the page geometry and only y is
+    // the active row's top.
+    in property <int> alias-active: -1;
+    in property <length> alias-y: 0px;
+    in-out property <string> alias-text;
+    in-out property <length> list-scroll: 0px;
+    callback intro-activated(int);
+    callback enable-toggled(bool);
+    callback item-toggled(int);
+    callback alias-activated(int);
+    callback alias-edited(int, string);
+    callback alias-committed(int);
+    callback hotkey-clicked(int);
+    callback filter-changed(string);
+    callback list-scrolled();
+
+    changed list-scroll => { root.list-scrolled(); }
+
+    background: transparent;
+
+    VerticalLayout {
+        x: Theme.spacing-xxl;
+        y: Theme.spacing-xxl;
+        width: parent.width - Theme.spacing-xxl * 2;
+        height: parent.height - Theme.spacing-xxl * 2;
+        spacing: Theme.spacing-section;
+
+        Text {
+            text: root.heading;
+            font-size: Theme.font-panel-title;
+            font-weight: 600;
+            color: Theme.text-primary;
+            overflow: elide;
+        }
+
+        for section in root.intro: VerticalLayout {
+            spacing: Theme.spacing-section-header-bottom;
+
+            if section.title != "": MagHeader {
+                text-label: section.title;
+            }
+
+            RowCard {
+                rows: section.rows;
+                row-activated(id) => { root.intro-activated(id); }
+            }
+
+            if section.note != "": Text {
+                text: section.note;
+                font-size: Theme.font-chip;
+                color: Theme.text-tertiary;
+                wrap: word-wrap;
+            }
+        }
+
+        Rectangle {
+            background: Theme.card-fill;
+            border-width: Theme.size-hairline;
+            border-color: Theme.card-stroke;
+            border-radius: Theme.radius-magpie-card;
+            clip: true;
+
+            SettingsRow {
+                width: 100%;
+                height: Theme.size-settings-row-height;
+                title: root.enable-title;
+                subtitle: root.enable-subtitle;
+                control: 1;
+                checked: root.kind-on;
+                activated => { root.enable-toggled(!root.kind-on); }
+            }
+        }
+
+        list-card := Rectangle {
+            vertical-stretch: 1;
+            background: Theme.card-fill;
+            border-width: Theme.size-hairline;
+            border-color: Theme.card-stroke;
+            border-radius: Theme.radius-magpie-card;
+            clip: true;
+
+            list-flick := Flickable {
+                x: 0;
+                y: Theme.size-settings-row-height;
+                width: 100%;
+                height: parent.height - Theme.size-settings-row-height;
+                interactive: true;
+                content-width: self.width;
+                content-height: Math.max(self.height, root.items-content-height);
+                content-y <=> root.list-scroll;
+
+                Rectangle {
+                    width: parent.width;
+                    height: Math.max(list-flick.height, root.items-content-height);
+                    background: transparent;
+
+                    for item in root.items: Rectangle {
+                        x: 0;
+                        y: item.top;
+                        width: parent.width;
+                        height: item.height;
+                        background: item-touch.has-hover ? Theme.row-hover : transparent;
+
+                        if item.top > 0: Rectangle {
+                            y: 0;
+                            height: Theme.size-hairline;
+                            background: Theme.separator;
+                        }
+
+                        item-touch := TouchArea {
+                            clicked => {
+                                if root.alias-active >= 0 {
+                                    root.alias-committed(-1);
+                                }
+                            }
+                        }
+
+                        Text {
+                            x: Theme.spacing-xl;
+                            width: root.alias-column-x - Theme.spacing-xl - Theme.spacing-md;
+                            height: parent.height;
+                            text: item.name;
+                            font-size: Theme.font-row;
+                            color: Theme.text-primary;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        if item.index != root.alias-active: Text {
+                            x: root.alias-column-x;
+                            width: Theme.size-shortcut-recorder;
+                            height: parent.height;
+                            text: item.alias == "" ? root.alias-hint : item.alias;
+                            font-size: Theme.font-row-trailing;
+                            color: item.alias == "" ? Theme.faint : Theme.fg-2;
+                            vertical-alignment: center;
+                            overflow: elide;
+
+                            alias-touch := TouchArea {
+                                clicked => { root.alias-activated(item.index); }
+                            }
+                        }
+
+                        if item.has-hotkey: Rectangle {
+                            x: root.hotkey-column-x;
+                            width: Theme.size-shortcut-recorder;
+                            height: Theme.size-magpie-field;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: Theme.radius-magpie-control;
+                            background: well-touch.has-hover ? Theme.pill-hover : Theme.surface;
+                            border-width: Theme.size-hairline;
+                            border-color: item.recording ? Theme.accent : Theme.border;
+
+                            well-touch := TouchArea {
+                                clicked => { root.hotkey-clicked(item.index); }
+                            }
+
+                            Text {
+                                x: Theme.spacing-xs;
+                                width: parent.width - Theme.spacing-xs * 2;
+                                height: parent.height;
+                                text: item.hotkey;
+                                font-size: Theme.font-chip;
+                                color: Theme.text-primary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+
+                        Checkbox {
+                            x: parent.width - Theme.spacing-xl - self.width;
+                            y: (parent.height - self.height) / 2;
+                            checked: item.visible;
+                            toggled => { root.item-toggled(item.index); }
+                        }
+                    }
+
+                    // The one alias editor, parked over the row being edited —
+                    // the same single-field arrangement the Direct2D window
+                    // used, so a scroll or re-filter never strands a draft.
+                    // Creation is the open event, so `init` takes the keyboard.
+                    if root.alias-active >= 0: MagInput {
+                        x: root.alias-column-x;
+                        y: root.alias-y + (Theme.size-settings-row-height - self.height) / 2;
+                        width: Theme.size-shortcut-recorder;
+                        text-value <=> root.alias-text;
+                        placeholder: root.alias-hint;
+                        edited(text) => { root.alias-edited(root.alias-active, text); }
+                        accepted(text) => { root.alias-committed(root.alias-active); }
+                        focus-lost => { root.alias-committed(root.alias-active); }
+                        init => { self.focus-field(); }
+                    }
+                }
+            }
+
+            // The filter rides on top of the list card.
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: 100%;
+                height: Theme.size-settings-row-height;
+                background: Theme.card-fill;
+
+                Rectangle {
+                    y: parent.height - Theme.size-hairline;
+                    height: Theme.size-hairline;
+                    width: 100%;
+                    background: Theme.separator;
+                }
+
+                MagInput {
+                    x: Theme.spacing-xl;
+                    y: (parent.height - self.height) / 2;
+                    width: parent.width - Theme.spacing-xl * 2 - Theme.spacing-xxxl;
+                    placeholder: root.filter-hint;
+                    text-value <=> root.filter-text;
+                    edited(text) => { root.filter-changed(text); }
+                }
+            }
+
+            if root.items-content-height <= 0px: MagEmptyState {
+                y: Theme.size-settings-row-height;
+                width: 100%;
+                height: parent.height - Theme.size-settings-row-height;
+                label: root.empty-label;
+            }
+
+            Scrollbar {
+                x: parent.width - Theme.size-scrollbar-inset - self.width;
+                y: Theme.size-settings-row-height + Theme.size-scrollbar-inset;
+                height: parent.height - Theme.size-settings-row-height
+                    - Theme.size-scrollbar-inset * 2;
+                content-height: Math.max(list-flick.height, root.items-content-height);
+                viewport-height: list-flick.height;
+                offset: -root.list-scroll;
+            }
+        }
+    }
+
+    // Trailing columns, right to left: checkbox, optional well, alias. Fixed
+    // widths keep every column on one vertical line down the list. The origin
+    // is the list card, whose contents the rows share.
+    out property <length> alias-column-x: list-card.width - Theme.spacing-xl
+        - Theme.size-checkbox - Theme.spacing-md
+        - Theme.size-shortcut-recorder - Theme.spacing-md
+        - Theme.size-shortcut-recorder;
+    out property <length> hotkey-column-x: list-card.width - Theme.spacing-xl
+        - Theme.size-checkbox - Theme.spacing-md
+        - Theme.size-shortcut-recorder;
+}
+
+// The tabs still waiting for their phase-8 page: the tab title and one neutral
+// i18n line, no fake controls.
 component PlaceholderPage inherits Rectangle {
     in property <string> heading;
     in property <string> note;
@@ -362,7 +658,8 @@ export component SettingsWindow inherits Window {
     in-out property <length> sidebar-scroll: 0px;
     // The SettingsTab discriminant AppCore selected; the only selection source.
     in property <int> selected-tab: 0;
-    // 0 General, 1 Permissions, 2 About, 3 Backup, 4 the placeholder tabs.
+    // 0 General, 1 Permissions, 2 About, 3 Backup, 4 launcher items,
+    // 5 feature rows, 6 the placeholder tabs.
     in property <int> page-kind: 0;
     in property <[SettingsPageSection]> general-sections;
     in property <[SettingsPageSection]> permissions-sections;
@@ -383,6 +680,26 @@ export component SettingsWindow inherits Window {
     in property <string> about-copyright;
     in property <string> placeholder-heading;
     in property <string> placeholder-note;
+    // The launcher pages (Applications, System Settings, System Actions and
+    // Commands share one instance; the host re-slices the list per tab).
+    in property <string> launcher-heading;
+    in property <[SettingsPageSection]> launcher-intro;
+    in property <string> launcher-enable-title;
+    in property <string> launcher-enable-subtitle;
+    in property <bool> launcher-kind-on;
+    in property <string> launcher-filter-hint;
+    in-out property <string> launcher-filter-text;
+    in property <[LauncherItemRow]> launcher-items;
+    in property <length> launcher-items-height;
+    in property <string> launcher-empty;
+    in property <string> launcher-alias-hint;
+    in property <int> launcher-alias-active: -1;
+    in property <length> launcher-alias-y: 0px;
+    in-out property <string> launcher-alias-text;
+    in-out property <length> launcher-list-scroll: 0px;
+    // The feature rows page (Quicklinks in 8.1; the other feature tabs in 8.2).
+    in property <string> feature-heading;
+    in property <[SettingsPageSection]> feature-sections;
 
     callback tab-selected(int);
     callback general-row-activated(int);
@@ -390,6 +707,16 @@ export component SettingsWindow inherits Window {
     callback backup-row-activated(int);
     callback about-row-activated(int);
     callback slint-link-clicked();
+    callback launcher-intro-activated(int);
+    callback launcher-enable-toggled(bool);
+    callback launcher-item-toggled(int);
+    callback launcher-alias-activated(int);
+    callback launcher-alias-edited(int, string);
+    callback launcher-alias-committed(int);
+    callback launcher-hotkey-clicked(int);
+    callback launcher-filter-changed(string);
+    callback launcher-list-scrolled();
+    callback feature-row-activated(int);
 
     // Bumped when the keyboard should land on the selected tab (on show).
     private property <int> focus-generation: 0;
@@ -522,10 +849,49 @@ export component SettingsWindow inherits Window {
             link-clicked => { root.slint-link-clicked(); }
         }
 
-        PlaceholderPage {
+        launcher-page := LauncherItemsPage {
             width: 100%;
             height: 100%;
             visible: root.page-kind == 4;
+            heading: root.launcher-heading;
+            intro: root.launcher-intro;
+            enable-title: root.launcher-enable-title;
+            enable-subtitle: root.launcher-enable-subtitle;
+            kind-on: root.launcher-kind-on;
+            filter-hint: root.launcher-filter-hint;
+            filter-text <=> root.launcher-filter-text;
+            items: root.launcher-items;
+            items-content-height: root.launcher-items-height;
+            empty-label: root.launcher-empty;
+            alias-hint: root.launcher-alias-hint;
+            alias-active: root.launcher-alias-active;
+            alias-y: root.launcher-alias-y;
+            alias-text <=> root.launcher-alias-text;
+            list-scroll <=> root.launcher-list-scroll;
+            intro-activated(id) => { root.launcher-intro-activated(id); }
+            enable-toggled(on) => { root.launcher-enable-toggled(on); }
+            item-toggled(index) => { root.launcher-item-toggled(index); }
+            alias-activated(index) => { root.launcher-alias-activated(index); }
+            alias-edited(index, text) => { root.launcher-alias-edited(index, text); }
+            alias-committed(index) => { root.launcher-alias-committed(index); }
+            hotkey-clicked(index) => { root.launcher-hotkey-clicked(index); }
+            filter-changed(text) => { root.launcher-filter-changed(text); }
+            list-scrolled => { root.launcher-list-scrolled(); }
+        }
+
+        RowsPage {
+            width: 100%;
+            height: 100%;
+            visible: root.page-kind == 5;
+            heading: root.feature-heading;
+            sections: root.feature-sections;
+            row-activated(id) => { root.feature-row-activated(id); }
+        }
+
+        PlaceholderPage {
+            width: 100%;
+            height: 100%;
+            visible: root.page-kind == 6;
             heading: root.placeholder-heading;
             note: root.placeholder-note;
         }

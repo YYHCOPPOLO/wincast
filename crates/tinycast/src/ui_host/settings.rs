@@ -51,10 +51,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::design_system::symbols::fluent_for_sf;
 use crate::ui_host::app_core as core_from_host;
 
-type Settings = tinycast_ui::SettingsWindow;
-type PageRow = tinycast_ui::SettingsPageRow;
-type PageSection = tinycast_ui::SettingsPageSection;
+pub(super) type Settings = tinycast_ui::SettingsWindow;
+pub(super) type PageRow = tinycast_ui::SettingsPageRow;
+pub(super) type PageSection = tinycast_ui::SettingsPageSection;
 type SidebarRow = tinycast_ui::SettingsSidebarRow;
+type ItemRow = tinycast_ui::LauncherItemRow;
 
 const SUBCLASS_ID: usize = 0x53;
 /// winit creates the HWND on the first event-loop turn; poll until it exists.
@@ -76,10 +77,10 @@ pub struct SettingsWindow {
     pub hwnd: HWND,
 }
 
-struct Inner {
-    host: HWND,
+pub(super) struct Inner {
+    pub(super) host: HWND,
     /// Upgradeable handle for the init timer; does not keep the window alive.
-    weak: slint::Weak<Settings>,
+    pub(super) weak: slint::Weak<Settings>,
     /// The 23 sidebar rows (4 section headers and 19 tabs); the model is
     /// created once and updated in place so focus survives a refresh.
     sidebar: Rc<VecModel<SidebarRow>>,
@@ -90,9 +91,23 @@ struct Inner {
     permissions: SectionGroup,
     backup: SectionGroup,
     about: Rc<VecModel<PageRow>>,
+    /// The launcher pages (Applications, System Settings, System Actions,
+    /// Commands): the sliced item table, the intro cards and the filter.
+    pub(super) launcher: Rc<VecModel<ItemRow>>,
+    pub(super) launcher_intro: SectionGroup,
+    pub(super) filter_query: String,
+    /// The filtered item ids and their hotkey actions for the current tab;
+    /// the dispatch maps a slice row's index through these.
+    pub(super) launcher_ids: Vec<String>,
+    pub(super) launcher_actions: Vec<Option<String>>,
+    /// The alias draft: which entry id it belongs to and its current text.
+    pub(super) alias_target: Option<String>,
+    pub(super) alias_draft: String,
+    /// The feature rows page (Quicklinks in 8.1; the rest in the next tasks).
+    pub(super) feature: SectionGroup,
     /// The local shortcut recorder. It owns only the action name while a well
     /// is listening; the capture itself runs from the HWND subclass.
-    recorder: crate::features::hotkeys::ui::recorder::Recorder,
+    pub(super) recorder: crate::features::hotkeys::ui::recorder::Recorder,
     ready: bool,
     /// A show request that arrived before the HWND existed.
     pending_show: bool,
@@ -122,6 +137,14 @@ impl SettingsWindow {
             permissions: SectionGroup::new(1),
             backup: SectionGroup::new(1),
             about: Rc::new(VecModel::default()),
+            launcher: Rc::new(VecModel::default()),
+            launcher_intro: SectionGroup::new(0),
+            filter_query: String::new(),
+            launcher_ids: Vec::new(),
+            launcher_actions: Vec::new(),
+            alias_target: None,
+            alias_draft: String::new(),
+            feature: SectionGroup::new(0),
             recorder: crate::features::hotkeys::ui::recorder::Recorder::new(),
             ready: false,
             pending_show: false,
@@ -151,6 +174,15 @@ impl SettingsWindow {
         window
             .ui
             .set_about_rows(ModelRc::from(unsafe { (*inner).about.clone() }));
+        window
+            .ui
+            .set_launcher_items(ModelRc::from(unsafe { (*inner).launcher.clone() }));
+        window.ui.set_launcher_intro(ModelRc::from(unsafe {
+            (*inner).launcher_intro.sections.clone()
+        }));
+        window
+            .ui
+            .set_feature_sections(ModelRc::from(unsafe { (*inner).feature.sections.clone() }));
         window
             .ui
             .set_sidebar_content_height(sidebar_content_height());
@@ -217,6 +249,76 @@ impl SettingsWindow {
                 open_slint_link(inner);
             }
         });
+        let ptr = inner as usize;
+        self.ui.on_launcher_intro_activated(move |id| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::intro_activated(inner, id);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_launcher_enable_toggled(move |on| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::enable_toggled(inner, on);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_launcher_item_toggled(move |index| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::item_toggled(inner, index);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_launcher_alias_activated(move |index| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::alias_activated(inner, index);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_launcher_alias_edited(move |index, text| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::alias_edited(inner, index, text.to_string());
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_launcher_alias_committed(move |index| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::alias_committed(inner, index);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_launcher_hotkey_clicked(move |index| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::hotkey_clicked(inner, index);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_launcher_filter_changed(move |text| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::filter_changed(inner, text.to_string());
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_launcher_list_scrolled(move || {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::list_scrolled(inner);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_feature_row_activated(move |id| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::feature_row_activated(inner, id);
+            }
+        });
     }
 
     pub fn show(&self) {
@@ -241,9 +343,10 @@ impl SettingsWindow {
     }
 
     pub fn on_tab_changed(&self) {
-        // A tab change ends any shortcut capture, like the Direct2D window's
-        // reset_pane_state did.
+        // A tab change ends any shortcut capture and drops the alias draft,
+        // like the Direct2D window's reset_pane_state did.
         stop_recording(self.inner, true);
+        super::settings_pages::tab_changed(self.inner);
         refresh(&self.ui, self.inner);
         if unsafe { (*self.inner).ready } {
             reveal_selected_tab(&self.ui, self.inner);
@@ -481,6 +584,14 @@ fn refresh(ui: &Settings, inner: *mut Inner) {
         (*inner).backup.sync(backup_model(lang));
     }
     sync_rows(unsafe { &(*inner).about }, about_model(lang));
+    // The phase-8 pages build from AppCore per tab; the placeholder tabs only
+    // carry the heading and note set above.
+    let ui_tab = core.settings_tab;
+    if page_kind(ui_tab) == 4 {
+        super::settings_pages::sync_launcher(ui, unsafe { &mut *inner }, core);
+    } else if page_kind(ui_tab) == 5 {
+        super::settings_pages::sync_feature(ui, unsafe { &mut *inner }, core);
+    }
 }
 
 fn refresh_inner(inner: *mut Inner) {
@@ -515,7 +626,13 @@ fn sidebar_model(lang: UiLang) -> Vec<SidebarRow> {
         .collect()
 }
 
-fn action_row(id: i32, title: &str, subtitle: &str, trailing: &str, control: i32) -> PageRow {
+pub(super) fn action_row(
+    id: i32,
+    title: &str,
+    subtitle: &str,
+    trailing: &str,
+    control: i32,
+) -> PageRow {
     PageRow {
         id,
         title: title.into(),
@@ -531,34 +648,48 @@ fn action_row(id: i32, title: &str, subtitle: &str, trailing: &str, control: i32
 /// A fixed set of titled groups on one page. The section structs are
 /// refreshed in place while each group's row model keeps its identity, so the
 /// row delegates — and their keyboard focus — survive every refresh.
-struct SectionGroup {
-    sections: Rc<VecModel<PageSection>>,
-    rows: Vec<Rc<VecModel<PageRow>>>,
+pub(super) struct SectionGroup {
+    pub(super) sections: Rc<VecModel<PageSection>>,
+    /// One row model per group, grown on demand: a tab whose page has more
+    /// groups than the last one simply takes the next models from the pool.
+    rows: std::cell::RefCell<Vec<Rc<VecModel<PageRow>>>>,
 }
 
 impl SectionGroup {
     fn new(count: usize) -> Self {
-        let rows: Vec<Rc<VecModel<PageRow>>> =
-            (0..count).map(|_| Rc::new(VecModel::default())).collect();
-        let sections = Rc::new(VecModel::from(
-            rows.iter()
+        Self {
+            sections: Rc::new(VecModel::default()),
+            rows: std::cell::RefCell::new(
+                (0..count).map(|_| Rc::new(VecModel::default())).collect(),
+            ),
+        }
+    }
+
+    /// One part per group: title, footer note, then the rows. A group-count
+    /// change rebuilds the section delegates once; the row models keep their
+    /// identity either way.
+    pub(super) fn sync(&self, parts: Vec<(String, String, Vec<PageRow>)>) {
+        let mut rows = self.rows.borrow_mut();
+        while rows.len() < parts.len() {
+            rows.push(Rc::new(VecModel::default()));
+        }
+        if self.sections.row_count() != parts.len() {
+            let sections: Vec<PageSection> = rows
+                .iter()
+                .take(parts.len())
                 .map(|model| PageSection {
                     title: Default::default(),
                     note: Default::default(),
                     rows: ModelRc::from(model.clone()),
                 })
-                .collect::<Vec<_>>(),
-        ));
-        Self { sections, rows }
-    }
-
-    /// One part per group: title, footer note, then the rows.
-    fn sync(&self, parts: Vec<(String, String, Vec<PageRow>)>) {
-        for (index, model) in self.rows.iter().enumerate() {
-            let Some((title, note, rows)) = parts.get(index) else {
+                .collect();
+            self.sections.set_vec(sections);
+        }
+        for (index, model) in rows.iter().enumerate() {
+            let Some((title, note, page_rows)) = parts.get(index) else {
                 break;
             };
-            sync_rows(model, rows.clone());
+            sync_rows(model, page_rows.clone());
             self.sections.set_row_data(
                 index,
                 PageSection {
@@ -776,7 +907,7 @@ fn about_model(lang: UiLang) -> Vec<PageRow> {
 
 /// Updates a fixed-length model row by row: replacing the model would recreate
 /// every delegate and throw the keyboard focus away.
-fn sync_rows<T: Clone + 'static>(model: &VecModel<T>, rows: Vec<T>) {
+pub(super) fn sync_rows<T: Clone + 'static>(model: &VecModel<T>, rows: Vec<T>) {
     if model.row_count() != rows.len() {
         model.set_vec(rows);
         return;
@@ -784,6 +915,11 @@ fn sync_rows<T: Clone + 'static>(model: &VecModel<T>, rows: Vec<T>) {
     for (index, row) in rows.into_iter().enumerate() {
         model.set_row_data(index, row);
     }
+}
+
+/// The localized tab title, shared with the page models.
+pub(super) fn tab_title(tab: SettingsTab, lang: UiLang) -> slint::SharedString {
+    settings_tab_title(tab, lang).into()
 }
 
 /// SettingsTab has no explicit index API; the discriminant is what the Slint
@@ -802,7 +938,12 @@ fn page_kind(tab: SettingsTab) -> i32 {
         SettingsTab::Permissions => 1,
         SettingsTab::About => 2,
         SettingsTab::Backup => 3,
-        _ => 4,
+        SettingsTab::Applications
+        | SettingsTab::SystemSettings
+        | SettingsTab::SystemActions
+        | SettingsTab::Commands => 4,
+        SettingsTab::Quicklinks => 5,
+        _ => 6,
     }
 }
 

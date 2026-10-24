@@ -221,6 +221,19 @@ export component MagInput inherits Rectangle {
     out property <bool> focused: input.has-focus;
     callback edited(string);
     callback accepted(string);
+    // Focus left the field: the host commits an in-progress draft here.
+    callback focus-lost();
+
+    changed focused => {
+        if (!root.focused) {
+            root.focus-lost();
+        }
+    }
+
+    // Focus the inner text field; usable from the host and from `init`.
+    public function focus-field() {
+        input.focus();
+    }
 
     height: Theme.size-magpie-input;
     border-radius: Theme.radius-magpie-control;
