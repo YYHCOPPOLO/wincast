@@ -2,6 +2,7 @@ pub mod editor;
 pub mod hud;
 pub mod modal;
 pub mod notes;
+pub mod onboarding;
 pub mod preview;
 pub mod result;
 pub mod settings;

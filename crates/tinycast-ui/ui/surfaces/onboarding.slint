@@ -1,0 +1,183 @@
+// The first-launch onboarding: hero glyph, title and subtitle per step, the
+// shortcut-recorder well on step 0, four progress dots and Continue. The
+// window is a normal captioned window on the page background; the step change
+// fades the content in over `duration-onboarding` (200 ms, ease-in-out), like
+// the Direct2D `Reveal` did.
+import { Theme } from "../theme.slint";
+
+export component OnboardingWindow inherits Window {
+    in property <int> step: 0;
+    in property <string> title-label;
+    in property <string> subtitle-label;
+    in property <string> hero-symbol;
+    // Step 0 only: the recorder well's caption ("Record" / "Listening…").
+    in property <string> well-label;
+    in property <string> continue-label;
+
+    callback record-clicked();
+    callback continue-clicked();
+
+    title: "Tinycast";
+    background: Theme.page;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+    preferred-width: 520px;
+    preferred-height: 400px;
+
+    private property <float> step-reveal: 0;
+
+    // Each step re-enters a state, so the 200 ms fade plays on every change.
+    states [
+        step-0 when root.step == 0: {
+            step-reveal: 1;
+            in {
+                animate step-reveal {
+                    duration: Theme.duration-onboarding;
+                    // `theme::duration::ONBOARDING_SECS`, `Ease::InOut`.
+                    easing: cubic-bezier(0.42, 0, 0.58, 1);
+                }
+            }
+        }
+        step-1 when root.step == 1: {
+            step-reveal: 1;
+            in {
+                animate step-reveal {
+                    duration: Theme.duration-onboarding;
+                    easing: cubic-bezier(0.42, 0, 0.58, 1);
+                }
+            }
+        }
+        step-2 when root.step == 2: {
+            step-reveal: 1;
+            in {
+                animate step-reveal {
+                    duration: Theme.duration-onboarding;
+                    easing: cubic-bezier(0.42, 0, 0.58, 1);
+                }
+            }
+        }
+        step-3 when root.step == 3: {
+            step-reveal: 1;
+            in {
+                animate step-reveal {
+                    duration: Theme.duration-onboarding;
+                    easing: cubic-bezier(0.42, 0, 0.58, 1);
+                }
+            }
+        }
+    ]
+
+    VerticalLayout {
+        opacity: root.step-reveal;
+        padding: Theme.spacing-xxl;
+        spacing: Theme.spacing-md;
+
+        // Hero: 60 DIP rounded tile with the step glyph (the D2D paint's
+        // 60/32 pair).
+        HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 60px;
+                height: 60px;
+                border-radius: Theme.radius-dialog;
+                background: Theme.surface-muted;
+
+                Text {
+                    text: root.hero-symbol;
+                    font-family: "Segoe Fluent Icons";
+                    font-size: 32px;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Text {
+            text: root.title-label;
+            font-size: Theme.font-panel-title;
+            font-weight: 600;
+            color: Theme.text-primary;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.subtitle-label;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        // The recorder well, step 0 only. The capture runs from the host's
+        // HWND subclass; the well itself just reports the click. 28 DIP tall
+        // and `size-shortcut-recorder` wide, as the D2D `step_rects` laid it.
+        if root.step == 0: HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: Theme.size-shortcut-recorder;
+                height: 28px;
+                border-radius: Theme.radius-menu;
+                background: Theme.control-surface;
+
+                Text {
+                    text: root.well-label;
+                    color: Theme.text-secondary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                TouchArea {
+                    clicked => { root.record-clicked(); }
+                }
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
+        }
+
+        // Progress dots: 7 DIP, 12 DIP pitch, like the Direct2D paint.
+        HorizontalLayout {
+            alignment: center;
+            height: 7px;
+            spacing: 5px;
+
+            for dot in [
+                0, 1, 2, 3,
+            ]: Rectangle {
+                width: 7px;
+                height: 7px;
+                border-radius: self.width / 2;
+                background: dot == root.step ? Theme.text-primary : Theme.text-tertiary;
+            }
+        }
+
+        // Continue / Get Started: the 140 DIP pill.
+        HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 140px;
+                height: Theme.size-menu-button;
+                border-radius: self.height / 2;
+                background: Theme.control-surface;
+
+                Text {
+                    text: root.continue-label;
+                    color: Theme.text-primary;
+                    font-weight: 500;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                TouchArea {
+                    clicked => { root.continue-clicked(); }
+                }
+            }
+        }
+    }
+}
