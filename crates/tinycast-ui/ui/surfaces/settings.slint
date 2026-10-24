@@ -59,6 +59,10 @@ component RowCard inherits Rectangle {
     callback row-text-accepted(int);
     callback row-well-revealed(length, length);
 
+    min-height: root.rows.length * Theme.size-settings-row-height;
+    preferred-height: root.rows.length * Theme.size-settings-row-height;
+    vertical-stretch: 0;
+
     background: Theme.card-fill;
     border-width: Theme.size-hairline;
     border-color: Theme.card-stroke;
@@ -79,9 +83,10 @@ component RowCard inherits Rectangle {
             }
 
             SettingsRow {
-                y: Theme.size-hairline;
+                x: 0;
+                y: 0;
                 width: parent.width;
-                height: parent.height - Theme.size-hairline;
+                height: parent.height;
                 title: row.title;
                 subtitle: row.subtitle;
                 trailing: row.trailing;
@@ -135,6 +140,7 @@ component RowsPage inherits Rectangle {
                 x: Theme.spacing-xxl;
                 y: Theme.spacing-xxl;
                 width: parent.width - Theme.spacing-xxl * 2;
+                height: self.preferred-height;
                 spacing: Theme.spacing-section;
                 // Start-aligned: without this the layout justifies, which
                 // pushes short pages down past mid-view and stretches the
@@ -190,6 +196,7 @@ component RowsPage inherits Rectangle {
         content-height: flick.content-height;
         viewport-height: flick.height;
         offset: -flick.content-y;
+        scroll-to(offset) => { flick.content-y = -offset; }
     }
 }
 
@@ -233,6 +240,7 @@ component AboutPage inherits Rectangle {
                 x: Theme.spacing-xxl;
                 y: Theme.spacing-xxl;
                 width: parent.width - Theme.spacing-xxl * 2;
+                height: self.preferred-height;
                 spacing: Theme.spacing-md;
                 alignment: start;
 
@@ -273,41 +281,9 @@ component AboutPage inherits Rectangle {
                     wrap: word-wrap;
                 }
 
-                Rectangle {
-                    background: Theme.card-fill;
-                    border-width: Theme.size-hairline;
-                    border-color: Theme.card-stroke;
-                    border-radius: Theme.radius-magpie-card;
-                    clip: true;
-
-                    VerticalLayout {
-                        spacing: 0px;
-
-                        for row[i] in root.rows: Rectangle {
-                            height: Theme.size-settings-row-height;
-                            background: transparent;
-
-                            if i > 0: Rectangle {
-                                y: 0;
-                                height: Theme.size-hairline;
-                                background: Theme.separator;
-                            }
-
-                            SettingsRow {
-                                y: Theme.size-hairline;
-                                width: parent.width;
-                                height: parent.height - Theme.size-hairline;
-                                title: row.title;
-                                subtitle: row.subtitle;
-                                trailing: row.trailing;
-                                control: row.control;
-                                checked: row.checked;
-                                active: row.active;
-                                enabled: row.enabled;
-                                activated => { root.row-activated(row.id); }
-                            }
-                        }
-                    }
+                RowCard {
+                    rows: root.rows;
+                    row-activated(id) => { root.row-activated(id); }
                 }
 
                 Rectangle {
@@ -360,6 +336,7 @@ component AboutPage inherits Rectangle {
         content-height: flick.content-height;
         viewport-height: flick.height;
         offset: -flick.content-y;
+        scroll-to(offset) => { flick.content-y = -offset; }
     }
 }
 
@@ -402,6 +379,7 @@ component LauncherItemsPage inherits Rectangle {
     in property <length> alias-y: 0px;
     in-out property <string> alias-text;
     in-out property <length> list-scroll: 0px;
+    out property <length> list-viewport-height: list-flick.height;
     callback intro-activated(int);
     callback enable-toggled(bool);
     callback item-toggled(int);
@@ -413,233 +391,268 @@ component LauncherItemsPage inherits Rectangle {
     callback list-scrolled();
 
     changed list-scroll => { root.list-scrolled(); }
+    changed list-viewport-height => { root.list-scrolled(); }
 
     background: transparent;
 
-    VerticalLayout {
-        x: Theme.spacing-xxl;
-        y: Theme.spacing-xxl;
-        width: parent.width - Theme.spacing-xxl * 2;
-        height: parent.height - Theme.spacing-xxl * 2;
-        spacing: Theme.spacing-section;
+    page-flick := Flickable {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        content-width: self.width;
+        content-height: page-body.height;
 
-        Text {
-            text: root.heading;
-            font-size: Theme.font-panel-title;
-            font-weight: 600;
-            color: Theme.text-primary;
-            overflow: elide;
-        }
+        page-body := Rectangle {
+            x: 0;
+            y: 0;
+            width: page-flick.width;
+            height: Math.max(page-flick.height, page-stack.preferred-height + Theme.spacing-xxl * 2);
+            background: transparent;
 
-        for section in root.intro: VerticalLayout {
-            spacing: Theme.spacing-section-header-bottom;
+            page-stack := VerticalLayout {
+                x: Theme.spacing-xxl;
+                y: Theme.spacing-xxl;
+                width: parent.width - Theme.spacing-xxl * 2;
+                height: parent.height - Theme.spacing-xxl * 2;
+                spacing: Theme.spacing-section;
 
-            if section.title != "": MagHeader {
-                text-label: section.title;
-            }
+                Text {
+                    text: root.heading;
+                    font-size: Theme.font-panel-title;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    overflow: elide;
+                }
 
-            RowCard {
-                rows: section.rows;
-                row-activated(id) => { root.intro-activated(id); }
-            }
+                for section in root.intro: VerticalLayout {
+                    spacing: Theme.spacing-section-header-bottom;
 
-            if section.note != "": Text {
-                text: section.note;
-                font-size: Theme.font-chip;
-                color: Theme.text-tertiary;
-                wrap: word-wrap;
-            }
-        }
+                    if section.title != "": MagHeader {
+                        text-label: section.title;
+                    }
 
-        Rectangle {
-            background: Theme.card-fill;
-            border-width: Theme.size-hairline;
-            border-color: Theme.card-stroke;
-            border-radius: Theme.radius-magpie-card;
-            clip: true;
+                    RowCard {
+                        rows: section.rows;
+                        row-activated(id) => { root.intro-activated(id); }
+                    }
 
-            SettingsRow {
-                width: 100%;
-                height: Theme.size-settings-row-height;
-                title: root.enable-title;
-                subtitle: root.enable-subtitle;
-                control: 1;
-                checked: root.kind-on;
-                activated => { root.enable-toggled(!root.kind-on); }
-            }
-        }
-
-        list-card := Rectangle {
-            vertical-stretch: 1;
-            background: Theme.card-fill;
-            border-width: Theme.size-hairline;
-            border-color: Theme.card-stroke;
-            border-radius: Theme.radius-magpie-card;
-            clip: true;
-
-            list-flick := Flickable {
-                x: 0;
-                y: Theme.size-settings-row-height;
-                width: 100%;
-                height: parent.height - Theme.size-settings-row-height;
-                interactive: true;
-                content-width: self.width;
-                content-height: Math.max(self.height, root.items-content-height);
-                content-y <=> root.list-scroll;
+                    if section.note != "": Text {
+                        text: section.note;
+                        font-size: Theme.font-chip;
+                        color: Theme.text-tertiary;
+                        wrap: word-wrap;
+                    }
+                }
 
                 Rectangle {
-                    width: parent.width;
-                    height: Math.max(list-flick.height, root.items-content-height);
-                    background: transparent;
+                    min-height: Theme.size-settings-row-height;
+                    preferred-height: Theme.size-settings-row-height;
+                    vertical-stretch: 0;
+                    background: Theme.card-fill;
+                    border-width: Theme.size-hairline;
+                    border-color: Theme.card-stroke;
+                    border-radius: Theme.radius-magpie-card;
+                    clip: true;
 
-                    for item in root.items: Rectangle {
+                    SettingsRow {
+                        width: 100%;
+                        height: Theme.size-settings-row-height;
+                        title: root.enable-title;
+                        subtitle: root.enable-subtitle;
+                        control: 1;
+                        checked: root.kind-on;
+                        activated => { root.enable-toggled(!root.kind-on); }
+                    }
+                }
+
+                list-card := Rectangle {
+                    min-height: Theme.size-settings-row-height * 5;
+                    vertical-stretch: 1;
+                    background: Theme.card-fill;
+                    border-width: Theme.size-hairline;
+                    border-color: Theme.card-stroke;
+                    border-radius: Theme.radius-magpie-card;
+                    clip: true;
+
+                    list-flick := Flickable {
                         x: 0;
-                        y: item.top;
-                        width: parent.width;
-                        height: item.height;
-                        background: item-touch.has-hover ? Theme.row-hover : transparent;
+                        y: Theme.size-settings-row-height;
+                        width: 100%;
+                        height: parent.height - Theme.size-settings-row-height;
+                        interactive: true;
+                        content-width: self.width;
+                        content-height: Math.max(self.height, root.items-content-height);
+                        content-y <=> root.list-scroll;
 
-                        if item.top > 0: Rectangle {
+                        Rectangle {
+                            x: 0;
                             y: 0;
+                            width: parent.width;
+                            height: Math.max(list-flick.height, root.items-content-height);
+                            background: transparent;
+
+                            for item in root.items: Rectangle {
+                                x: 0;
+                                y: item.top;
+                                width: parent.width;
+                                height: item.height;
+                                background: item-touch.has-hover ? Theme.row-hover : transparent;
+
+                                if item.top > 0: Rectangle {
+                                    y: 0;
+                                    height: Theme.size-hairline;
+                                    background: Theme.separator;
+                                }
+
+                                item-touch := TouchArea {
+                                    clicked => {
+                                        if root.alias-active >= 0 {
+                                            root.alias-committed(-1);
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    x: Theme.spacing-xl;
+                                    width: root.alias-column-x - Theme.spacing-xl - Theme.spacing-md;
+                                    height: parent.height;
+                                    text: item.name;
+                                    font-size: Theme.font-row;
+                                    color: Theme.text-primary;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+
+                                if item.index != root.alias-active: Text {
+                                    x: root.alias-column-x;
+                                    width: Theme.size-shortcut-recorder;
+                                    height: parent.height;
+                                    text: item.alias == "" ? root.alias-hint : item.alias;
+                                    font-size: Theme.font-row-trailing;
+                                    color: item.alias == "" ? Theme.faint : Theme.fg-2;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+
+                                    alias-touch := TouchArea {
+                                        clicked => { root.alias-activated(item.index); }
+                                    }
+                                }
+
+                                if item.has-hotkey: well := Rectangle {
+                                    x: root.hotkey-column-x;
+                                    width: Theme.size-shortcut-recorder;
+                                    height: Theme.size-magpie-field;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: Theme.radius-magpie-control;
+                                    background: well-touch.has-hover ? Theme.pill-hover : Theme.surface;
+                                    border-width: Theme.size-hairline;
+                                    border-color: item.recording ? Theme.accent : Theme.border;
+
+                                    well-touch := TouchArea {
+                                        clicked => {
+                                            root.hotkey-clicked(
+                                                item.index,
+                                                well.absolute-position.x + well.width / 2,
+                                                well.absolute-position.y,
+                                            );
+                                        }
+                                    }
+
+                                    Text {
+                                        x: Theme.spacing-xs;
+                                        width: parent.width - Theme.spacing-xs * 2;
+                                        height: parent.height;
+                                        text: item.hotkey;
+                                        font-size: Theme.font-chip;
+                                        color: Theme.text-primary;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                Checkbox {
+                                    x: parent.width - Theme.spacing-xl - self.width;
+                                    y: (parent.height - self.height) / 2;
+                                    checked: item.visible;
+                                    toggled => { root.item-toggled(item.index); }
+                                }
+                            }
+
+                            // The one alias editor, parked over the row being edited —
+                            // the same single-field arrangement the Direct2D window
+                            // used, so a scroll or re-filter never strands a draft.
+                            // Creation is the open event, so `init` takes the keyboard.
+                            if root.alias-active >= 0: MagInput {
+                                x: root.alias-column-x;
+                                y: root.alias-y + (Theme.size-settings-row-height - self.height) / 2;
+                                width: Theme.size-shortcut-recorder;
+                                text-value <=> root.alias-text;
+                                placeholder: root.alias-hint;
+                                edited(text) => { root.alias-edited(root.alias-active, text); }
+                                accepted(text) => { root.alias-committed(root.alias-active); }
+                                focus-lost => { root.alias-committed(root.alias-active); }
+                                init => { self.focus-field(); }
+                            }
+                        }
+                    }
+
+                    // The filter rides on top of the list card.
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        width: 100%;
+                        height: Theme.size-settings-row-height;
+                        background: Theme.card-fill;
+
+                        Rectangle {
+                            y: parent.height - Theme.size-hairline;
                             height: Theme.size-hairline;
+                            width: 100%;
                             background: Theme.separator;
                         }
 
-                        item-touch := TouchArea {
-                            clicked => {
-                                if root.alias-active >= 0 {
-                                    root.alias-committed(-1);
-                                }
-                            }
-                        }
-
-                        Text {
+                        MagInput {
                             x: Theme.spacing-xl;
-                            width: root.alias-column-x - Theme.spacing-xl - Theme.spacing-md;
-                            height: parent.height;
-                            text: item.name;
-                            font-size: Theme.font-row;
-                            color: Theme.text-primary;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-
-                        if item.index != root.alias-active: Text {
-                            x: root.alias-column-x;
-                            width: Theme.size-shortcut-recorder;
-                            height: parent.height;
-                            text: item.alias == "" ? root.alias-hint : item.alias;
-                            font-size: Theme.font-row-trailing;
-                            color: item.alias == "" ? Theme.faint : Theme.fg-2;
-                            vertical-alignment: center;
-                            overflow: elide;
-
-                            alias-touch := TouchArea {
-                                clicked => { root.alias-activated(item.index); }
-                            }
-                        }
-
-                        if item.has-hotkey: well := Rectangle {
-                            x: root.hotkey-column-x;
-                            width: Theme.size-shortcut-recorder;
-                            height: Theme.size-magpie-field;
                             y: (parent.height - self.height) / 2;
-                            border-radius: Theme.radius-magpie-control;
-                            background: well-touch.has-hover ? Theme.pill-hover : Theme.surface;
-                            border-width: Theme.size-hairline;
-                            border-color: item.recording ? Theme.accent : Theme.border;
-
-                            well-touch := TouchArea {
-                                clicked => {
-                                    root.hotkey-clicked(
-                                        item.index,
-                                        well.absolute-position.x + well.width / 2,
-                                        well.absolute-position.y,
-                                    );
-                                }
-                            }
-
-                            Text {
-                                x: Theme.spacing-xs;
-                                width: parent.width - Theme.spacing-xs * 2;
-                                height: parent.height;
-                                text: item.hotkey;
-                                font-size: Theme.font-chip;
-                                color: Theme.text-primary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                                overflow: elide;
-                            }
-                        }
-
-                        Checkbox {
-                            x: parent.width - Theme.spacing-xl - self.width;
-                            y: (parent.height - self.height) / 2;
-                            checked: item.visible;
-                            toggled => { root.item-toggled(item.index); }
+                            width: parent.width - Theme.spacing-xl * 2 - Theme.spacing-xxxl;
+                            placeholder: root.filter-hint;
+                            text-value <=> root.filter-text;
+                            edited(text) => { root.filter-changed(text); }
                         }
                     }
 
-                    // The one alias editor, parked over the row being edited —
-                    // the same single-field arrangement the Direct2D window
-                    // used, so a scroll or re-filter never strands a draft.
-                    // Creation is the open event, so `init` takes the keyboard.
-                    if root.alias-active >= 0: MagInput {
-                        x: root.alias-column-x;
-                        y: root.alias-y + (Theme.size-settings-row-height - self.height) / 2;
-                        width: Theme.size-shortcut-recorder;
-                        text-value <=> root.alias-text;
-                        placeholder: root.alias-hint;
-                        edited(text) => { root.alias-edited(root.alias-active, text); }
-                        accepted(text) => { root.alias-committed(root.alias-active); }
-                        focus-lost => { root.alias-committed(root.alias-active); }
-                        init => { self.focus-field(); }
+                    if root.items-content-height <= 0px: MagEmptyState {
+                        y: Theme.size-settings-row-height;
+                        width: 100%;
+                        height: parent.height - Theme.size-settings-row-height;
+                        label: root.empty-label;
+                    }
+
+                    Scrollbar {
+                        x: parent.width - Theme.size-scrollbar-inset - self.width;
+                        y: Theme.size-settings-row-height + Theme.size-scrollbar-inset;
+                        height: parent.height - Theme.size-settings-row-height
+                            - Theme.size-scrollbar-inset * 2;
+                        content-height: Math.max(list-flick.height, root.items-content-height);
+                        viewport-height: list-flick.height;
+                        offset: -root.list-scroll;
+                        scroll-to(offset) => { root.list-scroll = -offset; }
                     }
                 }
-            }
-
-            // The filter rides on top of the list card.
-            Rectangle {
-                x: 0;
-                y: 0;
-                width: 100%;
-                height: Theme.size-settings-row-height;
-                background: Theme.card-fill;
-
-                Rectangle {
-                    y: parent.height - Theme.size-hairline;
-                    height: Theme.size-hairline;
-                    width: 100%;
-                    background: Theme.separator;
-                }
-
-                MagInput {
-                    x: Theme.spacing-xl;
-                    y: (parent.height - self.height) / 2;
-                    width: parent.width - Theme.spacing-xl * 2 - Theme.spacing-xxxl;
-                    placeholder: root.filter-hint;
-                    text-value <=> root.filter-text;
-                    edited(text) => { root.filter-changed(text); }
-                }
-            }
-
-            if root.items-content-height <= 0px: MagEmptyState {
-                y: Theme.size-settings-row-height;
-                width: 100%;
-                height: parent.height - Theme.size-settings-row-height;
-                label: root.empty-label;
-            }
-
-            Scrollbar {
-                x: parent.width - Theme.size-scrollbar-inset - self.width;
-                y: Theme.size-settings-row-height + Theme.size-scrollbar-inset;
-                height: parent.height - Theme.size-settings-row-height
-                    - Theme.size-scrollbar-inset * 2;
-                content-height: Math.max(list-flick.height, root.items-content-height);
-                viewport-height: list-flick.height;
-                offset: -root.list-scroll;
             }
         }
+    }
+
+    Scrollbar {
+        x: parent.width - Theme.size-scrollbar-inset - self.width;
+        y: Theme.size-scrollbar-inset;
+        height: parent.height - Theme.size-scrollbar-inset * 2;
+        content-height: page-flick.content-height;
+        viewport-height: page-flick.height;
+        offset: -page-flick.content-y;
+        scroll-to(offset) => { page-flick.content-y = -offset; }
     }
 
     // Trailing columns, right to left: checkbox, optional well, alias. Fixed
@@ -734,6 +747,7 @@ export component SettingsWindow inherits Window {
     in property <length> launcher-alias-y: 0px;
     in-out property <string> launcher-alias-text;
     in-out property <length> launcher-list-scroll: 0px;
+    out property <length> launcher-list-viewport: launcher-page.list-viewport-height;
     // The feature rows page (Quicklinks in 8.1; the other feature tabs in 8.2).
     in property <string> feature-heading;
     in property <[SettingsPageSection]> feature-sections;

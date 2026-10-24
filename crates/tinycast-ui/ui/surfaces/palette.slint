@@ -821,10 +821,9 @@ export component PaletteWindow inherits Window {
                 }
             }
 
-            // 16 DIP hover strip: the 6/10 DIP rail alone is a 6 px target.
+            // Shared 16 DIP target with direct thumb dragging and track seek.
             Scrollbar {
-                // self.width is 6 at rest and 10 under the pointer; in split mode
-                // the rail hugs the 290 DIP list column instead of the panel edge.
+                // In split mode the rail hugs the 290 DIP list column.
                 x: root.split
                     ? root.split-x - Theme.size-scrollbar-inset - self.width
                     : parent.width - Theme.size-scrollbar-inset - self.width;
@@ -835,16 +834,7 @@ export component PaletteWindow inherits Window {
                 // content-y is negative while scrolled down; the rail wants a
                 // positive offset.
                 offset: -root.scroll-y;
-                hovered: scroll-zone.has-hover;
-            }
-
-            scroll-zone := TouchArea {
-                x: root.split
-                    ? root.split-x - Theme.size-scrollbar-hover-zone
-                    : parent.width - Theme.size-scrollbar-hover-zone;
-                y: 0;
-                width: Theme.size-scrollbar-hover-zone;
-                height: 100%;
+                scroll-to(offset) => { root.scroll-y = -offset; }
             }
         }
 

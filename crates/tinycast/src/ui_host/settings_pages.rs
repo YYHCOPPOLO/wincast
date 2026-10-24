@@ -23,11 +23,6 @@ pub(super) type ItemRow = tinycast_ui::LauncherItemRow;
 /// How far past the viewport the visible slice reaches, in list rows.
 const OVERSCAN_ROWS: usize = 4;
 
-/// The launcher list viewport is the window's detail column below the heading,
-/// the intro cards, the enable row and the filter; 620 DIP bounds it with room
-/// to spare at the 700 DIP minimum.
-const LIST_VIEWPORT: f32 = 620.0;
-
 /// The launcher page: intro cards (Commands only), the kind enable switch, and
 /// the visible slice of the filtered items.
 pub(super) fn sync_launcher(ui: &Settings, inner: &mut Inner, core: &crate::app_core::AppCore) {
@@ -61,9 +56,6 @@ pub(super) fn sync_launcher(ui: &Settings, inner: &mut Inner, core: &crate::app_
     inner.launcher_ids = filtered.iter().map(|e| e.id.clone()).collect();
     inner.launcher_actions = filtered.iter().map(|e| hotkey_action_key(e)).collect();
 
-    let row_h = size::SETTINGS_ROW_HEIGHT;
-    let count = filtered.len();
-    ui.set_launcher_items_height((count as f32 * row_h).max(0.0));
     slice_launcher(ui, inner, core);
 }
 
@@ -82,10 +74,18 @@ pub(super) fn slice_launcher(ui: &Settings, inner: &mut Inner, core: &crate::app
 
     let row_h = size::SETTINGS_ROW_HEIGHT;
     let count = filtered.len();
-    let scroll = ui.get_launcher_list_scroll();
+    let content = count as f32 * row_h;
+    ui.set_launcher_items_height(content);
+    let viewport = ui.get_launcher_list_viewport().max(row_h);
+    // Slint content-y is negative when scrolled down; row indexes use a
+    // positive offset. Clamp after filtering/resizing before slicing.
+    let scroll = (-ui.get_launcher_list_scroll()).clamp(0.0, (content - viewport).max(0.0));
+    if (ui.get_launcher_list_scroll() + scroll).abs() > f32::EPSILON {
+        ui.set_launcher_list_scroll(-scroll);
+    }
     let first = (scroll / row_h).floor().max(0.0) as usize;
     let first = first.saturating_sub(OVERSCAN_ROWS);
-    let last = (((scroll + LIST_VIEWPORT) / row_h).ceil() as usize + OVERSCAN_ROWS).min(count);
+    let last = (((scroll + viewport) / row_h).ceil() as usize + OVERSCAN_ROWS).min(count);
     let recording_action = inner.recorder.action.clone();
     let mut rows = Vec::with_capacity(last.saturating_sub(first));
     for index in first..last {
@@ -1310,6 +1310,7 @@ pub(super) fn filter_changed(ptr: *mut Inner, text: String) {
         let tab = (*core).settings_tab;
         if LauncherItemsSection::for_lang(tab, lang).is_some() {
             if let Some(ui) = ui_of(ptr) {
+                ui.set_launcher_list_scroll(0.0);
                 ui.set_launcher_empty(SharedString::from(empty_list_copy(
                     &inner.filter_query,
                     lang,

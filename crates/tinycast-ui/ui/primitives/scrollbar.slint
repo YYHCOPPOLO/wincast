@@ -1,43 +1,46 @@
 import { Theme } from "../theme.slint";
 
-// Thin overlay rail: 6 DIP at rest, 10 DIP under the pointer, 28 DIP minimum
-// thumb.
+// Thin overlay rail inside a stable 16 DIP pointer target. Thumb movement is
+// direct; only the rail's hover width animates.
 export component Scrollbar inherits Rectangle {
     in property <length> content-height;
     in property <length> viewport-height;
     in property <length> offset;
-    in property <bool> dragging: false;
-    // The palette arms this from its 16 DIP hover strip; the rail alone is too
-    // narrow to hit.
+    out property <bool> dragging: false;
     in property <bool> hovered: false;
+    callback scroll-to(length);
 
-    width: (root.hovered || touch.has-hover)
-        ? Theme.size-scrollbar-hover-width : Theme.size-scrollbar-width;
+    width: Theme.size-scrollbar-hover-zone;
     height: 100%;
     background: transparent;
     visible: root.content-height > root.viewport-height;
 
-    animate width {
-        duration: 120ms;
-        easing: ease-out;
-    }
-
     // `visible: false` still evaluates the bindings, so every divisor is guarded.
     property <length> safe-content: Math.max(1px, root.content-height);
     property <length> travel: Math.max(0px, root.height - thumb.height);
-    property <length> thumb-height: Math.max(
+    property <length> thumb-height: Math.min(root.height, Math.max(
         Theme.size-scrollbar-min-thumb,
         root.height * (root.viewport-height / root.safe-content),
-    );
+    ));
+    property <length> maximum-offset: Math.max(0px, root.safe-content - root.viewport-height);
     property <length> thumb-y:
-        root.offset
-            / Math.max(1px, root.safe-content - root.viewport-height)
+        Math.clamp(root.offset, 0px, root.maximum-offset)
+            / Math.max(1px, root.maximum-offset)
             * root.travel;
-    property <bool> lit: root.hovered || touch.has-hover;
+    property <bool> lit: root.hovered || touch.has-hover || root.dragging;
+    private property <length> grab-y: 0px;
+
+    function move-thumb(y: length) {
+        root.scroll-to(
+            Math.clamp((y - root.grab-y) / Math.max(1px, root.travel), 0, 1)
+                * root.maximum-offset,
+        );
+    }
 
     thumb := Rectangle {
+        x: root.width - self.width;
         y: root.thumb-y;
-        width: parent.width;
+        width: root.lit ? Theme.size-scrollbar-hover-width : Theme.size-scrollbar-width;
         height: root.thumb-height;
         border-radius: self.width / 2;
         background: Theme.text-primary.with-alpha(
@@ -46,13 +49,29 @@ export component Scrollbar inherits Rectangle {
             : Theme.scrollbar-rest-alpha,
         );
 
-        // The thumb tracks the wheel directly: a short ease-out smooths wheel
-        // steps without the spring's bounce, which read as lag then a jump.
-        animate y, height {
-            duration: 96ms;
+        animate width {
+            duration: 120ms;
             easing: ease-out;
         }
     }
 
-    touch := TouchArea {}
+    touch := TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                root.grab-y = self.mouse-y >= root.thumb-y
+                    && self.mouse-y <= root.thumb-y + root.thumb-height
+                    ? self.mouse-y - root.thumb-y : root.thumb-height / 2;
+                root.dragging = true;
+                root.move-thumb(self.mouse-y);
+            } else if (event.kind == PointerEventKind.up
+                || event.kind == PointerEventKind.cancel) {
+                root.dragging = false;
+            }
+        }
+        moved => {
+            if (root.dragging) {
+                root.move-thumb(self.mouse-y);
+            }
+        }
+    }
 }
