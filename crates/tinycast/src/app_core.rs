@@ -42,6 +42,7 @@ use crate::features::clipboard::service::store::{ClipboardFilter, ClipboardStore
 use crate::features::clipboard::ui::screen as clip_screen;
 use crate::features::custom_commands::service::store::CustomCommandStore;
 use crate::features::custom_commands::ui::coordinator as custom_coordinator;
+use crate::features::custom_commands::ui::editor::CommandDraft;
 use crate::features::launcher::service::app_index::AppIndex;
 use crate::features::launcher::settings::items::{
     commands_catalog_for, commit_alias_text, hotkey_action_key,
@@ -1162,20 +1163,43 @@ impl AppCore {
             );
             return;
         }
-        let passphrase = crate::features::custom_commands::ui::editor::edit_with_appearance(
-            owner,
-            None,
-            crate::features::custom_commands::ui::editor::EditorLabels {
-                title: "Raycast passphrase",
-                value_label: "Passphrase",
-                show_confirm: false,
-            },
-            self.ui_lang(),
-            self.resolved_appearance(),
-        )
-        .map(|d| d.command)
-        .unwrap_or_default();
-        match crate::features::backup::service::raycast::read(&bytes, &passphrase) {
+        // The passphrase prompt is the Slint sheet now: the import continues
+        // in its accept continuation, and a cancelled prompt reads nothing.
+        let lang = self.ui_lang();
+        let request = crate::ui_host::editor::EditorRequest {
+            title: tinycast_pure::i18n::raycast_passphrase_title(lang).to_string(),
+            name_label: String::new(),
+            value_label: tinycast_pure::i18n::raycast_passphrase_label(lang).to_string(),
+            confirm_label: String::new(),
+            accept_label: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Open, lang)
+                .to_string(),
+            cancel_label: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang)
+                .to_string(),
+            show_confirm: false,
+            name_hidden: true,
+            initial_name: String::new(),
+            initial_value: String::new(),
+            initial_confirm: false,
+        };
+        let host = self.host;
+        let opened = crate::ui_host::editor::open(
+            self.settings_window_hwnd(),
+            request,
+            Box::new(move |draft| {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).finish_raycast_import(&bytes, &draft.command);
+                    }
+                }
+            }),
+            Box::new(|| {}),
+        );
+        let _ = opened;
+    }
+
+    /// The accept continuation of the Raycast passphrase prompt.
+    fn finish_raycast_import(&mut self, bytes: &[u8], passphrase: &str) {
+        match crate::features::backup::service::raycast::read(bytes, passphrase) {
             Ok(json) => {
                 let was_snippets = self.settings.snippets_enabled;
                 crate::features::backup::service::actions::apply_import(&mut self.settings, json);
@@ -1495,7 +1519,9 @@ impl AppCore {
         self.invalidate_settings();
     }
 
-    pub fn new_custom_command(&mut self, owner: HWND) {
+    /// Opens the Slint command sheet for a new command; the continuation owns
+    /// the write, so a cancelled sheet never touches storage.
+    pub fn begin_new_custom_command(&mut self) {
         if !self.custom_commands.is_available() {
             self.show_alert(
                 "Library unavailable",
@@ -1503,18 +1529,50 @@ impl AppCore {
             );
             return;
         }
-        self.pause_global_hotkeys();
-        let drafted = crate::features::custom_commands::ui::editor::edit_with_appearance(
-            owner,
-            None,
-            crate::features::custom_commands::ui::editor::command_labels(self.ui_lang()),
-            self.ui_lang(),
-            self.resolved_appearance(),
-        );
-        self.resume_global_hotkeys();
-        let Some(draft) = drafted else {
-            return;
+        let lang = self.ui_lang();
+        let labels = crate::features::custom_commands::ui::editor::command_labels(lang);
+        let request = crate::ui_host::editor::EditorRequest {
+            title: labels.title.to_string(),
+            name_label: tinycast_pure::i18n::editor_name_label(lang).to_string(),
+            value_label: labels.value_label.to_string(),
+            confirm_label: tinycast_pure::i18n::editor_needs_confirmation(lang).to_string(),
+            accept_label: tinycast_pure::i18n::editor_save(lang).to_string(),
+            cancel_label: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang)
+                .to_string(),
+            show_confirm: true,
+            name_hidden: false,
+            initial_name: String::new(),
+            initial_value: String::new(),
+            initial_confirm: false,
         };
+        self.pause_global_hotkeys();
+        let host = self.host;
+        let opened = crate::ui_host::editor::open(
+            self.settings_window_hwnd(),
+            request,
+            Box::new(move |draft| {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).resume_global_hotkeys();
+                        (*core).save_new_custom_command(draft);
+                    }
+                }
+            }),
+            Box::new(move || {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).resume_global_hotkeys();
+                    }
+                }
+            }),
+        );
+        if !opened {
+            self.resume_global_hotkeys();
+        }
+    }
+
+    /// The accept continuation of `begin_new_custom_command`.
+    pub(crate) fn save_new_custom_command(&mut self, draft: CommandDraft) {
         let command = tinycast_pure::custom_command::CustomCommand {
             id: new_item_id(),
             name: draft.name,
@@ -1528,7 +1586,8 @@ impl AppCore {
         self.invalidate_settings();
     }
 
-    pub fn edit_custom_command_at(&mut self, owner: HWND, index: usize) {
+    /// Opens the Slint command sheet over an existing command.
+    pub fn begin_edit_custom_command_at(&mut self, index: usize) {
         if !self.custom_commands.is_available() {
             self.show_alert(
                 "Library unavailable",
@@ -1539,24 +1598,53 @@ impl AppCore {
         let Some(existing) = self.custom_commands.commands().get(index).cloned() else {
             return;
         };
-        let initial = crate::features::custom_commands::ui::editor::CommandDraft {
-            name: existing.name.clone(),
-            command: existing.command.clone(),
-            confirm: existing.confirm,
+        let lang = self.ui_lang();
+        let labels = crate::features::custom_commands::ui::editor::command_labels(lang);
+        let request = crate::ui_host::editor::EditorRequest {
+            title: labels.title.to_string(),
+            name_label: tinycast_pure::i18n::editor_name_label(lang).to_string(),
+            value_label: labels.value_label.to_string(),
+            confirm_label: tinycast_pure::i18n::editor_needs_confirmation(lang).to_string(),
+            accept_label: tinycast_pure::i18n::editor_save(lang).to_string(),
+            cancel_label: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang)
+                .to_string(),
+            show_confirm: true,
+            name_hidden: false,
+            initial_name: existing.name.clone(),
+            initial_value: existing.command.clone(),
+            initial_confirm: existing.confirm,
         };
         self.pause_global_hotkeys();
-        let drafted = crate::features::custom_commands::ui::editor::edit_with_appearance(
-            owner,
-            Some(&initial),
-            crate::features::custom_commands::ui::editor::command_labels(self.ui_lang()),
-            self.ui_lang(),
-            self.resolved_appearance(),
+        let host = self.host;
+        let opened = crate::ui_host::editor::open(
+            self.settings_window_hwnd(),
+            request,
+            Box::new(move |draft| {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).resume_global_hotkeys();
+                        (*core).save_edited_custom_command(index, draft);
+                    }
+                }
+            }),
+            Box::new(move || {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).resume_global_hotkeys();
+                    }
+                }
+            }),
         );
-        self.resume_global_hotkeys();
-        let Some(draft) = drafted else {
+        if !opened {
+            self.resume_global_hotkeys();
+        }
+    }
+
+    /// The accept continuation of `begin_edit_custom_command_at`.
+    pub(crate) fn save_edited_custom_command(&mut self, index: usize, draft: CommandDraft) {
+        let Some(mut updated) = self.custom_commands.commands().get(index).cloned() else {
             return;
         };
-        let mut updated = existing;
         updated.name = draft.name;
         updated.command = draft.command;
         updated.confirm = draft.confirm;
@@ -1567,7 +1655,8 @@ impl AppCore {
         self.invalidate_settings();
     }
 
-    pub fn edit_quicklink(&mut self, owner: HWND, index: Option<usize>) {
+    /// Opens the Slint quicklink sheet; the continuation owns the write.
+    pub fn begin_edit_quicklink(&mut self, index: Option<usize>) {
         if !self.quicklinks.is_available() {
             self.show_alert(
                 "Library unavailable",
@@ -1575,34 +1664,77 @@ impl AppCore {
             );
             return;
         }
-        let initial = index.and_then(|i| {
-            self.quicklinks.links().get(i).map(|link| {
-                crate::features::quicklinks::ui::editor::QuicklinkDraft {
-                    name: link.name.clone(),
-                    destination: link.destination.clone(),
-                }
-            })
-        });
-        let existing = index.and_then(|i| self.quicklinks.links().get(i).cloned());
-        self.pause_global_hotkeys();
-        let drafted = crate::features::quicklinks::ui::editor::edit(
-            owner,
-            initial.as_ref(),
-            self.ui_lang(),
-            self.resolved_appearance(),
-        );
-        self.resume_global_hotkeys();
-        let Some(draft) = drafted else {
-            return;
+        let initial = index.and_then(|i| self.quicklinks.links().get(i).cloned());
+        let lang = self.ui_lang();
+        let labels = crate::features::custom_commands::ui::editor::quicklink_labels(lang);
+        let request = crate::ui_host::editor::EditorRequest {
+            title: labels.title.to_string(),
+            name_label: tinycast_pure::i18n::editor_name_label(lang).to_string(),
+            value_label: labels.value_label.to_string(),
+            confirm_label: String::new(),
+            accept_label: tinycast_pure::i18n::editor_save(lang).to_string(),
+            cancel_label: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang)
+                .to_string(),
+            show_confirm: false,
+            name_hidden: false,
+            initial_name: initial
+                .as_ref()
+                .map(|link| link.name.clone())
+                .unwrap_or_default(),
+            initial_value: initial
+                .as_ref()
+                .map(|link| link.destination.clone())
+                .unwrap_or_default(),
+            initial_confirm: false,
         };
-        let mut link = existing.unwrap_or_else(|| tinycast_pure::quicklink::Quicklink {
-            id: new_item_id(),
-            name: String::new(),
-            destination: String::new(),
-            pinned: false,
-            show_in_root: true,
-            pin_order: 0,
-        });
+        self.pause_global_hotkeys();
+        let host = self.host;
+        let opened = crate::ui_host::editor::open(
+            self.settings_window_hwnd(),
+            request,
+            Box::new(move |draft| {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).resume_global_hotkeys();
+                        (*core).save_quicklink(
+                            index,
+                            crate::features::quicklinks::ui::editor::QuicklinkDraft {
+                                name: draft.name,
+                                destination: draft.command,
+                            },
+                        );
+                    }
+                }
+            }),
+            Box::new(move || {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).resume_global_hotkeys();
+                    }
+                }
+            }),
+        );
+        if !opened {
+            self.resume_global_hotkeys();
+        }
+    }
+
+    /// The accept continuation of `begin_edit_quicklink`.
+    pub(crate) fn save_quicklink(
+        &mut self,
+        index: Option<usize>,
+        draft: crate::features::quicklinks::ui::editor::QuicklinkDraft,
+    ) {
+        let mut link = index
+            .and_then(|i| self.quicklinks.links().get(i).cloned())
+            .unwrap_or_else(|| tinycast_pure::quicklink::Quicklink {
+                id: new_item_id(),
+                name: String::new(),
+                destination: String::new(),
+                pinned: false,
+                show_in_root: true,
+                pin_order: 0,
+            });
         link.name = draft.name;
         link.destination = draft.destination;
         if let Err(err) = self.quicklinks.upsert(link) {
@@ -1614,7 +1746,7 @@ impl AppCore {
 
     fn create_quicklink_from_command(&mut self) {
         self.hide_palette();
-        self.edit_quicklink(self.host, None);
+        self.begin_edit_quicklink(None);
     }
 
     pub fn import_quicklinks(&mut self, owner: HWND) {
@@ -2032,6 +2164,16 @@ impl AppCore {
 
     pub fn ui_lang(&self) -> tinycast_pure::i18n::UiLang {
         tinycast_pure::i18n::UiLang::parse(&self.settings.ui_language)
+    }
+
+    /// The settings window's real HWND once winit made it; the tray host is
+    /// the fallback owner for sheets opened from the palette path.
+    fn settings_window_hwnd(&self) -> HWND {
+        self.settings_window
+            .as_ref()
+            .map(|window| window.hwnd())
+            .filter(|hwnd| !hwnd.is_invalid())
+            .unwrap_or(self.host)
     }
 
     pub(crate) fn show_alert(&self, title: &str, message: &str) {

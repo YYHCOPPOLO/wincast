@@ -640,6 +640,16 @@ pub(super) fn invalidate_inner(inner: *mut Inner) {
     refresh_inner(inner);
 }
 
+/// The real Slint HWND once ready; the tray host is the fallback owner.
+pub(super) fn settings_owner(inner: *mut Inner) -> HWND {
+    let hwnd = unsafe { (*inner).hwnd };
+    if hwnd.is_invalid() {
+        unsafe { (*inner).host }
+    } else {
+        hwnd
+    }
+}
+
 /// One sidebar model row: a section header or a SettingsTab. Headers take the
 /// magpie label dress: Latin copy is uppercased (a no-op for Chinese).
 fn sidebar_model(lang: UiLang) -> Vec<SidebarRow> {

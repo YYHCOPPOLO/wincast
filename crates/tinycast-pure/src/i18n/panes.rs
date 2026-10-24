@@ -634,6 +634,14 @@ pub fn settings_placeholder_note(lang: UiLang) -> &'static str {
     )
 }
 
+pub fn raycast_passphrase_title(lang: UiLang) -> &'static str {
+    pick(lang, "Raycast passphrase", "Raycast 密码")
+}
+
+pub fn raycast_passphrase_label(lang: UiLang) -> &'static str {
+    pick(lang, "Passphrase", "密码")
+}
+
 pub fn backup_storage_note(path: &str, lang: UiLang) -> String {
     match lang {
         UiLang::En => format!("Settings file: {path}"),

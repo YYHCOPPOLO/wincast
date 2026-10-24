@@ -1,6 +1,8 @@
-//! Quicklink editor sheet. Width is 480 DIP.
+//! The quicklink editor's shared surface: the draft struct. The sheet itself
+//! is the Slint `EditorWindow` hosted by `ui_host::editor`; the width and the
+//! labels come from the custom-command editor's constants.
 
-use crate::features::custom_commands::ui::editor::{self, CommandDraft};
+use crate::features::custom_commands::ui::editor;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QuicklinkDraft {
@@ -8,29 +10,7 @@ pub struct QuicklinkDraft {
     pub destination: String,
 }
 
-pub fn edit(
-    owner: windows::Win32::Foundation::HWND,
-    initial: Option<&QuicklinkDraft>,
-    lang: tinycast_pure::i18n::UiLang,
-    appearance: u8,
-) -> Option<QuicklinkDraft> {
-    let seed = initial.map(|d| CommandDraft {
-        name: d.name.clone(),
-        command: d.destination.clone(),
-        confirm: false,
-    });
-    let drafted = editor::edit_with_appearance(
-        owner,
-        seed.as_ref(),
-        editor::quicklink_labels(lang),
-        lang,
-        appearance,
-    )?;
-    Some(QuicklinkDraft {
-        name: drafted.name,
-        destination: drafted.command,
-    })
-}
+pub const EDITOR_WIDTH_DIP: f32 = editor::EDITOR_WIDTH_DIP;
 
 #[cfg(test)]
 mod tests {
@@ -38,6 +18,6 @@ mod tests {
 
     #[test]
     fn editor_sheet_is_480_dip() {
-        assert_eq!(editor::EDITOR_WIDTH_DIP, 480.0);
+        assert_eq!(EDITOR_WIDTH_DIP, 480.0);
     }
 }

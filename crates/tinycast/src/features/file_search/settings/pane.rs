@@ -1,7 +1,6 @@
 //! Settings → File Search: enable, folders, ignore patterns.
 
 use tinycast_pure::theme;
-use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1RenderTarget, D2D1_DRAW_TEXT_OPTIONS_CLIP};
@@ -11,18 +10,9 @@ use windows::Win32::UI::Shell::{
     FileOpenDialog, IFileOpenDialog, IShellItem, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS,
     SIGDN_FILESYSPATH,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetWindowLongPtrW,
-    GetWindowTextLengthW, GetWindowTextW, IsWindow, LoadCursorW, RegisterClassW,
-    SetForegroundWindow, SetWindowLongPtrW, ShowWindow, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA,
-    IDC_ARROW, MSG, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY,
-    WM_KEYDOWN, WM_NCDESTROY, WNDCLASSW, WS_CHILD, WS_EX_CLIENTEDGE, WS_POPUP, WS_TABSTOP,
-    WS_VISIBLE,
-};
 
 use crate::design_system::settings as ds;
 use crate::features::launcher::settings::items::Formats;
-use crate::platform::screens::dip_scalar_to_px;
 
 const ROW_H: f32 = 52.0;
 const ITEM_H: f32 = 36.0;
@@ -311,193 +301,6 @@ pub fn pick_folder(owner: HWND) -> Option<String> {
         let path = item.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
         Some(path.to_string().unwrap_or_default()).filter(|s| !s.is_empty())
     }
-}
-
-pub fn ask_pattern(owner: HWND, lang: tinycast_pure::i18n::UiLang) -> Option<String> {
-    ask_string(owner, tinycast_pure::i18n::ignore_pattern_title(lang), lang)
-}
-
-fn ask_string(owner: HWND, title: &str, lang: tinycast_pure::i18n::UiLang) -> Option<String> {
-    let hwnd = create_prompt(owner, title, lang).ok()?;
-    unsafe {
-        let _ = ShowWindow(hwnd, SW_SHOW);
-        let _ = SetForegroundWindow(hwnd);
-        let mut msg = MSG::default();
-        while IsWindow(hwnd).as_bool() {
-            if !crate::platform::modal::next_message(&mut msg) {
-                let _ = DestroyWindow(hwnd);
-                break;
-            }
-            if msg.message == WM_KEYDOWN && msg.wParam.0 as u16 == 0x1B {
-                let _ = DestroyWindow(hwnd);
-                continue;
-            }
-            let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-        take_prompt()
-    }
-}
-
-const PROMPT_CLASS: windows::core::PCWSTR = w!("TinycastTextPrompt");
-const ID_EDIT: usize = 101;
-const ID_OK: usize = 102;
-const ID_CANCEL: usize = 103;
-
-struct PromptInner {
-    edit: HWND,
-    result: Option<String>,
-}
-
-static LAST_PROMPT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-fn take_prompt() -> Option<String> {
-    LAST_PROMPT.lock().ok().and_then(|mut g| g.take())
-}
-
-fn create_prompt(
-    owner: HWND,
-    title: &str,
-    lang: tinycast_pure::i18n::UiLang,
-) -> windows::core::Result<HWND> {
-    unsafe {
-        let hinstance = windows::Win32::System::LibraryLoader::GetModuleHandleW(None)?;
-        let class = WNDCLASSW {
-            style: CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(prompt_wndproc),
-            hInstance: hinstance.into(),
-            lpszClassName: PROMPT_CLASS,
-            hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-            ..Default::default()
-        };
-        let _ = RegisterClassW(&class);
-        let dpi = windows::Win32::UI::HiDpi::GetDpiForWindow(owner).max(96);
-        let w = dip_scalar_to_px(360.0, dpi);
-        let h = dip_scalar_to_px(140.0, dpi);
-        let title_wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
-        let hwnd = CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            PROMPT_CLASS,
-            PCWSTR(title_wide.as_ptr()),
-            WINDOW_STYLE(WS_POPUP.0 | 0x00C0_0000 | 0x0008_0000),
-            200,
-            200,
-            w,
-            h,
-            owner,
-            None,
-            hinstance,
-            None,
-        )?;
-        let edit = CreateWindowExW(
-            WS_EX_CLIENTEDGE,
-            w!("EDIT"),
-            w!(""),
-            WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | 0x0080),
-            16,
-            16,
-            w - 32,
-            dip_scalar_to_px(28.0, dpi),
-            hwnd,
-            windows::Win32::UI::WindowsAndMessaging::HMENU(ID_EDIT as *mut core::ffi::c_void),
-            hinstance,
-            None,
-        )?;
-        let add_wide: Vec<u16> = tinycast_pure::i18n::clipboard_add(lang)
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-        let cancel_wide: Vec<u16> =
-            tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang)
-                .encode_utf16()
-                .chain(std::iter::once(0))
-                .collect();
-        let _ = CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            w!("BUTTON"),
-            PCWSTR(add_wide.as_ptr()),
-            WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | 1),
-            w - 160,
-            h - 56,
-            64,
-            28,
-            hwnd,
-            windows::Win32::UI::WindowsAndMessaging::HMENU(ID_OK as *mut core::ffi::c_void),
-            hinstance,
-            None,
-        )?;
-        let _ = CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            w!("BUTTON"),
-            PCWSTR(cancel_wide.as_ptr()),
-            WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
-            w - 88,
-            h - 56,
-            72,
-            28,
-            hwnd,
-            windows::Win32::UI::WindowsAndMessaging::HMENU(ID_CANCEL as *mut core::ffi::c_void),
-            hinstance,
-            None,
-        )?;
-        let inner = Box::new(PromptInner { edit, result: None });
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(inner) as isize);
-        Ok(hwnd)
-    }
-}
-
-unsafe extern "system" fn prompt_wndproc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: windows::Win32::Foundation::WPARAM,
-    lparam: windows::Win32::Foundation::LPARAM,
-) -> windows::Win32::Foundation::LRESULT {
-    match msg {
-        WM_COMMAND => {
-            let id = (wparam.0 as u16) as usize;
-            if id == ID_OK || id == ID_CANCEL {
-                finish_prompt(hwnd, id == ID_OK);
-            }
-            windows::Win32::Foundation::LRESULT(0)
-        }
-        WM_KEYDOWN if wparam.0 as u16 == 0x0D => {
-            finish_prompt(hwnd, true);
-            windows::Win32::Foundation::LRESULT(0)
-        }
-        WM_CLOSE => {
-            finish_prompt(hwnd, false);
-            windows::Win32::Foundation::LRESULT(0)
-        }
-        WM_DESTROY => {
-            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-            if ptr != 0 {
-                let inner = Box::from_raw(ptr as *mut PromptInner);
-                if let Ok(mut g) = LAST_PROMPT.lock() {
-                    *g = inner.result;
-                }
-            }
-            DefWindowProcW(hwnd, msg, wparam, lparam)
-        }
-        WM_NCDESTROY => {
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-            DefWindowProcW(hwnd, msg, wparam, lparam)
-        }
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-    }
-}
-
-unsafe fn finish_prompt(hwnd: HWND, ok: bool) {
-    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-    if ptr != 0 && ok {
-        let inner = &mut *(ptr as *mut PromptInner);
-        let len = GetWindowTextLengthW(inner.edit) as usize;
-        let mut buf = vec![0u16; len + 1];
-        let n = GetWindowTextW(inner.edit, &mut buf);
-        if n > 0 {
-            inner.result = Some(String::from_utf16_lossy(&buf[..n as usize]));
-        }
-    }
-    let _ = DestroyWindow(hwnd);
 }
 
 #[cfg(test)]

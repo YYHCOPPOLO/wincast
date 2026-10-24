@@ -725,7 +725,6 @@ pub(super) fn intro_activated(ptr: *mut Inner, id: i32) {
     let Some(core) = core_of(ptr) else {
         return;
     };
-    let host = unsafe { (*ptr).host };
     unsafe {
         match id {
             0 => {
@@ -738,11 +737,11 @@ pub(super) fn intro_activated(ptr: *mut Inner, id: i32) {
             }
             2 => {
                 commit_alias(ptr);
-                (*core).new_custom_command(host);
+                (*core).begin_new_custom_command();
             }
             index if index >= 1000 => {
                 commit_alias(ptr);
-                (*core).edit_custom_command_at(host, (index - 1000) as usize);
+                (*core).begin_edit_custom_command_at((index - 1000) as usize);
             }
             _ => {}
         }
@@ -768,10 +767,10 @@ pub(super) fn feature_row_activated(ptr: *mut Inner, id: i32) {
                         !(*core).settings.quicklinks_show_in_launcher,
                     );
                 }
-                0 => (*core).edit_quicklink(host, None),
+                0 => (*core).begin_edit_quicklink(None),
                 1 => (*core).import_quicklinks(host),
                 2 => (*core).export_quicklinks(host),
-                index if index >= 100 => (*core).edit_quicklink(host, Some((index - 100) as usize)),
+                index if index >= 100 => (*core).begin_edit_quicklink(Some((index - 100) as usize)),
                 _ => {}
             },
 
@@ -874,11 +873,35 @@ pub(super) fn feature_row_activated(ptr: *mut Inner, id: i32) {
                     (*core).remove_file_search_ignore((index - 40) as usize);
                 }
                 50 => {
-                    if let Some(pattern) =
-                        crate::features::file_search::settings::pane::ask_pattern(host, lang)
-                    {
-                        (*core).add_file_search_ignore(pattern);
-                    }
+                    // The ignore-pattern prompt is the Slint sheet now; the
+                    // pattern lands through its accept continuation.
+                    let request = crate::ui_host::editor::EditorRequest {
+                        title: tinycast_pure::i18n::ignore_pattern_title(lang).to_string(),
+                        name_label: String::new(),
+                        value_label: tinycast_pure::i18n::ignore_pattern_title(lang).to_string(),
+                        confirm_label: String::new(),
+                        accept_label: tinycast_pure::i18n::clipboard_add(lang).to_string(),
+                        cancel_label: tinycast_pure::i18n::chrome(
+                            tinycast_pure::i18n::Chrome::Cancel,
+                            lang,
+                        )
+                        .to_string(),
+                        show_confirm: false,
+                        name_hidden: true,
+                        initial_name: String::new(),
+                        initial_value: String::new(),
+                        initial_confirm: false,
+                    };
+                    let _ = crate::ui_host::editor::open(
+                        super::settings::settings_owner(ptr),
+                        request,
+                        Box::new(move |draft| {
+                            if let Some(core) = crate::ui_host::app_core(host) {
+                                (*core).add_file_search_ignore(draft.command);
+                            }
+                        }),
+                        Box::new(|| {}),
+                    );
                 }
                 _ => {}
             },

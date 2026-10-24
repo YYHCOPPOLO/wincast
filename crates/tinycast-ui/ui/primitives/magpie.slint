@@ -28,10 +28,16 @@ export component MagSelectButton inherits Rectangle {
     in property <string> symbol;
     in property <bool> open: false;
     in property <bool> enabled: true;
+    // The value column's cap; the text elides past it.
+    in property <length> value-max-width: Theme.size-shortcut-recorder * 2 + Theme.spacing-xl;
     callback clicked;
 
     height: Theme.size-magpie-field;
-    min-width: Theme.size-magpie-field * 4;
+    width: Math.min(
+        value-text.preferred-width + Theme.size-settings-row-icon + Theme.font-calc-badge
+            + Theme.spacing-md * 3 + Theme.spacing-xs,
+        root.value-max-width,
+    );
     border-radius: Theme.radius-magpie-control;
     background: touch.has-hover && root.enabled ? Theme.pill-hover : Theme.surface;
     border-width: Theme.size-hairline;
@@ -50,7 +56,7 @@ export component MagSelectButton inherits Rectangle {
             vertical-alignment: center;
         }
 
-        Text {
+        value-text := Text {
             text: root.value;
             font-family: "Segoe UI";
             font-size: Theme.font-row-trailing;
@@ -86,6 +92,8 @@ export component MagChip inherits Rectangle {
     callback clicked;
 
     height: Theme.size-magpie-input;
+    width: chip-text.preferred-width + Theme.spacing-md * 2
+        + (root.has-dot ? Theme.size-hairline * 5 + Theme.spacing-xs : 0px);
     border-radius: self.height / 2;
     background: touch.has-hover && root.enabled ? Theme.pill-hover : Theme.surface-muted;
 
@@ -101,7 +109,7 @@ export component MagChip inherits Rectangle {
             background: root.dot;
         }
 
-        Text {
+        chip-text := Text {
             text: root.label;
             font-family: "Segoe UI";
             font-size: Theme.font-row-trailing;
@@ -124,12 +132,13 @@ export component MagBadge inherits Rectangle {
     in property <int> tone: 0;
 
     height: Theme.size-magpie-input;
+    width: badge-text.preferred-width + Theme.spacing-md * 2;
     border-radius: self.height / 2;
     background: root.tone == 0 ? Theme.green-soft
         : root.tone == 1 ? Theme.red-soft
         : Theme.amber-soft;
 
-    Text {
+    badge-text := Text {
         x: Theme.spacing-md;
         width: parent.width - Theme.spacing-md * 2;
         height: parent.height;
@@ -155,12 +164,13 @@ export component MagTextButton inherits Rectangle {
     callback clicked;
 
     height: Theme.size-magpie-input;
+    width: text-btn.preferred-width + Theme.spacing-sm * 2;
     border-radius: Theme.radius-magpie-control;
     background: touch.has-hover && root.enabled
         ? (root.danger ? Theme.red-soft : Theme.surface-muted)
         : transparent;
 
-    Text {
+    text-btn := Text {
         x: Theme.spacing-sm;
         width: parent.width - Theme.spacing-sm * 2;
         height: parent.height;
@@ -188,10 +198,11 @@ export component MagPrimaryButton inherits Rectangle {
     callback clicked;
 
     height: Theme.size-magpie-input;
+    width: primary-text.preferred-width + Theme.spacing-md * 2;
     border-radius: Theme.radius-magpie-control;
     background: root.enabled ? Theme.accent : Theme.surface-muted;
 
-    Text {
+    primary-text := Text {
         x: Theme.spacing-md;
         width: parent.width - Theme.spacing-md * 2;
         height: parent.height;

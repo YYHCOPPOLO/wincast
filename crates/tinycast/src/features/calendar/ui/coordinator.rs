@@ -57,27 +57,38 @@ pub fn camera_preview_optional(enabled: bool, title: &str, lang: UiLang) -> bool
 }
 
 pub fn create_event(owner: windows::Win32::Foundation::HWND, lang: UiLang) {
-    use crate::features::custom_commands::ui::editor::{edit_with, CommandDraft, EditorLabels};
-    let Some(draft) = edit_with(
-        owner,
-        Some(&CommandDraft {
-            name: "Meeting".into(),
-            command: "30".into(),
-            confirm: false,
-        }),
-        EditorLabels {
-            title: "Create Event",
-            value_label: "Duration minutes",
-            show_confirm: false,
-        },
-        lang,
-    ) else {
-        return;
+    // The event sheet is the Slint editor now; the appointment lands in its
+    // accept continuation, and a cancelled sheet adds nothing.
+    let request = crate::ui_host::editor::EditorRequest {
+        title: "Create Event".into(),
+        name_label: crate::features::custom_commands::ui::editor::field_acc_names(
+            "Duration minutes",
+            lang,
+        )
+        .0
+        .to_string(),
+        value_label: "Duration minutes".into(),
+        confirm_label: String::new(),
+        accept_label: tinycast_pure::i18n::editor_save(lang).to_string(),
+        cancel_label: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang)
+            .to_string(),
+        show_confirm: false,
+        name_hidden: false,
+        initial_name: "Meeting".into(),
+        initial_value: "30".into(),
+        initial_confirm: false,
     };
-    let minutes: i64 = draft.command.trim().parse().unwrap_or(30).max(1);
-    if show_add_appointment(&draft.name, minutes).is_err() {
-        let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));
-    }
+    let _ = crate::ui_host::editor::open(
+        owner,
+        request,
+        Box::new(|draft| {
+            let minutes: i64 = draft.command.trim().parse().unwrap_or(30).max(1);
+            if show_add_appointment(&draft.name, minutes).is_err() {
+                let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));
+            }
+        }),
+        Box::new(|| {}),
+    );
 }
 
 fn show_add_appointment(title: &str, minutes: i64) -> windows::core::Result<()> {
