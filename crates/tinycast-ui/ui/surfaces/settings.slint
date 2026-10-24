@@ -9,6 +9,7 @@ import { Theme } from "../theme.slint";
 import { Scrollbar } from "../primitives/scrollbar.slint";
 import { SettingsRow, SidebarRow } from "../primitives/form.slint";
 import { Checkbox } from "../primitives/checkbox.slint";
+import { RecorderBubble } from "../primitives/recorder.slint";
 import { MagEmptyState, MagHeader, MagInput } from "../primitives/magpie.slint";
 
 // One row of the sidebar: kind 0 is a section header, kind 1 a SettingsTab.
@@ -55,6 +56,7 @@ component RowCard inherits Rectangle {
     callback row-trailing-activated(int);
     callback row-text-edited(int, string);
     callback row-text-accepted(int);
+    callback row-well-revealed(length, length);
 
     background: Theme.card-fill;
     border-width: Theme.size-hairline;
@@ -89,6 +91,7 @@ component RowCard inherits Rectangle {
                 placeholder: row.placeholder;
                 enabled: row.enabled;
                 activated => { root.row-activated(row.id); }
+                well-revealed(x, y) => { root.row-well-revealed(x, y); }
                 trailing-activated => { root.row-trailing-activated(row.id); }
                 text-edited(text) => { root.row-text-edited(row.id, text); }
                 text-accepted(text) => { root.row-text-accepted(row.id); }
@@ -107,6 +110,7 @@ component RowsPage inherits Rectangle {
     callback row-trailing-activated(int);
     callback row-text-edited(int, string);
     callback row-text-accepted(int);
+    callback row-well-revealed(length, length);
 
     background: transparent;
 
@@ -151,6 +155,7 @@ component RowsPage inherits Rectangle {
                         row-trailing-activated(id) => { root.row-trailing-activated(id); }
                         row-text-edited(id, text) => { root.row-text-edited(id, text); }
                         row-text-accepted(id) => { root.row-text-accepted(id); }
+                        row-well-revealed(x, y) => { root.row-well-revealed(x, y); }
                     }
 
                     if section.note != "": Text {
@@ -395,7 +400,7 @@ component LauncherItemsPage inherits Rectangle {
     callback alias-activated(int);
     callback alias-edited(int, string);
     callback alias-committed(int);
-    callback hotkey-clicked(int);
+    callback hotkey-clicked(int, length, length);
     callback filter-changed(string);
     callback list-scrolled();
 
@@ -526,7 +531,7 @@ component LauncherItemsPage inherits Rectangle {
                             }
                         }
 
-                        if item.has-hotkey: Rectangle {
+                        if item.has-hotkey: well := Rectangle {
                             x: root.hotkey-column-x;
                             width: Theme.size-shortcut-recorder;
                             height: Theme.size-magpie-field;
@@ -537,7 +542,13 @@ component LauncherItemsPage inherits Rectangle {
                             border-color: item.recording ? Theme.accent : Theme.border;
 
                             well-touch := TouchArea {
-                                clicked => { root.hotkey-clicked(item.index); }
+                                clicked => {
+                                    root.hotkey-clicked(
+                                        item.index,
+                                        well.absolute-position.x + well.width / 2,
+                                        well.absolute-position.y,
+                                    );
+                                }
                             }
 
                             Text {
@@ -731,13 +742,21 @@ export component SettingsWindow inherits Window {
     callback launcher-alias-activated(int);
     callback launcher-alias-edited(int, string);
     callback launcher-alias-committed(int);
-    callback launcher-hotkey-clicked(int);
+    callback launcher-hotkey-clicked(int, length, length);
     callback launcher-filter-changed(string);
     callback launcher-list-scrolled();
     callback feature-row-activated(int);
     callback feature-trailing-activated(int);
     callback feature-text-edited(int, string);
     callback feature-text-accepted(int);
+    // The recorder callout: the rows report the well's window position.
+    in property <bool> recorder-visible: false;
+    in property <length> recorder-x: 0px;
+    in property <length> recorder-y: 0px;
+    in property <[string]> recorder-keys;
+    in property <string> recorder-caption;
+    in property <string> recorder-esc;
+    callback general-well-revealed(length, length);
 
     // Bumped when the keyboard should land on the selected tab (on show).
     private property <int> focus-generation: 0;
@@ -831,6 +850,7 @@ export component SettingsWindow inherits Window {
             heading: root.general-heading;
             sections: root.general-sections;
             row-activated(id) => { root.general-row-activated(id); }
+            row-well-revealed(x, y) => { root.general-well-revealed(x, y); }
         }
 
         RowsPage {
@@ -895,7 +915,7 @@ export component SettingsWindow inherits Window {
             alias-activated(index) => { root.launcher-alias-activated(index); }
             alias-edited(index, text) => { root.launcher-alias-edited(index, text); }
             alias-committed(index) => { root.launcher-alias-committed(index); }
-            hotkey-clicked(index) => { root.launcher-hotkey-clicked(index); }
+            hotkey-clicked(index, x, y) => { root.launcher-hotkey-clicked(index, x, y); }
             filter-changed(text) => { root.launcher-filter-changed(text); }
             list-scrolled => { root.launcher-list-scrolled(); }
         }
@@ -919,5 +939,23 @@ export component SettingsWindow inherits Window {
             heading: root.placeholder-heading;
             note: root.placeholder-note;
         }
+    }
+
+    // The recorder callout floats above the listening well; the caret's tip
+    // touches the well's top edge and the bubble stays inside the window.
+    if root.recorder-visible: RecorderBubble {
+        x: Math.max(
+            Theme.spacing-md,
+            Math.min(root.recorder-x - self.width / 2, root.width - self.width
+                - Theme.spacing-md),
+        );
+        y: Math.max(
+            Theme.spacing-md,
+            root.recorder-y - self.height + Theme.size-callout-caret-height,
+        );
+        keys: root.recorder-keys;
+        caption: root.recorder-caption;
+        esc-label: root.recorder-esc;
+        reveal: true;
     }
 }

@@ -161,6 +161,9 @@ export component SettingsRow inherits Rectangle {
     in property <string> placeholder;
     in property <bool> enabled: true;
     callback activated();
+    // A shortcut well that starts listening reports the well's window
+    // position so the host can float the recorder callout above it.
+    callback well-revealed(length, length);
     // The trailing destructive button (control 7) has its own hit target.
     callback trailing-activated();
     callback text-edited(string);
@@ -289,6 +292,15 @@ export component SettingsRow inherits Rectangle {
         enabled: root.enabled && root.control != 5;
         clicked => {
             scope.focus();
+            if (root.control == 3) {
+                // The well is the trailing layout child; its geometry derives
+                // from the row without naming the conditional element.
+                root.well-revealed(
+                    self.absolute-position.x + self.width - Theme.spacing-xl
+                        - Theme.size-shortcut-recorder / 2,
+                    self.absolute-position.y + (self.height - Theme.size-magpie-field) / 2,
+                );
+            }
             root.activated();
         }
     }

@@ -71,10 +71,6 @@ const RECORDER_ACTION: &str = "hotkey.togglePalette";
 pub struct SettingsWindow {
     ui: Settings,
     inner: *mut Inner,
-    /// Kept for the call sites the Direct2D window had. It stays invalid until
-    /// the event loop creates the Slint window; use `hwnd()` when a real handle
-    /// is needed (a file-dialog owner, for example).
-    pub hwnd: HWND,
 }
 
 pub(super) struct Inner {
@@ -105,6 +101,10 @@ pub(super) struct Inner {
     pub(super) alias_draft: String,
     /// The feature rows page (Quicklinks, the ten feature tabs and AI).
     pub(super) feature: SectionGroup,
+    /// Where the listening well sits in window coordinates; the recorder
+    /// callout floats there until the capture ends.
+    pub(super) recorder_at: Option<(f32, f32)>,
+    pub(super) recorder_keys: Rc<VecModel<slint::SharedString>>,
     /// The AI connection editor: which connection is open and its field
     /// drafts. The drafts live here so a refresh never loses them.
     pub(super) ai_editing: Option<usize>,
@@ -151,6 +151,8 @@ impl SettingsWindow {
             launcher_actions: Vec::new(),
             alias_target: None,
             alias_draft: String::new(),
+            recorder_at: None,
+            recorder_keys: Rc::new(VecModel::default()),
             feature: SectionGroup::new(0),
             ai_editing: None,
             ai_url: String::new(),
@@ -166,11 +168,7 @@ impl SettingsWindow {
             appearance,
             lang: None,
         }));
-        let window = Self {
-            ui,
-            inner,
-            hwnd: HWND::default(),
-        };
+        let window = Self { ui, inner };
         window
             .ui
             .set_sidebar_rows(ModelRc::from(unsafe { (*inner).sidebar.clone() }));
@@ -195,6 +193,9 @@ impl SettingsWindow {
         window
             .ui
             .set_feature_sections(ModelRc::from(unsafe { (*inner).feature.sections.clone() }));
+        window
+            .ui
+            .set_recorder_keys(ModelRc::from(unsafe { (*inner).recorder_keys.clone() }));
         window
             .ui
             .set_sidebar_content_height(sidebar_content_height());
@@ -304,10 +305,19 @@ impl SettingsWindow {
             }
         });
         let ptr = inner as usize;
-        self.ui.on_launcher_hotkey_clicked(move |index| {
+        self.ui.on_launcher_hotkey_clicked(move |index, x, y| {
             let inner = ptr as *mut Inner;
             if !inner.is_null() {
-                super::settings_pages::hotkey_clicked(inner, index);
+                super::settings_pages::hotkey_clicked(inner, index, x, y);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_general_well_revealed(move |x, y| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                unsafe {
+                    (*inner).recorder_at = Some((x, y));
+                }
             }
         });
         let ptr = inner as usize;
@@ -626,6 +636,42 @@ fn refresh(ui: &Settings, inner: *mut Inner) {
         super::settings_pages::sync_launcher(ui, unsafe { &mut *inner }, core);
     } else if page_kind(ui_tab) == 5 {
         super::settings_pages::sync_feature(ui, unsafe { &mut *inner }, core);
+    }
+    push_recorder_bubble(ui, unsafe { &*inner }, core, lang);
+}
+
+/// The callout over a listening well: the listening caption, the stored
+/// binding's caps and the position the row reported on click.
+fn push_recorder_bubble(
+    ui: &Settings,
+    inner: &Inner,
+    core: &crate::app_core::AppCore,
+    lang: UiLang,
+) {
+    let recording = inner.recorder.is_recording();
+    ui.set_recorder_visible(recording && inner.recorder_at.is_some());
+    if !recording {
+        return;
+    }
+    let caption = crate::features::hotkeys::ui::recorder::well_caption_lang(None, true, lang);
+    ui.set_recorder_caption(caption.into());
+    let keys: Vec<slint::SharedString> = inner
+        .recorder
+        .action
+        .as_deref()
+        .and_then(|action| core.hotkeys.get(action))
+        .map(|binding| {
+            binding
+                .label()
+                .split('+')
+                .map(slint::SharedString::from)
+                .collect()
+        })
+        .unwrap_or_default();
+    sync_rows(&inner.recorder_keys, keys);
+    if let Some((x, y)) = inner.recorder_at {
+        ui.set_recorder_x(x);
+        ui.set_recorder_y(y);
     }
 }
 

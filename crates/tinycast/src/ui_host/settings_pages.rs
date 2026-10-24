@@ -1256,7 +1256,7 @@ pub(super) fn commit_alias(ptr: *mut Inner) {
     }
 }
 
-pub(super) fn hotkey_clicked(ptr: *mut Inner, index: i32) {
+pub(super) fn hotkey_clicked(ptr: *mut Inner, index: i32, x: f32, y: f32) {
     let Some(core) = core_of(ptr) else {
         return;
     };
@@ -1270,8 +1270,9 @@ pub(super) fn hotkey_clicked(ptr: *mut Inner, index: i32) {
     else {
         return;
     };
+    let begin = inner.recorder.action.as_deref() != Some(action.as_str());
     unsafe {
-        if inner.recorder.action.as_deref() == Some(action.as_str()) {
+        if !begin {
             inner.recorder.cancel();
             (*core).resume_global_hotkeys();
         } else {
@@ -1280,6 +1281,8 @@ pub(super) fn hotkey_clicked(ptr: *mut Inner, index: i32) {
                 (*core).resume_global_hotkeys();
             }
             inner.recorder.begin(action);
+            // The callout floats over the well the row reported.
+            inner.recorder_at = Some((x, y));
             (*core).pause_global_hotkeys();
         }
         let lang = (*core).ui_lang();

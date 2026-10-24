@@ -15,6 +15,7 @@ slint = { version = "=1.18.1", default-features = false, features = [
     "backend-winit",
     "renderer-femtovg",
     "unstable-winit-030",
+    "accessibility",
 ] }
 
 [build-dependencies]
