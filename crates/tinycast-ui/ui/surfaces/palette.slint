@@ -69,6 +69,49 @@ component CalcBadge inherits Rectangle {
     }
 }
 
+// One side of the answer card: the value line and, under it, its kind pill.
+// The pill sits in a full-width holder instead of the column's layout: a layout
+// child with an explicit width becomes the column's maximum, and the badge's
+// label-measured width capped both columns so every value elided.
+component CalcColumn inherits Rectangle {
+    in property <string> value;
+    in property <string> badge;
+    in property <int> weight: 500;
+
+    background: transparent;
+
+    VerticalLayout {
+        width: 100%;
+        height: 100%;
+        alignment: center;
+        spacing: Theme.spacing-md;
+
+        Text {
+            width: 100%;
+            min-width: 0px;
+            text: root.value;
+            font-family: "Segoe UI";
+            font-size: Theme.font-calc-result;
+            font-weight: root.weight;
+            color: Theme.text-primary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        if root.badge != "": Rectangle {
+            height: Theme.font-calc-badge + Theme.spacing-xs;
+            background: transparent;
+
+            CalcBadge {
+                x: (parent.width - self.width) / 2;
+                y: 0;
+                text: root.badge;
+            }
+        }
+    }
+}
+
 // One 96 DIP answer card: expression to result, or a triangle and the message.
 // Two columns share the card; the 22 DIP arrows is the only fixed slot between.
 component CalcCard inherits Rectangle {
@@ -101,14 +144,20 @@ component CalcCard inherits Rectangle {
     border-color: Theme.card-stroke;
 
     if root.is-error: HorizontalLayout {
+        width: 100%;
+        height: 100%;
         // The error line starts where a column's text starts (old inner.x = 24).
         padding-left: Theme.spacing-xl;
         padding-right: Theme.spacing-xl;
         spacing: Theme.spacing-md;
 
-        GlyphIcon {
-            size: Theme.font-header-icon + 3px;
-            name: root.error-symbol;
+        VerticalLayout {
+            alignment: center;
+
+            GlyphIcon {
+                size: Theme.font-header-icon + 3px;
+                name: root.error-symbol;
+            }
         }
 
         Text {
@@ -123,36 +172,21 @@ component CalcCard inherits Rectangle {
     }
 
     if !root.is-error: HorizontalLayout {
-        padding-top: Theme.spacing-xxxl;
-        padding-bottom: Theme.spacing-xxxl;
+        width: 100%;
+        height: 100%;
+        // 16 DIP above and below leaves the 22 DIP line and the pill room to
+        // breathe inside the 96 DIP card instead of overflowing its 40 DIP core.
+        padding-top: Theme.spacing-md * 2;
+        padding-bottom: Theme.spacing-md * 2;
         padding-left: Theme.spacing-xl;
         padding-right: Theme.spacing-xl;
         spacing: Theme.spacing-sm;
 
-        Rectangle {
+        CalcColumn {
             horizontal-stretch: 1;
-            background: transparent;
-
-            VerticalLayout {
-                alignment: space-between;
-
-                Text {
-                    text: root.expression;
-                    font-family: "Segoe UI";
-                    // The Direct2D card drew both columns with calcResult (22, semibold).
-                    font-size: Theme.font-calc-result;
-                    font-weight: 600;
-                    color: Theme.text-primary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    overflow: elide;
-                }
-
-                if root.badge-left != "": CalcBadge {
-                    text: root.badge-left;
-                    horizontal-stretch: 0;
-                }
-            }
+            value: root.expression;
+            badge: root.badge-left;
+            weight: 500;
         }
 
         VerticalLayout {
@@ -165,29 +199,11 @@ component CalcCard inherits Rectangle {
             }
         }
 
-        Rectangle {
+        CalcColumn {
             horizontal-stretch: 1;
-            background: transparent;
-
-            VerticalLayout {
-                alignment: space-between;
-
-                Text {
-                    text: root.display;
-                    font-family: "Segoe UI";
-                    font-size: Theme.font-calc-result;
-                    font-weight: 600;
-                    color: Theme.text-primary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    overflow: elide;
-                }
-
-                if root.badge-right != "": CalcBadge {
-                    text: root.badge-right;
-                    horizontal-stretch: 0;
-                }
-            }
+            value: root.display;
+            badge: root.badge-right;
+            weight: 600;
         }
     }
 
