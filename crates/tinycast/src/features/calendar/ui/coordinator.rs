@@ -48,12 +48,19 @@ pub fn should_show_card(mode: PaletteMode, query: &str, enabled: bool) -> bool {
     enabled && mode == PaletteMode::Launcher && query.is_empty()
 }
 
-/// Camera preview HWND is the confirmation. Deny of the camera is not fatal.
-pub fn camera_preview_optional(enabled: bool, title: &str, lang: UiLang) -> bool {
+/// Camera preview card is the confirmation. Deny of the camera is not fatal;
+/// a busy slot or a failed surface returns false and the caller joins
+/// directly, like the old create failure did.
+pub fn present_preview(
+    enabled: bool,
+    title: &str,
+    lang: UiLang,
+    on_join: Box<dyn FnOnce()>,
+) -> bool {
     if !enabled {
-        return true;
+        return false;
     }
-    super::preview::present(title, lang)
+    super::preview::present(title, lang, on_join)
 }
 
 pub fn create_event(owner: windows::Win32::Foundation::HWND, lang: UiLang) {
@@ -151,10 +158,11 @@ mod tests {
     #[test]
     fn camera_deny_is_not_fatal() {
         assert!(crate::features::calendar::ui::preview::probe_camera_nonfatal());
-        assert!(camera_preview_optional(
+        assert!(!present_preview(
             false,
             "Standup",
-            tinycast_pure::i18n::UiLang::En
+            tinycast_pure::i18n::UiLang::En,
+            Box::new(|| {})
         ));
     }
 }

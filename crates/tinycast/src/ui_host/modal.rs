@@ -190,6 +190,52 @@ pub fn open(request: DialogRequest, on_accept: Box<dyn FnOnce()>) -> bool {
     true
 }
 
+/// Claims the slot for a caller-owned surface (the camera preview). The caller
+/// shows its own window and completes through [`complete_external`]; when the
+/// surface could not be shown it releases the claim with
+/// [`release_external`] so nothing runs. A dialog (or a second claim) already
+/// holding the slot refuses with `AlreadyOpen`.
+pub fn claim_external(pending: Pending) -> Result<(), AlreadyOpen> {
+    MODAL.with(|modal| modal.borrow_mut().gate.open(pending))
+}
+
+/// True while the slot is held by a caller-owned surface rather than a card.
+pub fn claimed_externally() -> bool {
+    MODAL.with(|modal| {
+        let modal = modal.borrow();
+        modal.gate.is_open() && modal.host.is_none()
+    })
+}
+
+/// Drops an unshown external claim: nothing was on screen, so nothing runs.
+pub fn release_external() {
+    MODAL.with(|modal| {
+        let mut modal = modal.borrow_mut();
+        modal.armed = false;
+        let _ = modal.gate.take_pending();
+    });
+}
+
+/// Runs the external continuation (accept or cancel) and frees the slot. A
+/// card dialog keeps its own path; this only answers external claims.
+pub fn complete_external(accepted: bool) {
+    let pending = MODAL.with(|modal| {
+        let mut modal = modal.borrow_mut();
+        if modal.host.is_some() {
+            return None;
+        }
+        modal.armed = false;
+        modal.gate.take_pending()
+    });
+    if let Some(pending) = pending {
+        if accepted {
+            (pending.on_accept)();
+        } else {
+            (pending.on_cancel)();
+        }
+    }
+}
+
 impl DialogHost {
     fn create(request: DialogRequest) -> Option<Self> {
         let ui = Dialog::new().ok()?;

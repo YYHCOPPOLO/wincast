@@ -901,13 +901,36 @@ impl AppCore {
     fn join_meeting(&mut self, event: &tinycast_pure::meeting::MeetingEvent) {
         self.calendar.mark_joined(&event.id);
         self.hide_palette();
-        if !crate::features::calendar::ui::coordinator::camera_preview_optional(
+        if !self.settings.camera_preview {
+            self.open_meeting_link(event);
+            return;
+        }
+        // The preview card is the confirmation: the link only opens from its
+        // accept continuation, which re-enters through the tray host.
+        let host = self.host;
+        let target = event.clone();
+        let opened = crate::features::calendar::ui::coordinator::present_preview(
             self.settings.camera_preview,
             &event.title,
             self.ui_lang(),
-        ) {
-            return;
+            Box::new(move || {
+                if let Some(core) = crate::ui_host::app_core(host) {
+                    unsafe {
+                        (*core).open_meeting_link(&target);
+                    }
+                }
+            }),
+        );
+        if !opened {
+            // The slot was busy or the card could not be created: join
+            // directly, like the old create failure did.
+            self.open_meeting_link(event);
         }
+    }
+
+    /// The link side of a confirmed join. Runs from the preview card's accept
+    /// continuation, so it must re-enter through the host pointer.
+    pub fn open_meeting_link(&mut self, event: &tinycast_pure::meeting::MeetingEvent) {
         if let Some(link) = &event.link {
             if crate::features::calendar::ui::coordinator::open_link(link).is_err() {
                 let _ = execute(&LaunchSpec::Uri("outlookcal:".into()));

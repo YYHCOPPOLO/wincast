@@ -1,0 +1,174 @@
+// The Quick Action result panel: 520 DIP wide, the running/replacement copy in
+// a scrollable body with 40 DIP edge fades, and Replace / Copy along the foot.
+// Same flat card vocabulary as the dialog: the window is the opaque surface,
+// 1 px border, 16 DIP corners. Entry: 180 ms ease-out reveal with 0.94 → 1
+// scale; exit: 120 ms, opacity only. The panel never takes focus; the host's
+// low-level hook routes Esc / Enter / Ctrl+C.
+import { Theme, Motion } from "../theme.slint";
+import { DialogButton } from "../primitives/dialog.slint";
+
+export component ResultWindow inherits Window {
+    in property <string> heading;
+    in property <string> body;
+    in property <string> working-label;
+    in property <string> replace-label;
+    in property <string> copy-label;
+    in property <string> symbol;
+
+    callback replace();
+    callback copy();
+
+    in-out property <bool> presented: false;
+    in-out property <float> exit-fade: 1;
+    private property <float> reveal: 0;
+
+    // Header: XL above, icon slot + title, LG below (the old
+    // `header_height()`); the foot is the 40 DIP button bar.
+    in property <length> header-height:
+        Theme.spacing-xl + Math.max(Theme.size-quick-action-header-icon, 18px)
+            + Theme.spacing-lg;
+    in property <length> foot-height: 40px;
+
+    // The measured body: the copy at full width, clamped between the short
+    // floor and the 320 DIP scroll cap (`QUICK_ACTION_PANEL_MIN_BODY` /
+    // `_BODY`); the window follows it, like the Direct2D panel's measure.
+    out property <length> body-height:
+        Math.min(
+            Math.max(body-text.preferred-height, Theme.size-quick-action-panel-min-body),
+            Theme.size-quick-action-panel-body,
+        );
+    in-out property <bool> body-scrollable:
+        body-text.preferred-height > root.body-height + 1px;
+
+    title: "Tinycast";
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.surface;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+    width: Theme.size-quick-action-panel;
+    height: root.header-height + root.body-height + root.foot-height;
+
+    states [
+        shown when root.presented: {
+            reveal: 1;
+            in {
+                animate reveal {
+                    duration: Theme.duration-enter;
+                    // `tinycast_pure::motion` `Ease::Out`.
+                    easing: cubic-bezier(0, 0, 0.58, 1);
+                }
+            }
+        }
+    ]
+
+    animate exit-fade {
+        duration: Theme.duration-exit;
+        // `tinycast_pure::motion` `Ease::In`.
+        easing: cubic-bezier(0.42, 0, 1, 1);
+    }
+
+    card := Rectangle {
+        opacity: root.reveal * root.exit-fade;
+        transform-scale: Motion.enter-scale
+            + (1 - Motion.enter-scale) * root.reveal;
+        border-radius: Theme.radius-dialog;
+        border-width: Theme.size-hairline;
+        border-color: Theme.border;
+        background: Theme.surface;
+        clip: true;
+
+        // Header row: the sparkles glyph and the action title.
+        HorizontalLayout {
+            x: Theme.spacing-dialog-content-inset;
+            y: Theme.spacing-xl;
+            width: parent.width - Theme.spacing-dialog-content-inset * 2;
+            height: root.header-height - Theme.spacing-xl - Theme.spacing-lg;
+            spacing: Theme.spacing-sm;
+
+            if root.symbol != "": Text {
+                width: Math.max(Theme.size-quick-action-header-icon, 18px);
+                text: root.symbol;
+                font-family: "Segoe Fluent Icons";
+                font-size: Math.max(Theme.size-quick-action-header-icon, 18px);
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: root.heading;
+                font-size: Theme.font-row;
+                font-weight: 600;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        // Body: scrollable when the copy outgrows the cap.
+        flick := Flickable {
+            x: Theme.spacing-dialog-content-inset;
+            y: root.header-height;
+            width: parent.width - Theme.spacing-dialog-content-inset * 2;
+            height: root.body-height;
+
+            body-text := Text {
+                width: flick.width - Theme.spacing-sm;
+                text: root.body == "" ? root.working-label : root.body;
+                font-size: Theme.font-row;
+                color: Theme.text-primary;
+                wrap: word-wrap;
+                height: self.preferred-height;
+            }
+        }
+
+        // Edge dissolve: 40 DIP bands fade the copy into the surface where it
+        // runs past the viewport (`size-quick-action-scroll-fade`).
+        if root.body-scrollable: Rectangle {
+            x: Theme.spacing-dialog-content-inset;
+            y: root.header-height;
+            width: flick.width;
+            height: Math.min(Theme.size-quick-action-scroll-fade, flick.height);
+            background: @linear-gradient(
+                180deg,
+                Theme.surface 0%,
+                Theme.surface.with-alpha(0) 100%,
+            );
+        }
+
+        if root.body-scrollable: Rectangle {
+            x: Theme.spacing-dialog-content-inset;
+            y: root.header-height + flick.height
+                - Math.min(Theme.size-quick-action-scroll-fade, flick.height);
+            width: flick.width;
+            height: Math.min(Theme.size-quick-action-scroll-fade, flick.height);
+            background: @linear-gradient(
+                180deg,
+                Theme.surface.with-alpha(0) 0%,
+                Theme.surface 100%,
+            );
+        }
+
+        // Foot: two even buttons across the panel (Replace leads).
+        HorizontalLayout {
+            x: Theme.spacing-dialog-content-inset;
+            y: root.header-height + root.body-height + Theme.spacing-xs;
+            width: parent.width - Theme.spacing-dialog-content-inset * 2;
+            height: root.foot-height - Theme.spacing-xs * 2;
+            spacing: Theme.spacing-md;
+
+            replace-button := DialogButton {
+                width: (parent.width - Theme.spacing-md) / 2;
+                label: root.replace-label;
+                primary: true;
+                clicked => { root.replace(); }
+            }
+
+            copy-button := DialogButton {
+                width: (parent.width - Theme.spacing-md) / 2;
+                label: root.copy-label;
+                clicked => { root.copy(); }
+            }
+        }
+    }
+}

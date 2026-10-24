@@ -1,0 +1,125 @@
+// The camera preview card shown before a meeting join: the meeting title, the
+// camera status, and Join / Cancel. Same flat card vocabulary as the dialog:
+// the window is the opaque surface, 1 px border, 16 DIP corners, and the
+// 420×236 `size-camera-preview-*` token frame. Entry: 180 ms ease-out reveal
+// with 0.94 → 1 scale; exit: 120 ms, opacity only.
+import { Theme, Motion } from "../theme.slint";
+import { DialogButton } from "../primitives/dialog.slint";
+
+export component PreviewWindow inherits Window {
+    in property <string> heading;
+    in property <string> message;
+    in property <string> accept-label;
+    in property <string> cancel-label;
+
+    callback accepted();
+    callback cancelled();
+
+    // 0 while the card rises into place, 1 once settled.
+    in-out property <bool> presented: false;
+    in-out property <float> exit-fade: 1;
+    private property <float> reveal: 0;
+
+    title: "Tinycast";
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.surface;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.font-row;
+    width: Theme.size-camera-preview-width;
+    height: Theme.size-camera-preview-height;
+
+    states [
+        shown when root.presented: {
+            reveal: 1;
+            in {
+                animate reveal {
+                    duration: Theme.duration-enter;
+                    // `tinycast_pure::motion` `Ease::Out`.
+                    easing: cubic-bezier(0, 0, 0.58, 1);
+                }
+            }
+        }
+    ]
+
+    animate exit-fade {
+        duration: Theme.duration-exit;
+        // `tinycast_pure::motion` `Ease::In`.
+        easing: cubic-bezier(0.42, 0, 1, 1);
+    }
+
+    forward-focus: keys;
+
+    // Esc cancels, Enter joins, wherever the focus sits.
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancelled();
+                return accept;
+            }
+            if (event.text == Key.Return) {
+                root.accepted();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    card := Rectangle {
+        opacity: root.reveal * root.exit-fade;
+        transform-scale: Motion.enter-scale
+            + (1 - Motion.enter-scale) * root.reveal;
+        border-radius: Theme.radius-dialog;
+        border-width: Theme.size-hairline;
+        border-color: Theme.border;
+        background: Theme.surface;
+
+        VerticalLayout {
+            padding: Theme.spacing-dialog-content-inset;
+            spacing: Theme.spacing-sm;
+
+            Text {
+                text: root.heading;
+                font-size: Theme.font-row;
+                font-weight: 600;
+                color: Theme.text-primary;
+                wrap: word-wrap;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.message;
+                font-size: Theme.font-row-trailing;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+                overflow: elide;
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                background: transparent;
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: Theme.spacing-md;
+
+                DialogButton {
+                    label: root.cancel-label;
+                    clicked => { root.cancelled(); }
+                }
+
+                accept-btn := DialogButton {
+                    label: root.accept-label;
+                    primary: true;
+                    clicked => { root.accepted(); }
+                }
+            }
+        }
+    }
+
+    // The host calls this once the window has focus: Join takes the keyboard.
+    public function focus-accept() {
+        accept-btn.focus-button();
+    }
+}
