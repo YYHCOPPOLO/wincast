@@ -137,6 +137,9 @@ pub struct AppCore {
     dictionary: Option<DictionaryStore>,
     dictionary_entry: Option<DictionaryEntry>,
     dictionary_suggestions: Vec<String>,
+    /// A copy happened for the entry on screen; the panel shows it until the
+    /// next keystroke.
+    dictionary_copied: bool,
 }
 
 impl AppCore {
@@ -218,6 +221,7 @@ impl AppCore {
             dictionary: DictionaryStore::open_default(),
             dictionary_entry: None,
             dictionary_suggestions: Vec::new(),
+            dictionary_copied: false,
         }
     }
 
@@ -412,7 +416,9 @@ impl AppCore {
     }
 
     /// The dictionary panel's text: the entry, a miss with suggestions, or the
-    /// hint while there is nothing to look up.
+    /// hint while there is nothing to look up. A copy keeps the palette open, so
+    /// the confirmation rides at the end of this text: a message HUD is its own
+    /// window, and showing one here would activate it and dismiss the palette.
     pub fn dictionary_preview(&self) -> Option<String> {
         if self.palette.mode != PaletteMode::Dictionary {
             return None;
@@ -422,13 +428,20 @@ impl AppCore {
         if query.is_empty() {
             return Some(tinycast_pure::i18n::dictionary_hint(lang).to_string());
         }
-        Some(match &self.dictionary_entry {
+        let entry = self.dictionary_entry.as_ref();
+        let mut text = match entry {
             Some(entry) => format_entry(entry, lang),
             None => format_no_match(query, &self.dictionary_suggestions, lang),
-        })
+        };
+        if self.dictionary_copied && entry.is_some() {
+            text.push_str("\n\n");
+            text.push_str(tinycast_pure::i18n::dictionary_definition_copied(lang));
+        }
+        Some(text)
     }
 
-    /// Enter in dictionary mode copies the whole entry, never a summary.
+    /// Enter in dictionary mode copies the whole entry, never a summary, and
+    /// never the panel's own confirmation line.
     pub fn dictionary_copy_text(&self) -> Option<String> {
         self.dictionary_entry
             .as_ref()
@@ -449,6 +462,7 @@ impl AppCore {
         }
         self.dictionary_entry = entry;
         self.dictionary_suggestions = suggestions;
+        self.dictionary_copied = false;
     }
 
     pub fn clipboard_preview(&self) -> Option<String> {
@@ -2816,11 +2830,10 @@ impl AppCore {
         // keeps the palette up for the next word.
         if self.palette.mode == PaletteMode::Dictionary {
             if let Some(text) = self.dictionary_copy_text() {
-                let _ = crate::platform::clipboard::write_text_marked(&text);
-                self.show_message_hud_tone(
-                    tinycast_pure::i18n::dictionary_definition_copied(self.ui_lang()),
-                    tinycast_pure::dialog::DialogTone::Success,
-                );
+                if crate::platform::clipboard::write_text_marked(&text).is_ok() {
+                    self.dictionary_copied = true;
+                    self.invalidate_palette();
+                }
             }
             return;
         }
@@ -4699,6 +4712,7 @@ impl AppCore {
             self.palette.selection = 0;
             self.dictionary_entry = None;
             self.dictionary_suggestions.clear();
+            self.dictionary_copied = false;
             self.after_hop();
             return;
         }
