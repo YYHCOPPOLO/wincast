@@ -50,6 +50,24 @@ export struct ChatRow {
     height: length,
 }
 
+// One chip under the dictionary headword; tone 0 neutral, 1 accent, 2 amber
+// (`tinycast_pure::dictionary::BadgeTone`).
+export struct DictionaryBadge {
+    text: string,
+    tone: int,
+}
+
+// One row of the dictionary page. Kind 0 section title, 1 Chinese line,
+// 2 English line, 3 form row, 4 parts of speech, 5 frequency pill, 6 note
+// (`tinycast_pure::dictionary::DictionaryRowKind`). `gap` is the extra space
+// above the row in DIP; only a section title after the first carries one.
+export struct DictionaryRow {
+    kind: int,
+    label: string,
+    text: string,
+    gap: length,
+}
+
 // A badge under one calculator column: 11 DIP ink on controlSurface.
 component CalcBadge inherits Rectangle {
     in property <string> text;
@@ -396,6 +414,571 @@ component ChatLine inherits Rectangle {
     }
 }
 
+// One chip under the dictionary headword: soft tile plus its matching ink.
+// Tone comes from `tinycast_pure::dictionary::BadgeTone`.
+component DictBadge inherits Rectangle {
+    in property <string> text;
+    in property <int> tone: 0;
+
+    height: 20px;
+    width: badge-text.preferred-width + Theme.spacing-md * 2;
+    border-radius: Theme.radius-key-cap;
+    background: root.tone == 2 ? Theme.amber-soft
+        : root.tone == 1 ? Theme.accent-soft
+        : Theme.control-surface;
+
+    badge-text := Text {
+        x: Theme.spacing-md;
+        y: 0;
+        width: self.preferred-width;
+        height: parent.height;
+        text: root.text;
+        font-family: Theme.font-family;
+        font-size: Theme.font-chip;
+        font-weight: 500;
+        color: root.tone == 2 ? Theme.amber
+            : root.tone == 1 ? Theme.accent
+            : Theme.fg-2;
+        vertical-alignment: center;
+    }
+}
+
+// A section title: the 2 x 11 accent bar, then the small caps label. The 14 DIP
+// above a section after the first rides in this row's own height, so the body
+// layout needs no spacer rows.
+component DictSectionTitle inherits Rectangle {
+    in property <string> text;
+    in property <length> gap: 0px;
+
+    background: transparent;
+    height: root.gap + 16px;
+
+    Rectangle {
+        x: 0;
+        y: root.gap + (16px - self.height) / 2;
+        width: 2px;
+        height: 11px;
+        border-radius: 1px;
+        background: Theme.accent;
+    }
+
+    Text {
+        x: 2px + Theme.spacing-md;
+        y: root.gap;
+        width: parent.width - 2px - Theme.spacing-md;
+        height: 16px;
+        text: root.text;
+        font-family: Theme.font-family;
+        font-size: Theme.font-section;
+        font-weight: 600;
+        letter-spacing: 0.4px;
+        color: Theme.text-tertiary;
+        vertical-alignment: center;
+    }
+}
+
+// One wrapped body line: a Chinese or English definition line, a parts-of-speech
+// line or a note. The height carries the 3-4 DIP line rhythm.
+component DictBodyLine inherits Rectangle {
+    in property <string> text;
+    in property <color> ink: Theme.text-primary;
+    in property <length> size: Theme.font-row;
+
+    background: transparent;
+    height: line.preferred-height + Theme.spacing-xs;
+
+    line := Text {
+        x: Theme.spacing-lg;
+        y: 0;
+        width: parent.width - Theme.spacing-lg;
+        height: self.preferred-height;
+        text: root.text;
+        wrap: word-wrap;
+        font-family: Theme.font-family;
+        font-size: root.size;
+        color: root.ink;
+    }
+}
+
+// One inflected form: the exchange label in a fixed 72 DIP column, the word
+// beside it, both free to wrap.
+component DictFormRow inherits Rectangle {
+    in property <string> label;
+    in property <string> text;
+
+    background: transparent;
+    height: Math.max(label-text.preferred-height, value-text.preferred-height)
+        + Theme.spacing-xs;
+
+    label-text := Text {
+        x: Theme.spacing-lg;
+        y: 1px;
+        width: 72px;
+        height: self.preferred-height;
+        text: root.label;
+        wrap: word-wrap;
+        font-family: Theme.font-family;
+        font-size: Theme.font-section;
+        color: Theme.text-tertiary;
+        vertical-alignment: top;
+    }
+
+    value-text := Text {
+        x: Theme.spacing-lg + 72px + Theme.spacing-sm;
+        y: 0;
+        width: parent.width - Theme.spacing-lg - 72px - Theme.spacing-sm;
+        height: self.preferred-height;
+        text: root.text;
+        wrap: word-wrap;
+        font-family: Theme.font-family;
+        font-size: Theme.font-row;
+        color: Theme.text-primary;
+    }
+}
+
+// The frequency line: BNC and COCA ranks on one quiet pill.
+component DictStatRow inherits Rectangle {
+    in property <string> text;
+
+    background: transparent;
+    height: 24px + Theme.spacing-xs;
+
+    Rectangle {
+        x: Theme.spacing-lg;
+        y: 0;
+        width: stat-text.preferred-width + Theme.spacing-md * 2;
+        height: 24px;
+        border-radius: Theme.radius-magpie-control;
+        background: Theme.card-2;
+
+        stat-text := Text {
+            x: Theme.spacing-md;
+            y: 0;
+            width: self.preferred-width;
+            height: parent.height;
+            text: root.text;
+            font-family: Theme.font-family;
+            font-size: Theme.font-row-trailing;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// The entry card: headword, phonetic and badges, with the copy button and the
+// corpus label in the trailing corner. It is never truncated: a long headword
+// wraps and the card grows down instead of clipping.
+component DictHeader inherits Rectangle {
+    in property <string> word;
+    in property <string> phonetic;
+    in property <[DictionaryBadge]> badges;
+    in property <string> source-label;
+    callback copy-requested;
+
+    // 14 DIP card padding and rail, 26 DIP copy target.
+    private property <length> card-padding: 14px;
+    private property <length> copy-size: 26px;
+    private property <length> corner-width:
+        root.copy-size + Theme.spacing-md + source-text.width;
+
+    background: Theme.card-fill;
+    border-width: Theme.size-hairline;
+    border-color: Theme.card-stroke;
+    border-radius: Theme.radius-magpie-card;
+    height: badge-row.y + badge-row.height + root.card-padding;
+
+    headword-text := Text {
+        x: root.card-padding;
+        y: root.card-padding;
+        width: parent.width - root.card-padding * 2 - root.corner-width - Theme.spacing-md;
+        height: self.preferred-height;
+        text: root.word;
+        wrap: word-wrap;
+        font-family: Theme.font-family;
+        font-size: Theme.font-calc-result;
+        font-weight: 600;
+        color: Theme.text-primary;
+        vertical-alignment: top;
+    }
+
+    phonetic-text := Text {
+        x: root.card-padding;
+        y: headword-text.y + headword-text.height
+            + (root.phonetic == "" ? 0px : Theme.spacing-xs);
+        width: parent.width - root.card-padding * 2 - root.corner-width - Theme.spacing-md;
+        height: root.phonetic == "" ? 0px : self.preferred-height;
+        text: root.phonetic;
+        font-family: Theme.font-family;
+        font-size: Theme.font-row;
+        color: Theme.text-secondary;
+        vertical-alignment: top;
+    }
+
+    badge-row := Rectangle {
+        x: root.card-padding;
+        y: phonetic-text.y + phonetic-text.height
+            + (root.badges.length == 0 ? 0px : Theme.spacing-lg);
+        width: parent.width - root.card-padding * 2;
+        height: root.badges.length == 0 ? 0px : 20px;
+        background: transparent;
+        // Eleven tags never fit one line on a narrow card: clip instead of
+        // growing the card sideways.
+        clip: true;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: Theme.spacing-xs;
+
+            for badge in root.badges: DictBadge {
+                text: badge.text;
+                tone: badge.tone;
+            }
+        }
+    }
+
+    source-text := Text {
+        x: parent.width - root.card-padding - root.copy-size - Theme.spacing-md - self.width;
+        y: root.card-padding;
+        width: self.preferred-width;
+        height: root.copy-size;
+        text: root.source-label;
+        font-family: Theme.font-family;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+        color: Theme.text-tertiary;
+        vertical-alignment: center;
+    }
+
+    Rectangle {
+        x: parent.width - root.card-padding - root.copy-size;
+        y: root.card-padding;
+        width: root.copy-size;
+        height: root.copy-size;
+        border-radius: Theme.radius-key-cap;
+        background: copy-touch.has-hover ? Theme.row-hover : transparent;
+
+        GlyphIcon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            size: 14px;
+            name: "doc.on.clipboard";
+            ink: Theme.text-tertiary;
+        }
+
+        copy-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.copy-requested(); }
+        }
+    }
+}
+
+// The panel before a lookup and after a miss: the page tile, a title, one line
+// of help and, on a miss, the closest headwords. The block is centred while it
+// fits and scrolls once eight suggestions outgrow the page, so it never clips.
+component DictEmptyState inherits Rectangle {
+    in property <string> title;
+    in property <string> body;
+    in property <string> closest-label;
+    in property <[string]> suggestions;
+
+    background: transparent;
+
+    empty-flick := Flickable {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        interactive: true;
+        content-width: self.width;
+        content-height: Math.max(
+            self.height,
+            empty-stack.preferred-height + Theme.spacing-xl * 2,
+        );
+
+        empty-stack := VerticalLayout {
+            x: 0;
+            y: Math.max(
+                Theme.spacing-xl,
+                (empty-flick.height - self.preferred-height) / 2,
+            );
+            width: parent.width;
+            alignment: center;
+            spacing: 0px;
+
+            HorizontalLayout {
+                alignment: center;
+
+                Rectangle {
+                    width: 64px;
+                    height: 64px;
+                    border-radius: Theme.radius-menu-panel;
+                    background: Theme.control-surface;
+
+                    GlyphIcon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        size: 28px;
+                        name: "text.page";
+                        ink: Theme.text-tertiary;
+                    }
+                }
+            }
+
+            Rectangle {
+                height: Theme.spacing-md;
+                background: transparent;
+            }
+
+            Text {
+                text: root.title;
+                font-family: Theme.font-family;
+                font-size: 14px;
+                font-weight: 600;
+                color: Theme.text-primary;
+                horizontal-alignment: center;
+                height: self.preferred-height;
+            }
+
+            Rectangle {
+                height: Theme.spacing-sm;
+                background: transparent;
+            }
+
+            Text {
+                width: Math.min(parent.width - Theme.spacing-xxl * 2, 480px);
+                height: self.preferred-height;
+                text: root.body;
+                wrap: word-wrap;
+                font-family: Theme.font-family;
+                font-size: Theme.font-row-trailing;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+            }
+
+            if root.suggestions.length > 0: Rectangle {
+                height: Theme.spacing-section;
+                background: transparent;
+            }
+
+            if root.suggestions.length > 0: Text {
+                text: root.closest-label;
+                font-family: Theme.font-family;
+                font-size: Theme.font-section;
+                font-weight: 600;
+                letter-spacing: 0.4px;
+                color: Theme.text-tertiary;
+                horizontal-alignment: center;
+                height: self.preferred-height;
+            }
+
+            for suggestion in root.suggestions: Text {
+                text: suggestion;
+                font-family: Theme.font-family;
+                font-size: Theme.font-row;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                // A hair of air between lines: the list has no other rhythm.
+                height: self.preferred-height + Theme.spacing-xxs;
+            }
+        }
+    }
+}
+
+// The dictionary page: a fixed entry card over a scrolling body, or the empty
+// and miss states. AppCore owns every string; this file owns the typography.
+export component DictionaryPanel inherits Rectangle {
+    in property <bool> has-entry: false;
+    in property <string> word;
+    in property <string> phonetic;
+    in property <[DictionaryBadge]> badges;
+    in property <[DictionaryRow]> rows;
+    in property <string> empty-title;
+    in property <string> empty-body;
+    in property <[string]> suggestions;
+    in property <string> closest-label;
+    in property <string> source-label;
+    in property <string> copied-label;
+    in-out property <int> copy-token: 0;
+    in-out property <length> scroll-y: 0px;
+    callback copy-requested;
+
+    private property <bool> toast-visible: false;
+    // Spec insets: the 14 DIP card rail, 16 DIP body left and a 26 DIP right
+    // rail for the scrollbar.
+    private property <length> card-inset: 14px;
+    private property <length> body-left: Theme.spacing-md * 2;
+    private property <length> body-right: Theme.spacing-xxl + Theme.spacing-sm;
+    private property <length> body-top: Theme.spacing-xl;
+    private property <length> body-bottom: Theme.spacing-dialog-inset;
+
+    background: transparent;
+
+    // A new headword, or a new state, starts the page at the top. The offset is
+    // mirrored through `scroll-y` so the rail and these resets agree.
+    changed word => { root.scroll-y = 0px; }
+    changed has-entry => { root.scroll-y = 0px; }
+    // The token only grows once a copy landed, so a repaint cannot revive a
+    // toast that already faded.
+    changed copy-token => { root.toast-visible = true; }
+
+    Timer {
+        interval: 1400ms;
+        running: root.toast-visible;
+        triggered => { root.toast-visible = false; }
+    }
+
+    dict-card := DictHeader {
+        x: root.card-inset;
+        y: root.card-inset;
+        width: root.width - root.card-inset * 2;
+        visible: root.has-entry;
+        word: root.word;
+        phonetic: root.phonetic;
+        badges: root.badges;
+        source-label: root.source-label;
+        copy-requested => { root.copy-requested(); }
+    }
+
+    // The body keeps the card fixed and scrolls the rows under it.
+    Rectangle {
+        x: 0;
+        y: root.card-inset + dict-card.height + Theme.spacing-xl;
+        width: 100%;
+        height: Math.max(0px, root.height - self.y);
+        background: transparent;
+        visible: root.has-entry;
+        clip: true;
+
+        body-flick := Flickable {
+            x: 0;
+            y: 0;
+            width: 100%;
+            height: 100%;
+            interactive: true;
+            content-width: self.width;
+            content-height: Math.max(
+                self.height,
+                body-stack.preferred-height + root.body-top + root.body-bottom,
+            );
+            // The flickable owns the wheel and drag offset; scroll-y mirrors it
+            // for the rail, and writing scroll-y moves the page (word changes).
+            changed content-y => { root.scroll-y = -self.content-y; }
+
+            body-stack := VerticalLayout {
+                x: root.body-left;
+                y: root.body-top;
+                width: body-flick.width - root.body-left - root.body-right;
+                spacing: 0px;
+
+                // One row slot per model row; the conditional child reports its
+                // own height, so the slot is exactly as tall as the shape it
+                // picked and the gap never needs a spacer.
+                for row in root.rows: VerticalLayout {
+                    spacing: 0px;
+
+                    if row.kind == 0: DictSectionTitle {
+                        text: row.text;
+                        gap: row.gap;
+                    }
+
+                    if row.kind == 1: DictBodyLine {
+                        text: row.text;
+                        ink: Theme.text-primary;
+                    }
+
+                    if row.kind == 2: DictBodyLine {
+                        text: row.text;
+                        ink: Theme.fg-2;
+                    }
+
+                    if row.kind == 3: DictFormRow {
+                        label: row.label;
+                        text: row.text;
+                    }
+
+                    if row.kind == 4: DictBodyLine {
+                        text: row.text;
+                        ink: Theme.text-secondary;
+                        size: Theme.font-row-trailing;
+                    }
+
+                    if row.kind == 5: DictStatRow {
+                        text: row.text;
+                    }
+
+                    if row.kind == 6: DictBodyLine {
+                        text: row.text;
+                        ink: Theme.text-secondary;
+                        size: Theme.font-row-trailing;
+                    }
+                }
+            }
+        }
+
+        Scrollbar {
+            x: parent.width - Theme.size-scrollbar-inset - self.width;
+            y: 0;
+            height: parent.height;
+            content-height: body-flick.content-height;
+            viewport-height: body-flick.height;
+            offset: root.scroll-y;
+            scroll-to(offset) => { root.scroll-y = offset; }
+        }
+    }
+
+    // A reset from above (a new headword) moves the page, not just the rail.
+    changed scroll-y => { body-flick.content-y = -root.scroll-y; }
+
+    if !root.has-entry: DictEmptyState {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        title: root.empty-title;
+        body: root.empty-body;
+        closest-label: root.closest-label;
+        suggestions: root.suggestions;
+    }
+
+    // The copy confirmation: bottom-trailing, over the body only. It never
+    // appends a line to the entry and vanishes on its own.
+    Rectangle {
+        x: root.width - self.width - (Theme.spacing-xxl + Theme.spacing-xs);
+        y: root.height - self.height - root.body-bottom;
+        width: toast-label.preferred-width + Theme.spacing-xl + 12px + Theme.spacing-sm
+            + Theme.spacing-xl;
+        height: 30px;
+        border-radius: 15px;
+        background: Theme.green-soft;
+        opacity: root.toast-visible ? 1 : 0;
+        animate opacity {
+            duration: Theme.duration-hover;
+            easing: ease-out;
+        }
+
+        GlyphIcon {
+            x: Theme.spacing-xl;
+            y: (parent.height - self.height) / 2;
+            size: 12px;
+            name: "checkmark";
+            ink: Theme.success;
+        }
+
+        toast-label := Text {
+            x: Theme.spacing-xl + 12px + Theme.spacing-sm;
+            y: 0;
+            width: self.preferred-width;
+            height: parent.height;
+            text: root.copied-label;
+            font-family: Theme.font-family;
+            font-size: Theme.font-row-trailing;
+            color: Theme.success;
+            vertical-alignment: center;
+        }
+    }
+}
+
 export component PaletteWindow inherits Window {
     in property <bool> expanded: false;
     // Fluent symbol for the current mode ("magnifyingglass", "chevron.left").
@@ -429,6 +1012,23 @@ export component PaletteWindow inherits Window {
     // fallback (the file path or the storage error) stays hidden.
     in property <image> preview-image;
     in property <bool> preview-image-ready: false;
+    // Dictionary page. AppCore owns the entry, the miss suggestions and the
+    // copy counter; the panel owns the page's typography and its own scroll.
+    // `dictionary-mode` replaces the split preview with the full-width page.
+    in property <bool> dictionary-mode: false;
+    in property <bool> dictionary-has-entry: false;
+    in property <string> dictionary-word;
+    in property <string> dictionary-phonetic;
+    in property <[DictionaryBadge]> dictionary-badges;
+    in property <[DictionaryRow]> dictionary-rows;
+    in property <string> dictionary-empty-title;
+    in property <string> dictionary-empty-body;
+    in property <[string]> dictionary-suggestions;
+    in property <string> dictionary-closest-label;
+    in property <string> dictionary-source-label;
+    in property <string> dictionary-copied-label;
+    in property <int> dictionary-copy-token;
+    in-out property <length> dictionary-scroll-y: 0px;
     // Clipboard type filter; the host passes rect/title/open from AppCore.
     in property <bool> filter-visible: false;
     in property <string> filter-label;
@@ -480,6 +1080,9 @@ export component PaletteWindow inherits Window {
     callback menu-activated(int);
     callback menu-hovered(int);
     callback menu-dismissed(length, length);
+    // The dictionary card's copy button; Esc and Enter stay on the host's key
+    // path, so the panel needs no focus scope.
+    callback dictionary-copy-requested();
 
     // Left edge of the native field: 16 DIP gutter + 22 DIP glyph + 8 DIP gap.
     property <length> field-x:
@@ -739,7 +1342,9 @@ export component PaletteWindow inherits Window {
             }
 
             // Clipboard: the 1 DIP rule and the wrapped, scrollable preview.
-            if root.split: Rectangle {
+            // The dictionary page owns the whole width instead, so neither the
+            // rule nor the preview pane is drawn for it.
+            if root.split && !root.dictionary-mode: Rectangle {
                 x: root.split-x;
                 y: 0;
                 width: Theme.size-hairline;
@@ -747,7 +1352,7 @@ export component PaletteWindow inherits Window {
                 background: Theme.separator;
             }
 
-            if root.split && root.preview-image-ready: Rectangle {
+            if root.split && !root.dictionary-mode && root.preview-image-ready: Rectangle {
                 x: root.split-x + Theme.size-hairline;
                 y: 0;
                 width: parent.width - root.split-x - Theme.size-hairline;
@@ -774,7 +1379,7 @@ export component PaletteWindow inherits Window {
                 }
             }
 
-            if root.split && !root.preview-image-ready: Flickable {
+            if root.split && !root.dictionary-mode && !root.preview-image-ready: Flickable {
                 x: root.split-x + Theme.size-hairline;
                 y: 0;
                 width: parent.width - root.split-x - Theme.size-hairline;
@@ -829,7 +1434,9 @@ export component PaletteWindow inherits Window {
             }
 
             // Edge dissolve: the surface fades the first and last visible rows.
-            if root.scrollable: Rectangle {
+            // The dictionary page keeps its own header card and scroll state,
+            // so the list's bands never draw over it.
+            if root.scrollable && !root.dictionary-mode: Rectangle {
                 y: 0;
                 width: root.split ? root.split-x : parent.width;
                 height: Math.min(root.fade-top, parent.height);
@@ -840,7 +1447,7 @@ export component PaletteWindow inherits Window {
                 );
             }
 
-            if root.scrollable: Rectangle {
+            if root.scrollable && !root.dictionary-mode: Rectangle {
                 y: parent.height - Math.min(root.fade-bottom, parent.height);
                 width: root.split ? root.split-x : parent.width;
                 height: Math.min(root.fade-bottom, parent.height);
@@ -898,6 +1505,30 @@ export component PaletteWindow inherits Window {
                 // positive offset.
                 offset: -root.scroll-y;
                 scroll-to(offset) => { root.scroll-y = -offset; }
+            }
+
+            // The dictionary page covers the whole content area: its card is
+            // fixed and its own rail scrolls the body, so the list's scrollbar
+            // and fades above it stay unused (no rows, content height 0).
+            if root.dictionary-mode: DictionaryPanel {
+                x: 0;
+                y: 0;
+                width: 100%;
+                height: 100%;
+                has-entry: root.dictionary-has-entry;
+                word: root.dictionary-word;
+                phonetic: root.dictionary-phonetic;
+                badges: root.dictionary-badges;
+                rows: root.dictionary-rows;
+                empty-title: root.dictionary-empty-title;
+                empty-body: root.dictionary-empty-body;
+                suggestions: root.dictionary-suggestions;
+                closest-label: root.dictionary-closest-label;
+                source-label: root.dictionary-source-label;
+                copied-label: root.dictionary-copied-label;
+                copy-token: root.dictionary-copy-token;
+                scroll-y: root.dictionary-scroll-y;
+                copy-requested => { root.dictionary-copy-requested(); }
             }
         }
 

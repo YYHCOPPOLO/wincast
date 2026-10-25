@@ -11,18 +11,24 @@ fn pick<'a>(lang: UiLang, en: &'a str, zh: &'a str) -> &'a str {
     }
 }
 
-/// Header field hint while the palette is in dictionary mode.
-pub fn dictionary_placeholder(lang: UiLang) -> &'static str {
-    pick(lang, "Type a word or phrase…", "输入单词或词语…")
+/// Title of the panel's empty state: there is nothing to look up yet.
+pub fn dictionary_empty_title(lang: UiLang) -> &'static str {
+    pick(lang, "Dictionary", "查词典")
 }
 
-/// Body hint for an empty query: the panel has nothing to look up yet.
-pub fn dictionary_hint(lang: UiLang) -> &'static str {
+/// One line under the empty title, saying how the panel is opened.
+pub fn dictionary_empty_body(lang: UiLang) -> &'static str {
     pick(
         lang,
-        "Type a word or phrase to look it up.",
-        "输入单词或词语以查询。",
+        "Type an English word or phrase, then press Tab.",
+        "输入英文单词或词语，按 Tab 查词。",
     )
+}
+
+/// Provenance label on the entry card. The corpus is English in every locale,
+/// so the name is not translated.
+pub fn dictionary_source(_lang: UiLang) -> &'static str {
+    "ECDICT"
 }
 
 /// Tab caption on the launcher while a query could open the panel.
@@ -82,6 +88,7 @@ pub fn dictionary_exchange_label(kind: ExchangeKind, lang: UiLang) -> &'static s
         (ExchangeKind::Superlative, UiLang::ZhHans) => "最高级",
         (ExchangeKind::Plural, UiLang::En) => "Plural",
         (ExchangeKind::Plural, UiLang::ZhHans) => "复数",
+        (ExchangeKind::AlternatePlural, lang) => dictionary_alternate_plural(lang),
         (ExchangeKind::DerivedForms, UiLang::En) => "Other forms",
         (ExchangeKind::DerivedForms, UiLang::ZhHans) => "其他形式",
     }
@@ -124,6 +131,12 @@ pub fn dictionary_tag_label(tag: &str, lang: UiLang) -> Option<&'static str> {
         ("gre", UiLang::ZhHans) => Some("GRE"),
         _ => None,
     }
+}
+
+/// ECDICT's `f` code: the second plural form some words carry (`frescos` next
+/// to `frescoes`, `yen` next to `yens`).
+pub fn dictionary_alternate_plural(lang: UiLang) -> &'static str {
+    pick(lang, "Alternate plural", "复数（异体）")
 }
 
 pub fn dictionary_no_entry(lang: UiLang) -> &'static str {

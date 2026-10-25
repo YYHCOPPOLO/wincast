@@ -1,16 +1,16 @@
-//! ECDICT data model and the plain-text formatter for the lookup panel.
+//! ECDICT data model, the structured panel view and the plain-text formatter.
 //!
 //! `SCHEMA` is the one schema definition, used by the build example and by the
-//! read-only store. `format_entry` is the one place that decides what the panel
-//! shows, so every stored field has exactly one rendering and nothing is
-//! summarised or dropped.
+//! read-only store. `view_entry` is the one place that decides what the panel
+//! shows: the header line and one ordered list of rows. `format_entry` renders
+//! that same view as plain text for the clipboard, so every stored field has
+//! exactly one rendering and nothing is summarised or dropped.
 
 use crate::i18n::{
-    dictionary_bnc_label, dictionary_closest, dictionary_coca_label, dictionary_collins_label,
-    dictionary_exchange_label, dictionary_no_entry, dictionary_no_entry_detail,
-    dictionary_oxford_label, dictionary_section_chinese, dictionary_section_english,
-    dictionary_section_forms, dictionary_section_frequency, dictionary_section_more,
-    dictionary_section_pos, dictionary_tag_label, UiLang,
+    dictionary_bnc_label, dictionary_coca_label, dictionary_collins_label,
+    dictionary_exchange_label, dictionary_oxford_label, dictionary_section_chinese,
+    dictionary_section_english, dictionary_section_forms, dictionary_section_frequency,
+    dictionary_section_more, dictionary_section_pos, dictionary_tag_label, UiLang,
 };
 
 /// The dictionary database the app opens read-only:
@@ -42,9 +42,13 @@ PRAGMA user_version = 1;
 /// Prefix suggestions shown under a miss; the panel stays read-only.
 pub const MAX_SUGGESTIONS: usize = 8;
 
+/// Extra space above a section title, in DIP. The first section starts at the
+/// body's own top inset, so it carries no gap.
+pub const SECTION_GAP: f32 = 14.0;
+
 /// One row of `words`, exactly as ECDICT ships it. Empty text fields are empty
-/// strings, numeric fields are 0, so the formatter can skip them without a
-/// second "is it set" flag.
+/// strings, numeric fields are 0, so the view can skip them without a second
+/// "is it set" flag.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DictionaryEntry {
     pub word: String,
@@ -81,6 +85,8 @@ pub enum ExchangeKind {
     Superlative,
     /// `s` — plural.
     Plural,
+    /// `f` — the plural variant ECDICT stores next to `s` (`frescos` for `fresco`).
+    AlternatePlural,
     /// `1` — the inflections of this lemma.
     DerivedForms,
 }
@@ -96,6 +102,7 @@ impl ExchangeKind {
             'r' => Some(Self::Comparative),
             't' => Some(Self::Superlative),
             's' => Some(Self::Plural),
+            'f' => Some(Self::AlternatePlural),
             _ => None,
         }
     }
@@ -134,70 +141,183 @@ pub fn parse_exchange(raw: &str) -> Vec<(ExchangeKind, String)> {
         .collect()
 }
 
-/// Every non-empty field of `entry` as the panel's text: no truncation, no
-/// summarising, one section per kind of content.
-pub fn format_entry(entry: &DictionaryEntry, lang: UiLang) -> String {
-    let mut out = String::new();
-    out.push_str(entry.word.trim());
-    let phonetic = entry.phonetic.trim();
-    if !phonetic.is_empty() {
-        out.push_str("  ");
-        out.push_str(phonetic);
-    }
-    let badges = badge_line(entry, lang);
-    if !badges.is_empty() {
-        out.push('\n');
-        out.push_str(&badges);
-    }
-    push_section(&mut out, dictionary_section_chinese(lang), &entry.translation);
-    push_section(&mut out, dictionary_section_english(lang), &entry.definition);
-    push_forms(&mut out, entry, lang);
-    push_section(&mut out, dictionary_section_pos(lang), &pos_line(&entry.pos));
-    let ranks = rank_line(entry, lang);
-    push_section(&mut out, dictionary_section_frequency(lang), &ranks);
-    push_section(&mut out, dictionary_section_more(lang), &raw_extras(entry));
-    out
+/// The tag tone a badge renders with: Collins amber, Oxford accent, exam tags
+/// neutral.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BadgeTone {
+    Neutral,
+    Accent,
+    Amber,
 }
 
-/// The miss panel: the query, then the closest headwords the store found.
-pub fn format_no_match(query: &str, suggestions: &[String], lang: UiLang) -> String {
-    let query = query.trim();
-    let mut out = String::from(dictionary_no_entry(lang));
-    if !query.is_empty() {
-        out.push('\n');
-        out.push_str(&dictionary_no_entry_detail(query, lang));
+/// One chip under the headword.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DictionaryBadge {
+    pub text: String,
+    pub tone: BadgeTone,
+}
+
+/// How one row of the panel body renders. Section rows carry the title in
+/// `text`; form rows carry the exchange label in `label`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DictionaryRowKind {
+    Section,
+    Chinese,
+    English,
+    Form,
+    Pos,
+    Stat,
+    Note,
+}
+
+/// One row of the panel body. `gap` is the extra space above it, in DIP.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DictionaryRow {
+    pub kind: DictionaryRowKind,
+    pub label: String,
+    pub text: String,
+    pub gap: f32,
+}
+
+/// The whole panel: the header card (word, phonetic, badges) plus the rows the
+/// body renders top to bottom.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DictionaryView {
+    pub word: String,
+    pub phonetic: String,
+    pub badges: Vec<DictionaryBadge>,
+    pub rows: Vec<DictionaryRow>,
+}
+
+/// Every non-empty field of `entry` as the panel's rows: one section per kind
+/// of content, every line kept, nothing summarised.
+pub fn view_entry(entry: &DictionaryEntry, lang: UiLang) -> DictionaryView {
+    let mut view = DictionaryView {
+        word: entry.word.trim().to_string(),
+        phonetic: entry.phonetic.trim().to_string(),
+        badges: view_badges(entry, lang),
+        rows: Vec::new(),
+    };
+
+    push_section(&mut view.rows, dictionary_section_chinese(lang));
+    push_lines(&mut view.rows, DictionaryRowKind::Chinese, &entry.translation);
+
+    push_section(&mut view.rows, dictionary_section_english(lang));
+    push_lines(&mut view.rows, DictionaryRowKind::English, &entry.definition);
+
+    let forms = form_rows(entry, lang);
+    if !forms.is_empty() {
+        push_section(&mut view.rows, dictionary_section_forms(lang));
+        for (label, text) in forms {
+            view.rows.push(DictionaryRow {
+                kind: DictionaryRowKind::Form,
+                label,
+                text,
+                gap: 0.0,
+            });
+        }
     }
-    let mut shown = suggestions.iter().filter(|s| !s.is_empty());
-    if shown.clone().next().is_some() {
-        out.push_str("\n\n");
-        out.push_str(dictionary_closest(lang));
-        for suggestion in shown.by_ref().take(MAX_SUGGESTIONS) {
-            out.push('\n');
-            out.push_str(suggestion);
+
+    let pos = pos_line(&entry.pos);
+    if !pos.is_empty() {
+        push_section(&mut view.rows, dictionary_section_pos(lang));
+        view.rows.push(DictionaryRow {
+            kind: DictionaryRowKind::Pos,
+            label: String::new(),
+            text: pos,
+            gap: 0.0,
+        });
+    }
+
+    let ranks = rank_line(entry, lang);
+    if !ranks.is_empty() {
+        push_section(&mut view.rows, dictionary_section_frequency(lang));
+        view.rows.push(DictionaryRow {
+            kind: DictionaryRowKind::Stat,
+            label: String::new(),
+            text: ranks,
+            gap: 0.0,
+        });
+    }
+
+    let extras = extra_lines(entry);
+    if !extras.is_empty() {
+        push_section(&mut view.rows, dictionary_section_more(lang));
+        for line in extras {
+            view.rows.push(DictionaryRow {
+                kind: DictionaryRowKind::Note,
+                label: String::new(),
+                text: line,
+                gap: 0.0,
+            });
+        }
+    }
+
+    view
+}
+
+/// The whole entry as plain text for the clipboard: the header line, then the
+/// same rows the panel draws, so a copy never says less than the panel.
+pub fn format_entry(entry: &DictionaryEntry, lang: UiLang) -> String {
+    let view = view_entry(entry, lang);
+    let mut out = String::new();
+    out.push_str(&view.word);
+    if !view.phonetic.is_empty() {
+        out.push_str("  ");
+        out.push_str(&view.phonetic);
+    }
+    if !view.badges.is_empty() {
+        out.push('\n');
+        let texts: Vec<&str> = view.badges.iter().map(|badge| badge.text.as_str()).collect();
+        out.push_str(&texts.join(" · "));
+    }
+    for row in &view.rows {
+        match row.kind {
+            DictionaryRowKind::Section => {
+                out.push_str("\n\n");
+                out.push_str(&row.text);
+            }
+            _ => {
+                out.push('\n');
+                if row.kind == DictionaryRowKind::Form && !row.label.is_empty() {
+                    out.push_str(&row.label);
+                    out.push(' ');
+                }
+                out.push_str(&row.text);
+            }
         }
     }
     out
 }
 
-fn badge_line(entry: &DictionaryEntry, lang: UiLang) -> String {
-    let mut badges: Vec<String> = Vec::new();
+fn view_badges(entry: &DictionaryEntry, lang: UiLang) -> Vec<DictionaryBadge> {
+    let mut badges: Vec<DictionaryBadge> = Vec::new();
     if entry.collins > 0 {
-        badges.push(format!(
-            "{} {}",
-            dictionary_collins_label(lang),
-            "★".repeat(entry.collins.clamp(1, 5) as usize)
-        ));
-    }
-    if entry.oxford > 0 {
-        badges.push(dictionary_oxford_label(lang).to_string());
-    }
-    for tag in entry.tag.split_whitespace() {
-        badges.push(match dictionary_tag_label(tag, lang) {
-            Some(label) => label.to_string(),
-            None => tag.to_string(),
+        badges.push(DictionaryBadge {
+            text: format!(
+                "{} {}",
+                dictionary_collins_label(lang),
+                "★".repeat(entry.collins.clamp(1, 5) as usize)
+            ),
+            tone: BadgeTone::Amber,
         });
     }
-    badges.join(" · ")
+    if entry.oxford > 0 {
+        badges.push(DictionaryBadge {
+            text: dictionary_oxford_label(lang).to_string(),
+            tone: BadgeTone::Accent,
+        });
+    }
+    for tag in entry.tag.split_whitespace() {
+        badges.push(DictionaryBadge {
+            text: match dictionary_tag_label(tag, lang) {
+                Some(label) => label.to_string(),
+                None => tag.to_string(),
+            },
+            tone: BadgeTone::Neutral,
+        });
+    }
+    badges
 }
 
 fn rank_line(entry: &DictionaryEntry, lang: UiLang) -> String {
@@ -237,27 +357,35 @@ fn pos_line(raw: &str) -> String {
     parts.join(" · ")
 }
 
-fn raw_extras(entry: &DictionaryEntry) -> String {
-    let mut extras: Vec<&str> = Vec::new();
-    let detail = entry.detail.trim();
-    if !detail.is_empty() {
-        extras.push(detail);
+/// `detail` then `audio`, one line each: ECDICT's leftover columns. `""` is a
+/// literal ECDICT writes for `a` and for a third of the corpus, not content.
+fn extra_lines(entry: &DictionaryEntry) -> Vec<String> {
+    let mut extras: Vec<String> = Vec::new();
+    for line in body_lines(&entry.detail) {
+        if line != "\"\"" {
+            extras.push(line);
+        }
     }
-    let audio = entry.audio.trim();
-    if !audio.is_empty() {
-        extras.push(audio);
-    }
-    extras.join("\n")
+    extras.extend(body_lines(&entry.audio));
+    extras
 }
 
-fn push_forms(out: &mut String, entry: &DictionaryEntry, lang: UiLang) {
+/// The lemma first, then ECDICT's own order. `1:` holds codes rather than
+/// words, so it renders as the names of the forms the lemma has.
+fn form_rows(entry: &DictionaryEntry, lang: UiLang) -> Vec<(String, String)> {
     let forms = parse_exchange(&entry.exchange);
-    if forms.is_empty() {
-        return;
-    }
-    let mut body = String::new();
-    for (kind, value) in forms {
-        // `1:` holds the codes of the forms this lemma has, not words.
+    let mut ordered: Vec<(ExchangeKind, String)> = forms
+        .iter()
+        .filter(|(kind, _)| *kind == ExchangeKind::Lemma)
+        .cloned()
+        .collect();
+    ordered.extend(
+        forms
+            .into_iter()
+            .filter(|(kind, _)| *kind != ExchangeKind::Lemma),
+    );
+    let mut rows = Vec::new();
+    for (kind, value) in ordered {
         let rendered = if kind == ExchangeKind::DerivedForms {
             derived_form_labels(&value, lang)
         } else {
@@ -266,14 +394,9 @@ fn push_forms(out: &mut String, entry: &DictionaryEntry, lang: UiLang) {
         if rendered.is_empty() {
             continue;
         }
-        if !body.is_empty() {
-            body.push('\n');
-        }
-        body.push_str(dictionary_exchange_label(kind, lang));
-        body.push(' ');
-        body.push_str(&rendered);
+        rows.push((dictionary_exchange_label(kind, lang).to_string(), rendered));
     }
-    push_section(out, dictionary_section_forms(lang), &body);
+    rows
 }
 
 /// `pd` → `过去式 / 过去分词` so the `1:` column reads as the forms it names.
@@ -290,16 +413,27 @@ fn derived_form_labels(codes: &str, lang: UiLang) -> String {
     labels.join(" / ")
 }
 
-/// Appends `\n\n<header>\n<body>` when the body has any line left.
-fn push_section(out: &mut String, header: &str, body: &str) {
-    let lines = body_lines(body);
-    if lines.is_empty() {
-        return;
+/// Appends a section title row; every section after the first keeps the gap.
+fn push_section(rows: &mut Vec<DictionaryRow>, header: &str) {
+    let gap = if rows.is_empty() { 0.0 } else { SECTION_GAP };
+    rows.push(DictionaryRow {
+        kind: DictionaryRowKind::Section,
+        label: String::new(),
+        text: header.to_string(),
+        gap,
+    });
+}
+
+/// One row per non-empty line of a multi-line ECDICT field.
+fn push_lines(rows: &mut Vec<DictionaryRow>, kind: DictionaryRowKind, raw: &str) {
+    for line in body_lines(raw) {
+        rows.push(DictionaryRow {
+            kind,
+            label: String::new(),
+            text: line,
+            gap: 0.0,
+        });
     }
-    out.push_str("\n\n");
-    out.push_str(header);
-    out.push('\n');
-    out.push_str(&lines.join("\n"));
 }
 
 /// ECDICT packs multi-line fields with a literal `\n`; both that and a real

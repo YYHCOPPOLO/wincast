@@ -3,7 +3,7 @@ use tinycast_pure::app_entry::{AppEntry, AppKind};
 use tinycast_pure::calc::{evaluate, CalcResult, CalculatorHistoryStore};
 use tinycast_pure::command_id::CommandID;
 use tinycast_pure::dictionary::{
-    format_entry, format_no_match, DictionaryEntry, MAX_SUGGESTIONS,
+    format_entry, view_entry, DictionaryEntry, DictionaryView, MAX_SUGGESTIONS,
 };
 use tinycast_pure::favorites::FavoritesStore;
 use tinycast_pure::feature_flags::FeatureFlags;
@@ -137,9 +137,10 @@ pub struct AppCore {
     dictionary: Option<DictionaryStore>,
     dictionary_entry: Option<DictionaryEntry>,
     dictionary_suggestions: Vec<String>,
-    /// A copy happened for the entry on screen; the panel shows it until the
-    /// next keystroke.
-    dictionary_copied: bool,
+    /// Monotonic count of copies made from the panel. The surface shows its
+    /// toast when the number changes, so re-pushing the same screen cannot
+    /// re-show a toast that already hid.
+    dictionary_copy_token: u32,
 }
 
 impl AppCore {
@@ -221,7 +222,7 @@ impl AppCore {
             dictionary: DictionaryStore::open_default(),
             dictionary_entry: None,
             dictionary_suggestions: Vec::new(),
-            dictionary_copied: false,
+            dictionary_copy_token: 0,
         }
     }
 
@@ -415,33 +416,58 @@ impl AppCore {
         .then_some(command_title(CommandID::AiChat, self.ui_lang()))
     }
 
-    /// The dictionary panel's text: the entry, a miss with suggestions, or the
-    /// hint while there is nothing to look up. A copy keeps the palette open, so
-    /// the confirmation rides at the end of this text: a message HUD is its own
-    /// window, and showing one here would activate it and dismiss the palette.
-    pub fn dictionary_preview(&self) -> Option<String> {
-        if self.palette.mode != PaletteMode::Dictionary {
-            return None;
+    /// The panel's entry as a structured page: header line plus body rows.
+    /// `None` on a miss or an empty query; the surface draws its own state then.
+    pub fn dictionary_view(&self) -> Option<DictionaryView> {
+        self.dictionary_entry
+            .as_ref()
+            .map(|entry| view_entry(entry, self.ui_lang()))
+    }
+
+    /// The empty state's title: the panel name before a lookup, the miss title
+    /// after one.
+    pub fn dictionary_empty_title(&self) -> &'static str {
+        let lang = self.ui_lang();
+        if self.palette.query.trim().is_empty() {
+            tinycast_pure::i18n::dictionary_empty_title(lang)
+        } else {
+            tinycast_pure::i18n::dictionary_no_entry(lang)
         }
+    }
+
+    /// The line under that title: how to look a word up, or why this one missed.
+    pub fn dictionary_empty_body(&self) -> String {
         let lang = self.ui_lang();
         let query = self.palette.query.trim();
         if query.is_empty() {
-            return Some(tinycast_pure::i18n::dictionary_hint(lang).to_string());
+            tinycast_pure::i18n::dictionary_empty_body(lang).to_string()
+        } else {
+            tinycast_pure::i18n::dictionary_no_entry_detail(query, lang)
         }
-        let entry = self.dictionary_entry.as_ref();
-        let mut text = match entry {
-            Some(entry) => format_entry(entry, lang),
-            None => format_no_match(query, &self.dictionary_suggestions, lang),
-        };
-        if self.dictionary_copied && entry.is_some() {
-            text.push_str("\n\n");
-            text.push_str(tinycast_pure::i18n::dictionary_definition_copied(lang));
-        }
-        Some(text)
     }
 
-    /// Enter in dictionary mode copies the whole entry, never a summary, and
-    /// never the panel's own confirmation line.
+    /// Prefix neighbours under a miss; empty when an entry is on screen.
+    pub fn dictionary_suggestions(&self) -> &[String] {
+        &self.dictionary_suggestions
+    }
+
+    /// Copy counter for the panel's toast; see `copy_dictionary`.
+    pub fn dictionary_copy_token(&self) -> i32 {
+        self.dictionary_copy_token as i32
+    }
+
+    /// Copies the whole entry, never a summary, and bumps the token the toast
+    /// reads. The palette stays up for the next word.
+    pub fn copy_dictionary(&mut self) {
+        if let Some(text) = self.dictionary_copy_text() {
+            if crate::platform::clipboard::write_text_marked(&text).is_ok() {
+                self.dictionary_copy_token = self.dictionary_copy_token.wrapping_add(1);
+                self.invalidate_palette();
+            }
+        }
+    }
+
+    /// The plain-text payload Enter and the copy button put on the clipboard.
     pub fn dictionary_copy_text(&self) -> Option<String> {
         self.dictionary_entry
             .as_ref()
@@ -462,7 +488,6 @@ impl AppCore {
         }
         self.dictionary_entry = entry;
         self.dictionary_suggestions = suggestions;
-        self.dictionary_copied = false;
     }
 
     pub fn clipboard_preview(&self) -> Option<String> {
@@ -2829,12 +2854,7 @@ impl AppCore {
         // The dictionary panel has no rows: Enter copies the whole entry and
         // keeps the palette up for the next word.
         if self.palette.mode == PaletteMode::Dictionary {
-            if let Some(text) = self.dictionary_copy_text() {
-                if crate::platform::clipboard::write_text_marked(&text).is_ok() {
-                    self.dictionary_copied = true;
-                    self.invalidate_palette();
-                }
-            }
+            self.copy_dictionary();
             return;
         }
         if self.palette.mode == PaletteMode::Emoji {
@@ -4715,7 +4735,6 @@ impl AppCore {
             self.palette.selection = 0;
             self.dictionary_entry = None;
             self.dictionary_suggestions.clear();
-            self.dictionary_copied = false;
             self.after_hop();
             return;
         }

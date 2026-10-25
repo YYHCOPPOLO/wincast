@@ -16,6 +16,7 @@ use std::time::Duration;
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
+use tinycast_pure::dictionary::{BadgeTone, DictionaryRowKind};
 use tinycast_pure::palette_menu::{menu_frame, menu_row_rect, OpenMenu};
 use tinycast_pure::palette_mode::PaletteMode;
 use tinycast_pure::palette_placement::{compact_size, expanded_size};
@@ -102,6 +103,12 @@ struct PaletteInner {
     model: Rc<VecModel<tinycast_ui::PaletteRow>>,
     /// The AI transcript, whole: a conversation is a few dozen fixed rows.
     chat: Rc<VecModel<tinycast_ui::ChatRow>>,
+    /// The dictionary page: the header chips and one row per body element.
+    /// Both are replaced on every refresh, never re-created, so the page keeps
+    /// its own scroll state while a word is on screen.
+    dict_badges: Rc<VecModel<tinycast_ui::DictionaryBadge>>,
+    dict_rows: Rc<VecModel<tinycast_ui::DictionaryRow>>,
+    dict_suggestions: Rc<VecModel<slint::SharedString>>,
     icons: IconCache,
     images: RowImages,
     clips: ClipImages,
@@ -136,6 +143,9 @@ impl PaletteWindow {
             edit: None,
             model: Rc::new(VecModel::default()),
             chat: Rc::new(VecModel::default()),
+            dict_badges: Rc::new(VecModel::default()),
+            dict_rows: Rc::new(VecModel::default()),
+            dict_suggestions: Rc::new(VecModel::default()),
             icons: IconCache::new(),
             images: RowImages::new(),
             clips: ClipImages::new(),
@@ -157,6 +167,27 @@ impl PaletteWindow {
         window
             .ui
             .set_chat_rows(ModelRc::from(unsafe { (*inner).chat.clone() }));
+        window
+            .ui
+            .set_dictionary_badges(ModelRc::from(unsafe { (*inner).dict_badges.clone() }));
+        window
+            .ui
+            .set_dictionary_rows(ModelRc::from(unsafe { (*inner).dict_rows.clone() }));
+        window.ui.set_dictionary_suggestions(ModelRc::from(unsafe {
+            (*inner).dict_suggestions.clone()
+        }));
+        let ptr = inner as usize;
+        window.ui.on_dictionary_copy_requested(move || {
+            let inner = ptr as *mut PaletteInner;
+            if inner.is_null() {
+                return;
+            }
+            if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                // Same path as Enter: the whole entry, and the token the toast
+                // reads. AppCore repaints the palette itself.
+                unsafe { (*core).copy_dictionary() };
+            }
+        });
         let ptr = inner as usize;
         window.ui.on_row_clicked(move |index, x, y| {
             let inner = ptr as *mut PaletteInner;
@@ -171,12 +202,11 @@ impl PaletteWindow {
                 return;
             }
             if let Some(core) = core_from_host(unsafe { (*inner).host }) {
+                // Ctrl+C over the clipboard preview copies the whole item when
+                // nothing is marked. The dictionary page has no selectable
+                // preview: its copy button and Enter go through their own path.
                 let core = unsafe { &*core };
-                let text = if core.palette.mode == PaletteMode::Dictionary {
-                    core.dictionary_copy_text().unwrap_or_default()
-                } else {
-                    core.clipboard_preview().unwrap_or_default()
-                };
+                let text = core.clipboard_preview().unwrap_or_default();
                 if !text.is_empty() {
                     let _ = crate::platform::clipboard::write_text_marked(&text);
                 }
@@ -632,10 +662,11 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     let (scroll, content, view) = core.scroll_metrics(panel_h);
     let items = core.launcher_paint_items();
     // Two split screens share this pane: the clipboard preview next to its
-    // 290 DIP list, and the dictionary panel, which owns the whole width.
+    // 290 DIP list, and the dictionary page, which owns the whole width and
+    // keeps no preview text at all.
     let is_dictionary = core.palette.mode == PaletteMode::Dictionary;
     let preview = if is_dictionary {
-        core.dictionary_preview()
+        None
     } else {
         core.clipboard_preview()
     };
@@ -646,18 +677,15 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     } else {
         theme::size::CLIPBOARD_LIST_WIDTH
     });
-    // The dictionary shows every ECDICT field in full; a clipboard paste is
-    // capped so a whole log file cannot stall text shaping.
-    let preview_text = if is_dictionary {
-        preview.unwrap_or_default()
-    } else {
-        preview
-            .unwrap_or_default()
-            .chars()
-            .take(PREVIEW_CHARS)
-            .collect::<String>()
-    };
+    // A clipboard paste is capped so a whole log file cannot stall text
+    // shaping; the dictionary page has no preview text to cap.
+    let preview_text = preview
+        .unwrap_or_default()
+        .chars()
+        .take(PREVIEW_CHARS)
+        .collect::<String>();
     ui.set_preview_text(preview_text.into());
+    attach_dictionary(ui, inner, core);
     attach_filter(ui, core, expanded);
     let empty = if items.is_empty() && core.ai_chat_messages().is_none() {
         core.empty_results_text().unwrap_or("")
@@ -714,6 +742,81 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
         }
         layout_search(ui, inner);
     }
+}
+
+/// The dictionary page: header card, body rows, miss suggestions and the copy
+/// counter. Every field AppCore's view carries lands in exactly one model
+/// element, in order, so the surface never drops or truncates a line.
+fn attach_dictionary(ui: &Palette, inner: *mut PaletteInner, core: &AppCore) {
+    let is_dictionary = core.palette.mode == PaletteMode::Dictionary;
+    ui.set_dictionary_mode(is_dictionary);
+    if !is_dictionary {
+        return;
+    }
+    let lang = core.ui_lang();
+    let view = core.dictionary_view();
+    let (word, phonetic) = view
+        .as_ref()
+        .map(|view| (view.word.as_str(), view.phonetic.as_str()))
+        .unwrap_or_default();
+    ui.set_dictionary_has_entry(view.is_some());
+    ui.set_dictionary_word(word.into());
+    ui.set_dictionary_phonetic(phonetic.into());
+    ui.set_dictionary_empty_title(core.dictionary_empty_title().into());
+    ui.set_dictionary_empty_body(core.dictionary_empty_body().into());
+    ui.set_dictionary_closest_label(tinycast_pure::i18n::dictionary_closest(lang).into());
+    ui.set_dictionary_source_label(tinycast_pure::i18n::dictionary_source(lang).into());
+    ui.set_dictionary_copied_label(
+        tinycast_pure::i18n::dictionary_definition_copied(lang).into(),
+    );
+    ui.set_dictionary_copy_token(core.dictionary_copy_token());
+    let badges: Vec<tinycast_ui::DictionaryBadge> = view
+        .as_ref()
+        .map(|view| {
+            view.badges
+                .iter()
+                .map(|badge| tinycast_ui::DictionaryBadge {
+                    text: badge.text.as_str().into(),
+                    tone: match badge.tone {
+                        BadgeTone::Neutral => 0,
+                        BadgeTone::Accent => 1,
+                        BadgeTone::Amber => 2,
+                    },
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let rows: Vec<tinycast_ui::DictionaryRow> = view
+        .as_ref()
+        .map(|view| {
+            view.rows
+                .iter()
+                .map(|row| tinycast_ui::DictionaryRow {
+                    kind: match row.kind {
+                        DictionaryRowKind::Section => 0,
+                        DictionaryRowKind::Chinese => 1,
+                        DictionaryRowKind::English => 2,
+                        DictionaryRowKind::Form => 3,
+                        DictionaryRowKind::Pos => 4,
+                        DictionaryRowKind::Stat => 5,
+                        DictionaryRowKind::Note => 6,
+                    },
+                    label: row.label.as_str().into(),
+                    text: row.text.as_str().into(),
+                    gap: row.gap,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let suggestions: Vec<slint::SharedString> = core
+        .dictionary_suggestions()
+        .iter()
+        .map(|suggestion| suggestion.as_str().into())
+        .collect();
+    let inner = unsafe { &mut *inner };
+    inner.dict_badges.set_vec(badges);
+    inner.dict_rows.set_vec(rows);
+    inner.dict_suggestions.set_vec(suggestions);
 }
 
 /// The header pop-up: the clipboard type filter or the AI model button. Both
