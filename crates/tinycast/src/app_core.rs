@@ -395,7 +395,7 @@ impl AppCore {
             return Some(if self.settings.ai_enabled {
                 tinycast_pure::i18n::dictionary_tab_ai(lang)
             } else {
-                tinycast_pure::i18n::dictionary_tab_clipboard(lang)
+                tinycast_pure::i18n::dictionary_tab_launcher(lang)
             });
         }
         // Tab opens the dictionary only when there is something to look up.
@@ -4694,8 +4694,9 @@ impl AppCore {
             self.after_hop();
             return;
         }
-        // Dictionary → AI when AI is on, otherwise Clipboard. `tab_from` is left
-        // alone: its Launcher → AI/Clipboard ring is the pre-dictionary one.
+        // Dictionary → AI when AI is on, otherwise back to Launcher. Clipboard is
+        // never the dictionary's next stop. `tab_from` is left alone: its
+        // Launcher → AI/Clipboard ring is the pre-dictionary one.
         if from == PaletteMode::Dictionary {
             if self.settings.ai_enabled {
                 self.palette.query = self.ai.draft.clone();
@@ -4706,8 +4707,10 @@ impl AppCore {
                         self.settings.ai_new_chat_after_minutes,
                     ));
             } else {
-                self.palette.query = query;
-                self.palette.mode = PaletteMode::Clipboard;
+                // The headword belongs to the panel, not to the launcher: the
+                // query the user typed before the first Tab is what returns.
+                self.palette.query = self.launcher_query.clone();
+                self.palette.mode = PaletteMode::Launcher;
             }
             self.palette.selection = 0;
             self.dictionary_entry = None;

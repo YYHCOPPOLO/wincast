@@ -35,9 +35,9 @@ pub fn dictionary_tab_ai(lang: UiLang) -> &'static str {
     pick(lang, "Tab AI", "Tab AI")
 }
 
-/// Tab caption inside the panel when AI is off, so Tab rings to Clipboard.
-pub fn dictionary_tab_clipboard(lang: UiLang) -> &'static str {
-    pick(lang, "Tab clipboard", "Tab 剪贴板")
+/// Tab caption inside the panel when AI is off, so Tab rings back to Launcher.
+pub fn dictionary_tab_launcher(lang: UiLang) -> &'static str {
+    pick(lang, "Tab for launcher", "Tab 启动器")
 }
 
 pub fn dictionary_section_chinese(lang: UiLang) -> &'static str {
