@@ -39,8 +39,8 @@ jobs:
       - name: Release notes
         shell: pwsh
         run: |
-          $previous = git describe --tags --abbrev=0 HEAD 2>$null | Select-Object -First 1
-          if ($LASTEXITCODE -ne 0 -or -not $previous) {
+          $previous = git describe --tags --abbrev=0 HEAD 2>$null
+          if (-not $previous) {
             $previous = (git rev-list --max-parents=0 HEAD | Select-Object -Last 1)
           }
           $commits = @(git log --no-merges --reverse --pretty=format:"- %s (%h)" "$previous..HEAD")
