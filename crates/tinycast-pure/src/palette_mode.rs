@@ -12,6 +12,8 @@ pub enum PaletteMode {
     Ai,
     AiHistory,
     ExtensionCommand,
+    /// ECDICT lookup: the read-only panel below the search field.
+    Dictionary,
 }
 
 impl PaletteMode {
@@ -31,6 +33,7 @@ impl PaletteMode {
             PaletteMode::Quicklinks => "Search quicklinks…",
             PaletteMode::QuicklinkArguments => "Enter a value…",
             PaletteMode::ExtensionCommand => "Search…",
+            PaletteMode::Dictionary => "Type a word or phrase…",
         }
     }
 
@@ -47,6 +50,7 @@ impl PaletteMode {
             PaletteMode::Uninstall => "trash",
             PaletteMode::Quicklinks | PaletteMode::QuicklinkArguments => "link",
             PaletteMode::ExtensionCommand => "puzzlepiece.extension",
+            PaletteMode::Dictionary => "text.page",
         }
     }
 }

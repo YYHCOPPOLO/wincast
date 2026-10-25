@@ -423,6 +423,7 @@ impl AppCore {
             PaletteMode::Ai | PaletteMode::QuicklinkArguments | PaletteMode::ExtensionCommand => {
                 None
             }
+            PaletteMode::Dictionary => None,
             PaletteMode::Clipboard => Some(if self.clipboard.is_available() {
                 clip_screen::empty_message_lang(self.clipboard_filter, lang)
             } else {

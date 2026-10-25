@@ -1,10 +1,12 @@
 mod catalog;
 mod copy;
+mod dictionary;
 mod panes;
 mod surfaces;
 
 pub use catalog::*;
 pub use copy::*;
+pub use dictionary::*;
 pub use panes::*;
 pub use surfaces::*;
 

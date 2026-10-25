@@ -96,6 +96,7 @@ pub fn palette_placeholder(mode: PaletteMode, lang: UiLang) -> &'static str {
             PaletteMode::Quicklinks => "搜索快捷链接…",
             PaletteMode::QuicklinkArguments => "输入值…",
             PaletteMode::ExtensionCommand => "搜索…",
+            PaletteMode::Dictionary => "输入单词或词语…",
         },
     }
 }

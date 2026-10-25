@@ -11,6 +11,7 @@ pub mod clipboard_text;
 pub mod command_id;
 pub mod custom_command;
 pub mod dialog;
+pub mod dictionary;
 pub mod double_tap;
 pub mod emoji;
 pub mod extensions;
