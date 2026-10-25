@@ -60,8 +60,12 @@ export component GlyphIcon inherits Rectangle {
     }
 
     Text {
-        width: 100%;
-        height: 100%;
+        // A Text clips to its own box, and the icon font's advance and line
+        // height are slightly larger than the DIP size. Size the text to its
+        // preferred box and centre that in the slot, or the glyph loses its
+        // right edge and the top of its ascender.
+        x: (root.width - self.preferred-width) / 2;
+        y: (root.height - self.preferred-height) / 2;
         text: root.glyph(root.name);
         font-family: Theme.icon-font;
         // The icon font's ink sits inside the em; one extra pixel keeps the
