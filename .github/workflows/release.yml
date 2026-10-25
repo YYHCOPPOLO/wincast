@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Build release
         run: cargo build -p tinycast --release --locked
@@ -31,19 +33,41 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/tinycast.exe dist/
           Copy-Item README.md dist/
+          Copy-Item README.en.md dist/
           Compress-Archive -Path dist/* -DestinationPath "tinycast-$version-windows-x64.zip"
+
+      - name: Release notes
+        shell: pwsh
+        run: |
+          $previous = git describe --tags --abbrev=0 HEAD 2>$null | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0 -or -not $previous) {
+            $previous = (git rev-list --max-parents=0 HEAD | Select-Object -Last 1)
+          }
+          $commits = @(git log --no-merges --reverse --pretty=format:"- %s (%h)" "$previous..HEAD")
+          if ($commits.Count -eq 0) {
+            $commits = @("- No changes since the previous release.")
+          }
+          $lines = @(
+            "Automated Windows x64 build.",
+            "",
+            "- Commit: ${{ github.sha }}",
+            "- Branch: ${{ github.ref_name }}",
+            "",
+            "## What's Changed",
+            ""
+          ) + $commits + @(
+            "",
+            "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$previous...${{ github.sha }}"
+          )
+          $lines -join "`n" | Out-File -FilePath RELEASE_NOTES.md -Encoding utf8
+          Get-Content RELEASE_NOTES.md
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}-build.${{ github.run_number }}
           name: Tinycast ${{ env.VERSION }} build ${{ github.run_number }}
-          body: |
-            Automated Windows x64 build.
-
-            - Commit: `${{ github.sha }}`
-            - Branch: `${{ github.ref_name }}`
+          body_path: RELEASE_NOTES.md
           files: |
             ${{ env.ASSET }}
             dist/tinycast.exe
-          generate_release_notes: true
