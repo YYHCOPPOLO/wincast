@@ -12,6 +12,7 @@ Download from [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest).
 - **System actions**: lock, sleep, volume, dark mode, recycle bin, `ms-settings:` pages
 - **Clipboard history**: text and images, search, pin, paste back to the previous window
 - **Calculator**: math, units, currencies, dates; Enter copies and saves history
+- **Dictionary**: type an English word or phrase and press Tab for the whole ECDICT entry (local data, no AI call)
 - **Commands & quicklinks**: custom commands, links and global hotkeys
 - **Window management**: snap, thirds, virtual desktops
 - **File search**: Windows Search, or a bounded folder walk
@@ -37,7 +38,7 @@ Requires **Windows 11 24H2 (build 26100) or later**, x64.
 | Show / hide the palette | Alt+Space (configurable) |
 | Run the selected result | Enter |
 | Clear / close | Esc |
-| Launcher / AI / Clipboard | Tab |
+| Launcher / dictionary / AI / Clipboard | Tab |
 | Actions for the current row | Ctrl+K |
 | Favorite slots | Ctrl+1…9, Ctrl+0 |
 
@@ -52,14 +53,25 @@ cargo build -p tinycast --release
 .\target\release\tinycast.exe
 ```
 
+The dictionary data stays out of the exe: build it once from [ECDICT](https://github.com/skywind3000/ECDICT) at the pinned commit (~97 MB, 770,611 entries):
+
+```powershell
+pwsh -NoProfile -File tools/build-dict.ps1
+```
+
+The script caches the CSV in `%TEMP%`, writes `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`, and drops the MIT notice next to it. `-Force` rebuilds; without the database Tab keeps the old launcher → AI/Clipboard ring.
+
 ## Data
 
 | What | Where |
 | --- | --- |
 | Settings, chats, notes, snippets, learning rank | `%APPDATA%\com.tinycast.win\` |
 | Clipboard history and image cache | `data\` next to the exe |
+| Dictionary data (ECDICT, built by `tools/build-dict.ps1`) | `%APPDATA%\com.tinycast.win\Dictionary\` |
 | API keys | DPAPI-protected, excluded from backups |
 
 ## License
 
 MIT. An independent rewrite; the UI and behavior reference [Tinycast](https://github.com/abue-ammar/tinycast) (AGPL-3.0) without copying its Swift source.
+
+Dictionary data comes from [ECDICT](https://github.com/skywind3000/ECDICT) (MIT, Copyright (c) 2025 Linwei) at commit `9c46923f`; the build script writes that license to `LICENSE-ECDICT.txt` next to the database.

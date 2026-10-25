@@ -12,6 +12,7 @@ Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测�
 - **系统操作**：锁屏、睡眠、音量、深色模式、回收站、`ms-settings:` 页面
 - **剪贴板历史**：文本与图片，支持搜索、钉住、粘回唤出前的窗口
 - **计算器**：数学、单位、汇率、日期；Enter 复制并写入历史
+- **词典**：输入英文单词或短语后按 Tab，显示 ECDICT 的全部释义（本地数据，不调用 AI）
 - **命令与快捷链接**：自定义命令、链接和全局热键
 - **窗口管理**：贴边、三分、虚拟桌面
 - **文件搜索**：Windows Search，或有限深度的目录遍历
@@ -37,7 +38,7 @@ Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测�
 | 显示 / 隐藏面板 | Alt+Space（可在设置中修改） |
 | 启动当前结果 | Enter |
 | 清空 / 关闭 | Esc |
-| 启动器 / AI / 剪贴板 | Tab |
+| 启动器 / 查词 / AI / 剪贴板 | Tab |
 | 当前行操作 | Ctrl+K |
 | 收藏槽 | Ctrl+1…9、Ctrl+0 |
 
@@ -52,14 +53,25 @@ cargo build -p tinycast --release
 .\target\release\tinycast.exe
 ```
 
+词典数据不在 exe 里：先从 [ECDICT](https://github.com/skywind3000/ECDICT)（固定提交）下载 CSV，再本地构建一次（约 97 MB，770,611 条）：
+
+```powershell
+pwsh -NoProfile -File tools/build-dict.ps1
+```
+
+脚本把 CSV 缓存到 `%TEMP%`，生成 `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`，并在旁边写入 MIT 许可。`-Force` 可重建；没有数据库时 Tab 仍是原来的 启动器 → AI/剪贴板。
+
 ## 数据
 
 | 内容 | 位置 |
 | --- | --- |
 | 设置、聊天、笔记、片段、学习排序 | `%APPDATA%\com.tinycast.win\` |
 | 剪贴板历史与图片缓存 | exe 同目录下的 `data\` |
+| 词典数据（ECDICT，由 `tools/build-dict.ps1` 生成） | `%APPDATA%\com.tinycast.win\Dictionary\` |
 | API Key | DPAPI 加密，不进入备份 |
 
 ## 许可
 
 MIT。界面与产品行为参考 [Tinycast](https://github.com/abue-ammar/tinycast)（AGPL-3.0）；本仓库为独立重写，不包含其 Swift 源码。
+
+词典数据来自 [ECDICT](https://github.com/skywind3000/ECDICT)（MIT，Copyright (c) 2025 Linwei），固定提交 `9c46923f`；构建脚本会把许可文本写入数据库同目录的 `LICENSE-ECDICT.txt`。

@@ -171,7 +171,12 @@ impl PaletteWindow {
                 return;
             }
             if let Some(core) = core_from_host(unsafe { (*inner).host }) {
-                let text = unsafe { (*core).clipboard_preview().unwrap_or_default() };
+                let core = unsafe { &*core };
+                let text = if core.palette.mode == PaletteMode::Dictionary {
+                    core.dictionary_copy_text().unwrap_or_default()
+                } else {
+                    core.clipboard_preview().unwrap_or_default()
+                };
                 if !text.is_empty() {
                     let _ = crate::platform::clipboard::write_text_marked(&text);
                 }
@@ -572,7 +577,7 @@ fn update_hover(ui: &Palette, inner: *mut PaletteInner) {
         return;
     };
     let split = ui.get_split();
-    if split && x >= theme::size::CLIPBOARD_LIST_WIDTH {
+    if split && x >= ui.get_split_x() {
         // Over the preview pane: the wheel, not a row, lives there.
         ui.set_hover_index(-1);
         return;
@@ -626,19 +631,33 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     let panel_h = snapshot::panel_height(expanded);
     let (scroll, content, view) = core.scroll_metrics(panel_h);
     let items = core.launcher_paint_items();
-    // Clipboard is the one split screen: 290 DIP list, rule, wrapped preview.
-    let preview = core.clipboard_preview();
-    let split = preview.is_some() && !items.is_empty();
+    // Two split screens share this pane: the clipboard preview next to its
+    // 290 DIP list, and the dictionary panel, which owns the whole width.
+    let is_dictionary = core.palette.mode == PaletteMode::Dictionary;
+    let preview = if is_dictionary {
+        core.dictionary_preview()
+    } else {
+        core.clipboard_preview()
+    };
+    let split = is_dictionary || (preview.is_some() && !items.is_empty());
     ui.set_split(split);
-    ui.set_split_x(theme::size::CLIPBOARD_LIST_WIDTH);
-    ui.set_preview_text(
+    ui.set_split_x(if is_dictionary {
+        0.0
+    } else {
+        theme::size::CLIPBOARD_LIST_WIDTH
+    });
+    // The dictionary shows every ECDICT field in full; a clipboard paste is
+    // capped so a whole log file cannot stall text shaping.
+    let preview_text = if is_dictionary {
+        preview.unwrap_or_default()
+    } else {
         preview
             .unwrap_or_default()
             .chars()
             .take(PREVIEW_CHARS)
             .collect::<String>()
-            .into(),
-    );
+    };
+    ui.set_preview_text(preview_text.into());
     attach_filter(ui, core, expanded);
     let empty = if items.is_empty() && core.ai_chat_messages().is_none() {
         core.empty_results_text().unwrap_or("")
@@ -647,7 +666,7 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     };
     let dpi = unsafe { GetDpiForWindow(window_hwnd(ui).unwrap_or_default()) };
     let inner_mut = unsafe { &mut *inner };
-    let preview_image = if split {
+    let preview_image = if split && !is_dictionary {
         core.clipboard_preview_image().and_then(|path| {
             let (width, height) = preview_image_pixels(dpi);
             inner_mut
@@ -1177,8 +1196,9 @@ unsafe extern "system" fn palette_subclass(
         WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
             let result = DefSubclassProc(hwnd, msg, wparam, lparam);
             if !inner.is_null() {
-                // Clicks over the clipboard preview belong to its selectable
-                // text: the field must not steal the focus back from it.
+                // Clicks over the clipboard preview or the dictionary panel
+                // belong to their selectable text: the field must not steal the
+                // focus back from it.
                 let over_preview = (*inner)
                     .weak
                     .upgrade()
@@ -1188,7 +1208,7 @@ unsafe extern "system" fn palette_subclass(
                             let scale = if dpi == 0 { 1.0 } else { 96.0 / dpi as f32 };
                             let pos = lparam.0 as u32;
                             let x = (pos & 0xffff) as i16 as f32 * scale;
-                            x >= theme::size::CLIPBOARD_LIST_WIDTH
+                            x >= ui.get_split_x()
                         }
                     })
                     .unwrap_or(false);
@@ -1283,12 +1303,16 @@ unsafe extern "system" fn palette_subclass(
     }
 }
 
-/// True while the pointer sits right of the 290 DIP list column in clipboard mode.
+/// True while the pointer sits in the split preview pane: the clipboard preview
+/// or the dictionary panel, whichever owns the right-hand side.
 fn wheel_over_preview(hwnd: HWND, inner: *mut PaletteInner, lparam: LPARAM) -> bool {
     let Some(core) = core_from_host(unsafe { (*inner).host }) else {
         return false;
     };
-    if unsafe { (*core).palette.mode } != PaletteMode::Clipboard {
+    if !matches!(
+        unsafe { (*core).palette.mode },
+        PaletteMode::Clipboard | PaletteMode::Dictionary
+    ) {
         return false;
     }
     // WM_MOUSEWHEEL carries screen coordinates.
@@ -1299,10 +1323,14 @@ fn wheel_over_preview(hwnd: HWND, inner: *mut PaletteInner, lparam: LPARAM) -> b
     if !unsafe { ScreenToClient(hwnd, &mut point) }.as_bool() {
         return false;
     }
-    // The preview starts one hairline right of the 290 DIP list column; anything
-    // left of that still belongs to AppCore's list scroll.
+    // The preview starts one hairline right of the split edge; anything left of
+    // that still belongs to AppCore's list scroll. The dictionary panel splits
+    // at 0 DIP, so its whole width scrolls the text.
+    let Some(ui) = (unsafe { (*inner).weak.upgrade() }) else {
+        return false;
+    };
     let preview_left = dip_scalar_to_px(
-        theme::size::CLIPBOARD_LIST_WIDTH + theme::size::HAIRLINE,
+        ui.get_split_x() + theme::size::HAIRLINE,
         unsafe { GetDpiForWindow(hwnd) },
     );
     point.x >= preview_left
