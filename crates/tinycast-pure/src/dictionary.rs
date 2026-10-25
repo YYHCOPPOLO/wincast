@@ -190,7 +190,9 @@ pub struct DictionaryView {
 }
 
 /// Every non-empty field of `entry` as the panel's rows: one section per kind
-/// of content, every line kept, nothing summarised.
+/// of content, every line kept, nothing summarised. A section with no body
+/// line is not a section: ECDICT leaves `definition` and `translation` empty
+/// for plenty of headwords, and a bare title reads as a bug.
 pub fn view_entry(entry: &DictionaryEntry, lang: UiLang) -> DictionaryView {
     let mut view = DictionaryView {
         word: entry.word.trim().to_string(),
@@ -199,11 +201,17 @@ pub fn view_entry(entry: &DictionaryEntry, lang: UiLang) -> DictionaryView {
         rows: Vec::new(),
     };
 
-    push_section(&mut view.rows, dictionary_section_chinese(lang));
-    push_lines(&mut view.rows, DictionaryRowKind::Chinese, &entry.translation);
+    let chinese = body_lines(&entry.translation);
+    if !chinese.is_empty() {
+        push_section(&mut view.rows, dictionary_section_chinese(lang));
+        push_lines(&mut view.rows, DictionaryRowKind::Chinese, chinese);
+    }
 
-    push_section(&mut view.rows, dictionary_section_english(lang));
-    push_lines(&mut view.rows, DictionaryRowKind::English, &entry.definition);
+    let english = body_lines(&entry.definition);
+    if !english.is_empty() {
+        push_section(&mut view.rows, dictionary_section_english(lang));
+        push_lines(&mut view.rows, DictionaryRowKind::English, english);
+    }
 
     let forms = form_rows(entry, lang);
     if !forms.is_empty() {
@@ -425,8 +433,8 @@ fn push_section(rows: &mut Vec<DictionaryRow>, header: &str) {
 }
 
 /// One row per non-empty line of a multi-line ECDICT field.
-fn push_lines(rows: &mut Vec<DictionaryRow>, kind: DictionaryRowKind, raw: &str) {
-    for line in body_lines(raw) {
+fn push_lines(rows: &mut Vec<DictionaryRow>, kind: DictionaryRowKind, lines: Vec<String>) {
+    for line in lines {
         rows.push(DictionaryRow {
             kind,
             label: String::new(),

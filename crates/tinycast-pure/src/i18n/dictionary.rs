@@ -158,6 +158,12 @@ pub fn dictionary_copy_definition(lang: UiLang) -> &'static str {
     pick(lang, "Copy Definition", "复制释义")
 }
 
+/// Footer label in the panel when there is no entry to copy: Enter goes back
+/// to the launcher instead.
+pub fn dictionary_back(lang: UiLang) -> &'static str {
+    pick(lang, "Back", "返回")
+}
+
 pub fn dictionary_definition_copied(lang: UiLang) -> &'static str {
     pick(lang, "Definition copied", "已复制释义")
 }

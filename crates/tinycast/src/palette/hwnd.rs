@@ -728,7 +728,13 @@ fn refresh(ui: &Palette, inner: *mut PaletteInner) {
     }
     ui.set_chat_mode(messages.is_some());
     ui.set_thinking_label(tinycast_pure::i18n::ai_thinking(core.ui_lang()).into());
-    ui.set_content_height(content.max(visible.content_height));
+    // The dictionary page owns the content area and its own rail; the list has
+    // no rows there, so its scroll state must stay empty.
+    ui.set_content_height(if is_dictionary {
+        0.0
+    } else {
+        content.max(visible.content_height)
+    });
     // Slint's Flickable offset is negative while scrolled down; AppCore keeps
     // the positive distance-from-top.
     ui.set_scroll_y(-scroll);

@@ -474,6 +474,17 @@ impl AppCore {
             .map(|entry| format_entry(entry, self.ui_lang()))
     }
 
+    /// The way out of the panel: the headword belongs to the panel, not to the
+    /// launcher, so the query typed before the first Tab returns and the
+    /// entry's own state is dropped. Shared by Tab and by Enter on a miss.
+    fn dictionary_to_launcher(&mut self) {
+        self.palette.query = self.launcher_query.clone();
+        self.palette.mode = PaletteMode::Launcher;
+        self.palette.selection = 0;
+        self.dictionary_entry = None;
+        self.dictionary_suggestions.clear();
+    }
+
     fn dictionary_refresh(&mut self) {
         let query = self.palette.query.trim().to_string();
         let mut entry = None;
@@ -2851,10 +2862,15 @@ impl AppCore {
         if !self.palette_visible {
             return;
         }
-        // The dictionary panel has no rows: Enter copies the whole entry and
-        // keeps the palette up for the next word.
+        // The dictionary panel has no rows: Enter copies the whole entry, or,
+        // with nothing to copy, takes the same way back the Tab ring does.
         if self.palette.mode == PaletteMode::Dictionary {
-            self.copy_dictionary();
+            if self.dictionary_entry.is_some() {
+                self.copy_dictionary();
+            } else {
+                self.dictionary_to_launcher();
+                self.after_hop();
+            }
             return;
         }
         if self.palette.mode == PaletteMode::Emoji {
@@ -4666,7 +4682,13 @@ impl AppCore {
             return tinycast_pure::i18n::footer_copy_answer(lang);
         }
         if self.palette.mode == PaletteMode::Dictionary {
-            return tinycast_pure::i18n::dictionary_copy_definition(lang);
+            // With no entry there is nothing to copy: Enter goes back instead,
+            // and the footer says so.
+            return if self.dictionary_entry.is_some() {
+                tinycast_pure::i18n::dictionary_copy_definition(lang)
+            } else {
+                tinycast_pure::i18n::dictionary_back(lang)
+            };
         }
         if self.palette.mode == PaletteMode::Clipboard {
             return tinycast_pure::i18n::footer_paste(lang);
@@ -4726,15 +4748,12 @@ impl AppCore {
                         self.settings.ai_opens_to,
                         self.settings.ai_new_chat_after_minutes,
                     ));
+                self.palette.selection = 0;
+                self.dictionary_entry = None;
+                self.dictionary_suggestions.clear();
             } else {
-                // The headword belongs to the panel, not to the launcher: the
-                // query the user typed before the first Tab is what returns.
-                self.palette.query = self.launcher_query.clone();
-                self.palette.mode = PaletteMode::Launcher;
+                self.dictionary_to_launcher();
             }
-            self.palette.selection = 0;
-            self.dictionary_entry = None;
-            self.dictionary_suggestions.clear();
             self.after_hop();
             return;
         }
