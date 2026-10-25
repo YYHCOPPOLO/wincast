@@ -2,6 +2,9 @@ use tinycast_pure::alias::AliasStore;
 use tinycast_pure::app_entry::{AppEntry, AppKind};
 use tinycast_pure::calc::{evaluate, CalcResult, CalculatorHistoryStore};
 use tinycast_pure::command_id::CommandID;
+use tinycast_pure::dictionary::{
+    format_entry, format_no_match, DictionaryEntry, MAX_SUGGESTIONS,
+};
 use tinycast_pure::favorites::FavoritesStore;
 use tinycast_pure::feature_flags::FeatureFlags;
 use tinycast_pure::hotkey::HotKeyBinding;
@@ -43,6 +46,7 @@ use crate::features::clipboard::ui::screen as clip_screen;
 use crate::features::custom_commands::service::store::CustomCommandStore;
 use crate::features::custom_commands::ui::coordinator as custom_coordinator;
 use crate::features::custom_commands::ui::editor::CommandDraft;
+use crate::features::dictionary::service::store::DictionaryStore;
 use crate::features::launcher::service::app_index::AppIndex;
 use crate::features::launcher::settings::items::{
     commands_catalog_for, commit_alias_text, hotkey_action_key,
@@ -128,6 +132,11 @@ pub struct AppCore {
     qa_panel: Option<crate::features::quick_actions::ui::result::ResultPanel>,
     launcher_query: String,
     ai_model_choices: Vec<tinycast_pure::ai::ModelSelection>,
+    /// `None` when no ECDICT database is installed; the Tab ring then keeps its
+    /// plain Launcher → AI/Clipboard shape.
+    dictionary: Option<DictionaryStore>,
+    dictionary_entry: Option<DictionaryEntry>,
+    dictionary_suggestions: Vec<String>,
 }
 
 impl AppCore {
@@ -206,6 +215,9 @@ impl AppCore {
             qa_panel: None,
             launcher_query: String::new(),
             ai_model_choices: Vec::new(),
+            dictionary: DictionaryStore::open_default(),
+            dictionary_entry: None,
+            dictionary_suggestions: Vec::new(),
         }
     }
 
@@ -374,6 +386,22 @@ impl AppCore {
     }
 
     pub fn tab_hint(&self) -> Option<&'static str> {
+        let lang = self.ui_lang();
+        if self.palette.mode == PaletteMode::Dictionary {
+            return Some(if self.settings.ai_enabled {
+                tinycast_pure::i18n::dictionary_tab_ai(lang)
+            } else {
+                tinycast_pure::i18n::dictionary_tab_clipboard(lang)
+            });
+        }
+        // Tab opens the dictionary only when there is something to look up.
+        if self.palette.mode == PaletteMode::Launcher
+            && self.expanded
+            && self.dictionary.is_some()
+            && !self.palette.query.trim().is_empty()
+        {
+            return Some(tinycast_pure::i18n::dictionary_tab_define(lang));
+        }
         tab_opens_ai_chat(
             self.palette.mode,
             self.settings.ai_enabled,
@@ -381,6 +409,46 @@ impl AppCore {
             self.palette.mode == PaletteMode::QuicklinkArguments,
         )
         .then_some(command_title(CommandID::AiChat, self.ui_lang()))
+    }
+
+    /// The dictionary panel's text: the entry, a miss with suggestions, or the
+    /// hint while there is nothing to look up.
+    pub fn dictionary_preview(&self) -> Option<String> {
+        if self.palette.mode != PaletteMode::Dictionary {
+            return None;
+        }
+        let lang = self.ui_lang();
+        let query = self.palette.query.trim();
+        if query.is_empty() {
+            return Some(tinycast_pure::i18n::dictionary_hint(lang).to_string());
+        }
+        Some(match &self.dictionary_entry {
+            Some(entry) => format_entry(entry, lang),
+            None => format_no_match(query, &self.dictionary_suggestions, lang),
+        })
+    }
+
+    /// Enter in dictionary mode copies the whole entry, never a summary.
+    pub fn dictionary_copy_text(&self) -> Option<String> {
+        self.dictionary_entry
+            .as_ref()
+            .map(|entry| format_entry(entry, self.ui_lang()))
+    }
+
+    fn dictionary_refresh(&mut self) {
+        let query = self.palette.query.trim().to_string();
+        let mut entry = None;
+        let mut suggestions = Vec::new();
+        if !query.is_empty() {
+            if let Some(store) = self.dictionary.as_ref() {
+                entry = store.lookup(&query);
+                if entry.is_none() {
+                    suggestions = store.suggest(&query, MAX_SUGGESTIONS);
+                }
+            }
+        }
+        self.dictionary_entry = entry;
+        self.dictionary_suggestions = suggestions;
     }
 
     pub fn clipboard_preview(&self) -> Option<String> {
@@ -1953,6 +2021,10 @@ impl AppCore {
     }
 
     pub fn launcher_paint_items(&self) -> Vec<PaintItem> {
+        // The dictionary panel owns the whole content area; there is no list.
+        if self.palette.mode == PaletteMode::Dictionary {
+            return Vec::new();
+        }
         if self.palette.mode == PaletteMode::Ai {
             return crate::features::ai::ui::screen::paint_chat(
                 &self.ai.session.messages,
@@ -2434,6 +2506,9 @@ impl AppCore {
                 if self.palette.mode == PaletteMode::FileSearch {
                     self.file_search.cancel();
                 }
+                if self.palette.mode == PaletteMode::Dictionary {
+                    self.dictionary_refresh();
+                }
                 if let Some(window) = &self.palette_window {
                     window.reset_search();
                 }
@@ -2480,6 +2555,9 @@ impl AppCore {
         if self.palette.mode == PaletteMode::FileSearch {
             self.file_search.search(&self.palette.query);
         }
+        if self.palette.mode == PaletteMode::Dictionary {
+            self.dictionary_refresh();
+        }
         self.clamp_selection();
         self.invalidate_palette();
     }
@@ -2501,6 +2579,9 @@ impl AppCore {
         }
         if self.palette.mode == PaletteMode::FileSearch {
             self.file_search.search(&self.palette.query);
+        }
+        if self.palette.mode == PaletteMode::Dictionary {
+            self.dictionary_refresh();
         }
         self.clamp_selection();
         self.invalidate_palette();
@@ -2729,6 +2810,18 @@ impl AppCore {
 
     pub fn activate_selected(&mut self) {
         if !self.palette_visible {
+            return;
+        }
+        // The dictionary panel has no rows: Enter copies the whole entry and
+        // keeps the palette up for the next word.
+        if self.palette.mode == PaletteMode::Dictionary {
+            if let Some(text) = self.dictionary_copy_text() {
+                let _ = crate::platform::clipboard::write_text_marked(&text);
+                self.show_message_hud_tone(
+                    tinycast_pure::i18n::dictionary_definition_copied(self.ui_lang()),
+                    tinycast_pure::dialog::DialogTone::Success,
+                );
+            }
             return;
         }
         if self.palette.mode == PaletteMode::Emoji {
@@ -4485,6 +4578,8 @@ impl AppCore {
                 selectable_rows(&self.sections()).len(),
             ),
             PaletteMode::Ai => 1,
+            // The dictionary panel is one surface, not a list of rows.
+            PaletteMode::Dictionary => 1,
             PaletteMode::AiHistory => self.ai.history().search(&self.palette.query).len(),
             _ => selectable_rows(&self.sections()).len(),
         }
@@ -4529,6 +4624,9 @@ impl AppCore {
         if self.palette.mode == PaletteMode::CalculatorHistory {
             return tinycast_pure::i18n::footer_copy_answer(lang);
         }
+        if self.palette.mode == PaletteMode::Dictionary {
+            return tinycast_pure::i18n::dictionary_copy_definition(lang);
+        }
         if self.palette.mode == PaletteMode::Clipboard {
             return tinycast_pure::i18n::footer_paste(lang);
         }
@@ -4561,12 +4659,46 @@ impl AppCore {
             return;
         }
         let from = self.palette.mode;
+        let query = self.palette.query.clone();
+        // Launcher → Dictionary, only when a headword was typed and the ECDICT
+        // database is installed; without it the ring stays exactly as it was.
+        if from == PaletteMode::Launcher
+            && self.dictionary.is_some()
+            && !query.trim().is_empty()
+        {
+            self.launcher_query = query;
+            self.palette.mode = PaletteMode::Dictionary;
+            self.palette.selection = 0;
+            self.dictionary_refresh();
+            self.after_hop();
+            return;
+        }
+        // Dictionary → AI when AI is on, otherwise Clipboard. `tab_from` is left
+        // alone: its Launcher → AI/Clipboard ring is the pre-dictionary one.
+        if from == PaletteMode::Dictionary {
+            if self.settings.ai_enabled {
+                self.palette.query = self.ai.draft.clone();
+                self.palette.mode = PaletteMode::Ai;
+                self.ai
+                    .apply_open_policy(crate::features::ai::ui::coordinator::open_policy(
+                        self.settings.ai_opens_to,
+                        self.settings.ai_new_chat_after_minutes,
+                    ));
+            } else {
+                self.palette.query = query;
+                self.palette.mode = PaletteMode::Clipboard;
+            }
+            self.palette.selection = 0;
+            self.dictionary_entry = None;
+            self.dictionary_suggestions.clear();
+            self.after_hop();
+            return;
+        }
         let hop = tab_from(
             from,
             self.settings.ai_enabled,
             from == PaletteMode::QuicklinkArguments,
         );
-        let query = self.palette.query.clone();
         match hop {
             TabHop::StayForArguments => return,
             TabHop::Clipboard => {
@@ -4607,6 +4739,12 @@ impl AppCore {
                     ));
             }
         }
+        self.after_hop();
+    }
+
+    /// The layout steps every Tab hop shares: fresh selection, expanded panel,
+    /// closed menu, and a repaint.
+    fn after_hop(&mut self) {
         self.palette.selection = 0;
         self.list_scroll = 0.0;
         self.expanded = true;

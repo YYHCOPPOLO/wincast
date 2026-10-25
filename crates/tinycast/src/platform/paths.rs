@@ -32,6 +32,12 @@ pub fn clipboard_dir() -> PathBuf {
     install_dir().join("data")
 }
 
+/// The ECDICT database built by `tools/build-dict.ps1`. Roaming AppData, not
+/// the install directory: it is 96 MB of shared data, not app state.
+pub fn dictionary_dir() -> PathBuf {
+    roaming_dir().join("Dictionary")
+}
+
 #[cfg(not(test))]
 fn known_dir(var: &str) -> PathBuf {
     std::env::var_os(var)

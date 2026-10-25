@@ -4,6 +4,7 @@ pub mod calculator;
 pub mod calendar;
 pub mod clipboard;
 pub mod custom_commands;
+pub mod dictionary;
 pub mod emoji;
 pub mod extensions;
 pub mod file_search;
