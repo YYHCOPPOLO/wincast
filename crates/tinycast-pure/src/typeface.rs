@@ -12,6 +12,25 @@ pub const LATIN_FALLBACK: &str = "Segoe UI";
 /// CJK families, preferred first.
 pub const CJK: [&str; 2] = ["Microsoft YaHei UI", "Microsoft YaHei"];
 
+/// The native Windows icon fonts. Segoe Fluent Icons ships with Windows 11;
+/// Windows 10 carries the older Segoe MDL2 Assets, which shares the code
+/// points the glyph map uses. The file name is the reliable probe: font
+/// enumeration would have to come from DirectWrite for no extra benefit.
+pub const ICON_FLUENT: &str = "Segoe Fluent Icons";
+pub const ICON_MDL2: &str = "Segoe MDL2 Assets";
+
+pub fn icon_family() -> &'static str {
+    let windir = std::env::var_os("WINDIR").unwrap_or_else(|| "C:\\Windows".into());
+    let fluent = std::path::Path::new(&windir)
+        .join("Fonts")
+        .join("SegoeIcons.ttf");
+    if fluent.is_file() {
+        ICON_FLUENT
+    } else {
+        ICON_MDL2
+    }
+}
+
 /// The Segoe UI Variable optical size for a DIP size. Fluent's type ramp switches to
 /// Display at 20 and to Small below 12, which is also where SF Pro swaps optical sizes.
 pub fn latin_family_for_size(size_dip: f32) -> &'static str {

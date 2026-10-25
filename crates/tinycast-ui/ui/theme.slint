@@ -71,6 +71,9 @@ export global Theme {
 
     // Typography (`theme::typography`), in DIP.
     in property <string> font-family;
+    // The OS icon font (`Segoe Fluent Icons`, or `Segoe MDL2 Assets` on
+    // Windows 10); every GlyphIcon draws its code point in this family.
+    in property <string> icon-font: "Segoe Fluent Icons";
     in property <length> font-search;
     in property <length> font-header-icon;
     in property <length> font-row;

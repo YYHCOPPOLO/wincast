@@ -21,6 +21,7 @@ where
 
     t.set_dark(appearance == 0);
     t.set_font_family(tinycast_pure::typeface::LATIN_FALLBACK.into());
+    t.set_icon_font(tinycast_pure::typeface::icon_family().into());
 
     // Colors: the opaque Magpie page/surface/muted/ink ramp, then the
     // translucent selection and hover ink. Old `theme::colors` alpha stops stay
