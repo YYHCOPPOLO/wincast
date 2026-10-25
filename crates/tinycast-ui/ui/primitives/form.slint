@@ -240,39 +240,46 @@ export component SettingsRow inherits Rectangle {
             overflow: elide;
         }
 
-        if root.control == 3: Rectangle {
-            width: Theme.size-shortcut-recorder;
-            height: Theme.size-magpie-field;
-            border-radius: Theme.radius-magpie-control;
-            background: Theme.surface;
-            border-width: Theme.size-hairline;
-            border-color: root.active ? Theme.accent : Theme.border;
+        // A fixed-height row child aligns to the top under the layout's
+        // default cross-axis stretch, so the well gets a centering wrapper,
+        // like the switch and the keycap.
+        if root.control == 3: VerticalLayout {
+            alignment: center;
 
-            Text {
-                x: Theme.spacing-xs;
-                width: parent.width - Theme.spacing-xs * 2;
-                height: parent.height;
-                text: root.trailing;
-                font-family: Theme.font-family;
-                font-size: Theme.font-chip;
-                color: Theme.text-primary;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                overflow: elide;
-            }
+            Rectangle {
+                width: Theme.size-shortcut-recorder;
+                height: Theme.size-magpie-field;
+                border-radius: Theme.radius-magpie-control;
+                background: Theme.surface;
+                border-width: Theme.size-hairline;
+                border-color: root.active ? Theme.accent : Theme.border;
 
-            // The well is its own affordance: pointer cursor and the same
-            // activation the row click performs, with the callout anchored to
-            // the well itself.
-            well-area := TouchArea {
-                mouse-cursor: MouseCursor.pointer;
-                clicked => {
-                    scope.focus();
-                    root.well-revealed(
-                        self.absolute-position.x + self.width / 2,
-                        self.absolute-position.y,
-                    );
-                    root.activated();
+                Text {
+                    x: Theme.spacing-xs;
+                    width: parent.width - Theme.spacing-xs * 2;
+                    height: parent.height;
+                    text: root.trailing;
+                    font-family: Theme.font-family;
+                    font-size: Theme.font-chip;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                // The well is its own affordance: pointer cursor and the same
+                // activation the row click performs, with the callout anchored
+                // to the well itself.
+                well-area := TouchArea {
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => {
+                        scope.focus();
+                        root.well-revealed(
+                            self.absolute-position.x + self.width / 2,
+                            self.absolute-position.y,
+                        );
+                        root.activated();
+                    }
                 }
             }
         }
