@@ -683,6 +683,11 @@ component DictEmptyState inherits Rectangle {
 
     background: transparent;
 
+    // A new query starts at the top: the wheel offset belongs to the miss that
+    // is gone. `changed` never fires at creation, and a fresh body is at 0.
+    changed title => { empty-flick.content-y = 0px; }
+    changed body => { empty-flick.content-y = 0px; }
+
     empty-flick := Flickable {
         x: 0;
         y: 0;
@@ -825,6 +830,11 @@ export component DictionaryPanel inherits Rectangle {
     // mirrored through `scroll-y` so the rail and these resets agree.
     changed word => { root.scroll-y = 0px; }
     changed has-entry => { root.scroll-y = 0px; }
+    // A page created for a headword inherits the offset of the body that was
+    // destroyed with the last one: the rail and the top band read `scroll-y`,
+    // so the page starts at the top even when neither `word` nor `has-entry`
+    // changed (Tab out and Tab back to the same headword).
+    init => { root.scroll-y = 0px; }
     // The token only grows once a copy landed, so a repaint cannot revive a
     // toast that already faded.
     changed copy-token => { root.toast-visible = true; }
