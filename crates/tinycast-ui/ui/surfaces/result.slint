@@ -77,7 +77,11 @@ export component ResultWindow inherits Window {
         border-width: Theme.size-hairline;
         border-color: Theme.border;
         background: Theme.surface;
-        clip: true;
+        // No `clip: true`: a rounded clip renders the whole card into a
+        // femtovg layer and resamples every child through a texture, which
+        // blurs the heading, body and glyph at fractional Windows scaling.
+        // Every child sits inside the 16 DIP radius, so the rounded
+        // background and border already draw the full silhouette.
 
         // Header row: the sparkles glyph and the action title.
         HorizontalLayout {

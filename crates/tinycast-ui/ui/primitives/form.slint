@@ -114,6 +114,9 @@ export component SidebarRow inherits Rectangle {
             GlyphIcon {
                 size: 15px;
                 name: root.symbol;
+                // The label is primary ink; a secondary stroke next to it reads
+                // as a blurry, out-of-focus glyph. One ink for the whole row.
+                ink: Theme.text-primary;
             }
         }
 
