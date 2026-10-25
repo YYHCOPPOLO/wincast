@@ -3442,6 +3442,10 @@ impl AppCore {
             self.close_menu();
             return;
         }
+        // The dictionary panel has no rows, so it has no row actions.
+        if self.palette.mode == PaletteMode::Dictionary {
+            return;
+        }
         if matches!(self.palette.mode, PaletteMode::Ai | PaletteMode::AiHistory) {
             if !self.expanded {
                 return;
@@ -3767,6 +3771,9 @@ impl AppCore {
     }
 
     fn footer_action_group_visible(&self) -> bool {
+        if self.palette.mode == PaletteMode::Dictionary {
+            return false;
+        }
         if matches!(self.palette.mode, PaletteMode::Ai | PaletteMode::AiHistory) {
             return self.expanded;
         }
@@ -3785,6 +3792,7 @@ impl AppCore {
             || self.palette.mode == PaletteMode::Uninstall
             || self.palette.mode == PaletteMode::Ai
             || self.palette.mode == PaletteMode::AiHistory
+            || self.palette.mode == PaletteMode::Dictionary
         {
             return None;
         }

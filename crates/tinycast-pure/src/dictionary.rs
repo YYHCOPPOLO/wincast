@@ -86,17 +86,25 @@ pub enum ExchangeKind {
 }
 
 impl ExchangeKind {
-    fn from_code(code: &str) -> Option<Self> {
+    fn from_char(code: char) -> Option<Self> {
         match code {
-            "0" => Some(Self::Lemma),
-            "p" => Some(Self::Past),
-            "d" => Some(Self::PastParticiple),
-            "i" => Some(Self::PresentParticiple),
-            "3" => Some(Self::ThirdPerson),
-            "r" => Some(Self::Comparative),
-            "t" => Some(Self::Superlative),
-            "s" => Some(Self::Plural),
-            "1" => Some(Self::DerivedForms),
+            '0' => Some(Self::Lemma),
+            'p' => Some(Self::Past),
+            'd' => Some(Self::PastParticiple),
+            'i' => Some(Self::PresentParticiple),
+            '3' => Some(Self::ThirdPerson),
+            'r' => Some(Self::Comparative),
+            't' => Some(Self::Superlative),
+            's' => Some(Self::Plural),
+            _ => None,
+        }
+    }
+
+    fn from_code(code: &str) -> Option<Self> {
+        let mut chars = code.chars();
+        match (chars.next(), chars.next()) {
+            (Some(code), None) if code == '1' => Some(Self::DerivedForms),
+            (Some(code), None) => Self::from_char(code),
             _ => None,
         }
     }
@@ -248,15 +256,38 @@ fn push_forms(out: &mut String, entry: &DictionaryEntry, lang: UiLang) {
         return;
     }
     let mut body = String::new();
-    for (index, (kind, word)) in forms.iter().enumerate() {
-        if index > 0 {
+    for (kind, value) in forms {
+        // `1:` holds the codes of the forms this lemma has, not words.
+        let rendered = if kind == ExchangeKind::DerivedForms {
+            derived_form_labels(&value, lang)
+        } else {
+            value
+        };
+        if rendered.is_empty() {
+            continue;
+        }
+        if !body.is_empty() {
             body.push('\n');
         }
-        body.push_str(dictionary_exchange_label(*kind, lang));
+        body.push_str(dictionary_exchange_label(kind, lang));
         body.push(' ');
-        body.push_str(word);
+        body.push_str(&rendered);
     }
     push_section(out, dictionary_section_forms(lang), &body);
+}
+
+/// `pd` → `过去式 / 过去分词` so the `1:` column reads as the forms it names.
+fn derived_form_labels(codes: &str, lang: UiLang) -> String {
+    let mut labels: Vec<&'static str> = Vec::new();
+    for code in codes.chars() {
+        if let Some(kind) = ExchangeKind::from_char(code) {
+            let label = dictionary_exchange_label(kind, lang);
+            if !labels.contains(&label) {
+                labels.push(label);
+            }
+        }
+    }
+    labels.join(" / ")
 }
 
 /// Appends `\n\n<header>\n<body>` when the body has any line left.
