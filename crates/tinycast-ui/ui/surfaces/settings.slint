@@ -58,6 +58,7 @@ component RowCard inherits Rectangle {
     callback row-text-edited(int, string);
     callback row-text-accepted(int);
     callback row-well-revealed(length, length);
+    callback row-select-revealed(int, length, length, length);
 
     min-height: root.rows.length * Theme.size-settings-row-height;
     preferred-height: root.rows.length * Theme.size-settings-row-height;
@@ -101,6 +102,9 @@ component RowCard inherits Rectangle {
                 enabled: row.enabled;
                 activated => { root.row-activated(row.id); }
                 well-revealed(x, y) => { root.row-well-revealed(x, y); }
+                select-revealed(right, top, bottom) => {
+                    root.row-select-revealed(row.id, right, top, bottom);
+                }
                 trailing-activated => { root.row-trailing-activated(row.id); }
                 text-edited(text) => { root.row-text-edited(row.id, text); }
                 text-accepted(text) => { root.row-text-accepted(row.id); }
@@ -120,6 +124,7 @@ component RowsPage inherits Rectangle {
     callback row-text-edited(int, string);
     callback row-text-accepted(int);
     callback row-well-revealed(length, length);
+    callback row-select-revealed(int, length, length, length);
 
     background: transparent;
 
@@ -172,6 +177,9 @@ component RowsPage inherits Rectangle {
                         row-text-edited(id, text) => { root.row-text-edited(id, text); }
                         row-text-accepted(id) => { root.row-text-accepted(id); }
                         row-well-revealed(x, y) => { root.row-well-revealed(x, y); }
+                        row-select-revealed(id, right, top, bottom) => {
+                            root.row-select-revealed(id, right, top, bottom);
+                        }
                     }
 
                     if section.note != "": Text {
@@ -712,6 +720,100 @@ component PlaceholderPage inherits Rectangle {
     }
 }
 
+// The value menu for a value row: a panel hanging under the row's trailing
+// edge. A click outside, Escape or a pick dismisses it; the host owns the
+// labels, the current index and the open state.
+component SettingsSelectPopup inherits Rectangle {
+    in property <bool> open: false;
+    in property <[string]> options;
+    in property <int> current: -1;
+    // The anchor row's right edge, top and bottom, in window coordinates.
+    in property <length> anchor-right;
+    in property <length> anchor-top;
+    in property <length> anchor-bottom;
+    callback picked(int);
+    callback dismissed;
+
+    width: 100%;
+    height: 100%;
+    background: transparent;
+
+    if root.open: Rectangle {
+        // A click that misses the panel dismisses the menu and never reaches
+        // the row underneath.
+        backdrop := TouchArea {
+            clicked => { root.dismissed(); }
+        }
+
+        panel := Rectangle {
+            x: Math.max(
+                Theme.spacing-md,
+                Math.min(
+                    root.anchor-right - self.width,
+                    root.width - self.width - Theme.spacing-md,
+                ),
+            );
+            y: root.anchor-bottom + Theme.spacing-xxs + self.height
+                    <= root.height - Theme.spacing-md
+                ? root.anchor-bottom + Theme.spacing-xxs
+                : root.anchor-top - self.height - Theme.spacing-xxs;
+            width: Theme.size-shortcut-recorder + Theme.spacing-xxl;
+            height: Math.min(
+                Math.max(
+                    root.options.length * Theme.size-menu-row-height + Theme.spacing-sm * 2,
+                    Theme.size-menu-row-height,
+                ),
+                root.height - Theme.spacing-md * 2,
+            );
+            background: Theme.menu-fill;
+            border-radius: Theme.radius-magpie-card;
+            border-width: Theme.size-hairline;
+            border-color: Theme.menu-border;
+
+            VerticalLayout {
+                padding: Theme.spacing-sm;
+                spacing: 0px;
+
+                for option[i] in root.options: Rectangle {
+                    height: Theme.size-menu-row-height;
+                    border-radius: Theme.radius-menu-row;
+                    background: i == root.current ? Theme.selection
+                        : (option-touch.has-hover ? Theme.menu-hover : transparent);
+
+                    Text {
+                        x: Theme.spacing-md;
+                        width: parent.width - Theme.spacing-md * 2;
+                        height: parent.height;
+                        text: option;
+                        font-family: Theme.font-family;
+                        font-size: Theme.font-row;
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    option-touch := TouchArea {
+                        clicked => { root.picked(i); }
+                    }
+                }
+            }
+        }
+
+        // Escape closes without picking. Creation is the open event, so init
+        // takes the keyboard for the menu.
+        escape-scope := FocusScope {
+            init => { self.focus(); }
+            key-pressed(event) => {
+                if (event.text == Key.Escape) {
+                    root.dismissed();
+                    return accept;
+                }
+                reject
+            }
+        }
+    }
+}
+
 export component SettingsWindow inherits Window {
     in property <string> window-title;
     in property <[SettingsSidebarRow]> sidebar-rows;
@@ -764,6 +866,14 @@ export component SettingsWindow inherits Window {
     // The feature rows page (Quicklinks in 8.1; the other feature tabs in 8.2).
     in property <string> feature-heading;
     in property <[SettingsPageSection]> feature-sections;
+    // The value menu opened by a value row: its labels, the current index and
+    // the anchor row's geometry in window coordinates.
+    in property <bool> select-open: false;
+    in property <[string]> select-options;
+    in property <int> select-current: -1;
+    in property <length> select-right: 0px;
+    in property <length> select-top: 0px;
+    in property <length> select-bottom: 0px;
 
     callback tab-selected(int);
     callback general-row-activated(int);
@@ -784,6 +894,9 @@ export component SettingsWindow inherits Window {
     callback feature-trailing-activated(int);
     callback feature-text-edited(int, string);
     callback feature-text-accepted(int);
+    callback feature-select-revealed(int, length, length, length);
+    callback select-picked(int);
+    callback select-dismissed();
     // The recorder callout: the rows report the well's window position.
     in property <bool> recorder-visible: false;
     in property <length> recorder-x: 0px;
@@ -989,6 +1102,9 @@ export component SettingsWindow inherits Window {
             row-trailing-activated(id) => { root.feature-trailing-activated(id); }
             row-text-edited(id, text) => { root.feature-text-edited(id, text); }
             row-text-accepted(id) => { root.feature-text-accepted(id); }
+            row-select-revealed(id, right, top, bottom) => {
+                root.feature-select-revealed(id, right, top, bottom);
+            }
         }
 
         PlaceholderPage {
@@ -1000,6 +1116,23 @@ export component SettingsWindow inherits Window {
             heading: root.placeholder-heading;
             note: root.placeholder-note;
         }
+    }
+
+    // The value menu floats above every page, so the page's scroll clip can
+    // never cut it off.
+    SettingsSelectPopup {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        open: root.select-open;
+        options: root.select-options;
+        current: root.select-current;
+        anchor-right: root.select-right;
+        anchor-top: root.select-top;
+        anchor-bottom: root.select-bottom;
+        picked(i) => { root.select-picked(i); }
+        dismissed => { root.select-dismissed(); }
     }
 
     // The recorder callout floats above the listening well; the caret's tip

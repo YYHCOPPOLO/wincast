@@ -921,9 +921,10 @@ pub(super) fn feature_row_activated(ptr: *mut Inner, id: i32) {
             },
 
             SettingsTab::Clipboard => match id {
-                10 => (*core).cycle_clipboard_retention(),
+                // 10 is the retention row: its menu opens from the Slint
+                // `select-revealed` callback, which carries the anchor.
                 index if (100..200).contains(&index) => {
-                    (*core).remove_clipboard_disabled_app((index - 100) as usize);
+                    confirm_remove_clipboard_app(ptr, (index - 100) as usize);
                 }
                 30 => {
                     if let Some(stem) =
@@ -1014,6 +1015,78 @@ pub(super) fn feature_text_accepted(_ptr: *mut Inner, _id: i32) {
     // Enter in a field keeps the editor open; the commit rides the next
     // navigation, exactly like the Direct2D editor did.
 }
+
+/// The value menu a value row asked for. Only the clipboard retention row has
+/// one today; its labels are the same retention strings the row shows.
+pub(super) fn select_revealed(ptr: *mut Inner, id: i32, right: f32, top: f32, bottom: f32) {
+    const RETENTION_ROW: i32 = 10;
+    let Some(core) = core_of(ptr) else {
+        return;
+    };
+    if unsafe { (*core).settings_tab } != SettingsTab::Clipboard || id != RETENTION_ROW {
+        return;
+    }
+    let lang = unsafe { (*core).ui_lang() };
+    let days = crate::features::clipboard::settings::pane::RETENTION_DAYS;
+    let options: Vec<SharedString> = days
+        .iter()
+        .map(|days| SharedString::from(tinycast_pure::i18n::clipboard_retention(*days, lang)))
+        .collect();
+    let current = days
+        .iter()
+        .position(|days| *days == unsafe { (*core).settings.clipboard_retention_days })
+        .map(|index| index as i32)
+        .unwrap_or(-1);
+    let inner = unsafe { &mut *ptr };
+    super::settings::sync_rows(&inner.select_options, options);
+    inner.select_row = Some(id);
+    inner.select_open = true;
+    inner.select_current = current;
+    inner.select_right = right;
+    inner.select_top = top;
+    inner.select_bottom = bottom;
+    if let Some(ui) = ui_of(ptr) {
+        ui.set_select_open(true);
+        ui.set_select_current(current);
+        ui.set_select_right(right);
+        ui.set_select_top(top);
+        ui.set_select_bottom(bottom);
+    }
+}
+
+/// A menu option was clicked: write the retention and close the menu.
+pub(super) fn select_picked(ptr: *mut Inner, index: i32) {
+    let Some(core) = core_of(ptr) else {
+        return;
+    };
+    let days = usize::try_from(index)
+        .ok()
+        .and_then(|index| {
+            crate::features::clipboard::settings::pane::RETENTION_DAYS
+                .get(index)
+                .copied()
+        });
+    close_select(ptr);
+    if let Some(days) = days {
+        unsafe {
+            (*core).set_clipboard_retention(days);
+        }
+    }
+}
+
+/// Hides the value menu without writing anything.
+pub(super) fn close_select(ptr: *mut Inner) {
+    let inner = unsafe { &mut *ptr };
+    if !inner.select_open && inner.select_row.is_none() {
+        return;
+    }
+    inner.select_row = None;
+    inner.select_open = false;
+    if let Some(ui) = ui_of(ptr) {
+        ui.set_select_open(false);
+    }
+}
+
 
 unsafe fn open_ai_editor(ptr: *mut Inner, index: usize) {
     let Some(core) = core_of(ptr) else {
@@ -1107,6 +1180,41 @@ fn confirm_disable_snippets(ptr: *mut Inner) {
         if let Some(core) = crate::ui_host::app_core(host) {
             unsafe {
                 (*core).set_snippets_enabled(false);
+            }
+        }
+    });
+}
+
+fn confirm_remove_clipboard_app(ptr: *mut Inner, index: usize) {
+    let Some(core) = core_of(ptr) else {
+        return;
+    };
+    let name = unsafe { (&(*core).settings.clipboard_disabled_apps).get(index).cloned() };
+    let Some(name) = name else {
+        return;
+    };
+    let lang = unsafe { (*core).ui_lang() };
+    let prompt = crate::surfaces::dialog::ConfirmPrompt {
+        title: tinycast_pure::i18n::clipboard_remove_app_title(lang).into(),
+        message: tinycast_pure::i18n::clipboard_remove_app_message(&name, lang).into(),
+        accept: tinycast_pure::i18n::clipboard_remove_app_action(lang).into(),
+        cancel: tinycast_pure::i18n::chrome(tinycast_pure::i18n::Chrome::Cancel, lang).into(),
+        destructive: false,
+    };
+    let host = unsafe { (*ptr).host };
+    crate::surfaces::dialog::confirm(&prompt, move || {
+        if let Some(core) = crate::ui_host::app_core(host) {
+            let index = unsafe {
+                (*core)
+                    .settings
+                    .clipboard_disabled_apps
+                    .iter()
+                    .position(|app| app == &name)
+            };
+            if let Some(index) = index {
+                unsafe {
+                    (*core).remove_clipboard_disabled_app(index);
+                }
             }
         }
     });

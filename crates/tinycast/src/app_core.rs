@@ -259,14 +259,22 @@ impl AppCore {
         crate::platform::tray::set_icon_visible(self.host, self.settings.show_in_menu_bar);
     }
 
-    pub fn cycle_clipboard_retention(&mut self) {
-        self.settings.clipboard_retention_days =
-            crate::features::clipboard::settings::pane::cycle_retention(
-                self.settings.clipboard_retention_days,
-            );
+    /// Writes a retention preset chosen from the settings value menu.
+    pub fn set_clipboard_retention(&mut self, days: i64) {
+        if self.settings.clipboard_retention_days == days {
+            return;
+        }
+        self.settings.clipboard_retention_days = days;
         let _ = self.settings.save();
         self.apply_clipboard_retention();
         self.invalidate_settings();
+    }
+
+    pub fn cycle_clipboard_retention(&mut self) {
+        let next = crate::features::clipboard::settings::pane::cycle_retention(
+            self.settings.clipboard_retention_days,
+        );
+        self.set_clipboard_retention(next);
     }
 
     fn apply_clipboard_retention(&mut self) {

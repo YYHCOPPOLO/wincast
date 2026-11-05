@@ -111,6 +111,15 @@ pub(super) struct Inner {
     pub(super) ai_model: String,
     pub(super) ai_key: String,
     pub(super) ai_error: Option<String>,
+    /// The value menu a value row opened: which row, its labels, the current
+    /// index and the anchor row's geometry. `select_row` is None when closed.
+    pub(super) select_row: Option<i32>,
+    pub(super) select_open: bool,
+    pub(super) select_current: i32,
+    pub(super) select_right: f32,
+    pub(super) select_top: f32,
+    pub(super) select_bottom: f32,
+    pub(super) select_options: Rc<VecModel<slint::SharedString>>,
     /// The local shortcut recorder. It owns only the action name while a well
     /// is listening; the capture itself runs from the HWND subclass.
     pub(super) recorder: crate::features::hotkeys::ui::recorder::Recorder,
@@ -158,6 +167,13 @@ impl SettingsWindow {
             ai_model: String::new(),
             ai_key: String::new(),
             ai_error: None,
+            select_row: None,
+            select_open: false,
+            select_current: -1,
+            select_right: 0.0,
+            select_top: 0.0,
+            select_bottom: 0.0,
+            select_options: Rc::new(VecModel::default()),
             recorder: crate::features::hotkeys::ui::recorder::Recorder::new(),
             ready: false,
             pending_show: false,
@@ -195,6 +211,9 @@ impl SettingsWindow {
         window
             .ui
             .set_recorder_keys(ModelRc::from(unsafe { (*inner).recorder_keys.clone() }));
+        window
+            .ui
+            .set_select_options(ModelRc::from(unsafe { (*inner).select_options.clone() }));
         window
             .ui
             .set_sidebar_content_height(sidebar_content_height());
@@ -361,6 +380,27 @@ impl SettingsWindow {
                 super::settings_pages::feature_text_accepted(inner, id);
             }
         });
+        let ptr = inner as usize;
+        self.ui.on_feature_select_revealed(move |id, right, top, bottom| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::select_revealed(inner, id, right, top, bottom);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_select_picked(move |index| {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::select_picked(inner, index);
+            }
+        });
+        let ptr = inner as usize;
+        self.ui.on_select_dismissed(move || {
+            let inner = ptr as *mut Inner;
+            if !inner.is_null() {
+                super::settings_pages::close_select(inner);
+            }
+        });
     }
 
     pub fn show(&self) {
@@ -389,6 +429,7 @@ impl SettingsWindow {
         // like the Direct2D window's reset_pane_state did.
         stop_recording(self.inner, true);
         super::settings_pages::tab_changed(self.inner);
+        super::settings_pages::close_select(self.inner);
         // The AI editor never survives a tab change; commit_pending already
         // wrote the draft before AppCore moved the tab.
         refresh(&self.ui, self.inner);
@@ -646,6 +687,15 @@ fn refresh(ui: &Settings, inner: *mut Inner) {
         super::settings_pages::sync_feature(ui, unsafe { &mut *inner }, core);
     }
     push_recorder_bubble(ui, unsafe { &*inner }, core, lang);
+    // The value menu is window-level state; refresh re-pushes it after any
+    // model rebuild so a pick or a dismiss never leaves a stale panel.
+    unsafe {
+        ui.set_select_open((*inner).select_open);
+        ui.set_select_current((*inner).select_current);
+        ui.set_select_right((*inner).select_right);
+        ui.set_select_top((*inner).select_top);
+        ui.set_select_bottom((*inner).select_bottom);
+    }
 }
 
 /// The callout over a listening well: the listening caption, the stored
@@ -1279,6 +1329,7 @@ fn now_ms() -> u64 {
 /// The close button only hides: any draft stays, and the window keeps its HWND.
 fn close_requested(inner: *mut Inner) {
     stop_recording(inner, true);
+    super::settings_pages::close_select(inner);
     unsafe {
         (*inner).visible = false;
     }

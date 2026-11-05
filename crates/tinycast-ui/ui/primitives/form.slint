@@ -87,8 +87,6 @@ export component SidebarRow inherits Rectangle {
     border-radius: Theme.radius-row;
     background: root.selected ? Theme.selection
         : (touch.has-hover ? Theme.row-hover : transparent);
-    border-width: scope.has-focus ? Theme.size-hairline : 0px;
-    border-color: Theme.text-tertiary;
 
     scope := FocusScope {
         x: 0;
@@ -169,6 +167,9 @@ export component SettingsRow inherits Rectangle {
     // A shortcut well that starts listening reports the well's window
     // position so the host can float the recorder callout above it.
     callback well-revealed(length, length);
+    // A value row reports its trailing edge so the host can hang the value
+    // menu under it (right edge, row top, row bottom).
+    callback select-revealed(length, length, length);
     // The trailing destructive button (control 7) has its own hit target.
     callback trailing-activated();
     callback text-edited(string);
@@ -178,11 +179,9 @@ export component SettingsRow inherits Rectangle {
     preferred-height: Theme.size-settings-row-height;
     vertical-stretch: 0;
     border-radius: Theme.radius-row;
-    // No hover fill: the row is quiet until focused; the trailing control
-    // shows its own affordance and takes the pointer cursor.
+    // No hover fill and no focus outline: the row stays quiet, and the
+    // focused row only keeps the soft selection tint.
     background: scope.has-focus ? Theme.selection : transparent;
-    border-width: scope.has-focus ? Theme.size-hairline : 0px;
-    border-color: Theme.text-tertiary;
 
     scope := FocusScope {
         x: 0;
@@ -192,6 +191,13 @@ export component SettingsRow inherits Rectangle {
         enabled: root.enabled;
         key-pressed(event) => {
             if (event.text == Key.Return || event.text == Key.Space) {
+                if (root.control == 4) {
+                    root.select-revealed(
+                        root.absolute-position.x + root.width - Theme.spacing-xl,
+                        root.absolute-position.y,
+                        root.absolute-position.y + root.height,
+                    );
+                }
                 root.activated();
                 return accept;
             }
@@ -288,10 +294,26 @@ export component SettingsRow inherits Rectangle {
         }
 
         // A value's pop-up button (magpie `.field`): the current value with a
-        // trailing chevron; the row's own click cycles or opens it.
-        if root.control == 4: MagSelectButton {
-            value: root.trailing;
-            enabled: root.enabled;
+        // trailing chevron. The row click opens the value menu; the button is
+        // fixed-height, so it gets the same centering wrapper as the well.
+        if root.control == 4: VerticalLayout {
+            alignment: center;
+
+            MagSelectButton {
+                value: root.trailing;
+                enabled: root.enabled;
+                // The button is its own hit target; a click on it must open
+                // the same menu the rest of the row does.
+                clicked => {
+                    scope.focus();
+                    root.select-revealed(
+                        root.absolute-position.x + root.width - Theme.spacing-xl,
+                        root.absolute-position.y,
+                        root.absolute-position.y + root.height,
+                    );
+                    root.activated();
+                }
+            }
         }
 
         // A single-line field (magpie `.editor input`); the row title is the
@@ -305,16 +327,24 @@ export component SettingsRow inherits Rectangle {
             accepted(text) => { root.text-accepted(text); }
         }
 
-        if root.control == 6: MagBadge {
-            label: root.trailing;
-            tone: root.tone;
+        if root.control == 6: VerticalLayout {
+            alignment: center;
+
+            MagBadge {
+                label: root.trailing;
+                tone: root.tone;
+            }
         }
 
-        if root.control == 7: MagTextButton {
-            label: root.trailing;
-            danger: true;
-            enabled: root.enabled;
-            clicked => { root.trailing-activated(); }
+        if root.control == 7: VerticalLayout {
+            alignment: center;
+
+            MagTextButton {
+                label: root.trailing;
+                danger: true;
+                enabled: root.enabled;
+                clicked => { root.trailing-activated(); }
+            }
         }
     }
 
@@ -329,6 +359,14 @@ export component SettingsRow inherits Rectangle {
                     self.absolute-position.x + self.width - Theme.spacing-xl
                         - Theme.size-shortcut-recorder / 2,
                     self.absolute-position.y + (self.height - Theme.size-magpie-field) / 2,
+                );
+            }
+            if (root.control == 4) {
+                // The value menu hangs under the value column's right edge.
+                root.select-revealed(
+                    self.absolute-position.x + self.width - Theme.spacing-xl,
+                    self.absolute-position.y,
+                    self.absolute-position.y + self.height,
                 );
             }
             root.activated();

@@ -13,7 +13,8 @@ use crate::design_system::settings as ds;
 
 const ROW_H: f32 = 36.0;
 
-const RETENTION_DAYS: [i64; 7] = [1, 7, 30, 90, 180, 365, -1];
+/// Every retention preset, in the order the value menu shows them.
+pub const RETENTION_DAYS: [i64; 7] = [1, 7, 30, 90, 180, 365, -1];
 
 pub fn section_header() -> &'static str {
     "Clipboard"

@@ -309,6 +309,21 @@ pub fn clipboard_add(lang: UiLang) -> &'static str {
     pick(lang, "Add", "添加")
 }
 
+pub fn clipboard_remove_app_title(lang: UiLang) -> &'static str {
+    pick(lang, "Remove application?", "移除应用？")
+}
+
+pub fn clipboard_remove_app_message(name: &str, lang: UiLang) -> String {
+    match lang {
+        UiLang::En => format!("Tinycast will record copies from {name} again."),
+        UiLang::ZhHans => format!("Tinycast 会重新记录来自 {name} 的复制内容。"),
+    }
+}
+
+pub fn clipboard_remove_app_action(lang: UiLang) -> &'static str {
+    pick(lang, "Remove", "移除")
+}
+
 pub fn clipboard_clear_section(lang: UiLang) -> &'static str {
     pick(lang, "Clear", "清除")
 }
