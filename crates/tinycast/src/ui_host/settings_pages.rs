@@ -468,24 +468,35 @@ fn feature_model(
             ]
         }
 
+        // Clipboard keeps the v0.10.2 page order and copy: the retention
+        // value, the excluded applications with their footer, then the clear
+        // row that asks for confirmation.
         SettingsTab::Clipboard => {
             let disabled = &core.settings.clipboard_disabled_apps;
             let mut apps: Vec<PageRow> = disabled
                 .iter()
                 .enumerate()
-                .map(|(index, app)| super::settings::action_row(100 + index as i32, app, "", "", 0))
+                .map(|(index, app)| {
+                    super::settings::action_row(
+                        100 + index as i32,
+                        app,
+                        "",
+                        say::remove_label(lang),
+                        2,
+                    )
+                })
                 .collect();
             apps.push(super::settings::action_row(
                 30,
                 say::clipboard_add_application(lang),
                 "",
-                "",
-                0,
+                say::clipboard_add(lang),
+                2,
             ));
             vec![
                 (
+                    say::clipboard_history(lang).to_uppercase(),
                     String::new(),
-                    say::clipboard_disabled_caption(lang).to_string(),
                     vec![value_row(
                         10,
                         say::clipboard_keep_for(lang),
@@ -495,19 +506,19 @@ fn feature_model(
                     )],
                 ),
                 (
-                    say::clipboard_disabled_apps(lang).to_string(),
-                    String::new(),
+                    say::clipboard_disabled_apps(lang).to_uppercase(),
+                    say::clipboard_disabled_caption(lang).to_string(),
                     apps,
                 ),
                 (
-                    say::clipboard_clear_section(lang).to_string(),
+                    say::clipboard_clear_section(lang).to_uppercase(),
                     String::new(),
                     vec![super::settings::action_row(
                         40,
                         say::clipboard_clear_history(lang),
-                        "",
-                        "",
-                        0,
+                        say::clipboard_clear_subtitle(lang),
+                        say::clipboard_clear_ellipsis(lang),
+                        2,
                     )],
                 ),
             ]
@@ -750,9 +761,10 @@ pub(super) fn intro_activated(ptr: *mut Inner, id: i32) {
 
 /// The feature rows page dispatch. Ids: 10+ are the tab's own switches and
 /// cycling values; 30/50 are the file-search Add-folder / Add-ignore rows and
-/// 30 the clipboard Add-app row; list rows use collision-free bases — 100+i
-/// file-search scopes, AI connections, clipboard apps and quicklinks; 200+i
-/// file-search ignore patterns; 200+ the AI connection editor rows.
+/// 30 the clipboard Add-app row; 40 is the clipboard clear row; list rows use
+/// collision-free bases — 100+i file-search scopes, AI connections, clipboard
+/// apps and quicklinks; 200+i file-search ignore patterns; 200+ the AI
+/// connection editor rows.
 pub(super) fn feature_row_activated(ptr: *mut Inner, id: i32) {
     let Some(core) = core_of(ptr) else {
         return;

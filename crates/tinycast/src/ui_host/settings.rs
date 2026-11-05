@@ -1048,7 +1048,7 @@ fn page_kind(tab: SettingsTab) -> i32 {
         | SettingsTab::SystemSettings
         | SettingsTab::SystemActions
         | SettingsTab::Commands => 4,
-        SettingsTab::Quicklinks | SettingsTab::Ai => 5,
+        SettingsTab::Quicklinks | SettingsTab::Ai | SettingsTab::Clipboard => 5,
         _ => 6,
     }
 }

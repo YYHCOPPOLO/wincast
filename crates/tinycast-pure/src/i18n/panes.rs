@@ -317,6 +317,14 @@ pub fn clipboard_clear_history(lang: UiLang) -> &'static str {
     pick(lang, "Clear history", "清除历史")
 }
 
+pub fn clipboard_clear_subtitle(lang: UiLang) -> &'static str {
+    pick(
+        lang,
+        "Removes every clip and image.",
+        "移除所有文本和图片。",
+    )
+}
+
 pub fn clipboard_clear_ellipsis(lang: UiLang) -> &'static str {
     pick(lang, "Clear…", "清除…")
 }
