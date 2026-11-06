@@ -1,0 +1,7 @@
+{
+  "name": "tinycast-go-preview",
+  "identifier": "com.tinycast.win.go-preview",
+  "version": "0.1.0",
+  "main": "./cmd/tinycast",
+  "out": "build"
+}
