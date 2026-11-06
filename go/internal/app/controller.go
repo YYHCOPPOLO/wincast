@@ -13,10 +13,12 @@ import (
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/diagnostics"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -24,56 +26,73 @@ import (
 const previewShortcut = "Alt+Shift+Space"
 
 type controller struct {
-	ctx              context.Context
-	cancel           context.CancelFunc
-	workers          sync.WaitGroup
-	panel            *mygo.Window
-	tray             *mygo.Tray
-	view             *palette.View
-	started          time.Time
-	showRequested    time.Time
-	closing          bool
-	menuOpen         bool
-	scanning         bool
-	target           windows.Target
-	scale            float64
-	icons            map[iconKey]*ui.Bitmap
-	pendingIcons     map[iconKey]bool
-	iconRequests     chan iconKey
-	pasteCancel      context.CancelFunc
-	pasteID          uint64
-	profile          profile
-	instance         *windows.Instance
-	diagnostic       *mygo.Window
-	settings         *mygo.Window
-	settingsPath     string
-	settingsDocument *storage.Document
-	settingsErr      error
-	settingsWritable bool
-	settingsStatus   string
-	settingsWrites   chan settingsWrite
-	appearance       string
-	language         string
-	systemDark       bool
-	messageHost      *windows.MessageHost
-	clipboardEvents  atomic.Uint64
-	editor           *editorWindow
-	notes            storage.NoteRepository
-	snapshot         diagnostics.Snapshot
-	cpuPercent       float64
-	cpuMeasured      bool
-	exeBytes         int64
-	storeStatus      string
-	dictionaryStatus string
-	catalogInfo      storage.CatalogInfo
-	catalogRequests  chan []storage.Application
-	lookupRequests   chan lookupRequest
-	lookupCancel     context.CancelFunc
-	lookupID         uint64
-	lookupCanceled   uint64
-	lookupElapsed    time.Duration
-	lookupCount      uint64
-	displaySummary   []string
+	ctx               context.Context
+	cancel            context.CancelFunc
+	workers           sync.WaitGroup
+	panel             *mygo.Window
+	tray              *mygo.Tray
+	view              *palette.View
+	started           time.Time
+	showRequested     time.Time
+	closing           bool
+	menuOpen          bool
+	scanning          bool
+	target            windows.Target
+	scale             float64
+	icons             map[iconKey]*ui.Bitmap
+	pendingIcons      map[iconKey]bool
+	iconRequests      chan iconKey
+	pasteCancel       context.CancelFunc
+	pasteID           uint64
+	profile           profile
+	instance          *windows.Instance
+	diagnostic        *mygo.Window
+	settings          *mygo.Window
+	settingsPath      string
+	settingsDocument  *storage.Document
+	settingsErr       error
+	settingsWritable  bool
+	settingsStatus    string
+	settingsWrites    chan settingsWrite
+	appearance        string
+	language          string
+	systemDark        bool
+	messageHost       *windows.MessageHost
+	clipboardEvents   atomic.Uint64
+	editor            *editorWindow
+	notes             storage.NoteRepository
+	launcher          *launcher.Service
+	launcherPrefs     *launcher.Preferences
+	catalog           []domain.Application
+	rankingWrites     chan []byte
+	featureDictionary bool
+	featureNotes      bool
+	clipboardEnabled  atomic.Bool
+	dictionaryReady   bool
+	hotkey            string
+	hotkeyDraft       string
+	hotkeyRegistered  bool
+	hotkeyOwned       string
+	customDirsDraft   string
+	doubleTap         string
+	doubleTapVK       atomic.Uint32
+	lastDoubleTap     atomic.Int64
+	keyboardInstalled bool
+	snapshot          diagnostics.Snapshot
+	cpuPercent        float64
+	cpuMeasured       bool
+	exeBytes          int64
+	storeStatus       string
+	dictionaryStatus  string
+	catalogInfo       storage.CatalogInfo
+	catalogRequests   chan []storage.Application
+	lookupRequests    chan lookupRequest
+	lookupCancel      context.CancelFunc
+	lookupID          uint64
+	lookupCanceled    uint64
+	lookupElapsed     time.Duration
+	lookupCount       uint64
+	displaySummary    []string
 }
 
 func newController(started time.Time, profile profile) *controller {
@@ -82,15 +101,35 @@ func newController(started time.Time, profile profile) *controller {
 		ctx: ctx, cancel: cancel, started: started, scale: 1,
 		icons: make(map[iconKey]*ui.Bitmap), pendingIcons: make(map[iconKey]bool), iconRequests: make(chan iconKey, 32),
 		profile: profile, catalogRequests: make(chan []storage.Application, 1), lookupRequests: make(chan lookupRequest, 1),
-		settingsWrites: make(chan settingsWrite, 1), systemDark: windows.SystemDark(),
-		appearance: "system", language: defaultLanguage(),
+		settingsWrites: make(chan settingsWrite, 1), rankingWrites: make(chan []byte, 1),
+		systemDark: windows.SystemDark(), appearance: "system", language: defaultLanguage(),
+		featureDictionary: true, featureNotes: true,
 	}
+	c.clipboardEnabled.Store(true)
 	c.notes = storage.NewFileNotes(filepath.Join(profile.data, "notes"))
 	c.loadSettings()
-	c.view = palette.New(c.language == "zh", c.open, c.hide, c.menu, c.copyText, c.icon, func(elapsed time.Duration, count int) {
-		log.Printf("filter elapsed_us=%d results=%d", elapsed.Microseconds(), count)
+	preferences, preferencesErr := launcher.LoadPreferences(filepath.Join(profile.settings, "launcher"))
+	if preferencesErr != nil {
+		log.Printf("launcher preferences load failed: %v", preferencesErr)
+	}
+	c.launcherPrefs = preferences
+	c.launcher = launcher.New(preferences)
+	c.view = palette.New(c.language == "zh", palette.Callbacks{
+		Open: c.open, Hide: c.hide, Menu: c.menu, CopyText: c.copyText, Icon: c.icon,
+		Filtered: func(elapsed time.Duration, count int) {
+			log.Printf("filter elapsed_us=%d results=%d", elapsed.Microseconds(), count)
+		},
+		Search:           c.search,
+		Favorite:         c.openFavorite,
+		FavoriteSlot:     c.launcherPrefs.FavoriteSlot,
+		ToggleFavorite:   c.toggleFavorite,
+		ToggleExpanded:   c.toggleExpanded,
+		SaveAlias:        c.saveAlias,
+		SetHidden:        c.setHidden,
+		ToggleShowHidden: c.toggleShowHidden,
 	})
 	c.applyViewAppearance()
+	c.view.DictionaryAvailable = c.featureDictionary && c.dictionaryReady
 	c.view.OnLookup = c.lookup
 	return c
 }
@@ -98,8 +137,9 @@ func newController(started time.Time, profile profile) *controller {
 func (c *controller) ready() {
 	c.panel = mygo.NewWindow(mygo.WindowOptions{
 		Title: "Tinycast Go Preview", Panel: true, Hidden: true, Frameless: true,
-		Width: 680, Height: 420, DisableResize: true, BackgroundColor: "light-dark(#ffffff, #232327)",
-		Content: ui.View(c.view.Render),
+		Width: int(theme.PanelWidth), Height: int(theme.PanelHeight), DisableResize: true,
+		BackgroundColor: "light-dark(#ffffff, #232327)",
+		Content:         ui.View(c.view.Render),
 	})
 	c.panel.OnClose(func(e *mygo.CloseEvent) {
 		if !c.closing {
@@ -124,10 +164,7 @@ func (c *controller) ready() {
 		}
 	})
 	c.logDisplays()
-	if err := mygo.GlobalShortcut.Register(previewShortcut, c.toggle); err != nil {
-		log.Printf("shortcut unavailable: %v", err)
-		c.view.Status = c.view.Text("热键被占用，请从托盘打开", "Shortcut unavailable; open from the tray")
-	}
+	c.applyHotkey()
 	if err := c.setupTray(); err != nil {
 		log.Printf("tray unavailable: %v", err)
 		c.view.Status = c.view.Text("无法创建托盘图标", "Could not create the tray icon")
@@ -135,7 +172,9 @@ func (c *controller) ready() {
 	c.startIcons()
 	c.startStorage()
 	c.startSettingsWriter()
+	c.startRankingWriter()
 	c.startClipboardHost()
+	c.applyDoubleTap()
 	c.scan()
 	if slices.Contains(os.Args[1:], "--diagnostics") {
 		c.openDiagnostics()
@@ -158,7 +197,7 @@ func (c *controller) place() {
 	width, height := c.panel.Size()
 	area := display.WorkArea
 	x := area.X + max(0, (area.Width-width)/2)
-	y := area.Y + max(0, (area.Height-height)/3)
+	y := area.Y + max(0, (area.Height-height)*18/100)
 	c.panel.SetPosition(x, y)
 	c.scale = display.ScaleFactor
 	if c.scale <= 0 {
@@ -228,10 +267,12 @@ func (c *controller) scan() {
 				log.Printf("catalog error: %v", err)
 				return
 			}
-			c.view.Apps = domainApplications(apps)
-			c.persistCatalog(apps)
+			c.launcher.SetApps(append(domainApplications(apps), c.scanCustomApplications()...))
+			c.catalog = c.launcher.Applications()
+			c.view.Apps = c.catalog
+			c.persistCatalog(c.catalog)
 			c.view.Filter()
-			log.Printf("catalog count=%d elapsed_us=%d", len(apps), time.Since(started).Microseconds())
+			log.Printf("catalog count=%d elapsed_us=%d", len(c.catalog), time.Since(started).Microseconds())
 		})
 	}()
 }
@@ -245,6 +286,10 @@ func domainApplications(apps []mygo.InstalledApp) []domain.Application {
 }
 
 func (c *controller) open(application domain.Application) {
+	if c.launcher != nil && c.view.Query != "" && application.ID != "" {
+		c.launcher.Record(c.view.Query, application.ID, time.Now())
+		c.queueRankingSave()
+	}
 	c.hide()
 	if err := mygo.Shell.LaunchApp(mygo.InstalledApp{ID: application.ID, Name: application.Name, Path: application.Path}); err != nil {
 		log.Printf("launch failed: %v", err)
@@ -278,17 +323,59 @@ func (c *controller) menu() {
 		}},
 		{Label: c.view.Text("刷新应用程序", "Refresh applications"), Click: c.scan},
 		{Separator: true},
+		{Label: c.favoriteLabel(), Accelerator: "Ctrl+D", Disabled: c.view.Dictionary || c.view.Chosen < 0, Click: c.toggleFavorite},
+		{Label: c.view.Text("设置别名…", "Set alias…"), Disabled: c.view.Dictionary || c.view.Chosen < 0, Click: c.openAliasDialog},
+		{Label: c.hideLabel(), Disabled: c.view.Dictionary || c.view.Chosen < 0, Click: c.toggleSelectedHidden},
+		{Label: c.showHiddenLabel(), Click: c.toggleShowHidden},
+		{Label: c.expandLabel(), Accelerator: "Ctrl+E", Click: c.toggleExpanded},
+		{Separator: true},
 		{Label: c.view.Text("复制文本 / 词条", "Copy text / entry"), Accelerator: "Ctrl+Shift+C", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), false) }},
 		{Label: c.view.Text("粘回原窗口", "Paste to previous window"), Accelerator: "Ctrl+Shift+Enter", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), true) }},
 		{Separator: true},
 		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
-		{Label: c.view.Text("笔记…", "Notes…"), Click: c.openEditor},
+		{Label: c.view.Text("笔记…", "Notes…"), Disabled: !c.featureNotes, Click: c.openEditor},
 		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: c.openDiagnostics},
 		{Separator: true},
 		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)
+}
+
+func (c *controller) favoriteLabel() string {
+	if application, ok := c.selected(); ok && c.launcherPrefs.IsFavorite(application.ID) {
+		return c.view.Text("取消收藏", "Remove from favorites")
+	}
+	return c.view.Text("加入收藏", "Add to favorites")
+}
+
+func (c *controller) hideLabel() string {
+	if application, ok := c.selected(); ok && c.launcherPrefs.IsHidden(application.ID) {
+		return c.view.Text("显示此应用", "Show this application")
+	}
+	return c.view.Text("隐藏此应用", "Hide this application")
+}
+
+func (c *controller) toggleSelectedHidden() {
+	application, ok := c.selected()
+	if !ok {
+		return
+	}
+	c.setHidden(application, !c.launcherPrefs.IsHidden(application.ID))
+}
+
+func (c *controller) showHiddenLabel() string {
+	if c.view.ShowHidden {
+		return c.view.Text("只显示可见应用", "Only show visible applications")
+	}
+	return c.view.Text("显示隐藏应用", "Show hidden applications")
+}
+
+func (c *controller) expandLabel() string {
+	if c.view.Expanded {
+		return c.view.Text("精简面板", "Compact panel")
+	}
+	return c.view.Text("展开面板", "Expand panel")
 }
 
 func (c *controller) ownsForeground() bool {
@@ -338,6 +425,7 @@ func (c *controller) stop() {
 	if c.messageHost != nil {
 		c.messageHost.Close()
 		c.messageHost = nil
+		c.keyboardInstalled = false
 	}
 	if c.tray != nil {
 		c.tray.Destroy()

@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
@@ -33,6 +35,13 @@ func (c *controller) loadSettings() {
 	c.settingsWritable = true
 	c.language = document.String("language", defaultLanguage())
 	c.appearance = document.String("appearance", "system")
+	c.featureDictionary = document.Bool("dictionaryEnabled", true)
+	c.featureNotes = document.Bool("notesEnabled", true)
+	c.clipboardEnabled.Store(document.Bool("clipboardMonitorEnabled", true))
+	c.hotkey = document.String("hotkey", previewShortcut)
+	c.hotkeyDraft = c.hotkey
+	c.doubleTap = document.String("doubleTapModifier", "none")
+	c.customDirsDraft = strings.Join(c.customDirectories(), "; ")
 	c.clampSettings()
 }
 
@@ -187,6 +196,30 @@ func appearanceValue(index int) string {
 	return "system"
 }
 
+func doubleTapIndex(value string) int {
+	switch value {
+	case "ctrl":
+		return 1
+	case "alt":
+		return 2
+	case "shift":
+		return 3
+	}
+	return 0
+}
+
+func doubleTapValue(index int) string {
+	switch index {
+	case 1:
+		return "ctrl"
+	case 2:
+		return "alt"
+	case 3:
+		return "shift"
+	}
+	return "none"
+}
+
 func (c *controller) settingsView(ctx *ui.Context) {
 	tokens := theme.For(c.dark())
 	ctx.SetTheme(tokens.Theme())
@@ -222,8 +255,67 @@ func (c *controller) settingsView(ctx *ui.Context) {
 		})
 
 		components.Card(ctx, tokens, func() {
+			ui.Text(ctx, c.text("功能", "Features")).FontSize(theme.SectionFont).
+				TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			components.FormRow(ctx, tokens, c.text("词典", "Dictionary"), func() {
+				enabled := c.featureDictionary
+				ui.Switch(ctx, &enabled).Label(c.text("Tab 查询词典", "Look up words with Tab"))
+				if enabled != c.featureDictionary {
+					c.setFeature("dictionaryEnabled", enabled)
+				}
+			})
+			components.FormRow(ctx, tokens, c.text("笔记", "Notes"), func() {
+				enabled := c.featureNotes
+				ui.Switch(ctx, &enabled).Label(c.text("独立笔记窗口", "Separate notes window"))
+				if enabled != c.featureNotes {
+					c.setFeature("notesEnabled", enabled)
+				}
+			})
+			components.FormRow(ctx, tokens, c.text("剪贴板监听", "Clipboard monitor"), func() {
+				enabled := c.clipboardEnabled.Load()
+				ui.Switch(ctx, &enabled).Label(c.text("只记录事件类型", "Records event types only"))
+				if enabled != c.clipboardEnabled.Load() {
+					c.setFeature("clipboardMonitorEnabled", enabled)
+				}
+			})
+		})
+
+		components.Card(ctx, tokens, func() {
+			ui.Text(ctx, c.text("输入", "Input")).FontSize(theme.SectionFont).
+				TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			components.FormRow(ctx, tokens, c.text("全局热键", "Shortcut"), func() {
+				ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.TextInput(ctx, &c.hotkeyDraft).Grow(1).Label(c.text("全局热键", "Global shortcut"))
+					if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
+						c.setHotkey(c.hotkeyDraft)
+					}
+				})
+			})
+			components.FormRow(ctx, tokens, c.text("应用目录", "App directories"), func() {
+				ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.TextInput(ctx, &c.customDirsDraft).Grow(1).
+						Label(c.text("自定义应用目录，用分号分隔", "Custom application directories, separated by semicolons"))
+					if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
+						c.setCustomDirectories(c.customDirsDraft)
+					}
+				})
+			})
+			components.FormRow(ctx, tokens, c.text("双击修饰键", "Double-tap modifier"), func() {
+				selected := doubleTapIndex(c.doubleTap)
+				ui.Segmented(ctx, &selected, c.text("无", "None"), "Ctrl", "Alt", "Shift").Grow(1)
+				if value := doubleTapValue(selected); value != c.doubleTap {
+					c.setDoubleTap(value)
+				}
+			})
+		})
+
+		components.Card(ctx, tokens, func() {
 			ui.Text(ctx, c.text("数据与诊断", "Data and diagnostics")).FontSize(theme.SectionFont).
 				TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			components.FormRow(ctx, tokens, c.text("运行状态", "Runtime"), func() {
+				ui.Text(ctx, c.text("运行中", "Running")+" · "+c.started.Format("15:04:05")).
+					FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
+			})
 			components.FormRow(ctx, tokens, c.text("设置目录", "Settings"), func() {
 				ui.Text(ctx, c.profile.settings).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
 			})
@@ -271,4 +363,45 @@ func (c *controller) setLanguage(value string) {
 		_ = c.settingsDocument.Set("language", value)
 	}
 	c.queueSettingsSave()
+}
+
+func (c *controller) setFeature(key string, enabled bool) {
+	switch key {
+	case "dictionaryEnabled":
+		c.featureDictionary = enabled
+		c.view.DictionaryAvailable = enabled && c.dictionaryReady
+		if !enabled && c.view.Dictionary {
+			c.view.Dictionary = false
+			c.view.Filter()
+		}
+	case "notesEnabled":
+		c.featureNotes = enabled
+	case "clipboardMonitorEnabled":
+		c.clipboardEnabled.Store(enabled)
+	}
+	if c.settingsDocument != nil && c.settingsWritable {
+		_ = c.settingsDocument.Set(key, enabled)
+	}
+	c.queueSettingsSave()
+}
+
+func (c *controller) setCustomDirectories(text string) {
+	var directories []string
+	for _, part := range strings.FieldsFunc(text, func(r rune) bool { return r == ';' || r == '\n' || r == '\r' }) {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			directories = append(directories, part)
+		}
+	}
+	if err := launcher.ValidateDirectories(directories); err != nil {
+		c.settingsStatus = c.text("目录不存在，未保存", "A directory is missing; nothing was saved")
+		log.Printf("custom app directories rejected: %v", err)
+		return
+	}
+	if c.settingsDocument != nil && c.settingsWritable {
+		_ = c.settingsDocument.Set("customAppDirs", directories)
+	}
+	c.queueSettingsSave()
+	c.settingsStatus = c.text("应用目录已更新", "Application directories updated")
+	c.scan()
 }

@@ -9,6 +9,7 @@ import "github.com/egoist/mygo/ui"
 const (
 	PanelWidth          float32 = 750
 	PanelHeight         float32 = 475
+	CompactHeight       float32 = 64
 	HeaderHeight        float32 = 44
 	HeaderPadding       float32 = 10
 	SearchHeight        float32 = 40

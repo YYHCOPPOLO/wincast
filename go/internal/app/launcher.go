@@ -1,0 +1,191 @@
+package app
+
+import (
+	"encoding/json"
+	"log"
+	"path/filepath"
+	"time"
+
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
+	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
+)
+
+func (c *controller) search(query string, showHidden bool) []domain.Application {
+	if c.launcher == nil {
+		return nil
+	}
+	return c.launcher.Search(query, showHidden, time.Now())
+}
+
+func (c *controller) selected() (domain.Application, bool) {
+	if c.view == nil || c.view.Dictionary || c.view.Chosen < 0 || c.view.Chosen >= len(c.view.Results) {
+		return domain.Application{}, false
+	}
+	return c.view.Results[c.view.Chosen], true
+}
+
+func (c *controller) openFavorite(digit byte) {
+	if c.launcherPrefs == nil {
+		return
+	}
+	id := c.launcherPrefs.FavoriteSlot(digit)
+	if id == "" {
+		c.view.Status = c.view.Text("该收藏槽位为空", "That favorite slot is empty")
+		return
+	}
+	application, ok := c.launcher.Application(id)
+	if !ok {
+		c.view.Status = c.view.Text("收藏的应用已不存在", "The favorite application is gone")
+		c.panel.Update(func() {})
+		return
+	}
+	c.open(application)
+}
+
+func (c *controller) toggleFavorite() {
+	application, ok := c.selected()
+	if !ok {
+		return
+	}
+	if err := c.launcherPrefs.ToggleFavorite(application.ID); err != nil {
+		c.view.Status = c.view.Text("收藏保存失败", "Could not save the favorite")
+		log.Printf("favorite save failed: %v", err)
+	} else if c.launcherPrefs.IsFavorite(application.ID) {
+		c.view.Status = c.view.Text("已收藏", "Added to favorites")
+	} else {
+		c.view.Status = c.view.Text("已取消收藏", "Removed from favorites")
+	}
+	c.view.Filter()
+	c.panel.Update(func() {})
+}
+
+func (c *controller) saveAlias(application domain.Application, alias string) {
+	if err := c.launcherPrefs.SetAlias(application.ID, alias); err != nil {
+		c.view.Status = c.view.Text("别名保存失败", "Could not save the alias")
+		log.Printf("alias save failed: %v", err)
+		return
+	}
+	c.launcher.SetApps(c.catalog)
+	c.view.Status = c.view.Text("别名已保存", "Alias saved")
+	c.view.Filter()
+	c.panel.Update(func() {})
+}
+
+func (c *controller) setHidden(application domain.Application, hidden bool) {
+	if err := c.launcherPrefs.SetHidden(application.ID, hidden); err != nil {
+		c.view.Status = c.view.Text("隐藏状态保存失败", "Could not save visibility")
+		log.Printf("hidden save failed: %v", err)
+		return
+	}
+	c.view.Status = c.view.Text("已隐藏此应用", "Application hidden")
+	if !hidden {
+		c.view.Status = c.view.Text("已显示此应用", "Application shown")
+	}
+	c.view.Filter()
+	c.panel.Update(func() {})
+}
+
+func (c *controller) toggleShowHidden() {
+	c.view.ShowHidden = !c.view.ShowHidden
+	c.view.Filter()
+	c.panel.Update(func() {})
+}
+
+func (c *controller) openAliasDialog() {
+	application, ok := c.selected()
+	if !ok {
+		return
+	}
+	c.view.AliasTarget = application
+	c.view.AliasText = c.launcherPrefs.Alias(application.ID)
+	c.view.AliasOpen = true
+	c.panel.Update(func() {})
+	// The first update builds the modal; the next frame can focus its input.
+	c.panel.Update(func() { c.view.FocusAlias() })
+}
+
+func (c *controller) toggleExpanded() {
+	c.view.Expanded = !c.view.Expanded
+	c.applyPanelSize()
+	c.panel.Update(func() {})
+}
+
+func (c *controller) applyPanelSize() {
+	if c.panel == nil {
+		return
+	}
+	height := theme.PanelHeight
+	if !c.view.Expanded {
+		height = theme.CompactHeight
+	}
+	c.panel.SetSize(int(theme.PanelWidth), int(height))
+	c.place()
+}
+
+func (c *controller) customDirectories() []string {
+	document, _ := c.settingDocument()
+	if document == nil {
+		return nil
+	}
+	raw, ok := document.Raw("customAppDirs")
+	if !ok {
+		return nil
+	}
+	var directories []string
+	if err := json.Unmarshal(raw, &directories); err != nil {
+		log.Printf("custom app directories ignored: %v", err)
+		return nil
+	}
+	return directories
+}
+
+func (c *controller) queueRankingSave() {
+	if c.launcherPrefs == nil {
+		return
+	}
+	data, err := c.launcherPrefs.RankingBytes()
+	if err != nil {
+		log.Printf("ranking encode failed: %v", err)
+		return
+	}
+	select {
+	case <-c.rankingWrites:
+	default:
+	}
+	select {
+	case c.rankingWrites <- data:
+	default:
+	}
+}
+
+func (c *controller) startRankingWriter() {
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		for {
+			select {
+			case <-c.ctx.Done():
+				return
+			case data := <-c.rankingWrites:
+				path := filepath.Join(c.profile.settings, "launcher", "ranking.json")
+				if err := storage.WriteFileAtomic(path, data, 0o600); err != nil {
+					log.Printf("ranking save failed: %v", err)
+				}
+			}
+		}
+	}()
+}
+
+func (c *controller) scanCustomApplications() []domain.Application {
+	directories := c.customDirectories()
+	if len(directories) == 0 {
+		return nil
+	}
+	apps, err := launcher.ScanCustomApps(c.ctx, directories)
+	if err != nil {
+		log.Printf("custom application scan failed: %v", err)
+	}
+	return apps
+}

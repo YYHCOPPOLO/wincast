@@ -24,25 +24,56 @@ var (
 	postQuitMessage           = user32.NewProc("PostQuitMessage")
 	addClipboardFormat        = user32.NewProc("AddClipboardFormatListener")
 	removeClipboardFormat     = user32.NewProc("RemoveClipboardFormatListener")
+	setWindowsHookEx          = user32.NewProc("SetWindowsHookExW")
+	callNextHookEx            = user32.NewProc("CallNextHookEx")
+	unhookWindowsHookEx       = user32.NewProc("UnhookWindowsHookEx")
 	getModuleHandle           = kernel32.NewProc("GetModuleHandleW")
+	moveMemory                = syscall.NewLazyDLL("ntdll.dll").NewProc("RtlMoveMemory")
 	coInitializeEx            = syscall.NewLazyDLL("ole32.dll").NewProc("CoInitializeEx")
 	coUninitialize            = syscall.NewLazyDLL("ole32.dll").NewProc("CoUninitialize")
 	messageHostSequence       atomic.Uint64
 	messageHosts              sync.Map // HWND -> *MessageHost
 	messageHostDispatchWindow = uint32(0x8000 + 1)
 	messageHostProc           = syscall.NewCallback(messageHostWndProc)
+	keyboardHookProc          = syscall.NewCallback(keyboardHookCallback)
+	keyboardHook              struct {
+		mu       sync.Mutex
+		callback func(KeyEvent)
+	}
 )
 
+// KeyEvent is one low-level keyboard transition. Injected events are
+// reported so callers never treat automation as a user gesture.
+type KeyEvent struct {
+	VirtualKey uint32
+	Down       bool
+	Injected   bool
+}
+
+type keyboardHookInfo struct {
+	virtualKey uint32
+	scanCode   uint32
+	flags      uint32
+	time       uint32
+	extra      uintptr
+}
+
 const (
-	wmDestroy                   = 0x0002
-	wmClose                     = 0x0010
-	wmNCCreate                  = 0x0081
-	wmNCDestroy                 = 0x0082
-	wmSettingChange             = 0x001A
-	wmClipboardUpdate           = 0x031D
-	wmColorizationChanged       = 0x0320
-	coinitApartmentThread       = 0x2
-	rpcChangedMode        int32 = -2147417850 // 0x80010106
+	wmDestroy                    = 0x0002
+	wmClose                      = 0x0010
+	wmNCCreate                   = 0x0081
+	wmNCDestroy                  = 0x0082
+	wmSettingChange              = 0x001A
+	wmClipboardUpdate            = 0x031D
+	wmColorizationChanged        = 0x0320
+	wmKeyDown                    = 0x0100
+	wmKeyUp                      = 0x0101
+	wmSysKeyDown                 = 0x0104
+	wmSysKeyUp                   = 0x0105
+	whKeyboardLL          uint32 = 13
+	llkhfInjected         uint32 = 0x10
+	coinitApartmentThread        = 0x2
+	rpcChangedMode        int32  = -2147417850 // 0x80010106
 )
 
 type windowMessage struct {
@@ -83,6 +114,7 @@ type MessageHost struct {
 	tasks       []func()
 	onClipboard func()
 	onTheme     func(dark bool)
+	hook        uintptr
 }
 
 func StartMessageHost() (*MessageHost, error) {
@@ -193,8 +225,87 @@ func (h *MessageHost) WatchTheme(callback func(dark bool)) error {
 	return nil
 }
 
+// MonitorKeyboard installs one low-level keyboard hook on the host thread.
+// The callback runs there and must not block; it never consumes a key.
+func (h *MessageHost) MonitorKeyboard(callback func(KeyEvent)) error {
+	result := make(chan error, 1)
+	if !h.Post(func() { result <- h.installKeyboard(callback) }) {
+		return errors.New("message host is closed")
+	}
+	return <-result
+}
+
+func (h *MessageHost) installKeyboard(callback func(KeyEvent)) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.hook != 0 {
+		return errors.New("keyboard hook is already installed")
+	}
+	module, _, _ := getModuleHandle.Call(0)
+	hook, _, callErr := setWindowsHookEx.Call(uintptr(whKeyboardLL), keyboardHookProc, module, 0)
+	if hook == 0 {
+		return fmt.Errorf("install keyboard hook: %w", callErr)
+	}
+	h.hook = hook
+	keyboardHook.mu.Lock()
+	keyboardHook.callback = callback
+	keyboardHook.mu.Unlock()
+	return nil
+}
+
+// StopKeyboard removes the low-level hook. Safe when none is installed.
+func (h *MessageHost) StopKeyboard() {
+	done := make(chan struct{})
+	if !h.Post(func() { h.removeKeyboard(); close(done) }) {
+		return
+	}
+	<-done
+}
+
+func (h *MessageHost) removeKeyboard() {
+	h.mu.Lock()
+	hook := h.hook
+	h.hook = 0
+	h.mu.Unlock()
+	if hook == 0 {
+		return
+	}
+	keyboardHook.mu.Lock()
+	keyboardHook.callback = nil
+	keyboardHook.mu.Unlock()
+	unhookWindowsHookEx.Call(hook)
+}
+
+func keyboardHookCallback(nCode, wParam, lParam uintptr) uintptr {
+	if int32(nCode) >= 0 && lParam != 0 {
+		var info keyboardHookInfo
+		// Copy the native structure instead of casting uintptr to
+		// unsafe.Pointer; the latter is a vet error and the copy keeps the
+		// callback's ABI unchanged.
+		moveMemory.Call(uintptr(unsafe.Pointer(&info)), lParam, unsafe.Sizeof(info))
+		var down bool
+		switch uint32(wParam) {
+		case wmKeyDown, wmSysKeyDown:
+			down = true
+		case wmKeyUp, wmSysKeyUp:
+		default:
+			result, _, _ := callNextHookEx.Call(0, nCode, wParam, lParam)
+			return result
+		}
+		keyboardHook.mu.Lock()
+		callback := keyboardHook.callback
+		keyboardHook.mu.Unlock()
+		if callback != nil {
+			callback(KeyEvent{VirtualKey: info.virtualKey, Down: down, Injected: info.flags&llkhfInjected != 0})
+		}
+	}
+	result, _, _ := callNextHookEx.Call(0, nCode, wParam, lParam)
+	return result
+}
+
 func (h *MessageHost) Close() {
 	h.close.Do(func() {
+		h.StopKeyboard()
 		if h.hwnd != 0 {
 			removeClipboardFormat.Call(h.hwnd)
 			postMessage.Call(h.hwnd, wmClose, 0, 0)

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/dictionary"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
-	"github.com/egoist/mygo"
 )
 
 type lookupRequest struct {
@@ -53,7 +53,8 @@ func (c *controller) startStorage() {
 					c.settings.Update(func() {})
 				}
 			}
-			c.view.DictionaryAvailable = dict != nil
+			c.dictionaryReady = dict != nil
+			c.view.DictionaryAvailable = c.featureDictionary && c.dictionaryReady
 			if dict == nil {
 				c.dictionaryStatus = c.view.Text("词典库缺失或不可读（不改写原文件）", "Dictionary missing or unreadable (original untouched)")
 				log.Printf("dictionary open unavailable: %v", err)
@@ -125,7 +126,7 @@ func (c *controller) startStorage() {
 	}()
 }
 
-func (c *controller) persistCatalog(apps []mygo.InstalledApp) {
+func (c *controller) persistCatalog(apps []domain.Application) {
 	entries := make([]storage.Application, len(apps))
 	for i, app := range apps {
 		entries[i] = storage.Application{ID: app.ID, Name: app.Name, Path: app.Path}

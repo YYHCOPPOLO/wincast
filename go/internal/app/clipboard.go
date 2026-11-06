@@ -18,6 +18,9 @@ func (c *controller) startClipboardHost() {
 	}
 	c.messageHost = host
 	if err := host.WatchClipboard(func() {
+		if !c.clipboardEnabled.Load() {
+			return
+		}
 		c.clipboardEvents.Add(1)
 		log.Printf("clipboard update")
 		c.panel.Update(func() {
