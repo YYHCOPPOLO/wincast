@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,11 +31,7 @@ func (c *controller) startStorage() {
 		if catalog != nil {
 			defer catalog.Close()
 		}
-		roaming, err := os.UserConfigDir()
-		var dict *dictionary.Store
-		if err == nil {
-			dict, err = dictionary.Open(c.ctx, filepath.Join(roaming, "com.tinycast.win", "Dictionary", "ecdict.sqlite"))
-		}
+		dict, err := dictionary.Open(c.ctx, c.profile.dictionary)
 		if dict != nil {
 			defer dict.Close()
 		}
