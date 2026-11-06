@@ -111,10 +111,21 @@ func (t Target) Paste(ctx context.Context, sequence uint32) error {
 	inputs := [4]keyboardInput{keyInput(0x11, false), keyInput(0x56, false), keyInput(0x56, true), keyInput(0x11, true)}
 	count, _, callErr := sendInput.Call(uintptr(len(inputs)), uintptr(unsafe.Pointer(&inputs[0])), unsafe.Sizeof(inputs[0]))
 	if count != uintptr(len(inputs)) {
-		// A short write may have pressed Ctrl. A key-up cannot type text; do
-		// not retry the text-producing keys into a possibly changed target.
-		release := keyInput(0x11, true)
-		sendInput.Call(1, uintptr(unsafe.Pointer(&release)), unsafe.Sizeof(release))
+		// Balance only downs in the accepted prefix. Never replay a key-down
+		// or a paste into a foreground window that may have changed.
+		var release []keyboardInput
+		if count == 2 {
+			release = append(release, keyInput(0x56, true))
+		}
+		if count > 0 && count < 4 {
+			release = append(release, keyInput(0x11, true))
+		}
+		if len(release) > 0 {
+			cleaned, _, cleanupErr := sendInput.Call(uintptr(len(release)), uintptr(unsafe.Pointer(&release[0])), unsafe.Sizeof(release[0]))
+			if cleaned != uintptr(len(release)) {
+				return fmt.Errorf("%w (%d/4), key release unconfirmed (%d/%d): %v", ErrPasteUnconfirmed, count, cleaned, len(release), cleanupErr)
+			}
+		}
 		return fmt.Errorf("%w (%d/4): %v", ErrPasteUnconfirmed, count, callErr)
 	}
 	return nil

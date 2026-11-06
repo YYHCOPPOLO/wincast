@@ -49,6 +49,9 @@ func (v *View) dictionaryBody(c *ui.Context, theme *ui.Theme) {
 }
 
 func (v *View) CopyText() string {
+	// A native menu can run before Changed has rebuilt the view. Invalidate
+	// an old definition before deciding what the current input can copy.
+	v.syncQuery(v.inputText.String())
 	if !v.Dictionary || v.Definition == nil {
 		return v.Query
 	}
@@ -70,6 +73,7 @@ func (v *View) ToggleDictionary() {
 		v.Status = v.Text("词典库不可用", "Dictionary database unavailable")
 		return
 	}
+	v.Query = v.inputText.String()
 	v.Dictionary = !v.Dictionary
 	v.dictionaryScroll.X, v.dictionaryScroll.Y = 0, 0
 	v.Filter()

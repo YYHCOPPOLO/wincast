@@ -39,6 +39,7 @@ type controller struct {
 	pasteCancel      context.CancelFunc
 	pasteID          uint64
 	profile          profile
+	instance         *windows.Instance
 	diagnostic       *mygo.Window
 	snapshot         diagnostics.Snapshot
 	cpuPercent       float64
@@ -152,8 +153,7 @@ func (c *controller) show() {
 	c.showRequested = time.Now()
 	if !c.panel.IsVisible() {
 		c.target = windows.ForegroundTarget()
-		c.view.Query = ""
-		c.view.Filter()
+		c.view.SetQuery("")
 	}
 	c.place()
 	c.view.Input.Focus()
@@ -228,7 +228,13 @@ func (c *controller) menu() {
 	defer func() {
 		c.menuOpen = false
 		if !c.closing && c.panel.IsVisible() {
-			c.view.Input.Focus()
+			if c.panel.IsFocused() {
+				c.view.Input.Focus()
+			} else {
+				// Blur during TrackPopupMenu is intentionally deferred, not
+				// forgotten when the user switches to another window.
+				c.hide()
+			}
 		}
 	}()
 	menu := mygo.NewMenu([]*mygo.MenuItem{
@@ -273,6 +279,7 @@ func (c *controller) stop() {
 	}
 	c.closing = true
 	c.cancel()
+	c.instance.StopServing()
 	mygo.GlobalShortcut.UnregisterAll()
 	if c.tray != nil {
 		c.tray.Destroy()
@@ -287,6 +294,7 @@ func (c *controller) finish() {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
+		c.instance.HoldIdentityUntilExit()
 		log.Print("shutdown worker deadline exceeded")
 	}
 }

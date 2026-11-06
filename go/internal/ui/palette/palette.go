@@ -22,6 +22,7 @@ type View struct {
 	Chinese             bool
 	Chosen              int
 	Input               ui.Handle
+	inputText           *ui.TextBuffer
 	list                ui.ListState
 	onOpen              func(mygo.InstalledApp)
 	onHide              func()
@@ -39,7 +40,7 @@ type View struct {
 }
 
 func New(chinese bool, open func(mygo.InstalledApp), hide, menu func(), copyText func(string, bool), icon func(mygo.InstalledApp) *ui.Bitmap, filtered func(time.Duration, int)) *View {
-	return &View{Chinese: chinese, Chosen: -1, onOpen: open, onHide: hide, onMenu: menu, onCopy: copyText, icon: icon, onFilter: filtered}
+	return &View{Chinese: chinese, Chosen: -1, inputText: ui.NewTextBuffer(""), onOpen: open, onHide: hide, onMenu: menu, onCopy: copyText, icon: icon, onFilter: filtered}
 }
 
 func (v *View) Text(zh, en string) string {
@@ -65,9 +66,9 @@ func (v *View) Render(c *ui.Context) {
 			if v.Dictionary {
 				placeholder = v.Text("查询词典…", "Look up a word…")
 			}
-			if ui.TextInputBase(c, &v.Query).Bind(&v.Input).Grow(1).FontSize(20).
+			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).FontSize(20).
 				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey).Changed() {
-				v.Filter()
+				v.syncQuery(v.inputText.String())
 			}
 		})
 		ui.Divider(c)
@@ -131,11 +132,8 @@ func (v *View) textKey(key ui.TextKey) bool {
 	// MyGo gives composition keys to the IME before OnTextKey. Read Text here
 	// because a rapid Enter may arrive before the next view has bound Query.
 	if key.Mods == ui.Ctrl|ui.Shift && (key.Key == ui.KeyEnter || key.Key == ui.KeyC) {
-		if v.Dictionary && v.Definition != nil {
-			v.onCopy(v.CopyText(), key.Key == ui.KeyEnter)
-		} else {
-			v.onCopy(key.Text(), key.Key == ui.KeyEnter)
-		}
+		v.syncQuery(key.Text())
+		v.onCopy(v.CopyText(), key.Key == ui.KeyEnter)
 		return true
 	}
 	if key.Mods != 0 {
@@ -143,10 +141,7 @@ func (v *View) textKey(key ui.TextKey) bool {
 	}
 	switch key.Key {
 	case ui.KeyEnter:
-		if v.Query != key.Text() {
-			v.Query = key.Text()
-			v.Filter()
-		}
+		v.syncQuery(key.Text())
 		v.open()
 	case ui.KeyEscape:
 		if key.Text() == "" {
@@ -175,9 +170,26 @@ func (v *View) escape() {
 		v.onHide()
 		return
 	}
-	v.Query = ""
-	v.Filter()
+	v.SetQuery("")
 	v.Input.Focus()
+}
+
+// SetQuery updates the actual input as well as its derived search state.
+// The persistent buffer also lets native menu actions read committed input
+// between frames without keeping an Element or a Context alive.
+func (v *View) SetQuery(text string) {
+	if v.inputText.String() != text {
+		v.inputText.Set(text)
+	}
+	v.Query = text
+	v.Filter()
+}
+
+func (v *View) syncQuery(text string) {
+	if v.Query != text {
+		v.Query = text
+		v.Filter()
+	}
 }
 
 func (v *View) open() {
