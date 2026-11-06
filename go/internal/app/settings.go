@@ -73,6 +73,14 @@ func (c *controller) forcedDark() *bool {
 	return nil
 }
 
+func (c *controller) applyViewAppearance() {
+	if forced := c.forcedDark(); forced != nil {
+		c.view.ForcedDark = forced
+		return
+	}
+	c.view.ForcedDark = &c.systemDark
+}
+
 func (c *controller) dark() bool {
 	if forced := c.forcedDark(); forced != nil {
 		return *forced
@@ -249,7 +257,7 @@ func (c *controller) settingsView(ctx *ui.Context) {
 
 func (c *controller) setAppearance(value string) {
 	c.appearance = value
-	c.view.ForcedDark = c.forcedDark()
+	c.applyViewAppearance()
 	if c.settingsDocument != nil && c.settingsWritable {
 		_ = c.settingsDocument.Set("appearance", value)
 	}

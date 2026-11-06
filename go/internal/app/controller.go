@@ -90,7 +90,7 @@ func newController(started time.Time, profile profile) *controller {
 	c.view = palette.New(c.language == "zh", c.open, c.hide, c.menu, c.copyText, c.icon, func(elapsed time.Duration, count int) {
 		log.Printf("filter elapsed_us=%d results=%d", elapsed.Microseconds(), count)
 	})
-	c.view.ForcedDark = c.forcedDark()
+	c.applyViewAppearance()
 	c.view.OnLookup = c.lookup
 	return c
 }

@@ -49,6 +49,9 @@ func (c *controller) startStorage() {
 				c.catalogInfo = info
 				c.storeStatus = "SQLite " + info.SQLiteVersion + " · WAL · FTS5/trigram"
 				log.Printf("storage sqlite=%s journal=%s fts5_trigram=true elapsed_us=%d", info.SQLiteVersion, info.Journal, time.Since(started).Microseconds())
+				if c.settings != nil {
+					c.settings.Update(func() {})
+				}
 			}
 			c.view.DictionaryAvailable = dict != nil
 			if dict == nil {
@@ -80,6 +83,9 @@ func (c *controller) startStorage() {
 					} else {
 						c.catalogInfo.Count = len(apps)
 						log.Printf("catalog stored count=%d", len(apps))
+						if c.settings != nil {
+							c.settings.Update(func() {})
+						}
 					}
 				})
 			case request := <-c.lookupRequests:

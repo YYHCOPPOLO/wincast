@@ -148,19 +148,14 @@ func (h *MessageHost) Post(fn func()) bool {
 		return false
 	}
 	h.mu.Lock()
-	h.tasks = append(h.tasks, fn)
-	hwnd := h.hwnd
-	h.mu.Unlock()
-	if hwnd == 0 {
+	defer h.mu.Unlock()
+	if h.hwnd == 0 {
 		return false
 	}
-	ok, _, _ := postMessage.Call(hwnd, uintptr(messageHostDispatchWindow), 0, 0)
+	h.tasks = append(h.tasks, fn)
+	ok, _, _ := postMessage.Call(h.hwnd, uintptr(messageHostDispatchWindow), 0, 0)
 	if ok == 0 {
-		h.mu.Lock()
-		if len(h.tasks) > 0 {
-			h.tasks = h.tasks[:len(h.tasks)-1]
-		}
-		h.mu.Unlock()
+		h.tasks = h.tasks[:len(h.tasks)-1]
 		return false
 	}
 	return true
