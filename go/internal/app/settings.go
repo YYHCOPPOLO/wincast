@@ -42,6 +42,7 @@ func (c *controller) loadSettings() {
 	c.hotkeyDraft = c.hotkey
 	c.doubleTap = document.String("doubleTapModifier", "none")
 	c.customDirsDraft = strings.Join(c.customDirectories(), "; ")
+	c.compactMode = document.Bool("compactMode", false)
 	c.clampSettings()
 }
 
@@ -300,6 +301,13 @@ func (c *controller) settingsView(ctx *ui.Context) {
 					}
 				})
 			})
+			components.FormRow(ctx, tokens, c.text("精简模式", "Compact mode"), func() {
+				enabled := c.compactMode
+				ui.Switch(ctx, &enabled).Label(c.text("只显示搜索栏，Ctrl+E 切换", "Show only the search bar; Ctrl+E toggles"))
+				if enabled != c.compactMode {
+					c.setCompact(enabled)
+				}
+			})
 			components.FormRow(ctx, tokens, c.text("双击修饰键", "Double-tap modifier"), func() {
 				selected := doubleTapIndex(c.doubleTap)
 				ui.Segmented(ctx, &selected, c.text("无", "None"), "Ctrl", "Alt", "Shift").Grow(1)
@@ -383,6 +391,16 @@ func (c *controller) setFeature(key string, enabled bool) {
 		_ = c.settingsDocument.Set(key, enabled)
 	}
 	c.queueSettingsSave()
+}
+
+func (c *controller) setCompact(enabled bool) {
+	c.compactMode = enabled
+	c.view.Expanded = !enabled
+	if c.settingsDocument != nil && c.settingsWritable {
+		_ = c.settingsDocument.Set("compactMode", enabled)
+	}
+	c.queueSettingsSave()
+	c.applyPanelSize()
 }
 
 func (c *controller) setCustomDirectories(text string) {

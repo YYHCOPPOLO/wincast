@@ -104,19 +104,27 @@ func (c *controller) openAliasDialog() {
 
 func (c *controller) toggleExpanded() {
 	c.view.Expanded = !c.view.Expanded
+	c.compactMode = !c.view.Expanded
+	if c.settingsDocument != nil && c.settingsWritable {
+		_ = c.settingsDocument.Set("compactMode", c.compactMode)
+	}
+	c.queueSettingsSave()
 	c.applyPanelSize()
 	c.panel.Update(func() {})
+}
+
+func (c *controller) panelHeight() int {
+	if c.view != nil && !c.view.Expanded {
+		return int(theme.CompactHeight)
+	}
+	return int(theme.PanelHeight)
 }
 
 func (c *controller) applyPanelSize() {
 	if c.panel == nil {
 		return
 	}
-	height := theme.PanelHeight
-	if !c.view.Expanded {
-		height = theme.CompactHeight
-	}
-	c.panel.SetSize(int(theme.PanelWidth), int(height))
+	c.panel.SetSize(int(theme.PanelWidth), c.panelHeight())
 	c.place()
 }
 

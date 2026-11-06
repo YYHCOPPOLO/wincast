@@ -74,6 +74,7 @@ type controller struct {
 	hotkeyRegistered  bool
 	hotkeyOwned       string
 	customDirsDraft   string
+	compactMode       bool
 	doubleTap         string
 	doubleTapVK       atomic.Uint32
 	doubleTapHeld     atomic.Bool
@@ -130,6 +131,7 @@ func newController(started time.Time, profile profile) *controller {
 		ToggleShowHidden: c.toggleShowHidden,
 	})
 	c.applyViewAppearance()
+	c.view.Expanded = !c.compactMode
 	c.view.DictionaryAvailable = c.featureDictionary && c.dictionaryReady
 	c.view.OnLookup = c.lookup
 	return c
@@ -138,7 +140,7 @@ func newController(started time.Time, profile profile) *controller {
 func (c *controller) ready() {
 	c.panel = mygo.NewWindow(mygo.WindowOptions{
 		Title: "Tinycast Go Preview", Panel: true, Hidden: true, Frameless: true,
-		Width: int(theme.PanelWidth), Height: int(theme.PanelHeight), DisableResize: true,
+		Width: int(theme.PanelWidth), Height: c.panelHeight(), DisableResize: true,
 		BackgroundColor: "light-dark(#ffffff, #232327)",
 		Content:         ui.View(c.view.Render),
 	})
