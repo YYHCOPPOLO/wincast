@@ -50,13 +50,17 @@ func Run() error {
 	if !mygo.App.RequestSingleInstanceLock() {
 		return nil
 	}
-	c := newController(started)
+	c := newController(started, p)
 	defer c.finish()
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	mygo.App.OnWindowAllClosed(func() {})
 	mygo.App.OnSecondInstance(func(args []string, _ string) {
 		if slices.Contains(args, "--quit") {
 			mygo.App.Quit()
+			return
+		}
+		if slices.Contains(args, "--diagnostics") {
+			c.openDiagnostics()
 			return
 		}
 		c.show()

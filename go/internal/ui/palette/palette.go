@@ -14,21 +14,28 @@ import (
 // View is UI-thread-owned display state. Callbacks send user intent back to
 // the app; no disk, SQL or shell work runs as the view is constructed.
 type View struct {
-	Query    string
-	Apps     []mygo.InstalledApp
-	Results  []mygo.InstalledApp
-	Loading  bool
-	Status   string
-	Chinese  bool
-	Chosen   int
-	Input    ui.Handle
-	list     ui.ListState
-	onOpen   func(mygo.InstalledApp)
-	onHide   func()
-	onMenu   func()
-	onCopy   func(string, bool)
-	icon     func(mygo.InstalledApp) *ui.Bitmap
-	onFilter func(time.Duration, int)
+	Query               string
+	Apps                []mygo.InstalledApp
+	Results             []mygo.InstalledApp
+	Loading             bool
+	Status              string
+	Chinese             bool
+	Chosen              int
+	Input               ui.Handle
+	list                ui.ListState
+	onOpen              func(mygo.InstalledApp)
+	onHide              func()
+	onMenu              func()
+	onCopy              func(string, bool)
+	icon                func(mygo.InstalledApp) *ui.Bitmap
+	onFilter            func(time.Duration, int)
+	Dictionary          bool
+	DictionaryAvailable bool
+	DictionaryLoading   bool
+	DictionaryError     string
+	Definition          *Definition
+	dictionaryScroll    ui.ScrollState
+	OnLookup            func(string)
 }
 
 func New(chinese bool, open func(mygo.InstalledApp), hide, menu func(), copyText func(string, bool), icon func(mygo.InstalledApp) *ui.Bitmap, filtered func(time.Duration, int)) *View {
@@ -54,28 +61,21 @@ func (v *View) Render(c *ui.Context) {
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Padding(18, 20).Gap(14).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "⌕").FontSize(24).TextColor(theme.TextMuted)
+			placeholder := v.Text("搜索应用程序…", "Search applications…")
+			if v.Dictionary {
+				placeholder = v.Text("查询词典…", "Look up a word…")
+			}
 			if ui.TextInputBase(c, &v.Query).Bind(&v.Input).Grow(1).FontSize(20).
-				Placeholder(v.Text("搜索应用程序…", "Search applications…")).
-				Label(v.Text("搜索应用程序", "Search applications")).OnTextKey(v.textKey).Changed() {
+				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey).Changed() {
 				v.Filter()
 			}
 		})
 		ui.Divider(c)
-		ui.Text(c, v.Text("应用程序", "Applications")).FontSize(12).TextColor(theme.TextMuted).Padding(10, 18)
-		v.list.Selected = &v.Chosen
-		v.list.Key = func(i int) any { return v.Results[i].Path }
-		v.list.Label = func(i int) string { return v.Results[i].Name }
-		list := ui.List(c, &v.list, len(v.Results), func(i int) { v.row(c, i, theme) }).Grow(1).Padding(0, 8).
-			Label(v.Text("应用程序搜索结果", "Application search results"))
-		if list.Submitted() {
-			v.open()
-		}
-		if len(v.Results) == 0 {
-			message := v.Text("没有匹配的应用程序", "No matching applications")
-			if v.Loading {
-				message = v.Text("正在读取应用程序…", "Loading applications…")
-			}
-			ui.Text(c, message).TextColor(theme.TextMuted).Padding(20)
+		if v.Dictionary {
+			ui.Text(c, v.Text("词典", "Dictionary")).FontSize(12).TextColor(theme.TextMuted).Padding(10, 18)
+			v.dictionaryBody(c, theme)
+		} else {
+			v.applications(c, theme)
 		}
 		ui.Divider(c)
 		ui.Row(c).Padding(10, 16).Gap(10).AlignItems(ui.Center).Children(func() {
@@ -84,12 +84,31 @@ func (v *View) Render(c *ui.Context) {
 				status = v.Text("Go 预览 · Alt+Shift+Space", "Go Preview · Alt+Shift+Space")
 			}
 			ui.Text(c, status).FontSize(11).TextColor(theme.TextMuted).Grow(1).Role(ui.RoleStatus)
-			ui.Text(c, v.Text("↑↓ 选择   ↵ 打开", "↑↓ Select   ↵ Open")).FontSize(11).TextColor(theme.TextMuted)
+			ui.Text(c, v.Text("Tab 词典   ↑↓ 选择", "Tab Dictionary   ↑↓ Select")).FontSize(11).TextColor(theme.TextMuted)
 			if ui.Button(c, "···").Label(v.Text("操作菜单 Ctrl+K", "Actions Ctrl+K")).Clicked() {
 				v.onMenu()
 			}
 		})
 	})
+}
+
+func (v *View) applications(c *ui.Context, theme *ui.Theme) {
+	ui.Text(c, v.Text("应用程序", "Applications")).FontSize(12).TextColor(theme.TextMuted).Padding(10, 18)
+	v.list.Selected = &v.Chosen
+	v.list.Key = func(i int) any { return v.Results[i].Path }
+	v.list.Label = func(i int) string { return v.Results[i].Name }
+	list := ui.List(c, &v.list, len(v.Results), func(i int) { v.row(c, i, theme) }).Grow(1).Padding(0, 8).
+		Label(v.Text("应用程序搜索结果", "Application search results"))
+	if list.Submitted() {
+		v.open()
+	}
+	if len(v.Results) == 0 {
+		message := v.Text("没有匹配的应用程序", "No matching applications")
+		if v.Loading {
+			message = v.Text("正在读取应用程序…", "Loading applications…")
+		}
+		ui.Text(c, message).TextColor(theme.TextMuted).Padding(20)
+	}
 }
 
 func (v *View) row(c *ui.Context, i int, theme *ui.Theme) {
@@ -112,7 +131,11 @@ func (v *View) textKey(key ui.TextKey) bool {
 	// MyGo gives composition keys to the IME before OnTextKey. Read Text here
 	// because a rapid Enter may arrive before the next view has bound Query.
 	if key.Mods == ui.Ctrl|ui.Shift && (key.Key == ui.KeyEnter || key.Key == ui.KeyC) {
-		v.onCopy(key.Text(), key.Key == ui.KeyEnter)
+		if v.Dictionary && v.Definition != nil {
+			v.onCopy(v.CopyText(), key.Key == ui.KeyEnter)
+		} else {
+			v.onCopy(key.Text(), key.Key == ui.KeyEnter)
+		}
 		return true
 	}
 	if key.Mods != 0 {
@@ -138,8 +161,8 @@ func (v *View) textKey(key ui.TextKey) bool {
 	case ui.KeyUp:
 		v.choose(v.Chosen - 1)
 	case ui.KeyTab:
-		// Only Applications exists in P0. Keep the native input focused until
-		// the complete mode contract is migrated by the launcher plan.
+		v.Query = key.Text()
+		v.ToggleDictionary()
 		return true
 	default:
 		return false
@@ -158,12 +181,18 @@ func (v *View) escape() {
 }
 
 func (v *View) open() {
+	if v.Dictionary {
+		return
+	}
 	if v.Chosen >= 0 && v.Chosen < len(v.Results) {
 		v.onOpen(v.Results[v.Chosen])
 	}
 }
 
 func (v *View) choose(i int) {
+	if v.Dictionary {
+		return
+	}
 	if len(v.Results) == 0 {
 		v.Chosen = -1
 		return
@@ -173,6 +202,18 @@ func (v *View) choose(i int) {
 }
 
 func (v *View) Filter() {
+	if v.Dictionary {
+		v.Definition = nil
+		v.DictionaryError = ""
+		v.dictionaryScroll.X, v.dictionaryScroll.Y = 0, 0
+		if v.OnLookup != nil {
+			v.OnLookup(v.Query)
+		}
+		return
+	}
+	if v.OnLookup != nil {
+		v.OnLookup("") // cancel a lookup after returning to Applications
+	}
 	started := time.Now()
 	query := strings.ToLower(strings.TrimSpace(v.Query))
 	type ranked struct {
