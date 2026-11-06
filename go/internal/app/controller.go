@@ -34,6 +34,8 @@ type controller struct {
 	icons         map[iconKey]*ui.Bitmap
 	pendingIcons  map[iconKey]bool
 	iconRequests  chan iconKey
+	pasteCancel   context.CancelFunc
+	pasteID       uint64
 }
 
 func newController(started time.Time) *controller {
@@ -42,7 +44,7 @@ func newController(started time.Time) *controller {
 		ctx: ctx, cancel: cancel, started: started, scale: 1,
 		icons: make(map[iconKey]*ui.Bitmap), pendingIcons: make(map[iconKey]bool), iconRequests: make(chan iconKey, 32),
 	}
-	c.view = palette.New(windows.ChineseUI(), c.open, c.hide, c.menu, c.icon, func(elapsed time.Duration, count int) {
+	c.view = palette.New(windows.ChineseUI(), c.open, c.hide, c.menu, c.copyText, c.icon, func(elapsed time.Duration, count int) {
 		log.Printf("filter elapsed_us=%d results=%d", elapsed.Microseconds(), count)
 	})
 	return c
@@ -115,6 +117,11 @@ func (c *controller) place() {
 func (c *controller) show() {
 	if c.closing || c.panel == nil {
 		return
+	}
+	if c.pasteCancel != nil {
+		c.pasteCancel()
+		c.pasteCancel = nil
+		c.pasteID++
 	}
 	c.showRequested = time.Now()
 	if !c.panel.IsVisible() {
@@ -205,6 +212,9 @@ func (c *controller) menu() {
 			}
 		}},
 		{Label: c.view.Text("刷新应用程序", "Refresh applications"), Click: func(*mygo.MenuItem, *mygo.Window) { c.scan() }},
+		mygo.Separator(),
+		{Label: c.view.Text("复制搜索文本", "Copy search text"), Accelerator: "Ctrl+Shift+C", Disabled: c.view.Query == "", Click: func(*mygo.MenuItem, *mygo.Window) { c.copyText(c.view.Query, false) }},
+		{Label: c.view.Text("粘回原窗口", "Paste to previous window"), Accelerator: "Ctrl+Shift+Enter", Disabled: c.view.Query == "", Click: func(*mygo.MenuItem, *mygo.Window) { c.copyText(c.view.Query, true) }},
 		mygo.Separator(),
 		{Label: c.view.Text("退出预览", "Quit Preview"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
 	})

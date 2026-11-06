@@ -26,12 +26,13 @@ type View struct {
 	onOpen   func(mygo.InstalledApp)
 	onHide   func()
 	onMenu   func()
+	onCopy   func(string, bool)
 	icon     func(mygo.InstalledApp) *ui.Bitmap
 	onFilter func(time.Duration, int)
 }
 
-func New(chinese bool, open func(mygo.InstalledApp), hide, menu func(), icon func(mygo.InstalledApp) *ui.Bitmap, filtered func(time.Duration, int)) *View {
-	return &View{Chinese: chinese, Chosen: -1, onOpen: open, onHide: hide, onMenu: menu, icon: icon, onFilter: filtered}
+func New(chinese bool, open func(mygo.InstalledApp), hide, menu func(), copyText func(string, bool), icon func(mygo.InstalledApp) *ui.Bitmap, filtered func(time.Duration, int)) *View {
+	return &View{Chinese: chinese, Chosen: -1, onOpen: open, onHide: hide, onMenu: menu, onCopy: copyText, icon: icon, onFilter: filtered}
 }
 
 func (v *View) Text(zh, en string) string {
@@ -110,6 +111,10 @@ func (v *View) row(c *ui.Context, i int, theme *ui.Theme) {
 func (v *View) textKey(key ui.TextKey) bool {
 	// MyGo gives composition keys to the IME before OnTextKey. Read Text here
 	// because a rapid Enter may arrive before the next view has bound Query.
+	if key.Mods == ui.Ctrl|ui.Shift && (key.Key == ui.KeyEnter || key.Key == ui.KeyC) {
+		v.onCopy(key.Text(), key.Key == ui.KeyEnter)
+		return true
+	}
 	if key.Mods != 0 {
 		return false
 	}

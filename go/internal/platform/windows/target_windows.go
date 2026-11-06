@@ -16,6 +16,7 @@ var (
 	isWindow         = user32.NewProc("IsWindow")
 	getProcessTimes  = kernel32.NewProc("GetProcessTimes")
 	getUILanguage    = kernel32.NewProc("GetUserDefaultUILanguage")
+	getClassName     = user32.NewProc("GetClassNameW")
 )
 
 // Target remembers both the window and the lifetime of its process. HWND/PID
@@ -31,6 +32,12 @@ func ForegroundTarget() Target {
 	var pid uint32
 	getWindowProcess.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
 	if hwnd == 0 || pid == 0 || pid == uint32(os.Getpid()) {
+		return Target{}
+	}
+	var class [128]uint16
+	getClassName.Call(hwnd, uintptr(unsafe.Pointer(&class[0])), uintptr(len(class)))
+	switch syscall.UTF16ToString(class[:]) {
+	case "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Progman", "WorkerW":
 		return Target{}
 	}
 	created, err := processCreation(pid)
