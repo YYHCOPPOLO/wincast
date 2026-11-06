@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"time"
@@ -15,20 +14,12 @@ import (
 
 // Run owns the only UI event loop. Preview paths and identity are kept apart
 // from the daily application, including when this is run outside the packager.
-func Run() error {
+func Run() (runErr error) {
 	started := time.Now()
 	p, err := previewProfile()
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(filepath.Join(p.logs, "tinycast.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open preview log: %w", err)
-	}
-	defer file.Close()
-	log.SetOutput(file)
-	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC)
-	log.Printf("startup go=%s mygo=%s profile=%s cache=%s data=%s", runtime.Version(), mygo.Version, p.settings, p.cache, p.data)
 	mygo.App.SetName(previewID)
 	mygo.App.SetPath(mygo.PathUserData, p.settings)
 	mygo.App.SetPath(mygo.PathCache, p.cache)
@@ -41,7 +32,9 @@ func Run() error {
 	if !first {
 		// MyGo forwards this command line to the existing UI. The kernel
 		// object above still prevents a second writer if IPC is unavailable.
-		mygo.App.RequestSingleInstanceLock()
+		if mygo.App.RequestSingleInstanceLock() {
+			return fmt.Errorf("Tinycast Go Preview is already running but could not be activated")
+		}
 		return nil
 	}
 	if slices.Contains(os.Args[1:], "--quit") {
@@ -50,6 +43,20 @@ func Run() error {
 	if !mygo.App.RequestSingleInstanceLock() {
 		return nil
 	}
+	file, err := openLog(p.logs)
+	if err != nil {
+		return fmt.Errorf("open preview log: %w", err)
+	}
+	log.SetOutput(file)
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC)
+	defer func() {
+		if runErr != nil {
+			log.Printf("application stopped with error: %v", runErr)
+		}
+		log.SetOutput(os.Stderr)
+		file.Close()
+	}()
+	log.Printf("startup go=%s mygo=%s profile=%s cache=%s data=%s", runtime.Version(), mygo.Version, p.settings, p.cache, p.data)
 	c := newController(started, p)
 	defer c.finish()
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)

@@ -105,6 +105,7 @@ func (c *controller) startStorage() {
 						return
 					}
 					c.lookupElapsed = elapsed
+					c.lookupCount++
 					c.view.DictionaryLoading = false
 					if c.lookupCancel != nil {
 						c.lookupCancel()

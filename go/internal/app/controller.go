@@ -42,6 +42,7 @@ type controller struct {
 	diagnostic       *mygo.Window
 	snapshot         diagnostics.Snapshot
 	cpuPercent       float64
+	cpuMeasured      bool
 	exeBytes         int64
 	storeStatus      string
 	dictionaryStatus string
@@ -52,6 +53,7 @@ type controller struct {
 	lookupID         uint64
 	lookupCanceled   uint64
 	lookupElapsed    time.Duration
+	lookupCount      uint64
 	displaySummary   []string
 }
 
@@ -155,8 +157,7 @@ func (c *controller) show() {
 	}
 	c.place()
 	c.view.Input.Focus()
-	c.panel.Show()
-	c.panel.Focus()
+	showWindow(c.panel)
 	log.Printf("show elapsed_us=%d visible=%t target_available=%t", time.Since(c.showRequested).Microseconds(), c.panel.IsVisible(), c.target.Window != 0)
 }
 

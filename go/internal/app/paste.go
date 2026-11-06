@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -63,6 +64,9 @@ func (c *controller) copyText(text string, paste bool) {
 			c.pasteCancel = nil
 			if err != nil {
 				c.view.Status = c.view.Text("粘贴未发送；内容已复制，可手动粘贴", "Paste was not sent; text is copied for manual paste")
+				if errors.Is(err, windows.ErrPasteUnconfirmed) {
+					c.view.Status = c.view.Text("已复制；粘贴状态未确认，请检查原窗口", "Copied; paste status is unconfirmed, please check the previous window")
+				}
 				log.Printf("paste canceled elapsed_us=%d error=%v", time.Since(started).Microseconds(), err)
 				c.show()
 				return

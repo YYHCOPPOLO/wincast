@@ -22,15 +22,11 @@ func (c *controller) openDiagnostics() {
 			Title: "Tinycast Go Preview — Diagnostics", Width: 760, Height: 640,
 			Hidden: true, Content: ui.View(c.diagnosticsView),
 		})
-		c.diagnostic.OnClose(func(e *mygo.CloseEvent) {
-			if !c.closing {
-				e.PreventDefault()
-				c.diagnostic.Hide()
-			}
-		})
+		// A diagnostic window has no unsaved user document. Closing releases
+		// its native surface/GPU resources; only the launcher stays resident.
+		c.diagnostic.OnClosed(func() { c.diagnostic = nil })
 	}
-	c.diagnostic.Show()
-	c.diagnostic.Focus()
+	showWindow(c.diagnostic)
 }
 
 func (c *controller) refreshDiagnostics() {
@@ -43,6 +39,7 @@ func (c *controller) refreshDiagnostics() {
 		elapsed := snapshot.At.Sub(c.snapshot.At)
 		if elapsed > 0 {
 			c.cpuPercent = float64(snapshot.CPU-c.snapshot.CPU) / float64(elapsed) * 100
+			c.cpuMeasured = true
 		}
 	}
 	c.snapshot = snapshot
@@ -77,14 +74,22 @@ func (c *controller) diagnosticsView(ctx *ui.Context) {
 				}
 				row(c.view.Text("版本", "Versions"), fmt.Sprintf("%s · MyGo %s · %s/%s", runtime.Version(), mygo.Version, runtime.GOOS, runtime.GOARCH))
 				row(c.view.Text("采样", "Sample"), c.snapshot.At.Format(time.RFC3339))
-				row(c.view.Text("进程资源", "Process resources"), fmt.Sprintf("WS %s · Private %s · Heap %s\nHandles %d · Goroutines %d · CPU %.3f%% (one core, since last sample)", diagnostics.MiB(c.snapshot.WorkingSet), diagnostics.MiB(c.snapshot.PrivateBytes), diagnostics.MiB(c.snapshot.HeapBytes), c.snapshot.Handles, c.snapshot.Goroutines, c.cpuPercent))
+				cpu := c.view.Text("CPU尚无区间采样", "CPU interval has not been sampled")
+				if c.cpuMeasured {
+					cpu = fmt.Sprintf("CPU %.3f%% (one core, since last sample)", c.cpuPercent)
+				}
+				row(c.view.Text("进程资源", "Process resources"), fmt.Sprintf("WS %s · Private %s · Heap %s\nHandles %d · Goroutines %d · %s", diagnostics.MiB(c.snapshot.WorkingSet), diagnostics.MiB(c.snapshot.PrivateBytes), diagnostics.MiB(c.snapshot.HeapBytes), c.snapshot.Handles, c.snapshot.Goroutines, cpu))
 				row(c.view.Text("程序大小", "Executable size"), fmt.Sprintf("%d bytes", c.exeBytes))
 				for _, display := range c.displaySummary {
 					row(c.view.Text("显示器", "Display"), display)
 				}
 				row(c.view.Text("应用索引", "Application index"), fmt.Sprintf("%s · %d applications", c.storeStatus, c.catalogInfo.Count))
 				row(c.view.Text("词典", "Dictionary"), c.dictionaryStatus)
-				row(c.view.Text("词典查询", "Dictionary lookup"), fmt.Sprintf("last SQL %dµs · canceled requests %d", c.lookupElapsed.Microseconds(), c.lookupCanceled))
+				lookup := c.view.Text("尚无查询", "No lookup yet")
+				if c.lookupCount > 0 {
+					lookup = fmt.Sprintf("last lookup %dµs · canceled requests %d", c.lookupElapsed.Microseconds(), c.lookupCanceled)
+				}
+				row(c.view.Text("词典查询", "Dictionary lookup"), lookup)
 				row(c.view.Text("预览设置", "Preview settings"), c.profile.settings)
 				row(c.view.Text("预览缓存", "Preview cache"), c.profile.cache)
 				row(c.view.Text("日志", "Logs"), c.profile.logs)

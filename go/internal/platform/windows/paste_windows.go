@@ -25,10 +25,11 @@ var (
 )
 
 var (
-	ErrForeground = errors.New("target is not the foreground window")
-	ErrPermission = errors.New("target has a higher integrity level")
-	ErrModifiers  = errors.New("modifier keys are still held")
-	ErrClipboard  = errors.New("clipboard ownership has changed")
+	ErrForeground       = errors.New("target is not the foreground window")
+	ErrPermission       = errors.New("target has a higher integrity level")
+	ErrModifiers        = errors.New("modifier keys are still held")
+	ErrClipboard        = errors.New("clipboard ownership has changed")
+	ErrPasteUnconfirmed = errors.New("only part of the paste shortcut was accepted")
 )
 
 func ClipboardSequence() uint32 {
@@ -114,7 +115,7 @@ func (t Target) Paste(ctx context.Context, sequence uint32) error {
 		// not retry the text-producing keys into a possibly changed target.
 		release := keyInput(0x11, true)
 		sendInput.Call(1, uintptr(unsafe.Pointer(&release)), unsafe.Sizeof(release))
-		return fmt.Errorf("send paste shortcut (%d/4): %w", count, callErr)
+		return fmt.Errorf("%w (%d/4): %v", ErrPasteUnconfirmed, count, callErr)
 	}
 	return nil
 }
