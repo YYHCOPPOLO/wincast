@@ -6,10 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"time"
 
+	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 )
 
 // Run owns the only UI event loop. Preview paths and identity are kept apart
@@ -32,26 +33,35 @@ func Run() error {
 	mygo.App.SetPath(mygo.PathUserData, p.settings)
 	mygo.App.SetPath(mygo.PathCache, p.cache)
 	mygo.App.SetPath(mygo.PathLogs, p.logs)
+	instance, first, err := windows.AcquireInstance(previewID)
+	if err != nil {
+		return err
+	}
+	defer instance.Close()
+	if !first {
+		// MyGo forwards this command line to the existing UI. The kernel
+		// object above still prevents a second writer if IPC is unavailable.
+		mygo.App.RequestSingleInstanceLock()
+		return nil
+	}
+	if slices.Contains(os.Args[1:], "--quit") {
+		return nil
+	}
 	if !mygo.App.RequestSingleInstanceLock() {
 		return nil
 	}
-	mygo.App.WhenReady(func() {
-		window := mygo.NewWindow(mygo.WindowOptions{
-			Title: "Tinycast Go Preview", Width: 680, Height: 420,
-			Content: ui.View(func(c *ui.Context) {
-				ui.Column(c).Fill().Padding(24).Gap(16).Children(func() {
-					ui.Text(c, "Tinycast Go Preview").FontSize(24)
-					ui.Text(c, "Go + MyGo 原生界面 · 独立预览")
-					ui.Text(c, "预览数据与日用 Tinycast 隔离。")
-					if ui.Button(c, "退出预览").Clicked() {
-						mygo.App.Quit()
-					}
-				})
-			}),
-		})
-		window.Show()
-		window.Focus()
-		log.Printf("ready elapsed_us=%d", time.Since(started).Microseconds())
+	c := newController(started)
+	defer c.finish()
+	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	mygo.App.OnWindowAllClosed(func() {})
+	mygo.App.OnSecondInstance(func(args []string, _ string) {
+		if slices.Contains(args, "--quit") {
+			mygo.App.Quit()
+			return
+		}
+		c.show()
 	})
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { c.stop() })
+	mygo.App.WhenReady(c.ready)
 	return mygo.App.Run()
 }
