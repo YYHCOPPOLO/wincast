@@ -79,6 +79,7 @@ type controller struct {
 	doubleTapVK       atomic.Uint32
 	doubleTapHeld     atomic.Bool
 	lastDoubleTap     atomic.Int64
+	lastToggle        atomic.Int64
 	keyboardInstalled bool
 	snapshot          diagnostics.Snapshot
 	cpuPercent        float64
@@ -238,6 +239,13 @@ func (c *controller) hide() {
 
 func (c *controller) toggle() {
 	if c.closing {
+		return
+	}
+	// RegisterHotKey can repeat while the accelerator is held. A held
+	// summon key must show once, not flicker on every repeat.
+	now := time.Now()
+	if previous := c.lastToggle.Swap(now.UnixNano()); previous != 0 &&
+		now.Sub(time.Unix(0, previous)) < 250*time.Millisecond {
 		return
 	}
 	if c.panel.IsVisible() {
