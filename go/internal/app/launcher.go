@@ -58,7 +58,6 @@ func (c *controller) toggleFavorite() {
 		c.view.Status = c.view.Text("已取消收藏", "Removed from favorites")
 	}
 	c.view.Filter()
-	c.panel.Update(func() {})
 }
 
 func (c *controller) saveAlias(application domain.Application, alias string) {
@@ -70,7 +69,6 @@ func (c *controller) saveAlias(application domain.Application, alias string) {
 	c.launcher.SetApps(c.catalog)
 	c.view.Status = c.view.Text("别名已保存", "Alias saved")
 	c.view.Filter()
-	c.panel.Update(func() {})
 }
 
 func (c *controller) setHidden(application domain.Application, hidden bool) {
@@ -84,13 +82,11 @@ func (c *controller) setHidden(application domain.Application, hidden bool) {
 		c.view.Status = c.view.Text("已显示此应用", "Application shown")
 	}
 	c.view.Filter()
-	c.panel.Update(func() {})
 }
 
 func (c *controller) toggleShowHidden() {
 	c.view.ShowHidden = !c.view.ShowHidden
 	c.view.Filter()
-	c.panel.Update(func() {})
 }
 
 func (c *controller) openAliasDialog() {

@@ -25,6 +25,11 @@ func (c *controller) openEditor() {
 	if c.closing {
 		return
 	}
+	if !c.featureNotes {
+		c.view.Status = c.view.Text("笔记功能已关闭", "Notes are disabled")
+		c.panel.Update(func() {})
+		return
+	}
 	c.hide()
 	if c.editor == nil {
 		editor := &editorWindow{buffer: ui.NewTextBuffer("")}

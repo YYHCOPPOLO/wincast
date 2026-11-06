@@ -76,6 +76,7 @@ type controller struct {
 	customDirsDraft   string
 	doubleTap         string
 	doubleTapVK       atomic.Uint32
+	doubleTapHeld     atomic.Bool
 	lastDoubleTap     atomic.Int64
 	keyboardInstalled bool
 	snapshot          diagnostics.Snapshot
@@ -257,6 +258,7 @@ func (c *controller) scan() {
 		if c.ctx.Err() != nil {
 			return
 		}
+		custom := c.scanCustomApplications()
 		c.panel.Update(func() {
 			if c.closing {
 				return
@@ -267,7 +269,7 @@ func (c *controller) scan() {
 				log.Printf("catalog error: %v", err)
 				return
 			}
-			c.launcher.SetApps(append(domainApplications(apps), c.scanCustomApplications()...))
+			c.launcher.SetApps(append(domainApplications(apps), custom...))
 			c.catalog = c.launcher.Applications()
 			c.view.Apps = c.catalog
 			c.persistCatalog(c.catalog)

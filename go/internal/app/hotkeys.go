@@ -118,12 +118,19 @@ func (c *controller) setDoubleTap(value string) {
 // onKeyboard runs on the message-host thread. It only compares atomic fields
 // and posts the toggle to the UI thread.
 func (c *controller) onKeyboard(event windows.KeyEvent) {
-	if event.Injected || !event.Down {
+	if event.Injected {
 		return
 	}
 	vk := c.doubleTapVK.Load()
 	if vk == 0 || event.VirtualKey != vk {
 		return
+	}
+	if !event.Down {
+		c.doubleTapHeld.Store(false)
+		return
+	}
+	if c.doubleTapHeld.Swap(true) {
+		return // key repeat is not a second tap
 	}
 	now := time.Now()
 	previous := c.lastDoubleTap.Swap(now.UnixNano())

@@ -213,7 +213,7 @@ func (v *View) textKey(key ui.TextKey) bool {
 	}
 	if key.Mods == ui.Ctrl {
 		if digit, ok := digitKey(key.Key); ok {
-			if v.callbacks.Favorite != nil {
+			if !v.Dictionary && v.callbacks.Favorite != nil {
 				v.callbacks.Favorite(digit)
 			}
 			return true
