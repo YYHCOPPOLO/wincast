@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -14,7 +15,7 @@ type Definition struct {
 
 type DefinitionSection struct{ Label, Text string }
 
-func (v *View) dictionaryBody(c *ui.Context, theme *ui.Theme) {
+func (v *View) dictionaryBody(c *ui.Context, tokens theme.Tokens) {
 	ui.Scroll(c).Grow(1).TrackScroll(&v.dictionaryScroll).Children(func() {
 		ui.Column(c).FillWidth().Padding(16, 20).Gap(14).Selectable().Children(func() {
 			if v.Definition == nil {
@@ -28,19 +29,19 @@ func (v *View) dictionaryBody(c *ui.Context, theme *ui.Theme) {
 				if v.DictionaryError != "" {
 					message = v.DictionaryError
 				}
-				ui.Text(c, message).TextColor(theme.TextMuted).Role(ui.RoleStatus)
+				ui.Text(c, message).TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
 				return
 			}
-			ui.Text(c, v.Definition.Word).FontSize(26).Bold().Role(ui.RoleHeading)
+			ui.Text(c, v.Definition.Word).FontSize(theme.HeadingFont).Bold().Role(ui.RoleHeading)
 			if v.Definition.Phonetic != "" {
-				ui.Text(c, v.Definition.Phonetic).TextColor(theme.TextMuted)
+				ui.Text(c, v.Definition.Phonetic).TextColor(tokens.TextTertiary)
 			}
 			for _, section := range v.Definition.Sections {
 				if section.Text == "" {
 					continue
 				}
 				ui.Column(c).Gap(6).Children(func() {
-					ui.Text(c, section.Label).FontSize(12).TextColor(theme.TextMuted).Role(ui.RoleHeading)
+					ui.Text(c, section.Label).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
 					ui.Text(c, section.Text)
 				})
 			}

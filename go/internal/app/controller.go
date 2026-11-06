@@ -5,13 +5,17 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/diagnostics"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -41,6 +45,20 @@ type controller struct {
 	profile          profile
 	instance         *windows.Instance
 	diagnostic       *mygo.Window
+	settings         *mygo.Window
+	settingsPath     string
+	settingsDocument *storage.Document
+	settingsErr      error
+	settingsWritable bool
+	settingsStatus   string
+	settingsWrites   chan settingsWrite
+	appearance       string
+	language         string
+	systemDark       bool
+	messageHost      *windows.MessageHost
+	clipboardEvents  atomic.Uint64
+	editor           *editorWindow
+	notes            storage.NoteRepository
 	snapshot         diagnostics.Snapshot
 	cpuPercent       float64
 	cpuMeasured      bool
@@ -64,10 +82,15 @@ func newController(started time.Time, profile profile) *controller {
 		ctx: ctx, cancel: cancel, started: started, scale: 1,
 		icons: make(map[iconKey]*ui.Bitmap), pendingIcons: make(map[iconKey]bool), iconRequests: make(chan iconKey, 32),
 		profile: profile, catalogRequests: make(chan []storage.Application, 1), lookupRequests: make(chan lookupRequest, 1),
+		settingsWrites: make(chan settingsWrite, 1), systemDark: windows.SystemDark(),
+		appearance: "system", language: defaultLanguage(),
 	}
-	c.view = palette.New(windows.ChineseUI(), c.open, c.hide, c.menu, c.copyText, c.icon, func(elapsed time.Duration, count int) {
+	c.notes = storage.NewFileNotes(filepath.Join(profile.data, "notes"))
+	c.loadSettings()
+	c.view = palette.New(c.language == "zh", c.open, c.hide, c.menu, c.copyText, c.icon, func(elapsed time.Duration, count int) {
 		log.Printf("filter elapsed_us=%d results=%d", elapsed.Microseconds(), count)
 	})
+	c.view.ForcedDark = c.forcedDark()
 	c.view.OnLookup = c.lookup
 	return c
 }
@@ -85,7 +108,7 @@ func (c *controller) ready() {
 		}
 	})
 	c.panel.OnBlur(func() {
-		if !c.closing && !c.menuOpen {
+		if !c.closing && !c.menuOpen && !c.ownsForeground() {
 			c.hide()
 		}
 	})
@@ -111,6 +134,8 @@ func (c *controller) ready() {
 	}
 	c.startIcons()
 	c.startStorage()
+	c.startSettingsWriter()
+	c.startClipboardHost()
 	c.scan()
 	if slices.Contains(os.Args[1:], "--diagnostics") {
 		c.openDiagnostics()
@@ -203,7 +228,7 @@ func (c *controller) scan() {
 				log.Printf("catalog error: %v", err)
 				return
 			}
-			c.view.Apps = apps
+			c.view.Apps = domainApplications(apps)
 			c.persistCatalog(apps)
 			c.view.Filter()
 			log.Printf("catalog count=%d elapsed_us=%d", len(apps), time.Since(started).Microseconds())
@@ -211,9 +236,17 @@ func (c *controller) scan() {
 	}()
 }
 
-func (c *controller) open(application mygo.InstalledApp) {
+func domainApplications(apps []mygo.InstalledApp) []domain.Application {
+	converted := make([]domain.Application, len(apps))
+	for i, app := range apps {
+		converted[i] = domain.Application{ID: app.ID, Name: app.Name, Path: app.Path}
+	}
+	return converted
+}
+
+func (c *controller) open(application domain.Application) {
 	c.hide()
-	if err := mygo.Shell.LaunchApp(application); err != nil {
+	if err := mygo.Shell.LaunchApp(mygo.InstalledApp{ID: application.ID, Name: application.Name, Path: application.Path}); err != nil {
 		log.Printf("launch failed: %v", err)
 		c.view.Status = c.view.Text("无法打开应用程序", "Could not open application")
 		c.show()
@@ -237,23 +270,42 @@ func (c *controller) menu() {
 			}
 		}
 	}()
-	menu := mygo.NewMenu([]*mygo.MenuItem{
-		{Label: c.view.Text("打开选中应用", "Open selected application"), Disabled: c.view.Dictionary || c.view.Chosen < 0, Click: func(*mygo.MenuItem, *mygo.Window) {
+	menu := components.Menu([]components.MenuAction{
+		{Label: c.view.Text("打开选中应用", "Open selected application"), Disabled: c.view.Dictionary || c.view.Chosen < 0, Click: func() {
 			if c.view.Chosen >= 0 && c.view.Chosen < len(c.view.Results) {
 				c.open(c.view.Results[c.view.Chosen])
 			}
 		}},
-		{Label: c.view.Text("刷新应用程序", "Refresh applications"), Click: func(*mygo.MenuItem, *mygo.Window) { c.scan() }},
-		mygo.Separator(),
-		{Label: c.view.Text("复制文本 / 词条", "Copy text / entry"), Accelerator: "Ctrl+Shift+C", Disabled: c.view.Query == "", Click: func(*mygo.MenuItem, *mygo.Window) { c.copyText(c.view.CopyText(), false) }},
-		{Label: c.view.Text("粘回原窗口", "Paste to previous window"), Accelerator: "Ctrl+Shift+Enter", Disabled: c.view.Query == "", Click: func(*mygo.MenuItem, *mygo.Window) { c.copyText(c.view.CopyText(), true) }},
-		mygo.Separator(),
-		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: func(*mygo.MenuItem, *mygo.Window) { c.view.ToggleDictionary() }},
-		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: func(*mygo.MenuItem, *mygo.Window) { c.openDiagnostics() }},
-		mygo.Separator(),
-		{Label: c.view.Text("退出预览", "Quit Preview"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
+		{Label: c.view.Text("刷新应用程序", "Refresh applications"), Click: c.scan},
+		{Separator: true},
+		{Label: c.view.Text("复制文本 / 词条", "Copy text / entry"), Accelerator: "Ctrl+Shift+C", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), false) }},
+		{Label: c.view.Text("粘回原窗口", "Paste to previous window"), Accelerator: "Ctrl+Shift+Enter", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), true) }},
+		{Separator: true},
+		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},
+		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
+		{Label: c.view.Text("笔记…", "Notes…"), Click: c.openEditor},
+		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: c.openDiagnostics},
+		{Separator: true},
+		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)
+}
+
+func (c *controller) ownsForeground() bool {
+	foreground := windows.ForegroundWindow()
+	if foreground == 0 {
+		return false
+	}
+	if c.settings != nil && foreground == c.settings.NativeHandle() {
+		return true
+	}
+	if c.editor != nil && c.editor.window != nil && foreground == c.editor.window.NativeHandle() {
+		return true
+	}
+	if c.diagnostic != nil && foreground == c.diagnostic.NativeHandle() {
+		return true
+	}
+	return false
 }
 
 func (c *controller) setupTray() error {
@@ -263,12 +315,14 @@ func (c *controller) setupTray() error {
 	}
 	c.tray = tray
 	tray.OnClick(c.show)
-	tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-		{Label: c.view.Text("打开 Tinycast Go 预览", "Open Tinycast Go Preview"), Accelerator: previewShortcut, Click: func(*mygo.MenuItem, *mygo.Window) { c.show() }},
-		mygo.Separator(),
-		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: func(*mygo.MenuItem, *mygo.Window) { c.openDiagnostics() }},
-		mygo.Separator(),
-		{Label: c.view.Text("退出预览", "Quit Preview"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
+	tray.SetMenu(components.Menu([]components.MenuAction{
+		{Label: c.view.Text("打开 Tinycast Go 预览", "Open Tinycast Go Preview"), Accelerator: previewShortcut, Click: c.show},
+		{Separator: true},
+		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
+		{Label: c.view.Text("笔记…", "Notes…"), Click: c.openEditor},
+		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: c.openDiagnostics},
+		{Separator: true},
+		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
 	}))
 	return nil
 }
@@ -281,6 +335,10 @@ func (c *controller) stop() {
 	c.cancel()
 	c.instance.StopServing()
 	mygo.GlobalShortcut.UnregisterAll()
+	if c.messageHost != nil {
+		c.messageHost.Close()
+		c.messageHost = nil
+	}
 	if c.tray != nil {
 		c.tray.Destroy()
 	}

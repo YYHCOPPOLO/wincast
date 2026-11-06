@@ -30,6 +30,10 @@ func Run() (runErr error) {
 		command = windows.ActivateQuit
 	} else if slices.Contains(os.Args[1:], "--diagnostics") {
 		command = windows.ActivateDiagnostics
+	} else if slices.Contains(os.Args[1:], "--settings") {
+		command = windows.ActivateSettings
+	} else if slices.Contains(os.Args[1:], "--notes") {
+		command = windows.ActivateNotes
 	}
 	instance, first, err := windows.AcquireInstance(previewID, p.cache)
 	if err != nil {
@@ -91,6 +95,10 @@ func Run() (runErr error) {
 					mygo.App.Quit()
 				case windows.ActivateDiagnostics:
 					c.openDiagnostics()
+				case windows.ActivateSettings:
+					c.openSettings()
+				case windows.ActivateNotes:
+					c.openEditor()
 				case windows.ActivatePanel:
 					c.show()
 				}

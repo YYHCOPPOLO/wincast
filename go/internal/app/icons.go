@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"math"
 
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -16,7 +17,7 @@ type iconKey struct {
 	pixels int
 }
 
-func (c *controller) icon(application mygo.InstalledApp) *ui.Bitmap {
+func (c *controller) icon(application domain.Application) *ui.Bitmap {
 	key := iconKey{application.Path, int(math.Ceil(28 * c.scale))}
 	if bitmap, ok := c.icons[key]; ok {
 		return bitmap

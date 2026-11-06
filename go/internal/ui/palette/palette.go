@@ -1,13 +1,12 @@
 package palette
 
 import (
-	"cmp"
 	"fmt"
-	"slices"
-	"strings"
 	"time"
 
-	"github.com/egoist/mygo"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -15,20 +14,21 @@ import (
 // the app; no disk, SQL or shell work runs as the view is constructed.
 type View struct {
 	Query               string
-	Apps                []mygo.InstalledApp
-	Results             []mygo.InstalledApp
+	Apps                []domain.Application
+	Results             []domain.Application
 	Loading             bool
 	Status              string
 	Chinese             bool
+	ForcedDark          *bool
 	Chosen              int
 	Input               ui.Handle
 	inputText           *ui.TextBuffer
 	list                ui.ListState
-	onOpen              func(mygo.InstalledApp)
+	onOpen              func(domain.Application)
 	onHide              func()
 	onMenu              func()
 	onCopy              func(string, bool)
-	icon                func(mygo.InstalledApp) *ui.Bitmap
+	icon                func(domain.Application) *ui.Bitmap
 	onFilter            func(time.Duration, int)
 	Dictionary          bool
 	DictionaryAvailable bool
@@ -39,7 +39,7 @@ type View struct {
 	OnLookup            func(string)
 }
 
-func New(chinese bool, open func(mygo.InstalledApp), hide, menu func(), copyText func(string, bool), icon func(mygo.InstalledApp) *ui.Bitmap, filtered func(time.Duration, int)) *View {
+func New(chinese bool, open func(domain.Application), hide, menu func(), copyText func(string, bool), icon func(domain.Application) *ui.Bitmap, filtered func(time.Duration, int)) *View {
 	return &View{Chinese: chinese, Chosen: -1, inputText: ui.NewTextBuffer(""), onOpen: open, onHide: hide, onMenu: menu, onCopy: copyText, icon: icon, onFilter: filtered}
 }
 
@@ -51,9 +51,13 @@ func (v *View) Text(zh, en string) string {
 }
 
 func (v *View) Render(c *ui.Context) {
-	theme := magpie(c.Theme().Dark)
-	c.SetTheme(theme)
-	c.Root().Background(theme.Background)
+	dark := c.Theme().Dark
+	if v.ForcedDark != nil {
+		dark = *v.ForcedDark
+	}
+	tokens := theme.For(dark)
+	c.SetTheme(tokens.Theme())
+	c.Root().Background(tokens.Surface)
 	c.OnShortcut(ui.Ctrl, ui.KeyK, v.onMenu)
 	c.OnShortcut(0, ui.KeyEscape, v.escape)
 	c.OnShortcut(0, ui.KeyDown, func() { v.choose(v.Chosen + 1) })
@@ -61,44 +65,38 @@ func (v *View) Render(c *ui.Context) {
 	c.OnShortcut(0, ui.KeyEnter, v.open)
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Padding(18, 20).Gap(14).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "⌕").FontSize(24).TextColor(theme.TextMuted)
+			ui.Text(c, "⌕").FontSize(24).TextColor(tokens.TextTertiary)
 			placeholder := v.Text("搜索应用程序…", "Search applications…")
 			if v.Dictionary {
 				placeholder = v.Text("查询词典…", "Look up a word…")
 			}
-			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).FontSize(20).
+			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).FontSize(theme.SearchFont).
 				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey).Changed() {
 				v.syncQuery(v.inputText.String())
 			}
 		})
 		ui.Divider(c)
 		if v.Dictionary {
-			ui.Text(c, v.Text("词典", "Dictionary")).FontSize(12).TextColor(theme.TextMuted).Padding(10, 18)
-			v.dictionaryBody(c, theme)
+			ui.Text(c, v.Text("词典", "Dictionary")).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Padding(10, 18)
+			v.dictionaryBody(c, tokens)
 		} else {
-			v.applications(c, theme)
+			v.applications(c, tokens)
 		}
 		ui.Divider(c)
-		ui.Row(c).Padding(10, 16).Gap(10).AlignItems(ui.Center).Children(func() {
-			status := v.Status
-			if status == "" {
-				status = v.Text("Go 预览 · Alt+Shift+Space", "Go Preview · Alt+Shift+Space")
-			}
-			ui.Text(c, status).FontSize(11).TextColor(theme.TextMuted).Grow(1).Role(ui.RoleStatus)
-			ui.Text(c, v.Text("Tab 词典   ↑↓ 选择", "Tab Dictionary   ↑↓ Select")).FontSize(11).TextColor(theme.TextMuted)
-			if ui.Button(c, "···").Label(v.Text("操作菜单 Ctrl+K", "Actions Ctrl+K")).Clicked() {
-				v.onMenu()
-			}
-		})
+		status := v.Status
+		if status == "" {
+			status = v.Text("Go 预览 · Alt+Shift+Space", "Go Preview · Alt+Shift+Space")
+		}
+		components.Footer(c, tokens, status, v.Text("Tab 词典   ↑↓ 选择", "Tab Dictionary   ↑↓ Select"), v.onMenu)
 	})
 }
 
-func (v *View) applications(c *ui.Context, theme *ui.Theme) {
-	ui.Text(c, v.Text("应用程序", "Applications")).FontSize(12).TextColor(theme.TextMuted).Padding(10, 18)
+func (v *View) applications(c *ui.Context, tokens theme.Tokens) {
+	components.Section(c, tokens, v.Text("应用程序", "Applications"))
 	v.list.Selected = &v.Chosen
-	v.list.Key = func(i int) any { return v.Results[i].Path }
+	v.list.Key = func(i int) any { return stableKey(v.Results[i]) }
 	v.list.Label = func(i int) string { return v.Results[i].Name }
-	list := ui.List(c, &v.list, len(v.Results), func(i int) { v.row(c, i, theme) }).Grow(1).Padding(0, 8).
+	list := ui.List(c, &v.list, len(v.Results), func(i int) { v.row(c, i, tokens) }).Grow(1).Padding(0, 8).
 		Label(v.Text("应用程序搜索结果", "Application search results"))
 	if list.Submitted() {
 		v.open()
@@ -108,24 +106,23 @@ func (v *View) applications(c *ui.Context, theme *ui.Theme) {
 		if v.Loading {
 			message = v.Text("正在读取应用程序…", "Loading applications…")
 		}
-		ui.Text(c, message).TextColor(theme.TextMuted).Padding(20)
+		ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
 	}
 }
 
-func (v *View) row(c *ui.Context, i int, theme *ui.Theme) {
+func (v *View) row(c *ui.Context, i int, tokens theme.Tokens) {
 	application := v.Results[i]
-	fill := ui.Transparent
-	if i == v.Chosen {
-		fill = theme.Selection
-	}
-	ui.Row(c).Height(44).Padding(6, 10).Gap(12).AlignItems(ui.Center).Radius(8).Background(fill).Children(func() {
-		if image := v.icon(application); image != nil {
-			ui.Image(c, image).Size(28, 28).Role(ui.RoleNone)
-		} else {
-			ui.Avatar(c, application.Name, nil).Size(28, 28).Role(ui.RoleNone)
-		}
-		ui.Text(c, application.Name).TextColor(theme.Text).Grow(1).SingleLine()
+	components.ResultRow(c, tokens, components.Row{
+		Icon: v.icon(application), Fallback: application.Name, Title: application.Name,
+		Selected: i == v.Chosen,
 	})
+}
+
+func stableKey(application domain.Application) string {
+	if application.ID != "" {
+		return application.ID
+	}
+	return application.Path
 }
 
 func (v *View) textKey(key ui.TextKey) bool {
@@ -227,60 +224,11 @@ func (v *View) Filter() {
 		v.OnLookup("") // cancel a lookup after returning to Applications
 	}
 	started := time.Now()
-	query := strings.ToLower(strings.TrimSpace(v.Query))
-	type ranked struct {
-		application mygo.InstalledApp
-		rank        int
-	}
-	items := make([]ranked, 0, len(v.Apps))
-	for _, application := range v.Apps {
-		if score := rank(strings.ToLower(application.Name), query); score >= 0 {
-			items = append(items, ranked{application, score})
-		}
-	}
-	slices.SortStableFunc(items, func(a, b ranked) int { return cmp.Compare(a.rank, b.rank) })
-	v.Results = v.Results[:0]
-	for _, item := range items {
-		v.Results = append(v.Results, item.application)
-	}
+	v.Results = domain.Filter(v.Apps, v.Query)
 	v.choose(0)
 	if v.onFilter != nil {
 		v.onFilter(time.Since(started), len(v.Results))
 	}
-}
-
-func rank(name, query string) int {
-	if query == "" || strings.HasPrefix(name, query) {
-		return 0
-	}
-	if strings.Contains(name, " "+query) {
-		return 1
-	}
-	if strings.Contains(name, query) {
-		return 2
-	}
-	rest := name
-	for _, r := range query {
-		i := strings.IndexRune(rest, r)
-		if i < 0 {
-			return -1
-		}
-		rest = rest[i+len(string(r)):]
-	}
-	return 3
-}
-
-func magpie(dark bool) *ui.Theme {
-	t := *ui.LightTheme()
-	t.Background, t.Surface, t.Text, t.TextMuted = ui.Hex("#ffffff"), ui.Hex("#f1f1f4"), ui.Hex("#1c1c21"), ui.Hex("#63636b")
-	t.Border, t.Accent, t.Selection = ui.Hex("#e3e3e8"), ui.Hex("#4f46e5"), ui.Hex("#ecebfb")
-	if dark {
-		t = *ui.DarkTheme()
-		t.Background, t.Surface, t.Text, t.TextMuted = ui.Hex("#232327"), ui.Hex("#2d2d33"), ui.Hex("#ededf1"), ui.Hex("#a1a1aa")
-		t.Border, t.Accent, t.Selection = ui.Hex("#333339"), ui.Hex("#a5b4fc"), ui.Hex("#33345a")
-	}
-	t.Radius, t.FontSize = 8, 14
-	return &t
 }
 
 func (v *View) CountStatus() string {

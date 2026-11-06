@@ -19,6 +19,11 @@ var (
 	getClassName     = user32.NewProc("GetClassNameW")
 )
 
+func ForegroundWindow() uintptr {
+	hwnd, _, _ := getForeground.Call()
+	return hwnd
+}
+
 // Target remembers both the window and the lifetime of its process. HWND/PID
 // values may be reused, so neither value alone is sufficient for paste-back.
 type Target struct {

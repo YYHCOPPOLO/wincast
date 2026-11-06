@@ -28,6 +28,8 @@ const (
 	ActivatePanel Activation = iota + 1
 	ActivateDiagnostics
 	ActivateQuit
+	ActivateSettings
+	ActivateNotes
 )
 
 const activationVersion = 1
@@ -138,7 +140,7 @@ func (i *Instance) receive(ctx context.Context, conn net.Conn, dispatch func(Act
 		return
 	}
 	command := Activation(packet[1])
-	if command < ActivatePanel || command > ActivateQuit {
+	if command < ActivatePanel || command > ActivateNotes {
 		return
 	}
 	// A quit can close activation I/O as soon as the UI takes it. Acknowledge
