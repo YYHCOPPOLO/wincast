@@ -2,6 +2,8 @@
   "name": "tinycast-go-preview",
   "identifier": "com.tinycast.win.go-preview",
   "version": "0.1.0",
+  "copyright": "Tinycast contributors",
   "main": "./cmd/tinycast",
-  "out": "build"
+  "out": "build",
+  "icon": "resources/icon.png"
 }
