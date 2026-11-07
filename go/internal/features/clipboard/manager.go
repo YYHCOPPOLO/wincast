@@ -62,52 +62,49 @@ func (m *Manager) Capture() bool {
 	if sequence != 0 && sequence == m.lastSequence {
 		return false
 	}
-	if windows.ClipboardHasInternalMarker() {
-		m.lastSequence = sequence
-		return false
-	}
-	if m.sourceDisabled() {
-		m.lastSequence = sequence
-		return false
-	}
-	if text, ok := windows.ReadClipboardText(); ok {
-		text = strings.TrimRight(text, "\x00")
-		if text != "" && len(text) <= MaxTextBytes {
-			_, inserted := m.store.InsertText(text)
-			if inserted {
-				m.lastSequence = sequence
-			}
-			return inserted
-		}
-	}
-	image, ok := windows.ReadClipboardImage()
+	snapshot, ok := windows.ReadClipboardSnapshot(MaxTextBytes, m.sourceAllowed)
 	if !ok {
 		return false
 	}
-	png, ok := windows.EncodeClipboardImage(image)
+	if snapshot.Ignored {
+		m.lastSequence = snapshot.Sequence
+		return false
+	}
+	if snapshot.Text != "" {
+		_, inserted := m.store.InsertText(snapshot.Text)
+		if inserted {
+			m.lastSequence = snapshot.Sequence
+		}
+		return inserted
+	}
+	png, ok := windows.EncodeClipboardImage(snapshot.Image)
 	if !ok || len(png) == 0 {
 		return false
 	}
 	_, inserted := m.store.SaveImage(png)
 	if inserted {
-		m.lastSequence = sequence
+		m.lastSequence = snapshot.Sequence
 	}
 	return inserted
 }
 
-func (m *Manager) sourceDisabled() bool {
-	stem := windows.ForegroundProcessStem()
+func (m *Manager) sourceAllowed(stem string) bool {
+	stem = normalizedExecutableStem(stem)
 	if stem == "" {
 		return false
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, disabled := range m.disabled {
-		if strings.EqualFold(strings.TrimSpace(disabled), stem) {
-			return true
+		if normalizedExecutableStem(disabled) == stem {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func normalizedExecutableStem(name string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".exe")
 }
 
 func (m *Manager) ApplyRetention(days int64) {

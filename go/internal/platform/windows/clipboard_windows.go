@@ -41,6 +41,7 @@ var (
 	closeClipboard          = user32Clipboard.NewProc("CloseClipboard")
 	emptyClipboard          = user32Clipboard.NewProc("EmptyClipboard")
 	getClipboardData        = user32Clipboard.NewProc("GetClipboardData")
+	getClipboardOwner       = user32Clipboard.NewProc("GetClipboardOwner")
 	setClipboardData        = user32Clipboard.NewProc("SetClipboardData")
 	isClipboardFormatAvail  = user32Clipboard.NewProc("IsClipboardFormatAvailable")
 	registerClipboardFormat = user32Clipboard.NewProc("RegisterClipboardFormatW")
@@ -63,6 +64,53 @@ var (
 type ClipboardImage struct {
 	PNG []byte
 	DIB []byte
+}
+
+// ClipboardSnapshot contains at most one payload from one stable clipboard
+// revision. Ignored revisions never read payload data: this covers internal,
+// excluded and unattributed owners.
+type ClipboardSnapshot struct {
+	Sequence uint32
+	Ignored  bool
+	Text     string
+	Image    ClipboardImage
+}
+
+// ReadClipboardSnapshot holds the clipboard open on one OS thread while it
+// checks the actual owner's process, marker and payload. The foreground app
+// is unrelated to background writers and must not determine source policy.
+// acceptSource must only compare the executable stem and return promptly.
+func ReadClipboardSnapshot(maxTextBytes int, acceptSource func(string) bool) (ClipboardSnapshot, bool) {
+	clipboardAccess.Lock()
+	defer clipboardAccess.Unlock()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if openClipboardRetry(0) != nil {
+		return ClipboardSnapshot{}, false
+	}
+	defer closeClipboardQuietly()
+	snapshot := ClipboardSnapshot{Sequence: ClipboardSequence()}
+	if snapshot.Sequence == 0 {
+		return ClipboardSnapshot{}, false
+	}
+	owner, _, _ := getClipboardOwner.Call()
+	internal := ClipboardHasInternalMarker()
+	source := windowProcessStem(owner)
+	if internal || source == "" || acceptSource == nil || !acceptSource(source) {
+		snapshot.Ignored = true
+	} else if text, ok := readClipboardTextLocked(); ok && text != "" && len(text) <= maxTextBytes {
+		snapshot.Text = text
+	} else {
+		snapshot.Image, _ = readClipboardImageLocked()
+	}
+	// Delayed rendering and a disappearing owner can change metadata while
+	// GetClipboardData runs. Never join one writer's policy with another's
+	// bytes, or persist a revision that gained the internal marker.
+	currentOwner, _, _ := getClipboardOwner.Call()
+	if ClipboardSequence() != snapshot.Sequence || currentOwner != owner || ClipboardHasInternalMarker() != internal {
+		return ClipboardSnapshot{}, false
+	}
+	return snapshot, true
 }
 
 func clipboardFormats() (internal, pngFormat, mimeFormat uint32) {
@@ -134,6 +182,10 @@ func ReadClipboardText() (string, bool) {
 		return "", false
 	}
 	defer closeClipboardQuietly()
+	return readClipboardTextLocked()
+}
+
+func readClipboardTextLocked() (string, bool) {
 	ok, _, _ := isClipboardFormatAvail.Call(cfUnicodeText)
 	if ok == 0 {
 		return "", false
@@ -183,6 +235,10 @@ func ReadClipboardImage() (ClipboardImage, bool) {
 		return ClipboardImage{}, false
 	}
 	defer closeClipboardQuietly()
+	return readClipboardImageLocked()
+}
+
+func readClipboardImageLocked() (ClipboardImage, bool) {
 	_, pngFormat, mimeFormat := clipboardFormats()
 	for _, format := range []uint32{pngFormat, mimeFormat} {
 		if format == 0 {
@@ -554,10 +610,10 @@ func stampClipboardMarker() {
 	}
 }
 
-// ForegroundProcessStem returns the executable stem of the foreground window,
-// used for clipboard source exclusion. Explorer and this process return "".
-func ForegroundProcessStem() string {
-	hwnd := ForegroundWindow()
+// windowProcessStem identifies the process owning hwnd, without substituting
+// a foreground process when ownership is absent or unreadable. The current
+// application and unknown sources return an empty stem and are not captured.
+func windowProcessStem(hwnd uintptr) string {
 	if hwnd == 0 {
 		return ""
 	}
