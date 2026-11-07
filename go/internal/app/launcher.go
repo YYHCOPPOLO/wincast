@@ -68,6 +68,7 @@ func (c *controller) saveAlias(application domain.Application, alias string) {
 		return
 	}
 	c.launcher.SetApps(c.catalog)
+	c.refreshExtras()
 	c.view.Status = c.view.Text("别名已保存", "Alias saved")
 	c.view.Filter()
 }

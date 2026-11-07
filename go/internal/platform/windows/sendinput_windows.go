@@ -122,16 +122,18 @@ func CaptureSelection(ctx context.Context, target Target, owner uintptr) (string
 		return "", errors.New("nothing was selected")
 	}
 	text, ok := ReadClipboardText()
-	// Restore only while the clipboard still holds exactly what Ctrl+C wrote.
-	if ClipboardSequence() == copied {
-		if hadPrevious {
-			_ = WriteClipboardText(0, previous, false)
-		} else if ok {
-			_ = WriteClipboardText(0, "", false)
-		}
-	}
 	if !ok {
 		return "", errors.New("the selection is not text")
+	}
+	// A newer copy between the sequence check and the read is not this
+	// selection; refuse rather than returning someone else's clipboard.
+	if ClipboardSequence() != copied {
+		return "", errors.New("the clipboard changed while reading the selection")
+	}
+	if hadPrevious {
+		_ = WriteClipboardText(0, previous, false)
+	} else {
+		_ = WriteClipboardText(0, "", false)
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {

@@ -38,7 +38,7 @@ func (c *controller) workflowSettings(ctx *ui.Context, tokens theme.Tokens) {
 					FontSize(theme.TrailingFont).TextColor(tokens.Destructive)
 			} else {
 				for _, command := range c.commands.Commands() {
-					c.workflowRow(ctx, tokens, command.Name, command.Text, command.Hotkey, func() {
+					c.workflowRow(ctx, tokens, command.Name, command.Text, command.Hotkey, "", nil, func() {
 						c.editCommand(command)
 					}, func() {
 						c.confirmWorkflowDelete(editors.Command, command.ID, command.Name)
@@ -65,7 +65,13 @@ func (c *controller) workflowSettings(ctx *ui.Context, tokens theme.Tokens) {
 					if link.Pinned {
 						subtitle = c.text("置顶 · ", "Pinned · ") + subtitle
 					}
-					c.workflowRow(ctx, tokens, link.Name, subtitle, link.Hotkey, func() {
+					pinLabel := c.text("置顶", "Pin")
+					if link.Pinned {
+						pinLabel = c.text("取消置顶", "Unpin")
+					}
+					c.workflowRow(ctx, tokens, link.Name, subtitle, link.Hotkey, pinLabel, func() {
+						c.toggleQuicklinkPin(link)
+					}, func() {
 						c.editQuicklink(link)
 					}, func() {
 						c.confirmWorkflowDelete(editors.Quicklink, link.ID, link.Name)
@@ -101,7 +107,7 @@ func (c *controller) workflowSettings(ctx *ui.Context, tokens theme.Tokens) {
 				if !record.Enabled {
 					subtitle += c.text(" · 已停用", " · Disabled")
 				}
-				c.workflowRow(ctx, tokens, record.Name, subtitle, c.snippetHotkey(record.ID), func() {
+				c.workflowRow(ctx, tokens, record.Name, subtitle, c.snippetHotkey(record.ID), "", nil, func() {
 					c.editSnippet(record)
 				}, func() {
 					c.confirmWorkflowDelete(editors.Snippet, record.ID, record.Name)
@@ -166,7 +172,7 @@ func (c *controller) launcherVisibility(ctx *ui.Context, tokens theme.Tokens, ke
 	})
 }
 
-func (c *controller) workflowRow(ctx *ui.Context, tokens theme.Tokens, name, subtitle, hotkey string, edit, remove func()) {
+func (c *controller) workflowRow(ctx *ui.Context, tokens theme.Tokens, name, subtitle, hotkey, extraLabel string, extra, edit, remove func()) {
 	ui.Row(ctx).FillWidth().Padding(4, 8).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Column(ctx).Grow(1).Gap(1).Children(func() {
 			ui.Text(ctx, name).FontSize(theme.RowFont).TextColor(tokens.Text).SingleLine()
@@ -176,6 +182,11 @@ func (c *controller) workflowRow(ctx *ui.Context, tokens theme.Tokens, name, sub
 			}
 			ui.Text(ctx, line).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary).SingleLine()
 		})
+		if extra != nil && extraLabel != "" {
+			if ui.Button(ctx, extraLabel).Clicked() {
+				extra()
+			}
+		}
 		if ui.Button(ctx, c.text("编辑", "Edit")).Clicked() {
 			edit()
 		}
@@ -183,6 +194,20 @@ func (c *controller) workflowRow(ctx *ui.Context, tokens theme.Tokens, name, sub
 			remove()
 		}
 	})
+}
+
+func (c *controller) toggleQuicklinkPin(link quicklink.Link) {
+	if c.quicklinks == nil {
+		return
+	}
+	if _, err := c.quicklinks.TogglePin(link.ID); err != nil {
+		c.settingsStatus = c.text("置顶保存失败", "Could not save the pin")
+		log.Printf("quicklink pin failed: %v", err)
+	} else {
+		c.settingsStatus = c.text("已更新置顶", "Pin updated")
+	}
+	c.refreshExtras()
+	c.settings.Update(func() {})
 }
 
 func (c *controller) newCommand() {
@@ -332,6 +357,9 @@ func (c *controller) saveSnippetForm(model *editors.Model) error {
 	if _, err := c.snippets.Save(record); err != nil {
 		if errors.Is(err, snippets.ErrConflict) {
 			return errors.New(c.text("文件已在磁盘上更改；未覆盖，请取消后重新打开", "The file changed on disk; it was not overwritten. Cancel and reopen."))
+		}
+		if errors.Is(err, snippets.ErrFileNotFound) {
+			return errors.New(c.text("片段文件已不存在；取消后重新打开", "The snippet file no longer exists; cancel and reopen"))
 		}
 		return err
 	}

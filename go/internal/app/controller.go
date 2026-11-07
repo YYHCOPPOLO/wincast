@@ -402,6 +402,10 @@ func domainApplications(apps []mygo.InstalledApp) []domain.Application {
 }
 
 func (c *controller) open(application domain.Application) {
+	if c.launcher != nil && c.view.Query != "" && application.ID != "" {
+		c.launcher.Record(c.view.Query, application.ID, time.Now())
+		c.queueRankingSave()
+	}
 	switch application.Kind {
 	case domain.KindCommand:
 		c.startCommand(application)
@@ -412,10 +416,6 @@ func (c *controller) open(application domain.Application) {
 	case domain.KindSnippet:
 		c.startSnippet(application)
 		return
-	}
-	if c.launcher != nil && c.view.Query != "" && application.ID != "" {
-		c.launcher.Record(c.view.Query, application.ID, time.Now())
-		c.queueRankingSave()
 	}
 	c.hide()
 	if err := mygo.Shell.LaunchApp(mygo.InstalledApp{ID: application.ID, Name: application.Name, Path: application.Path}); err != nil {
