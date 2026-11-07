@@ -92,6 +92,16 @@ func (d *Document) Int(key string, fallback int) int {
 	return fallback
 }
 
+func (d *Document) Strings(key string, fallback []string) []string {
+	var value []string
+	if raw, ok := d.values[key]; ok {
+		if json.Unmarshal(raw, &value) == nil {
+			return value
+		}
+	}
+	return append([]string(nil), fallback...)
+}
+
 func (d *Document) Set(key string, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
