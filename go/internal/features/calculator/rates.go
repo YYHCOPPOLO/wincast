@@ -48,6 +48,43 @@ type cachedRates struct {
 	UnitsPerBase map[string]float64 `json:"units_per_base"`
 }
 
+// UnmarshalJSON accepts both this build's object map and the Rust oracle's
+// array of [code, unitsPerBase] pairs.
+func (c *cachedRates) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		FetchedAt int64           `json:"fetched_at"`
+		Units     json.RawMessage `json:"units_per_base"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	c.FetchedAt = raw.FetchedAt
+	c.UnitsPerBase = make(map[string]float64)
+	if len(raw.Units) == 0 {
+		return nil
+	}
+	var asMap map[string]float64
+	if err := json.Unmarshal(raw.Units, &asMap); err == nil {
+		c.UnitsPerBase = asMap
+		return nil
+	}
+	var asArray [][]json.RawMessage
+	if err := json.Unmarshal(raw.Units, &asArray); err != nil {
+		return err
+	}
+	for _, pair := range asArray {
+		if len(pair) != 2 {
+			continue
+		}
+		var code string
+		var rate float64
+		if json.Unmarshal(pair[0], &code) == nil && json.Unmarshal(pair[1], &rate) == nil {
+			c.UnitsPerBase[strings.ToUpper(code)] = rate
+		}
+	}
+	return nil
+}
+
 func NewRates(cachePath string) *Rates {
 	store := &Rates{cachePath: cachePath, client: &http.Client{Timeout: fetchTimeout}}
 	if cached, ok := loadRatesCache(cachePath); ok {

@@ -25,13 +25,20 @@ func LoadHistory(path string) *History {
 		return &History{}
 	}
 	var history History
-	if err := json.Unmarshal(data, &history); err != nil {
-		return &History{}
+	if err := json.Unmarshal(data, &history); err == nil && history.Entries != nil {
+		if len(history.Entries) > historyCap {
+			history.Entries = history.Entries[:historyCap]
+		}
+		return &history
 	}
-	if len(history.Entries) > historyCap {
-		history.Entries = history.Entries[:historyCap]
+	var entries []HistoryEntry
+	if err := json.Unmarshal(data, &entries); err == nil {
+		if len(entries) > historyCap {
+			entries = entries[:historyCap]
+		}
+		return &History{Entries: entries}
 	}
-	return &history
+	return &History{}
 }
 
 func (h *History) Save(path string) error {

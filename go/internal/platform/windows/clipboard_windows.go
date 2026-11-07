@@ -446,7 +446,7 @@ func (c dibChannel) extract(pixel uint32) byte {
 // WriteClipboardText replaces the clipboard with text. When marked, the
 // private marker makes this app's own capture path ignore the update.
 func WriteClipboardText(text string, marked bool) error {
-	units := append(syscall.StringToUTF16(text), 0)
+	units := syscall.StringToUTF16(text)
 	return writeClipboardBytes(cfUnicodeText, uintptr(len(units))*2, func(ptr unsafe.Pointer) {
 		target := unsafe.Slice((*uint16)(ptr), len(units))
 		copy(target, units)
