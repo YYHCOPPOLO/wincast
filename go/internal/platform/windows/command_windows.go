@@ -40,7 +40,10 @@ func RunCommandLine(ctx context.Context, line string) error {
 	if err != nil {
 		return err
 	}
-	workingDirectory, _ := syscall.UTF16PtrFromString(os.Getenv("USERPROFILE"))
+	var workingDirectory *uint16
+	if home := os.Getenv("USERPROFILE"); home != "" {
+		workingDirectory, _ = syscall.UTF16PtrFromString(home)
+	}
 	var startup syscall.StartupInfo
 	startup.Cb = uint32(unsafe.Sizeof(startup))
 	var process syscall.ProcessInformation

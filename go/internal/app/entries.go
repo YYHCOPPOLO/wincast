@@ -286,16 +286,21 @@ func (c *controller) expandQuicklink(application domain.Application, link quickl
 }
 
 func (c *controller) openQuicklink(link quicklink.Link, destination string) {
+	wasVisible := c.panel.IsVisible()
 	c.hide()
 	if strings.TrimSpace(destination) == "" {
 		c.view.Status = c.view.Text("链接为空，未打开", "The link is empty; nothing was opened")
-		c.showPanel(false)
+		if wasVisible {
+			c.showPanel(false)
+		}
 		return
 	}
 	if err := quicklinks.Open(destination); err != nil {
 		log.Printf("quicklink open failed name=%q error=%v", link.Name, err)
 		c.view.Status = c.view.Text("无法打开快捷链接", "Could not open the quicklink")
-		c.showPanel(false)
+		if wasVisible {
+			c.showPanel(false)
+		}
 		c.showFailure(c.text("无法打开快捷链接", "Could not open the quicklink"), link.Name, err.Error())
 		return
 	}

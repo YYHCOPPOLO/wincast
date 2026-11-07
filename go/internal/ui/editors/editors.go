@@ -237,6 +237,10 @@ func FormatAccelerator(mods ui.Modifiers, key ui.Key) (string, bool) {
 		parts = append(parts, "Shift")
 	}
 	parts = append(parts, name)
+	if mods&(ui.Ctrl|ui.Alt|ui.Super) == 0 && !(key >= ui.KeyF1 && key <= ui.KeyF12) {
+		// A bare letter, digit or space would be taken from every application.
+		return "", false
+	}
 	return strings.Join(parts, "+"), true
 }
 

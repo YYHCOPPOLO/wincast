@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 // Snippet is one Markdown file. ID is the absolute source path, so an external
@@ -91,7 +92,7 @@ func Slug(name string) string {
 }
 
 func isAlphaNumeric(ch rune) bool {
-	return ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch > 0x7f
+	return unicode.IsLetter(ch) || unicode.IsNumber(ch)
 }
 
 // ParseError names the file and line that made the frontmatter invalid.

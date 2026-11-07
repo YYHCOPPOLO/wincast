@@ -531,6 +531,9 @@ func (c *controller) setFeature(key string, enabled bool) {
 		}
 	case "notesEnabled":
 		c.featureNotes = enabled
+		if !enabled && c.editor != nil {
+			c.hideEditor()
+		}
 	case "clipboardMonitorEnabled":
 		c.clipboardEnabled.Store(enabled)
 	case "commandsEnabled":

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"log"
 	"strings"
 	"time"
@@ -130,7 +131,7 @@ func (c *controller) handleKeyword(keyword string) {
 		if !c.snippetsEnabled.Load() {
 			return
 		}
-		if err := deliverKeyword(target, keyword, output); err != nil {
+		if err := deliverKeyword(target, keyword, output, func() bool { return c.snippetsEnabled.Load() }); err != nil {
 			if c.ctx.Err() == nil {
 				log.Printf("snippet keyword delivery failed: %v", err)
 			}
@@ -162,12 +163,15 @@ func (c *controller) snippetForKeyword(keyword string) (snippet.Snippet, bool) {
 
 // deliverKeyword deletes the typed keyword and types the expansion. Every
 // gate is rechecked immediately before injection.
-func deliverKeyword(target windows.Target, keyword string, output template.Output) error {
+func deliverKeyword(target windows.Target, keyword string, output template.Output, consent func() bool) error {
 	if err := target.CheckEditable(); err != nil {
 		return err
 	}
 	if foreground := windows.ForegroundWindow(); foreground != target.Window {
 		return errForegroundChanged
+	}
+	if !consent() {
+		return errors.New("snippet expansion was disabled")
 	}
 	count := len([]rune(strings.TrimSpace(keyword)))
 	if count > 0 {
@@ -180,6 +184,9 @@ func deliverKeyword(target windows.Target, keyword string, output template.Outpu
 		}
 		if foreground := windows.ForegroundWindow(); foreground != target.Window {
 			return errForegroundChanged
+		}
+		if !consent() {
+			return errors.New("snippet expansion was disabled")
 		}
 	}
 	if err := windows.SendUnicodeText(output.Text); err != nil {

@@ -3,6 +3,7 @@
 package quicklink
 
 import (
+	"net/url"
 	"sort"
 	"strings"
 
@@ -168,7 +169,15 @@ const (
 func Resolve(expanded string) (OpenKind, string) {
 	text := strings.TrimSpace(expanded)
 	if strings.HasPrefix(text, "file:") {
-		return OpenPath, strings.TrimPrefix(text, "file:")
+		path := strings.TrimPrefix(text, "file:")
+		path = strings.TrimPrefix(path, "//")
+		if len(path) >= 3 && path[0] == '/' && isASCIIAlpha(path[1]) && path[2] == ':' {
+			path = path[1:]
+		}
+		if decoded, err := url.PathUnescape(path); err == nil {
+			path = decoded
+		}
+		return OpenPath, path
 	}
 	if Detect(text) == DestinationPath {
 		return OpenPath, text

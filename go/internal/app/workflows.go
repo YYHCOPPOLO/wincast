@@ -86,6 +86,9 @@ func (c *controller) workflowSettings(ctx *ui.Context, tokens theme.Tokens) {
 			ui.Text(ctx, c.text("启用即允许在任意应用中监听键入的关键词；不保存按键记录。",
 				"Enabling listens for typed keywords in other apps; no key log is kept.")).
 				FontSize(theme.KeyCapFont).TextColor(tokens.TextTertiary)
+			if c.snippetError != "" {
+				ui.Text(ctx, c.snippetError).FontSize(theme.TrailingFont).TextColor(tokens.Destructive).SingleLine()
+			}
 			for _, issue := range c.snippetSnapshot.Issues {
 				ui.Text(ctx, c.text("片段格式错误：", "Malformed snippet: ")+issue.Path+" · "+issue.Message).
 					FontSize(theme.KeyCapFont).TextColor(tokens.Destructive).SingleLine()
@@ -242,6 +245,15 @@ func (c *controller) saveWorkflowForm() {
 	model.Error = ""
 	if strings.TrimSpace(model.Name) == "" {
 		model.Error = c.text("请填写名称", "A name is required")
+		c.settings.Update(func() {})
+		return
+	}
+	if model.Kind != editors.Snippet && strings.TrimSpace(model.Text) == "" {
+		if model.Kind == editors.Command {
+			model.Error = c.text("请填写命令", "A command line is required")
+		} else {
+			model.Error = c.text("请填写目标地址", "A destination is required")
+		}
 		c.settings.Update(func() {})
 		return
 	}
