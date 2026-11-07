@@ -66,6 +66,15 @@ func (t Target) Validate() error {
 	return nil
 }
 
+// CheckEditable validates the remembered window and refuses a target with a
+// higher integrity level, matching the paste path.
+func (t Target) CheckEditable() error {
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	return t.checkIntegrity()
+}
+
 func processCreation(pid uint32) (syscall.Filetime, error) {
 	handle, err := syscall.OpenProcess(0x1000, false, pid) // QUERY_LIMITED_INFORMATION
 	if err != nil {

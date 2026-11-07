@@ -85,22 +85,23 @@ func (c *controller) applyDoubleTap() {
 		return
 	}
 	if vk == 0 {
-		if c.keyboardInstalled {
-			c.messageHost.StopKeyboard()
-			c.keyboardInstalled = false
+		if c.doubleTapStop != nil {
+			c.doubleTapStop()
+			c.doubleTapStop = nil
 			log.Printf("keyboard monitor stopped")
 		}
 		return
 	}
-	if c.keyboardInstalled {
+	if c.doubleTapStop != nil {
 		return
 	}
-	if err := c.messageHost.MonitorKeyboard(c.onKeyboard); err != nil {
+	stop, err := c.messageHost.AddKeyboardListener(c.onKeyboard)
+	if err != nil {
 		log.Printf("keyboard monitor unavailable: %v", err)
 		c.settingsStatus = c.text("双击修饰键不可用", "Double-tap modifier is unavailable")
 		return
 	}
-	c.keyboardInstalled = true
+	c.doubleTapStop = stop
 	log.Printf("keyboard monitor installed vk=0x%02x", vk)
 }
 

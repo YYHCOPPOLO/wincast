@@ -531,11 +531,28 @@ func (c *controller) setFeature(key string, enabled bool) {
 		c.featureNotes = enabled
 	case "clipboardMonitorEnabled":
 		c.clipboardEnabled.Store(enabled)
+	case "commandsEnabled":
+		c.featureCommands = enabled
+	case "quicklinksEnabled":
+		c.featureQuicklinks = enabled
+	case "snippetsEnabled":
+		c.featureSnippets = enabled
+		c.applyKeywordListener()
+	case "commandsShowInLauncher":
+		c.commandsShowInLauncher = enabled
+	case "quicklinksShowInLauncher":
+		c.quicklinksShowInLauncher = enabled
+	case "snippetsShowInLauncher":
+		c.snippetsShowInLauncher = enabled
 	}
 	if c.settingsDocument != nil && c.settingsWritable {
 		_ = c.settingsDocument.Set(key, enabled)
 	}
 	c.queueSettingsSave()
+	if key == "commandsEnabled" || key == "quicklinksEnabled" || key == "snippetsEnabled" ||
+		key == "commandsShowInLauncher" || key == "quicklinksShowInLauncher" || key == "snippetsShowInLauncher" {
+		c.refreshExtras()
+	}
 }
 
 func (c *controller) setCompact(enabled bool) {

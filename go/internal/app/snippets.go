@@ -31,6 +31,9 @@ func (c *controller) reloadSnippets() {
 	for _, issue := range snapshot.Issues {
 		log.Printf("snippet issue path=%q error=%q", issue.Path, issue.Message)
 	}
+	if c.expander != nil && c.featureSnippets {
+		c.expander.SetKeywords(c.keywordList())
+	}
 }
 
 func (c *controller) snippetList() []template.Snippet {

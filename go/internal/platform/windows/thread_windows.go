@@ -46,8 +46,10 @@ var (
 // reported so callers never treat automation as a user gesture.
 type KeyEvent struct {
 	VirtualKey uint32
+	ScanCode   uint32
 	Down       bool
 	Injected   bool
+	ExtraInfo  uintptr
 }
 
 type keyboardHookInfo struct {
@@ -115,6 +117,9 @@ type MessageHost struct {
 	onClipboard func()
 	onTheme     func(dark bool)
 	hook        uintptr
+
+	keyboardListeners map[uint64]func(KeyEvent)
+	keyboardSeq       uint64
 }
 
 func StartMessageHost() (*MessageHost, error) {
@@ -225,55 +230,116 @@ func (h *MessageHost) WatchTheme(callback func(dark bool)) error {
 	return nil
 }
 
-// MonitorKeyboard installs one low-level keyboard hook on the host thread.
-// The callback runs there and must not block; it never consumes a key.
-func (h *MessageHost) MonitorKeyboard(callback func(KeyEvent)) error {
-	result := make(chan error, 1)
-	if !h.Post(func() { result <- h.installKeyboard(callback) }) {
-		return errors.New("message host is closed")
+// AddKeyboardListener installs one low-level keyboard hook on the host thread
+// and registers a listener. The returned function removes that listener and
+// the hook once the last one is gone. Listeners run on the host thread and
+// must not block; the hook never consumes a key.
+func (h *MessageHost) AddKeyboardListener(callback func(KeyEvent)) (func(), error) {
+	type registration struct {
+		id  uint64
+		err error
 	}
-	return <-result
+	result := make(chan registration, 1)
+	if !h.Post(func() {
+		id, err := h.addKeyboardListener(callback)
+		result <- registration{id: id, err: err}
+	}) {
+		return func() {}, errors.New("message host is closed")
+	}
+	registered := <-result
+	if registered.err != nil {
+		return func() {}, registered.err
+	}
+	id := registered.id
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			done := make(chan struct{})
+			if !h.Post(func() {
+				h.removeKeyboardListener(id)
+				close(done)
+			}) {
+				return
+			}
+			<-done
+		})
+	}, nil
 }
 
-func (h *MessageHost) installKeyboard(callback func(KeyEvent)) error {
+func (h *MessageHost) addKeyboardListener(callback func(KeyEvent)) (uint64, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.hook != 0 {
-		return errors.New("keyboard hook is already installed")
+	if h.keyboardListeners == nil {
+		h.keyboardListeners = make(map[uint64]func(KeyEvent), 2)
 	}
-	module, _, _ := getModuleHandle.Call(0)
-	hook, _, callErr := setWindowsHookEx.Call(uintptr(whKeyboardLL), keyboardHookProc, module, 0)
-	if hook == 0 {
-		return fmt.Errorf("install keyboard hook: %w", callErr)
+	if h.hook == 0 {
+		module, _, _ := getModuleHandle.Call(0)
+		hook, _, callErr := setWindowsHookEx.Call(uintptr(whKeyboardLL), keyboardHookProc, module, 0)
+		if hook == 0 {
+			return 0, fmt.Errorf("install keyboard hook: %w", callErr)
+		}
+		h.hook = hook
+		keyboardHook.mu.Lock()
+		keyboardHook.callback = h.dispatchKey
+		keyboardHook.mu.Unlock()
 	}
-	h.hook = hook
-	keyboardHook.mu.Lock()
-	keyboardHook.callback = callback
-	keyboardHook.mu.Unlock()
-	return nil
+	h.keyboardSeq++
+	id := h.keyboardSeq
+	h.keyboardListeners[id] = callback
+	return id, nil
 }
 
-// StopKeyboard removes the low-level hook. Safe when none is installed.
-func (h *MessageHost) StopKeyboard() {
-	done := make(chan struct{})
-	if !h.Post(func() { h.removeKeyboard(); close(done) }) {
-		return
-	}
-	<-done
-}
-
-func (h *MessageHost) removeKeyboard() {
+func (h *MessageHost) removeKeyboardListener(id uint64) {
 	h.mu.Lock()
+	delete(h.keyboardListeners, id)
+	remaining := len(h.keyboardListeners)
 	hook := h.hook
-	h.hook = 0
+	if remaining == 0 {
+		h.hook = 0
+	}
 	h.mu.Unlock()
-	if hook == 0 {
+	if remaining > 0 || hook == 0 {
 		return
 	}
 	keyboardHook.mu.Lock()
 	keyboardHook.callback = nil
 	keyboardHook.mu.Unlock()
 	unhookWindowsHookEx.Call(hook)
+}
+
+// ClearKeyboardListeners removes every listener and the hook. It runs during
+// host shutdown.
+func (h *MessageHost) ClearKeyboardListeners() {
+	done := make(chan struct{})
+	if !h.Post(func() {
+		h.mu.Lock()
+		h.keyboardListeners = nil
+		hook := h.hook
+		h.hook = 0
+		h.mu.Unlock()
+		if hook != 0 {
+			keyboardHook.mu.Lock()
+			keyboardHook.callback = nil
+			keyboardHook.mu.Unlock()
+			unhookWindowsHookEx.Call(hook)
+		}
+		close(done)
+	}) {
+		return
+	}
+	<-done
+}
+
+func (h *MessageHost) dispatchKey(event KeyEvent) {
+	h.mu.Lock()
+	listeners := make([]func(KeyEvent), 0, len(h.keyboardListeners))
+	for _, listener := range h.keyboardListeners {
+		listeners = append(listeners, listener)
+	}
+	h.mu.Unlock()
+	for _, listener := range listeners {
+		listener(event)
+	}
 }
 
 func keyboardHookCallback(nCode, wParam, lParam uintptr) uintptr {
@@ -296,7 +362,10 @@ func keyboardHookCallback(nCode, wParam, lParam uintptr) uintptr {
 		callback := keyboardHook.callback
 		keyboardHook.mu.Unlock()
 		if callback != nil {
-			callback(KeyEvent{VirtualKey: info.virtualKey, Down: down, Injected: info.flags&llkhfInjected != 0})
+			callback(KeyEvent{
+				VirtualKey: info.virtualKey, ScanCode: info.scanCode, Down: down,
+				Injected: info.flags&llkhfInjected != 0, ExtraInfo: info.extra,
+			})
 		}
 	}
 	result, _, _ := callNextHookEx.Call(0, nCode, wParam, lParam)
@@ -305,7 +374,7 @@ func keyboardHookCallback(nCode, wParam, lParam uintptr) uintptr {
 
 func (h *MessageHost) Close() {
 	h.close.Do(func() {
-		h.StopKeyboard()
+		h.ClearKeyboardListeners()
 		if h.hwnd != 0 {
 			removeClipboardFormat.Call(h.hwnd)
 			postMessage.Call(h.hwnd, wmClose, 0, 0)

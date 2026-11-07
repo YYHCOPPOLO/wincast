@@ -101,7 +101,11 @@ type controller struct {
 	doubleTapHeld            atomic.Bool
 	lastDoubleTap            atomic.Int64
 	lastToggle               atomic.Int64
-	keyboardInstalled        bool
+	doubleTapStop            func()
+	keywordStop              func()
+	expander                 *snippets.Expander
+	snippetsEnabled          atomic.Bool
+	keywordDelivery          uint64
 	snapshot                 diagnostics.Snapshot
 	cpuPercent               float64
 	cpuMeasured              bool
@@ -157,6 +161,7 @@ func newController(started time.Time, profile profile) *controller {
 	c.commands = commands.Open(filepath.Join(profile.settings, "custom-commands.json"))
 	c.quicklinks = quicklinks.Load(filepath.Join(profile.settings, "quicklinks.json"))
 	c.snippets = snippets.NewRepository(filepath.Join(profile.data, "snippets"))
+	c.expander = snippets.NewExpander()
 	c.reloadSnippets()
 	c.clipboardDisabledDraft = strings.Join(c.clipboardDisabled, "; ")
 	c.calcHistoryPath = filepath.Join(profile.settings, "calculator-history.json")
@@ -257,6 +262,7 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 	c.startCalculatorRates()
 	c.startClipboardHost()
 	c.applyDoubleTap()
+	c.applyKeywordListener()
 	c.scan()
 	if command != windows.ActivatePanel || !hidden {
 		c.activate(command)
@@ -639,7 +645,8 @@ func (c *controller) stop() {
 	if c.messageHost != nil {
 		c.messageHost.Close()
 		c.messageHost = nil
-		c.keyboardInstalled = false
+		c.doubleTapStop = nil
+		c.keywordStop = nil
 	}
 	if c.tray != nil {
 		c.tray.Destroy()
