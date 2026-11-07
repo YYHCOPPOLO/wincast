@@ -77,7 +77,7 @@ func Run() (runErr error) {
 		// Window OnClose runs after this listener. Save while the repository
 		// context is still alive, and leave both buffer and application alive
 		// if the user must resolve a conflict or a write failure.
-		if !c.saveEditor() {
+		if !c.saveNote(false) {
 			event.PreventDefault()
 			if c.editor != nil {
 				showWindow(c.editor.window)
@@ -85,6 +85,7 @@ func Run() (runErr error) {
 			}
 			return
 		}
+		c.persistNotesState()
 		c.stop()
 	})
 	mygo.App.WhenReady(func() {

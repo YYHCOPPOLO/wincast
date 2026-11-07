@@ -80,8 +80,10 @@ type controller struct {
 	clipboardPending         map[string]bool
 	clipboardImageRequests   chan clipboardImageRequest
 	clipboardEvents          atomic.Uint64
-	editor                   *editorWindow
+	editor                   *notesWindow
 	notes                    storage.NoteRepository
+	notesRoot                string
+	notesDeleteConfirm       bool
 	launcher                 *launcher.Service
 	launcherPrefs            *launcher.Preferences
 	catalog                  []domain.Application
@@ -156,7 +158,8 @@ func newController(started time.Time, profile profile) *controller {
 		featureDictionary: true, featureNotes: true,
 	}
 	c.clipboardEnabled.Store(true)
-	c.notes = storage.NewFileNotes(filepath.Join(profile.data, "notes"))
+	c.notesRoot = filepath.Join(profile.data, "notes")
+	c.notes = storage.NewFileNotes(c.notesRoot)
 	c.loadSettings()
 	c.commands = commands.Open(filepath.Join(profile.settings, "custom-commands.json"))
 	c.quicklinks = quicklinks.Load(filepath.Join(profile.settings, "quicklinks.json"))
