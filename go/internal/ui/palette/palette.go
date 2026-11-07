@@ -22,6 +22,7 @@ const (
 	ModeClipboard
 	ModeCalculatorHistory
 	ModeEmoji
+	ModeArguments
 )
 
 // Callbacks are the user's intent. The view never performs I/O and never
@@ -61,6 +62,8 @@ type Callbacks struct {
 	EmojiSearch    func(query string, tone emoji.SkinTone) []emoji.Emoji
 	EmojiPaste     func(string)
 	CycleEmojiTone func() emoji.SkinTone
+
+	SubmitArguments func(domain.Application, []string)
 }
 
 // View is UI-thread-owned display state. Callbacks send user intent back to
@@ -114,6 +117,9 @@ type View struct {
 	EmojiChosen int
 	emojiScroll ui.ScrollState
 	emojiReveal bool
+
+	Argument     *ArgumentForm
+	argumentList ui.ListState
 }
 
 func New(chinese bool, callbacks Callbacks) *View {
@@ -168,6 +174,12 @@ func (v *View) Render(c *ui.Context) {
 				placeholder = v.Text("搜索计算历史…", "Search calculator history…")
 			case ModeEmoji:
 				placeholder = v.Text("搜索 Emoji…", "Search emoji…")
+			case ModeArguments:
+				if current := v.argumentCurrent(); current != nil {
+					placeholder = current.Name
+				} else {
+					placeholder = v.Text("填写参数…", "Enter arguments…")
+				}
 			}
 			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).Height(theme.HeaderHeight).FontSize(theme.SearchFont).
 				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey).Changed() {
@@ -188,6 +200,8 @@ func (v *View) Render(c *ui.Context) {
 			v.calculatorHistoryBody(c, tokens)
 		case ModeEmoji:
 			v.emojiBody(c, tokens)
+		case ModeArguments:
+			v.argumentsBody(c, tokens)
 		default:
 			v.applications(c, tokens)
 		}
@@ -220,6 +234,8 @@ func (v *View) defaultStatus() string {
 		return v.Text("计算历史", "Calculator history")
 	case ModeEmoji:
 		return v.Text("Emoji 与符号 · 肤色 "+v.EmojiTone.Label(), "Emoji & Symbols · "+v.EmojiTone.Label())
+	case ModeArguments:
+		return v.Text("填写模板参数", "Template arguments")
 	default:
 		return v.Text("Go 预览", "Go Preview") + " · " + v.Shortcut
 	}
@@ -233,6 +249,8 @@ func (v *View) footerHints() string {
 		return v.Text("Enter 复制结果  Esc 返回", "Enter Copy  Esc Back")
 	case ModeEmoji:
 		return v.Text("Enter 粘回  Ctrl+T 肤色  Esc 返回", "Enter Paste  Ctrl+T Skin tone  Esc Back")
+	case ModeArguments:
+		return v.Text("Enter 确认  Backspace 上一步  Esc 取消", "Enter Confirm  Backspace Back  Esc Cancel")
 	default:
 		if v.CalcResult != nil {
 			return v.Text("Enter 复制答案  ↑↓ 选择", "Enter Copy answer  ↑↓ Select")
@@ -417,9 +435,23 @@ func (v *View) row(c *ui.Context, i int, tokens theme.Tokens) {
 		trailing = string([]byte{digits})
 	}
 	components.ResultRow(c, tokens, components.Row{
-		Icon: v.callbacks.Icon(application), Fallback: application.Name, Title: application.Name,
+		Icon: v.callbacks.Icon(application), Fallback: v.entryFallback(application), Title: application.Name,
 		Trailing: trailing, Selected: i == v.Chosen,
 	})
+}
+
+// entryFallback is the avatar text for a row without an icon. Feature rows
+// name their feature instead of repeating the entry name.
+func (v *View) entryFallback(application domain.Application) string {
+	switch application.Kind {
+	case domain.KindCommand:
+		return v.Text("命令", "CMD")
+	case domain.KindQuicklink:
+		return v.Text("链接", "LINK")
+	case domain.KindSnippet:
+		return v.Text("片段", "SNIP")
+	}
+	return application.Name
 }
 
 func (v *View) favoriteDigit(id string) byte {
@@ -447,6 +479,30 @@ func stableKey(application domain.Application) string {
 func (v *View) textKey(key ui.TextKey) bool {
 	// MyGo gives composition keys to the IME before OnTextKey. Read Text here
 	// because a rapid Enter may arrive before the next view has bound Query.
+	if v.Mode == ModeArguments {
+		if key.Mods == 0 {
+			switch key.Key {
+			case ui.KeyEnter, ui.KeyTab:
+				v.argumentCommit()
+				return true
+			case ui.KeyEscape:
+				v.cancelArguments()
+				return true
+			case ui.KeyBackspace:
+				if v.Query == "" {
+					v.argumentStepBack()
+					return true
+				}
+			case ui.KeyDown:
+				v.argumentMoveChoice(1)
+				return true
+			case ui.KeyUp:
+				v.argumentMoveChoice(-1)
+				return true
+			}
+		}
+		return false
+	}
 	if key.Key == ui.KeyTab && (key.Mods == 0 || key.Mods == ui.Shift) {
 		v.syncQuery(key.Text())
 		v.tab(key.Mods == ui.Shift)
@@ -581,6 +637,10 @@ func digitKey(key ui.Key) (byte, bool) {
 }
 
 func (v *View) escape() {
+	if v.Mode == ModeArguments {
+		v.cancelArguments()
+		return
+	}
 	if v.Query == "" {
 		switch v.Mode {
 		case ModeClipboard, ModeDictionary, ModeCalculatorHistory, ModeEmoji:
@@ -619,6 +679,10 @@ func (v *View) syncQuery(text string) {
 }
 
 func (v *View) open() {
+	if v.Mode == ModeArguments {
+		v.argumentCommit()
+		return
+	}
 	if !v.Expanded {
 		v.SetExpanded(true)
 		return
@@ -670,6 +734,10 @@ func (v *View) currentChosen() int {
 }
 
 func (v *View) moveVertical(step int) {
+	if v.Mode == ModeArguments {
+		v.argumentMoveChoice(step)
+		return
+	}
 	if !v.Expanded {
 		v.SetExpanded(true)
 		return
@@ -740,6 +808,9 @@ func (v *View) choose(i int) {
 }
 
 func (v *View) Filter() {
+	if v.Mode == ModeArguments {
+		return
+	}
 	switch v.Mode {
 	case ModeDictionary:
 		v.CalcResult = nil
@@ -811,6 +882,7 @@ func (v *View) CountStatus() string {
 
 func (v *View) SetModeLauncher() {
 	v.Mode = ModeLauncher
+	v.Argument = nil
 	v.Query = v.launcherQuery
 	v.inputText.Set(v.launcherQuery)
 	v.launcherQuery = ""
@@ -825,6 +897,7 @@ func (v *View) SetModeLauncher() {
 // expansion caused by a query or by entering a feature.
 func (v *View) ResetLauncher(expanded bool) {
 	v.launcherQuery = ""
+	v.Argument = nil
 	v.SetModeLauncher()
 	v.Status = ""
 	v.AliasOpen = false

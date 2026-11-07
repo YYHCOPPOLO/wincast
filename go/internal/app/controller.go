@@ -16,7 +16,9 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	calcservice "github.com/YYHCOPPOLO/wincast/go/internal/features/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/quicklinks"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
@@ -29,96 +31,105 @@ import (
 const previewShortcut = "Alt+Shift+Space"
 
 type controller struct {
-	ctx                    context.Context
-	cancel                 context.CancelFunc
-	workers                sync.WaitGroup
-	panel                  *mygo.Window
-	tray                   *mygo.Tray
-	view                   *palette.View
-	started                time.Time
-	showRequested          time.Time
-	closing                bool
-	menuOpen               bool
-	panelSizePending       bool
-	scanning               bool
-	target                 windows.Target
-	scale                  float64
-	icons                  map[iconKey]*ui.Bitmap
-	pendingIcons           map[iconKey]bool
-	iconRequests           chan iconKey
-	pasteCancel            context.CancelFunc
-	pasteID                uint64
-	profile                profile
-	instance               *windows.Instance
-	diagnostic             *mygo.Window
-	settings               *mygo.Window
-	settingsScroll         ui.ScrollState
-	settingsPath           string
-	settingsDocument       *storage.Document
-	settingsErr            error
-	settingsWritable       bool
-	settingsStatus         string
-	settingsWrites         chan settingsWrite
-	appearance             string
-	language               string
-	systemDark             bool
-	messageHost            *windows.MessageHost
-	clipboard              *clipboard.Manager
-	clipboardReady         bool
-	clipboardConfirm       bool
-	clipboardError         string
-	clipboardFilter        clipboard.Filter
-	clipboardRequests      chan struct{}
-	clipboardRetention     int64
-	clipboardDisabled      []string
-	clipboardDisabledDraft string
-	clipboardImages        map[string]*ui.Bitmap
-	clipboardImageBytes    int64
-	clipboardPending       map[string]bool
-	clipboardImageRequests chan clipboardImageRequest
-	clipboardEvents        atomic.Uint64
-	editor                 *editorWindow
-	notes                  storage.NoteRepository
-	launcher               *launcher.Service
-	launcherPrefs          *launcher.Preferences
-	catalog                []domain.Application
-	rankingWrites          chan []byte
-	featureDictionary      bool
-	featureNotes           bool
-	clipboardEnabled       atomic.Bool
-	dictionaryReady        bool
-	hotkey                 string
-	hotkeyDraft            string
-	hotkeyRegistered       bool
-	hotkeyOwned            string
-	customDirsDraft        string
-	compactMode            bool
-	doubleTap              string
-	doubleTapVK            atomic.Uint32
-	doubleTapHeld          atomic.Bool
-	lastDoubleTap          atomic.Int64
-	lastToggle             atomic.Int64
-	keyboardInstalled      bool
-	snapshot               diagnostics.Snapshot
-	cpuPercent             float64
-	cpuMeasured            bool
-	exeBytes               int64
-	storeStatus            string
-	dictionaryStatus       string
-	catalogInfo            storage.CatalogInfo
-	catalogRequests        chan []storage.Application
-	lookupRequests         chan lookupRequest
-	lookupCancel           context.CancelFunc
-	lookupID               uint64
-	lookupCanceled         uint64
-	lookupElapsed          time.Duration
-	lookupCount            uint64
-	displaySummary         []string
-	calcHistory            *domaincalc.History
-	calcHistoryPath        string
-	calcRates              *calcservice.Rates
-	calcRegion             string
-	emojiTone              string
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	workers                  sync.WaitGroup
+	panel                    *mygo.Window
+	tray                     *mygo.Tray
+	view                     *palette.View
+	started                  time.Time
+	showRequested            time.Time
+	closing                  bool
+	menuOpen                 bool
+	panelSizePending         bool
+	scanning                 bool
+	target                   windows.Target
+	scale                    float64
+	icons                    map[iconKey]*ui.Bitmap
+	pendingIcons             map[iconKey]bool
+	iconRequests             chan iconKey
+	pasteCancel              context.CancelFunc
+	pasteID                  uint64
+	profile                  profile
+	instance                 *windows.Instance
+	diagnostic               *mygo.Window
+	settings                 *mygo.Window
+	settingsScroll           ui.ScrollState
+	settingsPath             string
+	settingsDocument         *storage.Document
+	settingsErr              error
+	settingsWritable         bool
+	settingsStatus           string
+	settingsWrites           chan settingsWrite
+	appearance               string
+	language                 string
+	systemDark               bool
+	messageHost              *windows.MessageHost
+	clipboard                *clipboard.Manager
+	clipboardReady           bool
+	clipboardConfirm         bool
+	clipboardError           string
+	clipboardFilter          clipboard.Filter
+	clipboardRequests        chan struct{}
+	clipboardRetention       int64
+	clipboardDisabled        []string
+	clipboardDisabledDraft   string
+	clipboardImages          map[string]*ui.Bitmap
+	clipboardImageBytes      int64
+	clipboardPending         map[string]bool
+	clipboardImageRequests   chan clipboardImageRequest
+	clipboardEvents          atomic.Uint64
+	editor                   *editorWindow
+	notes                    storage.NoteRepository
+	launcher                 *launcher.Service
+	launcherPrefs            *launcher.Preferences
+	catalog                  []domain.Application
+	rankingWrites            chan []byte
+	featureDictionary        bool
+	featureNotes             bool
+	clipboardEnabled         atomic.Bool
+	dictionaryReady          bool
+	hotkey                   string
+	hotkeyDraft              string
+	hotkeyRegistered         bool
+	hotkeyOwned              string
+	customDirsDraft          string
+	compactMode              bool
+	doubleTap                string
+	doubleTapVK              atomic.Uint32
+	doubleTapHeld            atomic.Bool
+	lastDoubleTap            atomic.Int64
+	lastToggle               atomic.Int64
+	keyboardInstalled        bool
+	snapshot                 diagnostics.Snapshot
+	cpuPercent               float64
+	cpuMeasured              bool
+	exeBytes                 int64
+	storeStatus              string
+	dictionaryStatus         string
+	catalogInfo              storage.CatalogInfo
+	catalogRequests          chan []storage.Application
+	lookupRequests           chan lookupRequest
+	lookupCancel             context.CancelFunc
+	lookupID                 uint64
+	lookupCanceled           uint64
+	lookupElapsed            time.Duration
+	lookupCount              uint64
+	displaySummary           []string
+	calcHistory              *domaincalc.History
+	calcHistoryPath          string
+	calcRates                *calcservice.Rates
+	calcRegion               string
+	emojiTone                string
+	commands                 *commands.Store
+	quicklinks               *quicklinks.Store
+	featureCommands          bool
+	featureQuicklinks        bool
+	commandsShowInLauncher   bool
+	quicklinksShowInLauncher bool
+	commandConfirm           bool
+	pendingArgs              *argumentSession
+	clipboardSuppress        atomic.Bool
 }
 
 func newController(started time.Time, profile profile) *controller {
@@ -137,6 +148,8 @@ func newController(started time.Time, profile profile) *controller {
 	c.clipboardEnabled.Store(true)
 	c.notes = storage.NewFileNotes(filepath.Join(profile.data, "notes"))
 	c.loadSettings()
+	c.commands = commands.Open(filepath.Join(profile.settings, "custom-commands.json"))
+	c.quicklinks = quicklinks.Load(filepath.Join(profile.settings, "quicklinks.json"))
 	c.clipboardDisabledDraft = strings.Join(c.clipboardDisabled, "; ")
 	c.calcHistoryPath = filepath.Join(profile.settings, "calculator-history.json")
 	c.calcHistory = domaincalc.LoadHistory(c.calcHistoryPath)
@@ -180,6 +193,7 @@ func newController(started time.Time, profile profile) *controller {
 		EmojiSearch:           c.emojiSearch,
 		EmojiPaste:            c.pasteEmoji,
 		CycleEmojiTone:        c.cycleEmojiTone,
+		SubmitArguments:       c.submitArguments,
 	})
 	c.applyViewAppearance()
 	c.view.Expanded = !c.compactMode
@@ -187,6 +201,7 @@ func newController(started time.Time, profile profile) *controller {
 	c.view.EmojiTone = emoji.ToneFromRaw(c.emojiTone)
 	c.view.DictionaryAvailable = c.featureDictionary && c.dictionaryReady
 	c.view.OnLookup = c.lookup
+	c.refreshExtras()
 	return c
 }
 
@@ -279,6 +294,7 @@ func (c *controller) showPanel(reset bool) {
 	if !c.panel.IsVisible() {
 		c.target = windows.ForegroundTarget()
 		if reset {
+			c.pendingArgs = nil
 			c.view.ResetLauncher(!c.compactMode)
 		} else if c.view.Mode != palette.ModeLauncher {
 			c.view.SetExpanded(true)
@@ -363,6 +379,14 @@ func domainApplications(apps []mygo.InstalledApp) []domain.Application {
 }
 
 func (c *controller) open(application domain.Application) {
+	switch application.Kind {
+	case domain.KindCommand:
+		c.startCommand(application)
+		return
+	case domain.KindQuicklink:
+		c.startQuicklink(application)
+		return
+	}
 	if c.launcher != nil && c.view.Query != "" && application.ID != "" {
 		c.launcher.Record(c.view.Query, application.ID, time.Now())
 		c.queueRankingSave()

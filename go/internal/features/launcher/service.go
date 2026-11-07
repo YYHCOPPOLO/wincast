@@ -14,13 +14,30 @@ import (
 )
 
 type Service struct {
-	apps   []domain.Application
-	fields map[string]domain.SearchFields
-	prefs  *Preferences
+	apps        []domain.Application
+	extras      []domain.Application
+	fields      map[string]domain.SearchFields
+	extraFields map[string]domain.SearchFields
+	prefs       *Preferences
 }
 
 func New(prefs *Preferences) *Service {
-	return &Service{fields: make(map[string]domain.SearchFields), prefs: prefs}
+	return &Service{fields: make(map[string]domain.SearchFields), extraFields: make(map[string]domain.SearchFields), prefs: prefs}
+}
+
+// SetExtras replaces the command, quicklink and snippet entries that share
+// the launcher's ranking. keywords carries a snippet's keyword, the only
+// extra searchable word. Callers provide the display order.
+func (s *Service) SetExtras(extras []domain.Application, keywords map[string]string) {
+	s.extras = append([]domain.Application(nil), extras...)
+	s.extraFields = make(map[string]domain.SearchFields, len(extras))
+	for _, entry := range extras {
+		s.extraFields[entry.ID] = domain.SearchFields{
+			Alias:       s.prefs.Alias(entry.ID),
+			Display:     entry.Name,
+			SnippetWord: keywords[entry.ID],
+		}
+	}
 }
 
 func (s *Service) Preferences() *Preferences { return s.prefs }
@@ -77,6 +94,11 @@ func (s *Service) Application(id string) (domain.Application, bool) {
 			return app, true
 		}
 	}
+	for _, extra := range s.extras {
+		if extra.ID == id {
+			return extra, true
+		}
+	}
 	return domain.Application{}, false
 }
 
@@ -91,21 +113,26 @@ func (s *Service) Search(query string, showHidden bool, now time.Time) []domain.
 		app   domain.Application
 		score int
 	}
-	results := make([]scored, 0, len(s.apps))
-	for _, app := range s.apps {
+	results := make([]scored, 0, len(s.apps)+len(s.extras))
+	consider := func(app domain.Application, key string, fields domain.SearchFields) {
 		if !showHidden && s.prefs.IsHidden(app.ID) {
-			continue
+			return
 		}
+		score, ok := domain.SearchScore(query, fields)
+		if !ok {
+			return
+		}
+		results = append(results, scored{app: app, score: score + s.prefs.Boost(query, key, now)})
+	}
+	for _, app := range s.apps {
 		key := app.ID
 		if key == "" {
 			key = strings.ToLower(app.Path)
 		}
-		fields := s.fields[key]
-		score, ok := domain.SearchScore(query, fields)
-		if !ok {
-			continue
-		}
-		results = append(results, scored{app: app, score: score + s.prefs.Boost(query, key, now)})
+		consider(app, key, s.fields[key])
+	}
+	for _, extra := range s.extras {
+		consider(extra, extra.ID, s.extraFields[extra.ID])
 	}
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].score != results[j].score {
@@ -125,8 +152,8 @@ func (s *Service) Search(query string, showHidden bool, now time.Time) []domain.
 }
 
 func (s *Service) emptyQuery(showHidden bool) []domain.Application {
-	apps := make([]domain.Application, 0, len(s.apps))
-	added := make(map[string]bool, len(s.apps))
+	apps := make([]domain.Application, 0, len(s.apps)+len(s.extras))
+	added := make(map[string]bool, len(s.apps)+len(s.extras))
 	for _, id := range s.prefs.FavoriteOrder() {
 		app, ok := s.Application(id)
 		if !ok || (!showHidden && s.prefs.IsHidden(id)) {
@@ -149,7 +176,14 @@ func (s *Service) emptyQuery(showHidden bool) []domain.Application {
 		}
 		return rest[i].Path < rest[j].Path
 	})
-	return append(apps, rest...)
+	apps = append(apps, rest...)
+	for _, extra := range s.extras {
+		if added[extra.ID] || (!showHidden && s.prefs.IsHidden(extra.ID)) {
+			continue
+		}
+		apps = append(apps, extra)
+	}
+	return apps
 }
 
 func (s *Service) Record(query, id string, now time.Time) {

@@ -10,12 +10,24 @@ import (
 
 // Application is the catalog entry the UI shows. ID is the stable business
 // identity (AppUserModelID); Path locates the icon and launch target. Neither
-// is derived from the current sort position.
+// is derived from the current sort position. Kind is empty for applications
+// and names the feature for command, quicklink and snippet entries.
 type Application struct {
 	ID   string
 	Name string
 	Path string
+	Kind Kind
 }
+
+// Kind distinguishes catalog entries that are not installed applications.
+type Kind string
+
+const (
+	KindApplication Kind = ""
+	KindCommand     Kind = "command"
+	KindQuicklink   Kind = "quicklink"
+	KindSnippet     Kind = "snippet"
+)
 
 // Mode is the palette state that selects both the query source and the rows.
 type Mode uint8

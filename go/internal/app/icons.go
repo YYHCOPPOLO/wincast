@@ -18,6 +18,9 @@ type iconKey struct {
 }
 
 func (c *controller) icon(application domain.Application) *ui.Bitmap {
+	if application.Path == "" {
+		return nil
+	}
 	key := iconKey{application.Path, int(math.Ceil(28 * c.scale))}
 	if bitmap, ok := c.icons[key]; ok {
 		return bitmap

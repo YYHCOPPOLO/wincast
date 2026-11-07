@@ -70,7 +70,7 @@ func (c *controller) startClipboard() {
 			case <-c.ctx.Done():
 				return
 			case <-c.clipboardRequests:
-				if c.ctx.Err() != nil || !c.clipboardEnabled.Load() {
+				if c.ctx.Err() != nil || !c.clipboardEnabled.Load() || c.clipboardSuppress.Load() {
 					continue
 				}
 				before := c.clipboardEvents.Load()
