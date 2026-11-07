@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/diagnostics"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
@@ -26,76 +28,87 @@ import (
 const previewShortcut = "Alt+Shift+Space"
 
 type controller struct {
-	ctx               context.Context
-	cancel            context.CancelFunc
-	workers           sync.WaitGroup
-	panel             *mygo.Window
-	tray              *mygo.Tray
-	view              *palette.View
-	started           time.Time
-	showRequested     time.Time
-	closing           bool
-	menuOpen          bool
-	scanning          bool
-	target            windows.Target
-	scale             float64
-	icons             map[iconKey]*ui.Bitmap
-	pendingIcons      map[iconKey]bool
-	iconRequests      chan iconKey
-	pasteCancel       context.CancelFunc
-	pasteID           uint64
-	profile           profile
-	instance          *windows.Instance
-	diagnostic        *mygo.Window
-	settings          *mygo.Window
-	settingsPath      string
-	settingsDocument  *storage.Document
-	settingsErr       error
-	settingsWritable  bool
-	settingsStatus    string
-	settingsWrites    chan settingsWrite
-	appearance        string
-	language          string
-	systemDark        bool
-	messageHost       *windows.MessageHost
-	clipboardEvents   atomic.Uint64
-	editor            *editorWindow
-	notes             storage.NoteRepository
-	launcher          *launcher.Service
-	launcherPrefs     *launcher.Preferences
-	catalog           []domain.Application
-	rankingWrites     chan []byte
-	featureDictionary bool
-	featureNotes      bool
-	clipboardEnabled  atomic.Bool
-	dictionaryReady   bool
-	hotkey            string
-	hotkeyDraft       string
-	hotkeyRegistered  bool
-	hotkeyOwned       string
-	customDirsDraft   string
-	compactMode       bool
-	doubleTap         string
-	doubleTapVK       atomic.Uint32
-	doubleTapHeld     atomic.Bool
-	lastDoubleTap     atomic.Int64
-	lastToggle        atomic.Int64
-	keyboardInstalled bool
-	snapshot          diagnostics.Snapshot
-	cpuPercent        float64
-	cpuMeasured       bool
-	exeBytes          int64
-	storeStatus       string
-	dictionaryStatus  string
-	catalogInfo       storage.CatalogInfo
-	catalogRequests   chan []storage.Application
-	lookupRequests    chan lookupRequest
-	lookupCancel      context.CancelFunc
-	lookupID          uint64
-	lookupCanceled    uint64
-	lookupElapsed     time.Duration
-	lookupCount       uint64
-	displaySummary    []string
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	workers                sync.WaitGroup
+	panel                  *mygo.Window
+	tray                   *mygo.Tray
+	view                   *palette.View
+	started                time.Time
+	showRequested          time.Time
+	closing                bool
+	menuOpen               bool
+	scanning               bool
+	target                 windows.Target
+	scale                  float64
+	icons                  map[iconKey]*ui.Bitmap
+	pendingIcons           map[iconKey]bool
+	iconRequests           chan iconKey
+	pasteCancel            context.CancelFunc
+	pasteID                uint64
+	profile                profile
+	instance               *windows.Instance
+	diagnostic             *mygo.Window
+	settings               *mygo.Window
+	settingsPath           string
+	settingsDocument       *storage.Document
+	settingsErr            error
+	settingsWritable       bool
+	settingsStatus         string
+	settingsWrites         chan settingsWrite
+	appearance             string
+	language               string
+	systemDark             bool
+	messageHost            *windows.MessageHost
+	clipboard              *clipboard.Manager
+	clipboardReady         bool
+	clipboardError         string
+	clipboardFilter        clipboard.Filter
+	clipboardRequests      chan struct{}
+	clipboardRetention     int64
+	clipboardDisabled      []string
+	clipboardDisabledDraft string
+	clipboardImages        map[string]*ui.Bitmap
+	clipboardPending       map[string]bool
+	clipboardImageRequests chan clipboardImageRequest
+	clipboardEvents        atomic.Uint64
+	editor                 *editorWindow
+	notes                  storage.NoteRepository
+	launcher               *launcher.Service
+	launcherPrefs          *launcher.Preferences
+	catalog                []domain.Application
+	rankingWrites          chan []byte
+	featureDictionary      bool
+	featureNotes           bool
+	clipboardEnabled       atomic.Bool
+	dictionaryReady        bool
+	hotkey                 string
+	hotkeyDraft            string
+	hotkeyRegistered       bool
+	hotkeyOwned            string
+	customDirsDraft        string
+	compactMode            bool
+	doubleTap              string
+	doubleTapVK            atomic.Uint32
+	doubleTapHeld          atomic.Bool
+	lastDoubleTap          atomic.Int64
+	lastToggle             atomic.Int64
+	keyboardInstalled      bool
+	snapshot               diagnostics.Snapshot
+	cpuPercent             float64
+	cpuMeasured            bool
+	exeBytes               int64
+	storeStatus            string
+	dictionaryStatus       string
+	catalogInfo            storage.CatalogInfo
+	catalogRequests        chan []storage.Application
+	lookupRequests         chan lookupRequest
+	lookupCancel           context.CancelFunc
+	lookupID               uint64
+	lookupCanceled         uint64
+	lookupElapsed          time.Duration
+	lookupCount            uint64
+	displaySummary         []string
 }
 
 func newController(started time.Time, profile profile) *controller {
@@ -105,12 +118,16 @@ func newController(started time.Time, profile profile) *controller {
 		icons: make(map[iconKey]*ui.Bitmap), pendingIcons: make(map[iconKey]bool), iconRequests: make(chan iconKey, 32),
 		profile: profile, catalogRequests: make(chan []storage.Application, 1), lookupRequests: make(chan lookupRequest, 1),
 		settingsWrites: make(chan settingsWrite, 1), rankingWrites: make(chan []byte, 1),
-		systemDark: windows.SystemDark(), appearance: "system", language: defaultLanguage(),
+		clipboardRequests: make(chan struct{}, 1),
+		clipboardImages:   make(map[string]*ui.Bitmap), clipboardPending: make(map[string]bool),
+		clipboardImageRequests: make(chan clipboardImageRequest, 16),
+		systemDark:             windows.SystemDark(), appearance: "system", language: defaultLanguage(),
 		featureDictionary: true, featureNotes: true,
 	}
 	c.clipboardEnabled.Store(true)
 	c.notes = storage.NewFileNotes(filepath.Join(profile.data, "notes"))
 	c.loadSettings()
+	c.clipboardDisabledDraft = strings.Join(c.clipboardDisabled, "; ")
 	preferences, preferencesErr := launcher.LoadPreferences(filepath.Join(profile.settings, "launcher"))
 	if preferencesErr != nil {
 		log.Printf("launcher preferences load failed: %v", preferencesErr)
@@ -122,14 +139,22 @@ func newController(started time.Time, profile profile) *controller {
 		Filtered: func(elapsed time.Duration, count int) {
 			log.Printf("filter elapsed_us=%d results=%d", elapsed.Microseconds(), count)
 		},
-		Search:           c.search,
-		Favorite:         c.openFavorite,
-		FavoriteSlot:     c.launcherPrefs.FavoriteSlot,
-		ToggleFavorite:   c.toggleFavorite,
-		ToggleExpanded:   c.toggleExpanded,
-		SaveAlias:        c.saveAlias,
-		SetHidden:        c.setHidden,
-		ToggleShowHidden: c.toggleShowHidden,
+		Search:             c.search,
+		Favorite:           c.openFavorite,
+		FavoriteSlot:       c.launcherPrefs.FavoriteSlot,
+		ToggleFavorite:     c.toggleFavorite,
+		ToggleExpanded:     c.toggleExpanded,
+		SaveAlias:          c.saveAlias,
+		SetHidden:          c.setHidden,
+		ToggleShowHidden:   c.toggleShowHidden,
+		ClipboardSearch:    c.clipboardSearch,
+		ClipboardPaste:     c.pasteClipboardItem,
+		ClipboardCopy:      c.copyClipboardItem,
+		ClipboardPin:       c.toggleClipboardPin,
+		ClipboardDelete:    c.deleteClipboardItem,
+		ClipboardImage:     c.clipboardBitmap,
+		ClipboardPinned:    c.pasteClipboardSlot,
+		SetClipboardFilter: c.setClipboardFilter,
 	})
 	c.applyViewAppearance()
 	c.view.Expanded = !c.compactMode
@@ -177,11 +202,15 @@ func (c *controller) ready() {
 	c.startStorage()
 	c.startSettingsWriter()
 	c.startRankingWriter()
+	c.startClipboard()
+	c.startClipboardImages()
 	c.startClipboardHost()
 	c.applyDoubleTap()
 	c.scan()
 	if slices.Contains(os.Args[1:], "--diagnostics") {
 		c.openDiagnostics()
+	} else if slices.Contains(os.Args[1:], "--clipboard") {
+		c.openClipboard()
 	} else if !slices.Contains(os.Args[1:], "--hidden") {
 		c.show()
 	}
@@ -327,28 +356,74 @@ func (c *controller) menu() {
 			}
 		}
 	}()
+	if c.view.Mode == palette.ModeClipboard {
+		c.clipboardMenu()
+		return
+	}
 	menu := components.Menu([]components.MenuAction{
-		{Label: c.view.Text("打开选中应用", "Open selected application"), Disabled: c.view.Dictionary || c.view.Chosen < 0, Click: func() {
+		{Label: c.view.Text("打开选中应用", "Open selected application"), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: func() {
 			if c.view.Chosen >= 0 && c.view.Chosen < len(c.view.Results) {
 				c.open(c.view.Results[c.view.Chosen])
 			}
 		}},
 		{Label: c.view.Text("刷新应用程序", "Refresh applications"), Click: c.scan},
 		{Separator: true},
-		{Label: c.favoriteLabel(), Accelerator: "Ctrl+D", Disabled: c.view.Dictionary || c.view.Chosen < 0, Click: c.toggleFavorite},
-		{Label: c.view.Text("设置别名…", "Set alias…"), Disabled: c.view.Dictionary || c.view.Chosen < 0, Click: c.openAliasDialog},
-		{Label: c.hideLabel(), Disabled: c.view.Dictionary || c.view.Chosen < 0, Click: c.toggleSelectedHidden},
+		{Label: c.favoriteLabel(), Accelerator: "Ctrl+D", Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: c.toggleFavorite},
+		{Label: c.view.Text("设置别名…", "Set alias…"), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: c.openAliasDialog},
+		{Label: c.hideLabel(), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: c.toggleSelectedHidden},
 		{Label: c.showHiddenLabel(), Click: c.toggleShowHidden},
 		{Label: c.expandLabel(), Accelerator: "Ctrl+E", Click: c.toggleExpanded},
 		{Separator: true},
 		{Label: c.view.Text("复制文本 / 词条", "Copy text / entry"), Accelerator: "Ctrl+Shift+C", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), false) }},
 		{Label: c.view.Text("粘回原窗口", "Paste to previous window"), Accelerator: "Ctrl+Shift+Enter", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), true) }},
 		{Separator: true},
+		{Label: c.view.Text("剪贴板历史…", "Clipboard history…"), Click: c.openClipboard},
 		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("笔记…", "Notes…"), Disabled: !c.featureNotes, Click: c.openEditor},
 		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: c.openDiagnostics},
 		{Separator: true},
+		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
+	})
+	menu.Popup(c.panel)
+}
+
+func (c *controller) clipboardMenu() {
+	var selected *clipboard.Item
+	if c.view.ClipboardChosen >= 0 && c.view.ClipboardChosen < len(c.view.ClipboardItems) {
+		item := c.view.ClipboardItems[c.view.ClipboardChosen]
+		selected = &item
+	}
+	pinLabel := c.view.Text("置顶", "Pin")
+	if selected != nil && selected.Pinned() {
+		pinLabel = c.view.Text("取消置顶", "Unpin")
+	}
+	menu := components.Menu([]components.MenuAction{
+		{Label: c.view.Text("粘回原窗口", "Paste to previous window"), Disabled: selected == nil, Click: func() {
+			if selected != nil {
+				c.pasteClipboardItem(*selected)
+			}
+		}},
+		{Label: c.view.Text("复制", "Copy"), Disabled: selected == nil, Click: func() {
+			if selected != nil {
+				c.copyClipboardItem(*selected)
+			}
+		}},
+		{Label: pinLabel, Disabled: selected == nil, Click: func() {
+			if selected != nil {
+				c.toggleClipboardPin(*selected)
+			}
+		}},
+		{Label: c.view.Text("删除", "Delete"), Disabled: selected == nil, Click: func() {
+			if selected != nil {
+				c.deleteClipboardItem(*selected)
+			}
+		}},
+		{Separator: true},
+		{Label: c.view.Text("清空历史…", "Clear history…"), Click: c.clearClipboardHistory},
+		{Label: c.view.Text("返回启动器", "Back to launcher"), Accelerator: "Esc", Click: c.view.SetModeLauncher},
+		{Separator: true},
+		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)

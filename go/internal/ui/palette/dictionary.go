@@ -53,7 +53,7 @@ func (v *View) CopyText() string {
 	// A native menu can run before Changed has rebuilt the view. Invalidate
 	// an old definition before deciding what the current input can copy.
 	v.syncQuery(v.inputText.String())
-	if !v.Dictionary || v.Definition == nil {
+	if v.Mode != ModeDictionary || v.Definition == nil {
 		return v.Query
 	}
 	var text strings.Builder
@@ -67,16 +67,4 @@ func (v *View) CopyText() string {
 		}
 	}
 	return text.String()
-}
-
-func (v *View) ToggleDictionary() {
-	if !v.DictionaryAvailable {
-		v.Status = v.Text("词典库不可用", "Dictionary database unavailable")
-		return
-	}
-	v.Query = v.inputText.String()
-	v.Dictionary = !v.Dictionary
-	v.dictionaryScroll.X, v.dictionaryScroll.Y = 0, 0
-	v.Filter()
-	v.Input.Focus()
 }

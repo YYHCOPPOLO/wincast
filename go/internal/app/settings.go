@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -38,6 +40,8 @@ func (c *controller) loadSettings() {
 	c.featureDictionary = document.Bool("dictionaryEnabled", true)
 	c.featureNotes = document.Bool("notesEnabled", true)
 	c.clipboardEnabled.Store(document.Bool("clipboardMonitorEnabled", true))
+	c.clipboardRetention = int64(document.Int("clipboardRetentionDays", clipboard.DefaultRetentionDays))
+	c.clipboardDisabled = document.Strings("clipboardDisabledApps", clipboard.DefaultDisabledApps)
 	c.hotkey = document.String("hotkey", previewShortcut)
 	c.hotkeyDraft = c.hotkey
 	c.doubleTap = document.String("doubleTapModifier", "none")
@@ -61,6 +65,11 @@ func (c *controller) clampSettings() {
 	case "system", "light", "dark":
 	default:
 		c.appearance = "system"
+	}
+	switch c.clipboardRetention {
+	case 1, 7, 30, 90, 180, 365, -1:
+	default:
+		c.clipboardRetention = clipboard.DefaultRetentionDays
 	}
 }
 
@@ -221,6 +230,82 @@ func doubleTapValue(index int) string {
 	return "none"
 }
 
+func clipboardRetentionLabel(language string, days int64) string {
+	zh := language == "zh"
+	switch days {
+	case 1:
+		if zh {
+			return "1 天"
+		}
+		return "1 Day"
+	case 7:
+		if zh {
+			return "1 周"
+		}
+		return "1 Week"
+	case 30:
+		if zh {
+			return "1 个月"
+		}
+		return "1 Month"
+	case 90:
+		if zh {
+			return "3 个月"
+		}
+		return "3 Months"
+	case 180:
+		if zh {
+			return "6 个月"
+		}
+		return "6 Months"
+	case 365:
+		if zh {
+			return "1 年"
+		}
+		return "1 Year"
+	default:
+		if zh {
+			return "永久"
+		}
+		return "Forever"
+	}
+}
+
+func cycleClipboardRetention(days int64) int64 {
+	presets := []int64{1, 7, 30, 90, 180, 365, -1}
+	for index, preset := range presets {
+		if preset == days {
+			return presets[(index+1)%len(presets)]
+		}
+	}
+	return 90
+}
+
+func (c *controller) setClipboardDisabledApps(text string) {
+	var apps []string
+	seen := make(map[string]bool)
+	for _, part := range strings.FieldsFunc(text, func(r rune) bool {
+		return r == ';' || r == '\n' || r == '\r'
+	}) {
+		part = strings.TrimSpace(part)
+		if part == "" || seen[strings.ToLower(part)] {
+			continue
+		}
+		seen[strings.ToLower(part)] = true
+		apps = append(apps, part)
+	}
+	c.clipboardDisabled = apps
+	c.clipboardDisabledDraft = strings.Join(apps, "; ")
+	if c.settingsDocument != nil && c.settingsWritable {
+		_ = c.settingsDocument.Set("clipboardDisabledApps", apps)
+	}
+	c.queueSettingsSave()
+	if c.clipboard != nil {
+		c.clipboard.SetDisabledApps(apps)
+	}
+	c.settingsStatus = c.text("排除列表已更新", "Excluded apps updated")
+}
+
 func (c *controller) settingsView(ctx *ui.Context) {
 	tokens := theme.For(c.dark())
 	ctx.SetTheme(tokens.Theme())
@@ -274,9 +359,31 @@ func (c *controller) settingsView(ctx *ui.Context) {
 			})
 			components.FormRow(ctx, tokens, c.text("剪贴板监听", "Clipboard monitor"), func() {
 				enabled := c.clipboardEnabled.Load()
-				ui.Switch(ctx, &enabled).Label(c.text("只记录事件类型", "Records event types only"))
+				ui.Switch(ctx, &enabled).Label(c.text("保存文本和图片历史", "Keep text and image history"))
 				if enabled != c.clipboardEnabled.Load() {
 					c.setFeature("clipboardMonitorEnabled", enabled)
+				}
+			})
+			components.FormRow(ctx, tokens, c.text("保留时间", "Retention"), func() {
+				if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).Clicked() {
+					c.setClipboardRetention(cycleClipboardRetention(c.clipboardRetention))
+				}
+			})
+			components.FormRow(ctx, tokens, c.text("排除应用", "Excluded apps"), func() {
+				ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.TextInput(ctx, &c.clipboardDisabledDraft).Grow(1).
+						Label(c.text("按可执行文件名排除，用分号分隔", "Excluded executable names, separated by semicolons"))
+					if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
+						c.setClipboardDisabledApps(c.clipboardDisabledDraft)
+					}
+				})
+			})
+			components.FormRow(ctx, tokens, c.text("剪贴板历史", "Clipboard history"), func() {
+				if ui.Button(ctx, c.text("清空历史", "Clear history")).Clicked() {
+					c.clearClipboardHistory()
+				}
+				if c.clipboardError != "" {
+					ui.Text(ctx, c.clipboardError).FontSize(theme.TrailingFont).TextColor(tokens.Destructive).SingleLine()
 				}
 			})
 		})
@@ -378,9 +485,8 @@ func (c *controller) setFeature(key string, enabled bool) {
 	case "dictionaryEnabled":
 		c.featureDictionary = enabled
 		c.view.DictionaryAvailable = enabled && c.dictionaryReady
-		if !enabled && c.view.Dictionary {
-			c.view.Dictionary = false
-			c.view.Filter()
+		if !enabled && c.view.Mode == palette.ModeDictionary {
+			c.view.SetModeLauncher()
 		}
 	case "notesEnabled":
 		c.featureNotes = enabled

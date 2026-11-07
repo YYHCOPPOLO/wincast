@@ -9,6 +9,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 )
 
@@ -20,7 +21,7 @@ func (c *controller) search(query string, showHidden bool) []domain.Application 
 }
 
 func (c *controller) selected() (domain.Application, bool) {
-	if c.view == nil || c.view.Dictionary || c.view.Chosen < 0 || c.view.Chosen >= len(c.view.Results) {
+	if c.view == nil || c.view.Mode != palette.ModeLauncher || c.view.Chosen < 0 || c.view.Chosen >= len(c.view.Results) {
 		return domain.Application{}, false
 	}
 	return c.view.Results[c.view.Chosen], true

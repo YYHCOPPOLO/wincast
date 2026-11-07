@@ -103,7 +103,7 @@ func (c *controller) startStorage() {
 					lookupErr = request.ctx.Err()
 				}
 				c.panel.Update(func() {
-					if c.closing || request.id != c.lookupID || !c.view.Dictionary || request.query != c.view.Query {
+					if c.closing || request.id != c.lookupID || c.view.Mode != palette.ModeDictionary || request.query != c.view.Query {
 						return
 					}
 					c.lookupElapsed = elapsed
@@ -147,7 +147,7 @@ func (c *controller) lookup(query string) {
 	}
 	c.lookupID++
 	c.view.DictionaryLoading = false
-	if !c.view.Dictionary || strings.TrimSpace(query) == "" {
+	if c.view.Mode != palette.ModeDictionary || strings.TrimSpace(query) == "" {
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, 500*time.Millisecond)

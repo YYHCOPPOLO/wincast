@@ -2,12 +2,22 @@ package palette
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo/ui"
+)
+
+type Mode uint8
+
+const (
+	ModeLauncher Mode = iota
+	ModeDictionary
+	ModeClipboard
 )
 
 // Callbacks are the user's intent. The view never performs I/O and never
@@ -27,6 +37,15 @@ type Callbacks struct {
 	SaveAlias        func(domain.Application, string)
 	SetHidden        func(domain.Application, bool)
 	ToggleShowHidden func()
+
+	ClipboardSearch    func(query string, filter clipboard.Filter) []clipboard.Item
+	ClipboardPaste     func(clipboard.Item)
+	ClipboardCopy      func(clipboard.Item)
+	ClipboardPin       func(clipboard.Item)
+	ClipboardDelete    func(clipboard.Item)
+	ClipboardImage     func(clipboard.Item) *ui.Bitmap
+	ClipboardPinned    func(byte)
+	SetClipboardFilter func(clipboard.Filter)
 }
 
 // View is UI-thread-owned display state. Callbacks send user intent back to
@@ -50,17 +69,27 @@ type View struct {
 	AliasTarget         domain.Application
 	aliasInput          ui.Handle
 	callbacks           Callbacks
-	Dictionary          bool
+	Mode                Mode
+	launcherQuery       string
 	DictionaryAvailable bool
 	DictionaryLoading   bool
 	DictionaryError     string
 	Definition          *Definition
 	dictionaryScroll    ui.ScrollState
 	OnLookup            func(string)
+
+	ClipboardItems     []clipboard.Item
+	ClipboardFilter    clipboard.Filter
+	ClipboardAvailable bool
+	ClipboardError     string
+	ClipboardChosen    int
+	clipboardList      ui.ListState
+	clipboardPreview   ui.ScrollState
 }
 
 func New(chinese bool, callbacks Callbacks) *View {
-	return &View{Chinese: chinese, Expanded: true, Chosen: -1, inputText: ui.NewTextBuffer(""), callbacks: callbacks}
+	return &View{Chinese: chinese, Expanded: true, Chosen: -1, ClipboardChosen: -1,
+		inputText: ui.NewTextBuffer(""), callbacks: callbacks}
 }
 
 func (v *View) Text(zh, en string) string {
@@ -84,8 +113,8 @@ func (v *View) Render(c *ui.Context) {
 	c.Root().Background(tokens.Surface)
 	c.OnShortcut(ui.Ctrl, ui.KeyK, v.callbacks.Menu)
 	c.OnShortcut(0, ui.KeyEscape, v.escape)
-	c.OnShortcut(0, ui.KeyDown, func() { v.choose(v.Chosen + 1) })
-	c.OnShortcut(0, ui.KeyUp, func() { v.choose(v.Chosen - 1) })
+	c.OnShortcut(0, ui.KeyDown, func() { v.choose(v.currentChosen() + 1) })
+	c.OnShortcut(0, ui.KeyUp, func() { v.choose(v.currentChosen() - 1) })
 	c.OnShortcut(0, ui.KeyEnter, v.open)
 	v.renderAlias(c, tokens)
 	ui.Column(c).Fill().Children(func() {
@@ -96,8 +125,11 @@ func (v *View) Render(c *ui.Context) {
 		ui.Row(c).Padding(padding, 20).Gap(14).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "⌕").FontSize(24).TextColor(tokens.TextTertiary)
 			placeholder := v.Text("搜索应用程序…", "Search applications…")
-			if v.Dictionary {
+			switch v.Mode {
+			case ModeDictionary:
 				placeholder = v.Text("查询词典…", "Look up a word…")
+			case ModeClipboard:
+				placeholder = v.Text("搜索剪贴板…", "Search clipboard…")
 			}
 			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).FontSize(theme.SearchFont).
 				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey).Changed() {
@@ -108,19 +140,48 @@ func (v *View) Render(c *ui.Context) {
 			return
 		}
 		ui.Divider(c)
-		if v.Dictionary {
+		switch v.Mode {
+		case ModeDictionary:
 			ui.Text(c, v.Text("词典", "Dictionary")).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Padding(10, 18)
 			v.dictionaryBody(c, tokens)
-		} else {
+		case ModeClipboard:
+			v.clipboardBody(c, tokens)
+		default:
 			v.applications(c, tokens)
 		}
 		ui.Divider(c)
 		status := v.Status
 		if status == "" {
-			status = v.Text("Go 预览 · Alt+Shift+Space", "Go Preview · Alt+Shift+Space")
+			status = v.defaultStatus()
 		}
-		components.Footer(c, tokens, status, v.Text("Tab 词典   ↑↓ 选择", "Tab Dictionary   ↑↓ Select"), v.callbacks.Menu)
+		components.Footer(c, tokens, status, v.footerHints(), v.callbacks.Menu)
 	})
+}
+
+func (v *View) defaultStatus() string {
+	switch v.Mode {
+	case ModeClipboard:
+		if v.ClipboardError != "" {
+			return v.ClipboardError
+		}
+		if !v.ClipboardAvailable {
+			return v.Text("剪贴板存储不可用", "Clipboard storage is unavailable")
+		}
+		return v.Text("剪贴板历史", "Clipboard history")
+	case ModeDictionary:
+		return v.Text("ECDICT 词典", "ECDICT dictionary")
+	default:
+		return v.Text("Go 预览 · Alt+Shift+Space", "Go Preview · Alt+Shift+Space")
+	}
+}
+
+func (v *View) footerHints() string {
+	switch v.Mode {
+	case ModeClipboard:
+		return v.Text("Enter 粘回  Ctrl+C 复制  Ctrl+. 置顶  Ctrl+P 筛选", "Enter Paste  Ctrl+C Copy  Ctrl+. Pin  Ctrl+P Filter")
+	default:
+		return v.Text("Tab 词典   ↑↓ 选择", "Tab Dictionary   ↑↓ Select")
+	}
 }
 
 func (v *View) renderAlias(c *ui.Context, tokens theme.Tokens) {
@@ -206,21 +267,49 @@ func stableKey(application domain.Application) string {
 func (v *View) textKey(key ui.TextKey) bool {
 	// MyGo gives composition keys to the IME before OnTextKey. Read Text here
 	// because a rapid Enter may arrive before the next view has bound Query.
+	if v.Mode == ModeClipboard {
+		if key.Mods == ui.Ctrl && key.Key == ui.KeyC {
+			v.copySelectedClipboard()
+			return true
+		}
+		if key.Mods == ui.Ctrl|ui.Shift && key.Key == ui.KeyEnter {
+			v.pasteSelectedClipboard()
+			return true
+		}
+		if key.Mods == 0 && key.Key == ui.KeyDelete {
+			v.deleteSelectedClipboard()
+			return true
+		}
+	}
 	if key.Mods == ui.Ctrl|ui.Shift && (key.Key == ui.KeyEnter || key.Key == ui.KeyC) {
 		v.syncQuery(key.Text())
 		v.callbacks.CopyText(v.CopyText(), key.Key == ui.KeyEnter)
 		return true
 	}
 	if key.Mods == ui.Ctrl {
+		if v.Mode == ModeClipboard {
+			switch key.Key {
+			case ui.KeyP:
+				v.CycleClipboardFilter()
+				return true
+			case ui.KeyPeriod:
+				v.pinSelectedClipboard()
+				return true
+			}
+			if digit, ok := digitKey(key.Key); ok {
+				v.pastePinned(digit)
+				return true
+			}
+		}
 		if digit, ok := digitKey(key.Key); ok {
-			if !v.Dictionary && v.callbacks.Favorite != nil {
+			if v.Mode == ModeLauncher && v.callbacks.Favorite != nil {
 				v.callbacks.Favorite(digit)
 			}
 			return true
 		}
 		switch key.Key {
 		case ui.KeyD:
-			if v.callbacks.ToggleFavorite != nil {
+			if v.Mode == ModeLauncher && v.callbacks.ToggleFavorite != nil {
 				v.callbacks.ToggleFavorite()
 			}
 			return true
@@ -239,18 +328,15 @@ func (v *View) textKey(key ui.TextKey) bool {
 		v.syncQuery(key.Text())
 		v.open()
 	case ui.KeyEscape:
-		if key.Text() == "" {
-			v.callbacks.Hide()
-		} else {
-			key.SetText("")
-			v.Query = ""
-			v.Filter()
-		}
+		v.escape()
 	case ui.KeyDown:
-		v.choose(v.Chosen + 1)
+		v.choose(v.currentChosen() + 1)
 	case ui.KeyUp:
-		v.choose(v.Chosen - 1)
+		v.choose(v.currentChosen() - 1)
 	case ui.KeyTab:
+		if v.Mode == ModeClipboard {
+			return false
+		}
 		v.Query = key.Text()
 		v.ToggleDictionary()
 		return true
@@ -288,6 +374,11 @@ func digitKey(key ui.Key) (byte, bool) {
 
 func (v *View) escape() {
 	if v.Query == "" {
+		switch v.Mode {
+		case ModeClipboard, ModeDictionary:
+			v.SetModeLauncher()
+			return
+		}
 		v.callbacks.Hide()
 		return
 	}
@@ -314,7 +405,11 @@ func (v *View) syncQuery(text string) {
 }
 
 func (v *View) open() {
-	if v.Dictionary {
+	switch v.Mode {
+	case ModeDictionary:
+		return
+	case ModeClipboard:
+		v.pasteSelectedClipboard()
 		return
 	}
 	if v.Chosen >= 0 && v.Chosen < len(v.Results) {
@@ -322,8 +417,24 @@ func (v *View) open() {
 	}
 }
 
+func (v *View) currentChosen() int {
+	if v.Mode == ModeClipboard {
+		return v.ClipboardChosen
+	}
+	return v.Chosen
+}
+
 func (v *View) choose(i int) {
-	if v.Dictionary {
+	switch v.Mode {
+	case ModeDictionary:
+		return
+	case ModeClipboard:
+		if len(v.ClipboardItems) == 0 {
+			v.ClipboardChosen = -1
+			return
+		}
+		v.ClipboardChosen = max(0, min(i, len(v.ClipboardItems)-1))
+		v.clipboardList.ScrollIntoView(v.ClipboardChosen)
 		return
 	}
 	if len(v.Results) == 0 {
@@ -335,13 +446,22 @@ func (v *View) choose(i int) {
 }
 
 func (v *View) Filter() {
-	if v.Dictionary {
+	switch v.Mode {
+	case ModeDictionary:
 		v.Definition = nil
 		v.DictionaryError = ""
 		v.dictionaryScroll.X, v.dictionaryScroll.Y = 0, 0
 		if v.OnLookup != nil {
 			v.OnLookup(v.Query)
 		}
+		return
+	case ModeClipboard:
+		if v.callbacks.ClipboardSearch != nil {
+			v.ClipboardItems = v.callbacks.ClipboardSearch(v.Query, v.ClipboardFilter)
+		} else {
+			v.ClipboardItems = nil
+		}
+		v.choose(0)
 		return
 	}
 	if v.OnLookup != nil {
@@ -361,4 +481,290 @@ func (v *View) Filter() {
 
 func (v *View) CountStatus() string {
 	return fmt.Sprintf(v.Text("%d 个应用程序", "%d applications"), len(v.Apps))
+}
+
+func (v *View) SetModeLauncher() {
+	v.Mode = ModeLauncher
+	v.Query = v.launcherQuery
+	v.inputText.Set(v.launcherQuery)
+	v.launcherQuery = ""
+	v.Chosen, v.ClipboardChosen = -1, -1
+	v.Filter()
+	v.Input.Focus()
+}
+
+func (v *View) SetModeClipboard() {
+	if v.Mode == ModeClipboard {
+		v.Input.Focus()
+		return
+	}
+	if v.Mode == ModeLauncher {
+		v.launcherQuery = v.Query
+	}
+	v.Mode = ModeClipboard
+	v.Query = ""
+	v.inputText.Set("")
+	v.ClipboardChosen = -1
+	v.Filter()
+	v.Input.Focus()
+}
+
+func (v *View) Clipboard() bool { return v.Mode == ModeClipboard }
+
+// ChooseClipboard moves the clipboard selection after a store mutation.
+func (v *View) ChooseClipboard(index int) {
+	if index < 0 || index >= len(v.ClipboardItems) {
+		return
+	}
+	v.ClipboardChosen = index
+	v.clipboardList.ScrollIntoView(index)
+}
+
+func (v *View) ToggleDictionary() {
+	if v.Mode == ModeDictionary {
+		v.SetModeLauncher()
+		return
+	}
+	if !v.DictionaryAvailable {
+		v.Status = v.Text("词典库不可用", "Dictionary database unavailable")
+		return
+	}
+	v.launcherQuery = v.inputText.String()
+	v.Query = v.inputText.String()
+	v.Mode = ModeDictionary
+	v.dictionaryScroll.X, v.dictionaryScroll.Y = 0, 0
+	v.Filter()
+	v.Input.Focus()
+}
+
+func (v *View) clipboardBody(c *ui.Context, tokens theme.Tokens) {
+	ui.Row(c).Padding(4, 18).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, clipboardFilterLabel(v.Chinese, v.ClipboardFilter)).FontSize(theme.SectionFont).
+			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+		if v.ClipboardChosen >= 0 && v.ClipboardChosen < len(v.ClipboardItems) {
+			label := v.Text("置顶", "Pin")
+			if v.ClipboardItems[v.ClipboardChosen].Pinned() {
+				label = v.Text("取消置顶", "Unpin")
+			}
+			if ui.Button(c, label).Clicked() {
+				v.pinSelectedClipboard()
+			}
+		}
+		if ui.Button(c, v.Text("筛选 Ctrl+P", "Filter Ctrl+P")).Clicked() {
+			v.CycleClipboardFilter()
+		}
+	})
+	v.clipboardPreviewBody(c, tokens)
+	v.clipboardList.Selected = &v.ClipboardChosen
+	v.clipboardList.Key = func(i int) any { return v.ClipboardItems[i].ID }
+	v.clipboardList.Label = func(i int) string { return clipboardRowTitle(v.ClipboardItems[i], v.Chinese) }
+	list := ui.List(c, &v.clipboardList, len(v.ClipboardItems), func(i int) {
+		v.clipboardRow(c, i, tokens)
+	}).Grow(1).Padding(0, 8).Label(v.Text("剪贴板历史", "Clipboard history"))
+	if list.Submitted() {
+		v.open()
+	}
+	if len(v.ClipboardItems) == 0 {
+		message := clipboardEmptyLabel(v.Chinese, v.ClipboardFilter)
+		if !v.ClipboardAvailable {
+			message = v.Text("剪贴板存储不可用，已有历史记录已保留", "Clipboard storage is unavailable; existing history is preserved")
+		}
+		if v.ClipboardError != "" {
+			message = v.ClipboardError
+		}
+		ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
+	}
+}
+
+func (v *View) clipboardPreviewBody(c *ui.Context, tokens theme.Tokens) {
+	if v.ClipboardChosen < 0 || v.ClipboardChosen >= len(v.ClipboardItems) {
+		return
+	}
+	item := v.ClipboardItems[v.ClipboardChosen]
+	ui.Column(c).FillWidth().Padding(8, 18).Gap(6).Background(tokens.Card2).Children(func() {
+		if item.Kind == clipboard.KindImage {
+			if v.callbacks.ClipboardImage != nil {
+				if bitmap := v.callbacks.ClipboardImage(item); bitmap != nil {
+					ui.Image(c, bitmap).Size(160, 100).Fit(ui.Contain).Role(ui.RoleNone)
+					return
+				}
+			}
+			ui.Text(c, v.Text("图片", "Image")+" · "+item.ImagePath).FontSize(theme.TrailingFont).
+				TextColor(tokens.TextTertiary).SingleLine()
+			return
+		}
+		text := item.Text
+		if len([]rune(text)) > 600 {
+			text = string([]rune(text)[:600])
+		}
+		ui.Text(c, text).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).MaxLines(3)
+	})
+}
+
+func (v *View) clipboardRow(c *ui.Context, i int, tokens theme.Tokens) {
+	item := v.ClipboardItems[i]
+	trailing := ""
+	if item.Pinned() {
+		trailing = v.Text("置顶", "Pinned")
+	}
+	components.ResultRow(c, tokens, components.Row{
+		Fallback: clipboardRowFallback(item, v.Chinese),
+		Title:    clipboardRowTitle(item, v.Chinese),
+		Trailing: trailing,
+		Selected: i == v.ClipboardChosen,
+	})
+}
+
+func clipboardRowTitle(item clipboard.Item, chinese bool) string {
+	if item.Kind == clipboard.KindImage {
+		if chinese {
+			return "[图片]"
+		}
+		return "[Image]"
+	}
+	return collapseClipboardText(item.Text, 200)
+}
+
+func clipboardRowFallback(item clipboard.Item, chinese bool) string {
+	if item.Kind == clipboard.KindImage {
+		if chinese {
+			return "图"
+		}
+		return "IMG"
+	}
+	return "TXT"
+}
+
+func collapseClipboardText(text string, maxChars int) string {
+	var builder strings.Builder
+	chars := 0
+	for _, r := range text {
+		if chars == maxChars {
+			break
+		}
+		if r == '\n' || r == '\r' || r == '\t' || r == ' ' {
+			if builder.Len() > 0 && !strings.HasSuffix(builder.String(), " ") {
+				builder.WriteByte(' ')
+				chars++
+			}
+			continue
+		}
+		builder.WriteRune(r)
+		chars++
+	}
+	return strings.TrimRight(builder.String(), " ")
+}
+
+func (v *View) CycleClipboardFilter() {
+	next := (v.ClipboardFilter + 1) % 5
+	v.ClipboardFilter = next
+	if v.callbacks.SetClipboardFilter != nil {
+		v.callbacks.SetClipboardFilter(next)
+	}
+	v.ClipboardChosen = -1
+	v.Filter()
+}
+
+func (v *View) pinSelectedClipboard() {
+	if v.ClipboardChosen < 0 || v.ClipboardChosen >= len(v.ClipboardItems) {
+		return
+	}
+	item := v.ClipboardItems[v.ClipboardChosen]
+	if v.callbacks.ClipboardPin != nil {
+		v.callbacks.ClipboardPin(item)
+	}
+}
+
+func (v *View) pasteSelectedClipboard() {
+	if v.ClipboardChosen < 0 || v.ClipboardChosen >= len(v.ClipboardItems) {
+		return
+	}
+	item := v.ClipboardItems[v.ClipboardChosen]
+	if v.callbacks.ClipboardPaste != nil {
+		v.callbacks.ClipboardPaste(item)
+	}
+}
+
+func (v *View) copySelectedClipboard() {
+	if v.ClipboardChosen < 0 || v.ClipboardChosen >= len(v.ClipboardItems) {
+		return
+	}
+	item := v.ClipboardItems[v.ClipboardChosen]
+	if v.callbacks.ClipboardCopy != nil {
+		v.callbacks.ClipboardCopy(item)
+	}
+}
+
+func (v *View) deleteSelectedClipboard() {
+	if v.ClipboardChosen < 0 || v.ClipboardChosen >= len(v.ClipboardItems) {
+		return
+	}
+	item := v.ClipboardItems[v.ClipboardChosen]
+	if v.callbacks.ClipboardDelete != nil {
+		v.callbacks.ClipboardDelete(item)
+	}
+}
+
+func (v *View) pastePinned(digit byte) {
+	if v.callbacks.ClipboardPinned != nil {
+		v.callbacks.ClipboardPinned(digit)
+	}
+}
+
+func clipboardFilterLabel(chinese bool, filter clipboard.Filter) string {
+	if chinese {
+		switch filter {
+		case clipboard.FilterText:
+			return "文本"
+		case clipboard.FilterImages:
+			return "图片"
+		case clipboard.FilterLinks:
+			return "链接"
+		case clipboard.FilterEmails:
+			return "邮箱"
+		default:
+			return "全部"
+		}
+	}
+	switch filter {
+	case clipboard.FilterText:
+		return "Text"
+	case clipboard.FilterImages:
+		return "Images"
+	case clipboard.FilterLinks:
+		return "Links"
+	case clipboard.FilterEmails:
+		return "Emails"
+	default:
+		return "All"
+	}
+}
+
+func clipboardEmptyLabel(chinese bool, filter clipboard.Filter) string {
+	if chinese {
+		switch filter {
+		case clipboard.FilterText:
+			return "剪贴板历史中没有文本"
+		case clipboard.FilterImages:
+			return "剪贴板历史中没有图片"
+		case clipboard.FilterLinks:
+			return "剪贴板历史中没有链接"
+		case clipboard.FilterEmails:
+			return "剪贴板历史中没有邮箱"
+		default:
+			return "剪贴板历史为空"
+		}
+	}
+	switch filter {
+	case clipboard.FilterText:
+		return "No text in clipboard history"
+	case clipboard.FilterImages:
+		return "No images in clipboard history"
+	case clipboard.FilterLinks:
+		return "No links in clipboard history"
+	case clipboard.FilterEmails:
+		return "No email addresses in clipboard history"
+	default:
+		return "Clipboard history is empty"
+	}
 }
