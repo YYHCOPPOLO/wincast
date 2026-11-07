@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 type tokenKind uint8
@@ -538,7 +539,7 @@ func tokenize(input string) []token {
 	isDigit := func(r rune) bool { return r >= '0' && r <= '9' }
 	for i < len(chars) {
 		ch := chars[i]
-		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+		if unicode.IsSpace(ch) {
 			i++
 			continue
 		}
@@ -694,7 +695,7 @@ func isHexDigit(r rune) bool {
 }
 
 func isAlphabetic(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+	return unicode.IsLetter(r)
 }
 
 func compactSuffix(chars []rune, index int) bool {

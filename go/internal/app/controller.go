@@ -39,6 +39,7 @@ type controller struct {
 	showRequested          time.Time
 	closing                bool
 	menuOpen               bool
+	panelSizePending       bool
 	scanning               bool
 	target                 windows.Target
 	scale                  float64
@@ -51,6 +52,7 @@ type controller struct {
 	instance               *windows.Instance
 	diagnostic             *mygo.Window
 	settings               *mygo.Window
+	settingsScroll         ui.ScrollState
 	settingsPath           string
 	settingsDocument       *storage.Document
 	settingsErr            error
@@ -71,6 +73,7 @@ type controller struct {
 	clipboardDisabled      []string
 	clipboardDisabledDraft string
 	clipboardImages        map[string]*ui.Bitmap
+	clipboardImageBytes    int64
 	clipboardPending       map[string]bool
 	clipboardImageRequests chan clipboardImageRequest
 	clipboardEvents        atomic.Uint64
@@ -157,6 +160,7 @@ func newController(started time.Time, profile profile) *controller {
 		FavoriteSlot:          c.launcherPrefs.FavoriteSlot,
 		ToggleFavorite:        c.toggleFavorite,
 		ToggleExpanded:        c.toggleExpanded,
+		ExpandedChanged:       c.schedulePanelSize,
 		SaveAlias:             c.saveAlias,
 		SetHidden:             c.setHidden,
 		ToggleShowHidden:      c.toggleShowHidden,
@@ -179,6 +183,7 @@ func newController(started time.Time, profile profile) *controller {
 	})
 	c.applyViewAppearance()
 	c.view.Expanded = !c.compactMode
+	c.view.Shortcut = c.hotkey
 	c.view.EmojiTone = emoji.ToneFromRaw(c.emojiTone)
 	c.view.DictionaryAvailable = c.featureDictionary && c.dictionaryReady
 	c.view.OnLookup = c.lookup
@@ -246,10 +251,10 @@ func (c *controller) logDisplays() {
 
 func (c *controller) place() {
 	display := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
-	width, height := c.panel.Size()
+	width, _ := c.panel.Size()
 	area := display.WorkArea
 	x := area.X + max(0, (area.Width-width)/2)
-	y := area.Y + max(0, (area.Height-height)*18/100)
+	y := area.Y + max(0, (area.Height-int(theme.PanelHeight))*18/100)
 	c.panel.SetPosition(x, y)
 	c.scale = display.ScaleFactor
 	if c.scale <= 0 {
@@ -258,6 +263,10 @@ func (c *controller) place() {
 }
 
 func (c *controller) show() {
+	c.showPanel(true)
+}
+
+func (c *controller) showPanel(reset bool) {
 	if c.closing || c.panel == nil {
 		return
 	}
@@ -269,7 +278,12 @@ func (c *controller) show() {
 	c.showRequested = time.Now()
 	if !c.panel.IsVisible() {
 		c.target = windows.ForegroundTarget()
-		c.view.SetQuery("")
+		if reset {
+			c.view.ResetLauncher(!c.compactMode)
+		} else if c.view.Mode != palette.ModeLauncher {
+			c.view.SetExpanded(true)
+		}
+		c.applyPanelSize()
 	}
 	c.place()
 	c.view.Input.Focus()
@@ -308,6 +322,7 @@ func (c *controller) scan() {
 		return
 	}
 	c.scanning, c.view.Loading = true, true
+	directories := c.customDirectories() // snapshot UI-owned settings before the worker starts
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
@@ -316,7 +331,7 @@ func (c *controller) scan() {
 		if c.ctx.Err() != nil {
 			return
 		}
-		custom := c.scanCustomApplications()
+		custom := c.scanCustomApplications(directories)
 		c.panel.Update(func() {
 			if c.closing {
 				return
@@ -331,7 +346,9 @@ func (c *controller) scan() {
 			c.catalog = c.launcher.Applications()
 			c.view.Apps = c.catalog
 			c.persistCatalog(c.catalog)
-			c.view.Filter()
+			if c.view.Mode == palette.ModeLauncher {
+				c.view.Filter()
+			}
 			log.Printf("catalog count=%d elapsed_us=%d", len(c.catalog), time.Since(started).Microseconds())
 		})
 	}()
@@ -354,7 +371,7 @@ func (c *controller) open(application domain.Application) {
 	if err := mygo.Shell.LaunchApp(mygo.InstalledApp{ID: application.ID, Name: application.Name, Path: application.Path}); err != nil {
 		log.Printf("launch failed: %v", err)
 		c.view.Status = c.view.Text("无法打开应用程序", "Could not open application")
-		c.show()
+		c.showPanel(false)
 	}
 }
 

@@ -48,5 +48,5 @@ func (c *controller) openEmoji() {
 	if !c.panel.IsVisible() {
 		c.target = windows.ForegroundTarget()
 	}
-	c.show()
+	c.showPanel(false)
 }

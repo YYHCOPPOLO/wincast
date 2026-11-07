@@ -44,7 +44,7 @@ func (c *controller) copyText(text string, paste bool) {
 	if err := target.Restore(owner); err != nil {
 		c.view.Status = c.view.Text("已复制，无法恢复原窗口或权限不足", "Copied; the previous window could not be restored or requires permission")
 		log.Printf("paste foreground failed: %v", err)
-		c.show()
+		c.showPanel(false)
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, 800*time.Millisecond)
@@ -71,7 +71,7 @@ func (c *controller) copyText(text string, paste bool) {
 					c.view.Status = c.view.Text("已复制；粘贴状态未确认，请检查原窗口", "Copied; paste status is unconfirmed, please check the previous window")
 				}
 				log.Printf("paste canceled elapsed_us=%d error=%v", time.Since(started).Microseconds(), err)
-				c.show()
+				c.showPanel(false)
 				return
 			}
 			c.view.Status = c.view.Text("已向原窗口发送粘贴", "Paste sent to the previous window")

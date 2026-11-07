@@ -104,13 +104,12 @@ func (c *controller) openAliasDialog() {
 }
 
 func (c *controller) toggleExpanded() {
-	c.view.Expanded = !c.view.Expanded
+	c.view.SetExpanded(!c.view.Expanded)
 	c.compactMode = !c.view.Expanded
 	if c.settingsDocument != nil && c.settingsWritable {
 		_ = c.settingsDocument.Set("compactMode", c.compactMode)
 	}
 	c.queueSettingsSave()
-	c.applyPanelSize()
 	c.panel.Update(func() {})
 }
 
@@ -125,8 +124,28 @@ func (c *controller) applyPanelSize() {
 	if c.panel == nil {
 		return
 	}
+	width, height := c.panel.Size()
+	if width == int(theme.PanelWidth) && height == c.panelHeight() {
+		return
+	}
+	x, y := c.panel.Position()
 	c.panel.SetSize(int(theme.PanelWidth), c.panelHeight())
-	c.place()
+	c.panel.SetPosition(x, y)
+}
+
+// Query changes may originate while a view is being built. Defer native
+// geometry mutations to one queued update and retain the existing top anchor.
+func (c *controller) schedulePanelSize() {
+	if c.panel == nil || c.panelSizePending || c.closing {
+		return
+	}
+	c.panelSizePending = true
+	c.panel.Update(func() {
+		c.panelSizePending = false
+		if !c.closing {
+			c.applyPanelSize()
+		}
+	})
 }
 
 func (c *controller) customDirectories() []string {
@@ -189,8 +208,7 @@ func (c *controller) startRankingWriter() {
 	}()
 }
 
-func (c *controller) scanCustomApplications() []domain.Application {
-	directories := c.customDirectories()
+func (c *controller) scanCustomApplications(directories []string) []domain.Application {
 	if len(directories) == 0 {
 		return nil
 	}

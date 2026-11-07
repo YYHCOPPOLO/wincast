@@ -231,6 +231,12 @@ func readGlobalBytes(format uint32) ([]byte, bool) {
 // EncodeClipboardImage converts a DIB to PNG. PNG payloads pass through.
 func EncodeClipboardImage(imageBytes ClipboardImage) ([]byte, bool) {
 	if len(imageBytes.PNG) > 0 {
+		config, err := png.DecodeConfig(bytes.NewReader(imageBytes.PNG))
+		if err != nil || len(imageBytes.PNG) > maxClipboardImageSize || config.Width <= 0 || config.Height <= 0 ||
+			config.Width > maxDIBDimension || config.Height > maxDIBDimension ||
+			int64(config.Width)*int64(config.Height) > maxClipboardImageSize/4 {
+			return nil, false
+		}
 		return imageBytes.PNG, true
 	}
 	if len(imageBytes.DIB) == 0 {

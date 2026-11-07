@@ -95,5 +95,5 @@ func (c *controller) openCalculatorHistory() {
 	if !c.panel.IsVisible() {
 		c.target = windows.ForegroundTarget()
 	}
-	c.show()
+	c.showPanel(false)
 }

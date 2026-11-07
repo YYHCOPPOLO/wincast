@@ -38,6 +38,7 @@ type Callbacks struct {
 	FavoriteSlot     func(byte) string
 	ToggleFavorite   func()
 	ToggleExpanded   func()
+	ExpandedChanged  func()
 	SaveAlias        func(domain.Application, string)
 	SetHidden        func(domain.Application, bool)
 	ToggleShowHidden func()
@@ -47,7 +48,7 @@ type Callbacks struct {
 	ClipboardCopy      func(clipboard.Item)
 	ClipboardPin       func(clipboard.Item)
 	ClipboardDelete    func(clipboard.Item)
-	ClipboardImage     func(clipboard.Item) *ui.Bitmap
+	ClipboardImage     func(clipboard.Item) (*ui.Bitmap, bool)
 	ClipboardPinned    func(byte)
 	SetClipboardFilter func(clipboard.Filter)
 
@@ -70,6 +71,7 @@ type View struct {
 	Results             []domain.Application
 	Loading             bool
 	Status              string
+	Shortcut            string
 	Chinese             bool
 	ForcedDark          *bool
 	Expanded            bool
@@ -101,6 +103,7 @@ type View struct {
 	ClipboardChosen    int
 	clipboardList      ui.ListState
 	clipboardPreview   ui.ScrollState
+	clipboardPreviewID string
 
 	CalcResult      *domaincalc.Result
 	CalcHistory     []domaincalc.HistoryEntry
@@ -110,6 +113,7 @@ type View struct {
 	EmojiTone   emoji.SkinTone
 	EmojiChosen int
 	emojiScroll ui.ScrollState
+	emojiReveal bool
 }
 
 func New(chinese bool, callbacks Callbacks) *View {
@@ -140,25 +144,20 @@ func (v *View) Render(c *ui.Context) {
 	c.OnShortcut(0, ui.KeyEscape, v.escape)
 	c.OnShortcut(0, ui.KeyDown, func() { v.moveVertical(1) })
 	c.OnShortcut(0, ui.KeyUp, func() { v.moveVertical(-1) })
-	c.OnShortcut(0, ui.KeyLeft, func() {
-		if v.Mode == ModeEmoji {
-			v.moveHorizontal(-1)
-		}
-	})
-	c.OnShortcut(0, ui.KeyRight, func() {
-		if v.Mode == ModeEmoji {
-			v.moveHorizontal(1)
-		}
-	})
+	if v.Mode == ModeEmoji {
+		c.OnShortcut(0, ui.KeyLeft, func() { v.moveHorizontal(-1) })
+		c.OnShortcut(0, ui.KeyRight, func() { v.moveHorizontal(1) })
+	}
 	c.OnShortcut(0, ui.KeyEnter, v.open)
 	v.renderAlias(c, tokens)
 	ui.Column(c).Fill().Children(func() {
-		padding := float32(18)
-		if !v.Expanded {
-			padding = theme.HeaderPadding
-		}
-		ui.Row(c).Padding(padding, 20).Gap(14).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "⌕").FontSize(24).TextColor(tokens.TextTertiary)
+		ui.Row(c).Height(theme.HeaderHeight+2*theme.HeaderPadding).
+			Padding(theme.HeaderPadding, 20).Gap(14).AlignItems(ui.Center).Children(func() {
+			if v.Mode == ModeLauncher {
+				ui.Text(c, "⌕").FontSize(24).TextColor(tokens.TextTertiary)
+			} else if ui.Button(c, "‹").Size(28, 28).Label(v.Text("返回启动器", "Back to launcher")).Clicked() {
+				v.SetModeLauncher()
+			}
 			placeholder := v.Text("搜索应用程序…", "Search applications…")
 			switch v.Mode {
 			case ModeDictionary:
@@ -170,7 +169,7 @@ func (v *View) Render(c *ui.Context) {
 			case ModeEmoji:
 				placeholder = v.Text("搜索 Emoji…", "Search emoji…")
 			}
-			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).FontSize(theme.SearchFont).
+			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).Height(theme.HeaderHeight).FontSize(theme.SearchFont).
 				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey).Changed() {
 				v.syncQuery(v.inputText.String())
 			}
@@ -222,7 +221,7 @@ func (v *View) defaultStatus() string {
 	case ModeEmoji:
 		return v.Text("Emoji 与符号 · 肤色 "+v.EmojiTone.Label(), "Emoji & Symbols · "+v.EmojiTone.Label())
 	default:
-		return v.Text("Go 预览 · Alt+Shift+Space", "Go Preview · Alt+Shift+Space")
+		return v.Text("Go 预览", "Go Preview") + " · " + v.Shortcut
 	}
 }
 
@@ -366,34 +365,24 @@ func (v *View) emojiBody(c *ui.Context, tokens theme.Tokens) {
 				ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
 				return
 			}
-			group := ""
-			var row []int
-			flush := func() {
-				if len(row) == 0 {
-					return
-				}
-				indexes := row
-				row = nil
-				ui.Grid(c).Columns(emoji.GridColumns).Gap(6).Children(func() {
-					for _, index := range indexes {
-						v.emojiCell(c, index, tokens)
-					}
-				})
-			}
-			for index, item := range v.EmojiItems {
-				if item.Group != group {
-					flush()
-					group = item.Group
-					ui.Text(c, group).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
-				}
-				row = append(row, index)
-				if len(row) >= emoji.GridColumns {
-					flush()
+			for _, section := range emoji.Sections(v.EmojiItems) {
+				ui.Text(c, section.Group).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+				for start := section.Start; start < section.Start+section.Count; start += emoji.GridColumns {
+					end := min(start+emoji.GridColumns, section.Start+section.Count)
+					ui.Grid(c).FillWidth().Columns(emoji.GridColumns).Gap(6).Children(func() {
+						for index := start; index < end; index++ {
+							v.emojiCell(c, index, tokens)
+						}
+						// Empty cells retain the columns of a partial category row.
+						for missing := end - start; missing < emoji.GridColumns; missing++ {
+							ui.Spacer(c).Height(emoji.CellDip)
+						}
+					})
 				}
 			}
-			flush()
 		})
 	})
+	v.emojiReveal = false
 }
 
 func (v *View) emojiCell(c *ui.Context, index int, tokens theme.Tokens) {
@@ -402,9 +391,15 @@ func (v *View) emojiCell(c *ui.Context, index int, tokens theme.Tokens) {
 	if index == v.EmojiChosen {
 		fill = tokens.Selection
 	}
-	ui.Text(c, item.Glyph).FontSize(26).Height(50).TextAlign(ui.Center).
+	cell := ui.Text(c, item.Glyph).FontSize(30).Height(emoji.CellDip).TextAlign(ui.Center).
 		Background(fill).Radius(10).Label(item.Name).Role(ui.RoleButton).
-		OnClick(func() { v.EmojiChosen = index })
+		OnClick(func() { v.choose(index) })
+	if v.emojiReveal && index == v.EmojiChosen {
+		sections := emoji.Sections(v.EmojiItems)
+		if len(sections) > 0 && index >= min(emoji.GridColumns, sections[0].Count) {
+			cell.ScrollIntoView()
+		}
+	}
 }
 
 func (v *View) cycleEmojiTone() {
@@ -452,6 +447,21 @@ func stableKey(application domain.Application) string {
 func (v *View) textKey(key ui.TextKey) bool {
 	// MyGo gives composition keys to the IME before OnTextKey. Read Text here
 	// because a rapid Enter may arrive before the next view has bound Query.
+	if key.Key == ui.KeyTab && (key.Mods == 0 || key.Mods == ui.Shift) {
+		v.syncQuery(key.Text())
+		v.tab(key.Mods == ui.Shift)
+		return true
+	}
+	if v.Mode == ModeEmoji && key.Mods == 0 {
+		switch key.Key {
+		case ui.KeyLeft:
+			v.moveHorizontal(-1)
+			return true
+		case ui.KeyRight:
+			v.moveHorizontal(1)
+			return true
+		}
+	}
 	if v.Mode == ModeClipboard {
 		if key.Mods == ui.Ctrl && key.Key == ui.KeyC {
 			v.copySelectedClipboard()
@@ -523,21 +533,25 @@ func (v *View) textKey(key ui.TextKey) bool {
 		v.moveVertical(1)
 	case ui.KeyUp:
 		v.moveVertical(-1)
-	case ui.KeyTab:
-		if v.Mode != ModeLauncher {
-			return false
-		}
-		if strings.TrimSpace(key.Text()) == "" {
-			v.SetModeClipboard()
-			return true
-		}
-		v.Query = key.Text()
-		v.ToggleDictionary()
-		return true
 	default:
 		return false
 	}
 	return true
+}
+
+func (v *View) tab(backward bool) {
+	query := v.Query
+	if v.Mode == ModeLauncher {
+		if !backward && strings.TrimSpace(query) != "" && v.DictionaryAvailable {
+			v.ToggleDictionary()
+		} else {
+			v.SetModeClipboard()
+			v.SetQuery(query)
+		}
+		return
+	}
+	v.SetModeLauncher()
+	v.SetQuery(query)
 }
 
 func digitKey(key ui.Key) (byte, bool) {
@@ -588,17 +602,27 @@ func (v *View) SetQuery(text string) {
 		v.inputText.Set(text)
 	}
 	v.Query = text
+	if strings.TrimSpace(text) != "" {
+		v.SetExpanded(true)
+	}
 	v.Filter()
 }
 
 func (v *View) syncQuery(text string) {
 	if v.Query != text {
 		v.Query = text
+		if strings.TrimSpace(text) != "" {
+			v.SetExpanded(true)
+		}
 		v.Filter()
 	}
 }
 
 func (v *View) open() {
+	if !v.Expanded {
+		v.SetExpanded(true)
+		return
+	}
 	switch v.Mode {
 	case ModeDictionary:
 		return
@@ -646,8 +670,12 @@ func (v *View) currentChosen() int {
 }
 
 func (v *View) moveVertical(step int) {
+	if !v.Expanded {
+		v.SetExpanded(true)
+		return
+	}
 	if v.Mode == ModeEmoji {
-		v.choose(v.EmojiChosen + step*emoji.GridColumns)
+		v.choose(emoji.VerticalSelection(v.EmojiItems, v.EmojiChosen, step))
 		return
 	}
 	v.choose(v.currentChosen() + step)
@@ -664,12 +692,7 @@ func (v *View) choose(i int) {
 	case ModeDictionary:
 		return
 	case ModeClipboard:
-		if len(v.ClipboardItems) == 0 {
-			v.ClipboardChosen = -1
-			return
-		}
-		v.ClipboardChosen = max(0, min(i, len(v.ClipboardItems)-1))
-		v.clipboardList.ScrollIntoView(v.ClipboardChosen)
+		v.chooseClipboard(i, false)
 		return
 	case ModeCalculatorHistory:
 		minimum := 0
@@ -691,7 +714,15 @@ func (v *View) choose(i int) {
 			v.EmojiChosen = -1
 			return
 		}
-		v.EmojiChosen = max(0, min(i, len(v.EmojiItems)-1))
+		chosen := max(0, min(i, len(v.EmojiItems)-1))
+		if chosen != v.EmojiChosen {
+			v.emojiReveal = true
+		}
+		sections := emoji.Sections(v.EmojiItems)
+		if len(sections) > 0 && chosen < min(emoji.GridColumns, sections[0].Count) {
+			v.emojiScroll.X, v.emojiScroll.Y = 0, 0
+		}
+		v.EmojiChosen = chosen
 		return
 	}
 	minimum := 0
@@ -724,12 +755,7 @@ func (v *View) Filter() {
 	case ModeClipboard:
 		v.CalcResult = nil
 		v.CalcHistory = nil
-		if v.callbacks.ClipboardSearch != nil {
-			v.ClipboardItems = v.callbacks.ClipboardSearch(v.Query, v.ClipboardFilter)
-		} else {
-			v.ClipboardItems = nil
-		}
-		v.choose(0)
+		v.filterClipboard(true)
 		return
 	case ModeCalculatorHistory:
 		if v.callbacks.Calculate != nil {
@@ -752,6 +778,8 @@ func (v *View) Filter() {
 		} else {
 			v.EmojiItems = nil
 		}
+		v.emojiScroll.X, v.emojiScroll.Y = 0, 0
+		v.emojiReveal = true
 		v.choose(0)
 		return
 	}
@@ -793,7 +821,28 @@ func (v *View) SetModeLauncher() {
 	v.Input.Focus()
 }
 
+// ResetLauncher applies the summon preference without persisting temporary
+// expansion caused by a query or by entering a feature.
+func (v *View) ResetLauncher(expanded bool) {
+	v.launcherQuery = ""
+	v.SetModeLauncher()
+	v.Status = ""
+	v.AliasOpen = false
+	v.SetExpanded(expanded)
+}
+
+func (v *View) SetExpanded(expanded bool) {
+	if v.Expanded == expanded {
+		return
+	}
+	v.Expanded = expanded
+	if v.callbacks.ExpandedChanged != nil {
+		v.callbacks.ExpandedChanged()
+	}
+}
+
 func (v *View) SetModeEmoji() {
+	v.SetExpanded(true)
 	if v.Mode == ModeEmoji {
 		v.Input.Focus()
 		return
@@ -810,6 +859,7 @@ func (v *View) SetModeEmoji() {
 }
 
 func (v *View) SetModeCalculatorHistory() {
+	v.SetExpanded(true)
 	if v.Mode == ModeCalculatorHistory {
 		v.Input.Focus()
 		return
@@ -827,6 +877,7 @@ func (v *View) SetModeCalculatorHistory() {
 }
 
 func (v *View) SetModeClipboard() {
+	v.SetExpanded(true)
 	if v.Mode == ModeClipboard {
 		v.Input.Focus()
 		return
@@ -854,8 +905,62 @@ func (v *View) ChooseClipboard(index int) {
 	if index < 0 || index >= len(v.ClipboardItems) {
 		return
 	}
-	v.ClipboardChosen = index
-	v.clipboardList.ScrollIntoView(index)
+	v.chooseClipboard(index, false)
+}
+
+// RefreshClipboard retains the selected business ID when capture or a store
+// mutation changes row order. Only a new query/filter intentionally starts at
+// the first row; deletion chooses the nearest surviving row.
+func (v *View) RefreshClipboard() {
+	if v.Mode == ModeClipboard {
+		v.filterClipboard(false)
+	}
+}
+
+func (v *View) selectedClipboardID() string {
+	if v.ClipboardChosen >= 0 && v.ClipboardChosen < len(v.ClipboardItems) {
+		return v.ClipboardItems[v.ClipboardChosen].ID
+	}
+	return ""
+}
+
+func (v *View) chooseClipboard(index int, reveal bool) {
+	previous := v.selectedClipboardID()
+	if len(v.ClipboardItems) == 0 {
+		v.ClipboardChosen = -1
+		return
+	}
+	v.ClipboardChosen = max(0, min(index, len(v.ClipboardItems)-1))
+	if reveal || v.selectedClipboardID() != previous {
+		v.clipboardList.ScrollIntoView(v.ClipboardChosen)
+	}
+}
+
+func (v *View) filterClipboard(reset bool) {
+	previous, index := v.selectedClipboardID(), v.ClipboardChosen
+	if v.callbacks.ClipboardSearch != nil {
+		v.ClipboardItems = v.callbacks.ClipboardSearch(v.Query, v.ClipboardFilter)
+	} else {
+		v.ClipboardItems = nil
+	}
+	if reset {
+		index = 0
+	} else {
+		for candidate, item := range v.ClipboardItems {
+			if item.ID == previous {
+				index = candidate
+				break
+			}
+		}
+	}
+	if len(v.ClipboardItems) == 0 {
+		v.ClipboardChosen = -1
+		return
+	}
+	v.ClipboardChosen = max(0, min(index, len(v.ClipboardItems)-1))
+	if reset || v.selectedClipboardID() != previous {
+		v.clipboardList.ScrollIntoView(v.ClipboardChosen)
+	}
 }
 
 func (v *View) ToggleDictionary() {
@@ -867,6 +972,7 @@ func (v *View) ToggleDictionary() {
 		v.Status = v.Text("词典库不可用", "Dictionary database unavailable")
 		return
 	}
+	v.SetExpanded(true)
 	v.launcherQuery = v.inputText.String()
 	v.Query = v.inputText.String()
 	v.Mode = ModeDictionary
@@ -895,50 +1001,66 @@ func (v *View) clipboardBody(c *ui.Context, tokens theme.Tokens) {
 			v.CycleClipboardFilter()
 		}
 	})
-	v.clipboardPreviewBody(c, tokens)
-	v.clipboardList.Selected = &v.ClipboardChosen
-	v.clipboardList.Key = func(i int) any { return v.ClipboardItems[i].ID }
-	v.clipboardList.Label = func(i int) string { return clipboardRowTitle(v.ClipboardItems[i], v.Chinese) }
-	list := ui.List(c, &v.clipboardList, len(v.ClipboardItems), func(i int) {
-		v.clipboardRow(c, i, tokens)
-	}).Grow(1).Padding(0, 8).Label(v.Text("剪贴板历史", "Clipboard history"))
-	if list.Submitted() {
-		v.open()
-	}
-	if len(v.ClipboardItems) == 0 {
-		message := clipboardEmptyLabel(v.Chinese, v.ClipboardFilter)
-		if !v.ClipboardAvailable {
-			message = v.Text("剪贴板存储不可用，已有历史记录已保留", "Clipboard storage is unavailable; existing history is preserved")
-		}
-		if v.ClipboardError != "" {
-			message = v.ClipboardError
-		}
-		ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
-	}
+	ui.Row(c).FillWidth().Grow(1).Children(func() {
+		ui.Column(c).Width(290).FillHeight().Children(func() {
+			v.clipboardList.Selected = &v.ClipboardChosen
+			v.clipboardList.Key = func(i int) any { return v.ClipboardItems[i].ID }
+			v.clipboardList.Label = func(i int) string { return clipboardRowTitle(v.ClipboardItems[i], v.Chinese) }
+			list := ui.List(c, &v.clipboardList, len(v.ClipboardItems), func(i int) {
+				v.clipboardRow(c, i, tokens)
+			}).Grow(1).Padding(0, 8).Label(v.Text("剪贴板历史", "Clipboard history"))
+			if list.Submitted() {
+				v.open()
+			}
+			if len(v.ClipboardItems) == 0 {
+				message := clipboardEmptyLabel(v.Chinese, v.ClipboardFilter)
+				if !v.ClipboardAvailable {
+					message = v.Text("剪贴板存储不可用，已有历史记录已保留", "Clipboard storage is unavailable; existing history is preserved")
+				}
+				if v.ClipboardError != "" {
+					message = v.ClipboardError
+				}
+				ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
+			}
+		})
+		ui.Box(c).Width(1).FillHeight().Background(tokens.Line)
+		v.clipboardPreviewBody(c, tokens)
+	})
 }
 
 func (v *View) clipboardPreviewBody(c *ui.Context, tokens theme.Tokens) {
-	if v.ClipboardChosen < 0 || v.ClipboardChosen >= len(v.ClipboardItems) {
-		return
+	id := v.selectedClipboardID()
+	if id != v.clipboardPreviewID {
+		v.clipboardPreviewID = id
+		v.clipboardPreview.X, v.clipboardPreview.Y = 0, 0
 	}
-	item := v.ClipboardItems[v.ClipboardChosen]
-	ui.Column(c).FillWidth().Padding(8, 18).Gap(6).Background(tokens.Card2).Children(func() {
-		if item.Kind == clipboard.KindImage {
-			if v.callbacks.ClipboardImage != nil {
-				if bitmap := v.callbacks.ClipboardImage(item); bitmap != nil {
-					ui.Image(c, bitmap).Size(160, 100).Fit(ui.Contain).Role(ui.RoleNone)
-					return
-				}
+	ui.Scroll(c).Grow(1).FillHeight().TrackScroll(&v.clipboardPreview).Children(func() {
+		ui.Column(c).FillWidth().Padding(16, 18).Gap(12).Children(func() {
+			if id == "" {
+				ui.Text(c, v.Text("选择一条记录查看完整内容", "Select an entry to preview its full contents")).
+					TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
+				return
 			}
-			ui.Text(c, v.Text("图片", "Image")+" · "+item.ImagePath).FontSize(theme.TrailingFont).
-				TextColor(tokens.TextTertiary).SingleLine()
-			return
-		}
-		text := item.Text
-		if len([]rune(text)) > 600 {
-			text = string([]rune(text)[:600])
-		}
-		ui.Text(c, text).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).MaxLines(3)
+			item := v.ClipboardItems[v.ClipboardChosen]
+			if item.Kind == clipboard.KindImage {
+				var bitmap *ui.Bitmap
+				loading := false
+				if v.callbacks.ClipboardImage != nil {
+					bitmap, loading = v.callbacks.ClipboardImage(item)
+				}
+				if bitmap != nil {
+					ui.Image(c, bitmap).Size(360, 240).Fit(ui.Contain).Label(v.Text("剪贴板图片预览", "Clipboard image preview"))
+				} else {
+					message := v.Text("无法加载图片预览", "Image preview unavailable")
+					if loading {
+						message = v.Text("正在加载图片预览…", "Loading image preview…")
+					}
+					ui.Text(c, message).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
+				}
+				return
+			}
+			ui.Text(c, item.Text).FillWidth().FontSize(theme.RowFont).TextColor(tokens.TextSecondary).Selectable()
+		})
 	})
 }
 
@@ -1020,6 +1142,10 @@ func (v *View) pinSelectedClipboard() {
 }
 
 func (v *View) pasteSelectedClipboard() {
+	if !v.Expanded {
+		v.SetExpanded(true)
+		return
+	}
 	if v.ClipboardChosen < 0 || v.ClipboardChosen >= len(v.ClipboardItems) {
 		return
 	}

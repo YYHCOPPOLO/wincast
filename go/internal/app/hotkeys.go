@@ -55,6 +55,7 @@ func (c *controller) setHotkey(accel string) {
 		log.Printf("shortcut update failed: %v", err)
 	} else {
 		c.hotkey = strings.TrimSpace(accel)
+		c.view.Shortcut = c.hotkey
 		if c.settingsDocument != nil && c.settingsWritable {
 			_ = c.settingsDocument.Set("hotkey", c.hotkey)
 		}

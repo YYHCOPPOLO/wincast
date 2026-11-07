@@ -1,9 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
+	"io"
 	"log"
 	"os"
 	"time"
@@ -13,6 +17,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	imagedraw "golang.org/x/image/draw"
 )
 
 // startClipboard opens the history store on a worker; no SQLite call runs on
@@ -53,7 +58,7 @@ func (c *controller) startClipboard() {
 			c.view.ClipboardAvailable = manager.Store().Available()
 			c.view.ClipboardError = c.clipboardError
 			if c.view.Clipboard() {
-				c.view.Filter()
+				c.view.RefreshClipboard()
 			}
 			log.Printf("clipboard storage ready dir=%s retention_days=%d items=%d", c.profile.data, c.clipboardRetention, len(items))
 			if c.settings != nil {
@@ -88,7 +93,7 @@ func (c *controller) startClipboard() {
 					c.view.ClipboardError = c.clipboardError
 					c.view.ClipboardAvailable = manager.Store().Available()
 					if c.view.Clipboard() {
-						c.view.Filter()
+						c.view.RefreshClipboard()
 					}
 					if c.settings != nil {
 						c.settings.Update(func() {})
@@ -194,7 +199,7 @@ func (c *controller) clearClipboardHistoryConfirmed() {
 	}
 	c.clipboardError = ""
 	c.view.ClipboardError = ""
-	c.view.Filter()
+	c.view.RefreshClipboard()
 	if c.settings != nil {
 		c.settings.Update(func() {})
 	}
@@ -208,7 +213,7 @@ func (c *controller) setClipboardRetention(days int64) {
 	c.queueSettingsSave()
 	if c.clipboard != nil {
 		c.clipboard.ApplyRetention(days)
-		c.view.Filter()
+		c.view.RefreshClipboard()
 	}
 }
 
@@ -221,7 +226,7 @@ func (c *controller) openClipboard() {
 	if !c.panel.IsVisible() {
 		c.target = windows.ForegroundTarget()
 	}
-	c.show()
+	c.showPanel(false)
 }
 
 type clipboardImageRequest struct {
@@ -241,10 +246,9 @@ func (c *controller) startClipboardImages() {
 				if c.ctx.Err() != nil {
 					return
 				}
-				data, err := os.ReadFile(request.path)
-				var bitmap *ui.Bitmap
-				if err == nil {
-					bitmap, _ = ui.DecodeBitmap(data)
+				bitmap, err := loadClipboardPreview(request.path)
+				if err != nil {
+					log.Printf("clipboard preview unavailable: %v", err)
 				}
 				if c.ctx.Err() != nil {
 					return
@@ -254,25 +258,28 @@ func (c *controller) startClipboardImages() {
 						return
 					}
 					delete(c.clipboardPending, request.id)
-					if len(c.clipboardImages) >= 64 {
+					bytes := clipboardBitmapBytes(bitmap)
+					for len(c.clipboardImages) >= 32 || c.clipboardImageBytes+bytes > 48*1024*1024 {
 						for old := range c.clipboardImages {
+							c.clipboardImageBytes -= clipboardBitmapBytes(c.clipboardImages[old])
 							delete(c.clipboardImages, old)
 							break
 						}
 					}
 					c.clipboardImages[request.id] = bitmap
+					c.clipboardImageBytes += bytes
 				})
 			}
 		}
 	}()
 }
 
-func (c *controller) clipboardBitmap(item clipboard.Item) *ui.Bitmap {
+func (c *controller) clipboardBitmap(item clipboard.Item) (*ui.Bitmap, bool) {
 	if item.Kind != clipboard.KindImage || item.ImagePath == "" {
-		return nil
+		return nil, false
 	}
 	if bitmap, ok := c.clipboardImages[item.ID]; ok {
-		return bitmap
+		return bitmap, false
 	}
 	if !c.clipboardPending[item.ID] {
 		select {
@@ -281,7 +288,62 @@ func (c *controller) clipboardBitmap(item clipboard.Item) *ui.Bitmap {
 		default:
 		}
 	}
-	return nil
+	return nil, true
+}
+
+// Preview thumbnails are independent of the original PNG used for copying.
+// Bound compressed bytes and decoded pixels before allocating an image.
+func loadClipboardPreview(path string) (*ui.Bitmap, error) {
+	const maxBytes = 64 * 1024 * 1024
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxBytes {
+		return nil, errors.New("image preview file is unavailable or too large")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxBytes {
+		return nil, errors.New("image preview exceeds the file limit")
+	}
+	config, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if config.Width <= 0 || config.Height <= 0 || config.Width > 8192 || config.Height > 8192 ||
+		int64(config.Width)*int64(config.Height) > maxBytes/4 {
+		return nil, errors.New("image preview exceeds the pixel limit")
+	}
+	source, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	width, height := config.Width, config.Height
+	if max(width, height) <= 900 {
+		return ui.NewBitmap(source), nil
+	}
+	if width >= height {
+		height, width = max(1, height*900/width), 900
+	} else {
+		width, height = max(1, width*900/height), 900
+	}
+	thumbnail := image.NewRGBA(image.Rect(0, 0, width, height))
+	imagedraw.CatmullRom.Scale(thumbnail, thumbnail.Bounds(), source, source.Bounds(), imagedraw.Src, nil)
+	return ui.NewBitmap(thumbnail), nil
+}
+
+func clipboardBitmapBytes(bitmap *ui.Bitmap) int64 {
+	if bitmap == nil {
+		return 0
+	}
+	width, height := bitmap.Size()
+	// Include the CPU copy, GPU texture and smaller rendering levels.
+	return int64(width) * int64(height) * 4 * 3
 }
 
 func (c *controller) clipboardSearch(query string, filter clipboard.Filter) []clipboard.Item {
@@ -298,7 +360,7 @@ func (c *controller) setClipboardFilter(filter clipboard.Filter) {
 
 func (c *controller) refreshClipboardView() {
 	if c.view.Mode == palette.ModeClipboard {
-		c.view.Filter()
+		c.view.RefreshClipboard()
 	}
 	if c.settings != nil {
 		c.settings.Update(func() {})
@@ -411,7 +473,7 @@ func (c *controller) pasteToRememberedTarget() {
 	if err := target.Restore(owner); err != nil {
 		c.view.Status = c.view.Text("已复制，无法恢复原窗口或权限不足", "Copied; the previous window could not be restored or requires permission")
 		log.Printf("paste foreground failed: %v", err)
-		c.show()
+		c.showPanel(false)
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, 800*time.Millisecond)
@@ -438,7 +500,7 @@ func (c *controller) pasteToRememberedTarget() {
 					c.view.Status = c.view.Text("已复制；粘贴状态未确认，请检查原窗口", "Copied; paste status is unconfirmed, please check the previous window")
 				}
 				log.Printf("clipboard paste canceled elapsed_us=%d error=%v", time.Since(started).Microseconds(), err)
-				c.show()
+				c.showPanel(false)
 				return
 			}
 			c.view.Status = c.view.Text("已向原窗口发送粘贴", "Paste sent to the previous window")

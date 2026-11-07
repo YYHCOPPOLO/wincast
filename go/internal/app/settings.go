@@ -336,148 +336,152 @@ func (c *controller) settingsView(ctx *ui.Context) {
 	ctx.Root().Background(tokens.Page)
 	ui.Column(ctx).Fill().Padding(24).Gap(18).Children(func() {
 		ui.Text(ctx, c.text("设置", "Settings")).FontSize(24).Bold().Role(ui.RoleHeading)
-		ui.Text(ctx, c.text("这些设置只属于 Go 预览，不影响现有日用版本。", "These settings belong to the Go preview and never change the daily build.")).
+		ui.Text(ctx, c.text("更改会应用于当前 Tinycast。", "Changes apply to this Tinycast application.")).
 			FontSize(theme.SectionFont).TextColor(tokens.TextTertiary)
 
-		components.Card(ctx, tokens, func() {
-			components.FormRow(ctx, tokens, c.text("外观", "Appearance"), func() {
-				selected := appearanceIndex(c.appearance)
-				ui.Segmented(ctx, &selected,
-					c.text("跟随系统", "System"), c.text("浅色", "Light"), c.text("深色", "Dark")).Grow(1)
-				if value := appearanceValue(selected); value != c.appearance {
-					c.setAppearance(value)
-				}
-			})
-			components.FormRow(ctx, tokens, c.text("语言", "Language"), func() {
-				selected := 0
-				if c.language == "en" {
-					selected = 1
-				}
-				ui.Segmented(ctx, &selected, "中文", "English").Grow(1)
-				language := "zh"
-				if selected == 1 {
-					language = "en"
-				}
-				if language != c.language {
-					c.setLanguage(language)
-				}
-			})
-		})
-
-		components.Card(ctx, tokens, func() {
-			ui.Text(ctx, c.text("功能", "Features")).FontSize(theme.SectionFont).
-				TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
-			components.FormRow(ctx, tokens, c.text("词典", "Dictionary"), func() {
-				enabled := c.featureDictionary
-				ui.Switch(ctx, &enabled).Label(c.text("Tab 查询词典", "Look up words with Tab"))
-				if enabled != c.featureDictionary {
-					c.setFeature("dictionaryEnabled", enabled)
-				}
-			})
-			components.FormRow(ctx, tokens, c.text("笔记", "Notes"), func() {
-				enabled := c.featureNotes
-				ui.Switch(ctx, &enabled).Label(c.text("独立笔记窗口", "Separate notes window"))
-				if enabled != c.featureNotes {
-					c.setFeature("notesEnabled", enabled)
-				}
-			})
-			components.FormRow(ctx, tokens, c.text("剪贴板监听", "Clipboard monitor"), func() {
-				enabled := c.clipboardEnabled.Load()
-				ui.Switch(ctx, &enabled).Label(c.text("保存文本和图片历史", "Keep text and image history"))
-				if enabled != c.clipboardEnabled.Load() {
-					c.setFeature("clipboardMonitorEnabled", enabled)
-				}
-			})
-			components.FormRow(ctx, tokens, c.text("保留时间", "Retention"), func() {
-				if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).Clicked() {
-					c.setClipboardRetention(cycleClipboardRetention(c.clipboardRetention))
-				}
-			})
-			components.FormRow(ctx, tokens, c.text("排除应用", "Excluded apps"), func() {
-				ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.TextInput(ctx, &c.clipboardDisabledDraft).Grow(1).
-						Label(c.text("按可执行文件名排除，用分号分隔", "Excluded executable names, separated by semicolons"))
-					if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-						c.setClipboardDisabledApps(c.clipboardDisabledDraft)
-					}
+		ui.Scroll(ctx).Grow(1).TrackScroll(&c.settingsScroll).Children(func() {
+			ui.Column(ctx).FillWidth().Gap(18).Children(func() {
+				components.Card(ctx, tokens, func() {
+					components.FormRow(ctx, tokens, c.text("外观", "Appearance"), func() {
+						selected := appearanceIndex(c.appearance)
+						ui.Segmented(ctx, &selected,
+							c.text("跟随系统", "System"), c.text("浅色", "Light"), c.text("深色", "Dark")).Grow(1)
+						if value := appearanceValue(selected); value != c.appearance {
+							c.setAppearance(value)
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("语言", "Language"), func() {
+						selected := 0
+						if c.language == "en" {
+							selected = 1
+						}
+						ui.Segmented(ctx, &selected, "中文", "English").Grow(1)
+						language := "zh"
+						if selected == 1 {
+							language = "en"
+						}
+						if language != c.language {
+							c.setLanguage(language)
+						}
+					})
 				})
-			})
-			components.FormRow(ctx, tokens, c.text("剪贴板历史", "Clipboard history"), func() {
-				if ui.Button(ctx, c.text("清空历史", "Clear history")).Clicked() {
-					c.clearClipboardHistory()
-				}
-				if c.clipboardError != "" {
-					ui.Text(ctx, c.clipboardError).FontSize(theme.TrailingFont).TextColor(tokens.Destructive).SingleLine()
-				}
-			})
-			components.FormRow(ctx, tokens, c.text("Emoji 肤色", "Emoji skin tone"), func() {
-				if ui.Button(ctx, c.view.EmojiTone.Label()).Clicked() {
-					c.cycleEmojiTone()
-				}
-			})
-		})
 
-		components.Card(ctx, tokens, func() {
-			ui.Text(ctx, c.text("输入", "Input")).FontSize(theme.SectionFont).
-				TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
-			components.FormRow(ctx, tokens, c.text("全局热键", "Shortcut"), func() {
-				ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.TextInput(ctx, &c.hotkeyDraft).Grow(1).Label(c.text("全局热键", "Global shortcut"))
-					if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-						c.setHotkey(c.hotkeyDraft)
-					}
+				components.Card(ctx, tokens, func() {
+					ui.Text(ctx, c.text("功能", "Features")).FontSize(theme.SectionFont).
+						TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+					components.FormRow(ctx, tokens, c.text("词典", "Dictionary"), func() {
+						enabled := c.featureDictionary
+						ui.Switch(ctx, &enabled).Label(c.text("Tab 查询词典", "Look up words with Tab"))
+						if enabled != c.featureDictionary {
+							c.setFeature("dictionaryEnabled", enabled)
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("笔记", "Notes"), func() {
+						enabled := c.featureNotes
+						ui.Switch(ctx, &enabled).Label(c.text("独立笔记窗口", "Separate notes window"))
+						if enabled != c.featureNotes {
+							c.setFeature("notesEnabled", enabled)
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("剪贴板监听", "Clipboard monitor"), func() {
+						enabled := c.clipboardEnabled.Load()
+						ui.Switch(ctx, &enabled).Label(c.text("保存文本和图片历史", "Keep text and image history"))
+						if enabled != c.clipboardEnabled.Load() {
+							c.setFeature("clipboardMonitorEnabled", enabled)
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("保留时间", "Retention"), func() {
+						if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).Clicked() {
+							c.setClipboardRetention(cycleClipboardRetention(c.clipboardRetention))
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("排除应用", "Excluded apps"), func() {
+						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.TextInput(ctx, &c.clipboardDisabledDraft).Grow(1).
+								Label(c.text("按可执行文件名排除，用分号分隔", "Excluded executable names, separated by semicolons"))
+							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
+								c.setClipboardDisabledApps(c.clipboardDisabledDraft)
+							}
+						})
+					})
+					components.FormRow(ctx, tokens, c.text("剪贴板历史", "Clipboard history"), func() {
+						if ui.Button(ctx, c.text("清空历史", "Clear history")).Clicked() {
+							c.clearClipboardHistory()
+						}
+						if c.clipboardError != "" {
+							ui.Text(ctx, c.clipboardError).FontSize(theme.TrailingFont).TextColor(tokens.Destructive).SingleLine()
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("Emoji 肤色", "Emoji skin tone"), func() {
+						if ui.Button(ctx, c.view.EmojiTone.Label()).Clicked() {
+							c.cycleEmojiTone()
+						}
+					})
 				})
-			})
-			components.FormRow(ctx, tokens, c.text("应用目录", "App directories"), func() {
-				ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.TextInput(ctx, &c.customDirsDraft).Grow(1).
-						Label(c.text("自定义应用目录，用分号分隔", "Custom application directories, separated by semicolons"))
-					if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-						c.setCustomDirectories(c.customDirsDraft)
-					}
-				})
-			})
-			components.FormRow(ctx, tokens, c.text("精简模式", "Compact mode"), func() {
-				enabled := c.compactMode
-				ui.Switch(ctx, &enabled).Label(c.text("只显示搜索栏，Ctrl+E 切换", "Show only the search bar; Ctrl+E toggles"))
-				if enabled != c.compactMode {
-					c.setCompact(enabled)
-				}
-			})
-			components.FormRow(ctx, tokens, c.text("双击修饰键", "Double-tap modifier"), func() {
-				selected := doubleTapIndex(c.doubleTap)
-				ui.Segmented(ctx, &selected, c.text("无", "None"), "Ctrl", "Alt", "Shift").Grow(1)
-				if value := doubleTapValue(selected); value != c.doubleTap {
-					c.setDoubleTap(value)
-				}
-			})
-		})
 
-		components.Card(ctx, tokens, func() {
-			ui.Text(ctx, c.text("数据与诊断", "Data and diagnostics")).FontSize(theme.SectionFont).
-				TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
-			components.FormRow(ctx, tokens, c.text("运行状态", "Runtime"), func() {
-				ui.Text(ctx, c.text("运行中", "Running")+" · "+c.started.Format("15:04:05")).
-					FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
-			})
-			components.FormRow(ctx, tokens, c.text("设置目录", "Settings"), func() {
-				ui.Text(ctx, c.profile.settings).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
-			})
-			components.FormRow(ctx, tokens, c.text("缓存目录", "Cache"), func() {
-				ui.Text(ctx, c.profile.cache).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
-			})
-			components.FormRow(ctx, tokens, c.text("词典库", "Dictionary"), func() {
-				ui.Text(ctx, c.profile.dictionary).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
-			})
-			components.FormRow(ctx, tokens, c.text("索引条目", "Catalog"), func() {
-				count := c.text("等待索引", "Waiting for the index")
-				if c.catalogInfo.Count > 0 {
-					count = fmt.Sprintf("%d", c.catalogInfo.Count)
-				}
-				ui.Text(ctx, count).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
-			})
-			components.FormRow(ctx, tokens, c.text("剪贴板事件", "Clipboard events"), func() {
-				ui.Text(ctx, c.clipboardSummary()).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
+				components.Card(ctx, tokens, func() {
+					ui.Text(ctx, c.text("输入", "Input")).FontSize(theme.SectionFont).
+						TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+					components.FormRow(ctx, tokens, c.text("全局热键", "Shortcut"), func() {
+						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.TextInput(ctx, &c.hotkeyDraft).Grow(1).Label(c.text("全局热键", "Global shortcut"))
+							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
+								c.setHotkey(c.hotkeyDraft)
+							}
+						})
+					})
+					components.FormRow(ctx, tokens, c.text("应用目录", "App directories"), func() {
+						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.TextInput(ctx, &c.customDirsDraft).Grow(1).
+								Label(c.text("自定义应用目录，用分号分隔", "Custom application directories, separated by semicolons"))
+							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
+								c.setCustomDirectories(c.customDirsDraft)
+							}
+						})
+					})
+					components.FormRow(ctx, tokens, c.text("精简模式", "Compact mode"), func() {
+						enabled := c.compactMode
+						ui.Switch(ctx, &enabled).Label(c.text("只显示搜索栏，Ctrl+E 切换", "Show only the search bar; Ctrl+E toggles"))
+						if enabled != c.compactMode {
+							c.setCompact(enabled)
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("双击修饰键", "Double-tap modifier"), func() {
+						selected := doubleTapIndex(c.doubleTap)
+						ui.Segmented(ctx, &selected, c.text("无", "None"), "Ctrl", "Alt", "Shift").Grow(1)
+						if value := doubleTapValue(selected); value != c.doubleTap {
+							c.setDoubleTap(value)
+						}
+					})
+				})
+
+				components.Card(ctx, tokens, func() {
+					ui.Text(ctx, c.text("数据与诊断", "Data and diagnostics")).FontSize(theme.SectionFont).
+						TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+					components.FormRow(ctx, tokens, c.text("运行状态", "Runtime"), func() {
+						ui.Text(ctx, c.text("运行中", "Running")+" · "+c.started.Format("15:04:05")).
+							FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
+					})
+					components.FormRow(ctx, tokens, c.text("设置目录", "Settings"), func() {
+						ui.Text(ctx, c.profile.settings).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
+					})
+					components.FormRow(ctx, tokens, c.text("缓存目录", "Cache"), func() {
+						ui.Text(ctx, c.profile.cache).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
+					})
+					components.FormRow(ctx, tokens, c.text("词典库", "Dictionary"), func() {
+						ui.Text(ctx, c.profile.dictionary).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
+					})
+					components.FormRow(ctx, tokens, c.text("索引条目", "Catalog"), func() {
+						count := c.text("等待索引", "Waiting for the index")
+						if c.catalogInfo.Count > 0 {
+							count = fmt.Sprintf("%d", c.catalogInfo.Count)
+						}
+						ui.Text(ctx, count).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
+					})
+					components.FormRow(ctx, tokens, c.text("剪贴板事件", "Clipboard events"), func() {
+						ui.Text(ctx, c.clipboardSummary()).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
+					})
+				})
 			})
 		})
 
@@ -530,12 +534,11 @@ func (c *controller) setFeature(key string, enabled bool) {
 
 func (c *controller) setCompact(enabled bool) {
 	c.compactMode = enabled
-	c.view.Expanded = !enabled
+	c.view.SetExpanded(!enabled)
 	if c.settingsDocument != nil && c.settingsWritable {
 		_ = c.settingsDocument.Set("compactMode", enabled)
 	}
 	c.queueSettingsSave()
-	c.applyPanelSize()
 }
 
 func (c *controller) setCustomDirectories(text string) {
