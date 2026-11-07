@@ -347,7 +347,7 @@ func scanItem(row rowScanner) (Item, error) {
 func (s *Store) Available() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.db != nil && s.lastErr == nil && !s.closed
+	return s.db != nil && !s.closed
 }
 
 func (s *Store) LastError() string {
@@ -370,12 +370,13 @@ func (s *Store) SetMaxAgeSeconds(seconds int64) {
 func (s *Store) InsertText(text string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.db == nil || s.lastErr != nil || s.closed {
+	if s.db == nil || s.closed {
 		return "", false
 	}
 	if len(s.items) > 0 {
 		first := s.items[0]
 		if first.Kind == KindText && first.Text == text {
+			s.lastErr = nil
 			return first.ID, true
 		}
 	}
@@ -391,7 +392,7 @@ func (s *Store) InsertText(text string) (string, bool) {
 func (s *Store) InsertImage(path string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.db == nil || s.lastErr != nil || s.closed {
+	if s.db == nil || s.closed {
 		return "", false
 	}
 	now := time.Now().Unix()
@@ -408,7 +409,7 @@ func (s *Store) InsertImage(path string) (string, bool) {
 func (s *Store) SaveImage(png []byte) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.db == nil || s.lastErr != nil || s.closed {
+	if s.db == nil || s.closed {
 		return "", false
 	}
 	if err := checkedDirectory(s.images); err != nil {
@@ -500,7 +501,7 @@ func (s *Store) withTransactionLocked(operation func(*sql.Tx) error) error {
 func (s *Store) Search(query string, filter Filter) []Item {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.db == nil || s.lastErr != nil {
+	if s.db == nil || s.closed {
 		return nil
 	}
 	query = strings.TrimSpace(query)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -50,6 +51,7 @@ var (
 	globalFree              = kernelClipboard.NewProc("GlobalFree")
 
 	clipboardFormatOnce sync.Once
+	clipboardAccess     sync.Mutex
 	clipboardInternalF  uint32
 	clipboardPNGF       uint32
 	clipboardPNGMimeF   uint32
@@ -81,10 +83,10 @@ func registerFormat(name string) uint32 {
 	return uint32(value)
 }
 
-func openClipboardRetry() error {
+func openClipboardRetry(owner uintptr) error {
 	var lastErr error
 	for attempt := 0; attempt < clipboardOpenAttempts; attempt++ {
-		ok, _, callErr := openClipboard.Call(0)
+		ok, _, callErr := openClipboard.Call(owner)
 		if ok != 0 {
 			return nil
 		}
@@ -124,7 +126,11 @@ func ClipboardHasInternalMarker() bool {
 // ReadClipboardText returns bounded UTF-16 clipboard text. It never leaves the
 // clipboard open when a handle or allocation is malformed.
 func ReadClipboardText() (string, bool) {
-	if openClipboardRetry() != nil {
+	clipboardAccess.Lock()
+	defer clipboardAccess.Unlock()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if openClipboardRetry(0) != nil {
 		return "", false
 	}
 	defer closeClipboardQuietly()
@@ -169,7 +175,11 @@ func readGlobalText(handle uintptr) (string, bool) {
 // ReadClipboardImage returns PNG data when the clipboard already carries it,
 // otherwise the raw DIB/DIBV5 block for conversion off the UI thread.
 func ReadClipboardImage() (ClipboardImage, bool) {
-	if openClipboardRetry() != nil {
+	clipboardAccess.Lock()
+	defer clipboardAccess.Unlock()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if openClipboardRetry(0) != nil {
 		return ClipboardImage{}, false
 	}
 	defer closeClipboardQuietly()
@@ -445,16 +455,19 @@ func (c dibChannel) extract(pixel uint32) byte {
 
 // WriteClipboardText replaces the clipboard with text. When marked, the
 // private marker makes this app's own capture path ignore the update.
-func WriteClipboardText(text string, marked bool) error {
-	units := syscall.StringToUTF16(text)
-	return writeClipboardBytes(cfUnicodeText, uintptr(len(units))*2, func(ptr unsafe.Pointer) {
+func WriteClipboardText(owner uintptr, text string, marked bool) error {
+	units, err := syscall.UTF16FromString(text)
+	if err != nil {
+		return fmt.Errorf("encode clipboard text: %w", err)
+	}
+	return writeClipboardBytes(owner, cfUnicodeText, uintptr(len(units))*2, func(ptr unsafe.Pointer) {
 		target := unsafe.Slice((*uint16)(ptr), len(units))
 		copy(target, units)
 	}, marked)
 }
 
 // WriteClipboardPNG replaces the clipboard with PNG bytes.
-func WriteClipboardPNG(data []byte, marked bool) error {
+func WriteClipboardPNG(owner uintptr, data []byte, marked bool) error {
 	if len(data) == 0 {
 		return errors.New("empty png")
 	}
@@ -462,17 +475,25 @@ func WriteClipboardPNG(data []byte, marked bool) error {
 	if format == 0 {
 		return errors.New("PNG clipboard format is unavailable")
 	}
-	return writeClipboardBytes(format, uintptr(len(data)), func(ptr unsafe.Pointer) {
+	return writeClipboardBytes(owner, format, uintptr(len(data)), func(ptr unsafe.Pointer) {
 		copy(unsafe.Slice((*byte)(ptr), len(data)), data)
 	}, marked)
 }
 
-func writeClipboardBytes(format uint32, size uintptr, fill func(unsafe.Pointer), marked bool) error {
-	if openClipboardRetry() != nil {
-		return errors.New("clipboard is busy")
+func writeClipboardBytes(owner uintptr, format uint32, size uintptr, fill func(unsafe.Pointer), marked bool) error {
+	if owner == 0 {
+		return errors.New("clipboard write requires an application window")
 	}
-	defer closeClipboardQuietly()
-	emptyClipboard.Call()
+	var pid uint32
+	getWindowProcess.Call(owner, uintptr(unsafe.Pointer(&pid)))
+	if pid != uint32(syscall.Getpid()) {
+		return errors.New("clipboard owner is not an application window")
+	}
+	clipboardAccess.Lock()
+	defer clipboardAccess.Unlock()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	// Prepare the payload before clearing the user's current clipboard.
 	handle, _, callErr := globalAlloc.Call(gmemMoveable, size)
 	if handle == 0 {
 		return fmt.Errorf("allocate clipboard block: %w", callErr)
@@ -484,6 +505,15 @@ func writeClipboardBytes(format uint32, size uintptr, fill func(unsafe.Pointer),
 	}
 	fill(globalPointer(ptr))
 	globalUnlock.Call(handle)
+	if err := openClipboardRetry(owner); err != nil {
+		globalFree.Call(handle)
+		return fmt.Errorf("open clipboard for writing: %w", err)
+	}
+	defer closeClipboardQuietly()
+	if ok, _, err := emptyClipboard.Call(); ok == 0 {
+		globalFree.Call(handle)
+		return fmt.Errorf("empty clipboard: %w", err)
+	}
 	ok, _, callErr := setClipboardData.Call(uintptr(format), handle)
 	if ok == 0 {
 		globalFree.Call(handle)

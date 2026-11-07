@@ -20,7 +20,7 @@ func (c *controller) pasteEmoji(glyph string) {
 	if glyph == "" || c.closing {
 		return
 	}
-	if err := windows.WriteClipboardText(glyph, true); err != nil {
+	if err := windows.WriteClipboardText(c.panel.NativeHandle(), glyph, true); err != nil {
 		c.view.Status = c.view.Text("复制失败，请重试", "Could not copy; please retry")
 		log.Printf("emoji copy failed: %v", err)
 		return

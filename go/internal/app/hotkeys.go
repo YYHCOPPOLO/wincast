@@ -78,6 +78,8 @@ func doubleTapVirtualKey(value string) uint32 {
 func (c *controller) applyDoubleTap() {
 	vk := doubleTapVirtualKey(c.doubleTap)
 	c.doubleTapVK.Store(vk)
+	c.doubleTapHeld.Store(false)
+	c.lastDoubleTap.Store(0)
 	if c.messageHost == nil {
 		return
 	}
@@ -122,7 +124,13 @@ func (c *controller) onKeyboard(event windows.KeyEvent) {
 		return
 	}
 	vk := c.doubleTapVK.Load()
-	if vk == 0 || event.VirtualKey != vk {
+	if vk == 0 {
+		return
+	}
+	if modifierVirtualKey(event.VirtualKey) != vk {
+		if event.Down {
+			c.lastDoubleTap.Store(0) // a chord is not a standalone tap
+		}
 		return
 	}
 	if !event.Down {
@@ -147,4 +155,17 @@ func (c *controller) onKeyboard(event windows.KeyEvent) {
 			c.toggle()
 		}
 	})
+}
+
+func modifierVirtualKey(vk uint32) uint32 {
+	switch vk {
+	case 0xA0, 0xA1: // VK_LSHIFT, VK_RSHIFT
+		return 0x10
+	case 0xA2, 0xA3: // VK_LCONTROL, VK_RCONTROL
+		return 0x11
+	case 0xA4, 0xA5: // VK_LMENU, VK_RMENU
+		return 0x12
+	default:
+		return vk
+	}
 }

@@ -30,6 +30,9 @@ const (
 	ActivateQuit
 	ActivateSettings
 	ActivateNotes
+	ActivateClipboard
+	ActivateCalculator
+	ActivateEmoji
 )
 
 const activationVersion = 1
@@ -140,7 +143,7 @@ func (i *Instance) receive(ctx context.Context, conn net.Conn, dispatch func(Act
 		return
 	}
 	command := Activation(packet[1])
-	if command < ActivatePanel || command > ActivateNotes {
+	if command < ActivatePanel || command > ActivateEmoji {
 		return
 	}
 	// A quit can close activation I/O as soon as the UI takes it. Acknowledge

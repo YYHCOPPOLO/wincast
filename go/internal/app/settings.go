@@ -140,29 +140,53 @@ func (c *controller) startSettingsWriter() {
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
+		persist := func(write settingsWrite) {
+			err := storage.WriteFileAtomic(c.settingsPath, write.data, 0o600)
+			if err != nil {
+				log.Printf("settings save failed: %v", err)
+			}
+			if c.ctx.Err() != nil {
+				return
+			}
+			c.panel.Update(func() {
+				if c.closing {
+					return
+				}
+				if err != nil {
+					c.settingsStatus = c.text("设置保存失败；原文件已保留", "Could not save settings; the previous file was kept")
+				} else {
+					c.settingsStatus = c.text("已保存", "Saved")
+				}
+				if c.settings != nil {
+					c.settings.Update(func() {})
+				}
+			})
+		}
 		for {
 			select {
 			case <-c.ctx.Done():
+				// Producers live on the stopped UI thread. Drain its newest
+				// complete snapshot before releasing the writer identity.
+				if write, ok := newestPending(c.settingsWrites); ok {
+					persist(write)
+				}
 				return
 			case write := <-c.settingsWrites:
-				err := storage.WriteFileAtomic(c.settingsPath, write.data, 0o600)
-				c.panel.Update(func() {
-					if c.closing {
-						return
-					}
-					if err != nil {
-						c.settingsStatus = c.text("设置保存失败；原文件已保留", "Could not save settings; the previous file was kept")
-						log.Printf("settings save failed: %v", err)
-					} else {
-						c.settingsStatus = c.text("已保存", "Saved")
-					}
-					if c.settings != nil {
-						c.settings.Update(func() {})
-					}
-				})
+				persist(write)
 			}
 		}
 	}()
+}
+
+func newestPending[T any](queue <-chan T) (value T, ok bool) {
+	for {
+		select {
+		case value = <-queue:
+			ok = true
+		default:
+			return value, ok
+		}
+	}
 }
 
 func (c *controller) openSettings() {

@@ -6,6 +6,7 @@ package launcher
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -30,32 +31,44 @@ type Preferences struct {
 	Favorites []string
 	Hidden    map[string]bool
 	Ranking   map[string]map[string]domain.RankingRecord
+	readOnly  map[string]error
 }
 
 func LoadPreferences(dir string) (*Preferences, error) {
 	p := &Preferences{
 		dir: dir, Aliases: make(map[string]string), Hidden: make(map[string]bool),
-		Ranking: make(map[string]map[string]domain.RankingRecord),
+		Ranking:  make(map[string]map[string]domain.RankingRecord),
+		readOnly: make(map[string]error),
 	}
-	var firstErr error
-	if err := loadJSON(filepath.Join(dir, "favorites.json"), &p.Favorites); err != nil {
-		firstErr = err
+	var loadErrors []error
+	load := func(name string, target any) bool {
+		if err := loadJSON(filepath.Join(dir, name), target); err != nil {
+			p.readOnly[name] = err
+			loadErrors = append(loadErrors, fmt.Errorf("%s: %w", name, err))
+			return false
+		}
+		return true
 	}
-	p.Favorites = sanitizeIDs(p.Favorites)
-	if err := loadJSON(filepath.Join(dir, "aliases.json"), &p.Aliases); err != nil && firstErr == nil {
-		firstErr = err
+	var favorites []string
+	if load("favorites.json", &favorites) {
+		p.Favorites = sanitizeIDs(favorites)
+	}
+	aliases := make(map[string]string)
+	if load("aliases.json", &aliases) && aliases != nil {
+		p.Aliases = aliases
 	}
 	for id, alias := range p.Aliases {
 		if id == "" || strings.TrimSpace(alias) == "" {
 			delete(p.Aliases, id)
 		}
 	}
-	if err := loadJSON(filepath.Join(dir, "hidden.json"), &p.Hidden); err != nil && firstErr == nil {
-		firstErr = err
+	hidden := make(map[string]bool)
+	if load("hidden.json", &hidden) && hidden != nil {
+		p.Hidden = hidden
 	}
 	var records []domain.RankingRecord
-	if err := loadJSON(filepath.Join(dir, "ranking.json"), &records); err != nil && firstErr == nil {
-		firstErr = err
+	if !load("ranking.json", &records) {
+		records = nil
 	}
 	for _, record := range records {
 		if record.ItemKey == "" || record.Query == "" || record.Count == 0 {
@@ -66,7 +79,7 @@ func LoadPreferences(dir string) (*Preferences, error) {
 		}
 		p.Ranking[record.Query][record.ItemKey] = record
 	}
-	return p, firstErr
+	return p, errors.Join(loadErrors...)
 }
 
 func loadJSON(path string, target any) error {
@@ -100,12 +113,24 @@ func (p *Preferences) SetAlias(id, alias string) error {
 	if id == "" {
 		return errors.New("empty application id")
 	}
+	if err := p.writable("aliases.json"); err != nil {
+		return err
+	}
+	previous, existed := p.Aliases[id]
 	if strings.TrimSpace(alias) == "" {
 		delete(p.Aliases, id)
 	} else {
 		p.Aliases[id] = alias
 	}
-	return p.saveAliases()
+	if err := p.saveAliases(); err != nil {
+		if existed {
+			p.Aliases[id] = previous
+		} else {
+			delete(p.Aliases, id)
+		}
+		return err
+	}
+	return nil
 }
 
 func (p *Preferences) IsHidden(id string) bool { return p.Hidden[id] }
@@ -114,12 +139,24 @@ func (p *Preferences) SetHidden(id string, hidden bool) error {
 	if id == "" {
 		return errors.New("empty application id")
 	}
+	if err := p.writable("hidden.json"); err != nil {
+		return err
+	}
+	previous, existed := p.Hidden[id]
 	if hidden {
 		p.Hidden[id] = true
 	} else {
 		delete(p.Hidden, id)
 	}
-	return p.saveHidden()
+	if err := p.saveHidden(); err != nil {
+		if existed {
+			p.Hidden[id] = previous
+		} else {
+			delete(p.Hidden, id)
+		}
+		return err
+	}
+	return nil
 }
 
 // ToggleFavorite appends the id, or removes it without reordering the rest.
@@ -127,12 +164,20 @@ func (p *Preferences) ToggleFavorite(id string) error {
 	if id == "" {
 		return errors.New("empty application id")
 	}
+	if err := p.writable("favorites.json"); err != nil {
+		return err
+	}
+	previous := slices.Clone(p.Favorites)
 	if index := slices.Index(p.Favorites, id); index >= 0 {
 		p.Favorites = slices.Delete(p.Favorites, index, index+1)
 	} else {
 		p.Favorites = append(p.Favorites, id)
 	}
-	return p.saveFavorites()
+	if err := p.saveFavorites(); err != nil {
+		p.Favorites = previous
+		return err
+	}
+	return nil
 }
 
 func (p *Preferences) IsFavorite(id string) bool { return slices.Contains(p.Favorites, id) }
@@ -261,6 +306,9 @@ func (p *Preferences) saveHidden() error {
 
 // RankingBytes returns the flat records sorted for a stable file.
 func (p *Preferences) RankingBytes() ([]byte, error) {
+	if err := p.writable("ranking.json"); err != nil {
+		return nil, err
+	}
 	var records []domain.RankingRecord
 	for _, byItem := range p.Ranking {
 		for _, record := range byItem {
@@ -274,6 +322,13 @@ func (p *Preferences) RankingBytes() ([]byte, error) {
 		return strings.Compare(a.ItemKey, b.ItemKey)
 	})
 	return json.MarshalIndent(records, "", "  ")
+}
+
+func (p *Preferences) writable(name string) error {
+	if err := p.readOnly[name]; err != nil {
+		return fmt.Errorf("preserving unreadable %s: %w", name, err)
+	}
+	return nil
 }
 
 // SaveRanking writes the frecency table atomically.

@@ -25,16 +25,7 @@ func Run() (runErr error) {
 	mygo.App.SetPath(mygo.PathUserData, p.settings)
 	mygo.App.SetPath(mygo.PathCache, p.cache)
 	mygo.App.SetPath(mygo.PathLogs, p.logs)
-	command := windows.ActivatePanel
-	if slices.Contains(os.Args[1:], "--quit") {
-		command = windows.ActivateQuit
-	} else if slices.Contains(os.Args[1:], "--diagnostics") {
-		command = windows.ActivateDiagnostics
-	} else if slices.Contains(os.Args[1:], "--settings") {
-		command = windows.ActivateSettings
-	} else if slices.Contains(os.Args[1:], "--notes") {
-		command = windows.ActivateNotes
-	}
+	command := activationCommand(os.Args[1:])
 	instance, first, err := windows.AcquireInstance(previewID, p.cache)
 	if err != nil {
 		return err
@@ -82,26 +73,28 @@ func Run() (runErr error) {
 	defer c.finish()
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	mygo.App.OnWindowAllClosed(func() {})
-	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { c.stop() })
+	mygo.App.OnBeforeQuit(func(event *mygo.QuitEvent) {
+		// Window OnClose runs after this listener. Save while the repository
+		// context is still alive, and leave both buffer and application alive
+		// if the user must resolve a conflict or a write failure.
+		if !c.saveEditor() {
+			event.PreventDefault()
+			if c.editor != nil {
+				showWindow(c.editor.window)
+				c.editor.window.Update(func() {})
+			}
+			return
+		}
+		c.stop()
+	})
 	mygo.App.WhenReady(func() {
-		c.ready()
+		c.ready(command, slices.Contains(os.Args[1:], "--hidden"))
 		if err := instance.Listen(c.ctx, func(command windows.Activation) {
 			c.panel.Update(func() {
 				if c.closing {
 					return
 				}
-				switch command {
-				case windows.ActivateQuit:
-					mygo.App.Quit()
-				case windows.ActivateDiagnostics:
-					c.openDiagnostics()
-				case windows.ActivateSettings:
-					c.openSettings()
-				case windows.ActivateNotes:
-					c.openEditor()
-				case windows.ActivatePanel:
-					c.show()
-				}
+				c.activate(command)
 			})
 		}); err != nil {
 			runErr = err
@@ -112,4 +105,46 @@ func Run() (runErr error) {
 		return err
 	}
 	return runErr
+}
+
+// activationCommand is shared by first-launch and single-instance forwarding.
+func activationCommand(args []string) windows.Activation {
+	for _, option := range []struct {
+		flag    string
+		command windows.Activation
+	}{
+		{"--quit", windows.ActivateQuit},
+		{"--diagnostics", windows.ActivateDiagnostics},
+		{"--settings", windows.ActivateSettings},
+		{"--notes", windows.ActivateNotes},
+		{"--clipboard", windows.ActivateClipboard},
+		{"--calculator", windows.ActivateCalculator},
+		{"--emoji", windows.ActivateEmoji},
+	} {
+		if slices.Contains(args, option.flag) {
+			return option.command
+		}
+	}
+	return windows.ActivatePanel
+}
+
+func (c *controller) activate(command windows.Activation) {
+	switch command {
+	case windows.ActivateQuit:
+		mygo.App.Quit()
+	case windows.ActivateDiagnostics:
+		c.openDiagnostics()
+	case windows.ActivateSettings:
+		c.openSettings()
+	case windows.ActivateNotes:
+		c.openEditor()
+	case windows.ActivateClipboard:
+		c.openClipboard()
+	case windows.ActivateCalculator:
+		c.openCalculatorHistory()
+	case windows.ActivateEmoji:
+		c.openEmoji()
+	case windows.ActivatePanel:
+		c.show()
+	}
 }

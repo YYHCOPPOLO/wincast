@@ -62,7 +62,7 @@ func (c *controller) copyCalculatorResult(result domaincalc.Result) {
 	if result.IsError() {
 		return
 	}
-	if err := windows.WriteClipboardText(result.CopyText, true); err != nil {
+	if err := windows.WriteClipboardText(c.panel.NativeHandle(), result.CopyText, true); err != nil {
 		c.view.Status = c.view.Text("复制失败，请重试", "Could not copy; please retry")
 		log.Printf("calculator copy failed: %v", err)
 		return
@@ -78,7 +78,7 @@ func (c *controller) copyCalculatorResult(result domaincalc.Result) {
 
 func (c *controller) copyCalculatorHistory(entry domaincalc.HistoryEntry) {
 	payload := domaincalc.HistoryCopyPayload(entry.Result)
-	if err := windows.WriteClipboardText(payload, true); err != nil {
+	if err := windows.WriteClipboardText(c.panel.NativeHandle(), payload, true); err != nil {
 		c.view.Status = c.view.Text("复制失败，请重试", "Could not copy; please retry")
 		log.Printf("calculator history copy failed: %v", err)
 		return

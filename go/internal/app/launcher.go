@@ -169,15 +169,21 @@ func (c *controller) startRankingWriter() {
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
+		persist := func(data []byte) {
+			path := filepath.Join(c.profile.settings, "launcher", "ranking.json")
+			if err := storage.WriteFileAtomic(path, data, 0o600); err != nil {
+				log.Printf("ranking save failed: %v", err)
+			}
+		}
 		for {
 			select {
 			case <-c.ctx.Done():
+				if data, ok := newestPending(c.rankingWrites); ok {
+					persist(data)
+				}
 				return
 			case data := <-c.rankingWrites:
-				path := filepath.Join(c.profile.settings, "launcher", "ranking.json")
-				if err := storage.WriteFileAtomic(path, data, 0o600); err != nil {
-					log.Printf("ranking save failed: %v", err)
-				}
+				persist(data)
 			}
 		}
 	}()

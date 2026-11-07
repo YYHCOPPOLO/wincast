@@ -11,6 +11,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -18,10 +19,12 @@ import (
 // the UI loop. The message host only signals this worker after a clipboard
 // notification, keeping the Win32 message thread responsive.
 func (c *controller) startClipboard() {
+	disabled := append([]string(nil), c.clipboardDisabled...)
+	retention := c.clipboardRetention
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
-		manager, err := clipboard.NewManager(c.ctx, c.profile.data, "", c.clipboardDisabled)
+		manager, err := clipboard.NewManager(c.ctx, c.profile.data, "", disabled)
 		if err != nil {
 			c.panel.Update(func() {
 				if c.closing {
@@ -38,7 +41,7 @@ func (c *controller) startClipboard() {
 			return
 		}
 		defer manager.Close()
-		manager.ApplyRetention(c.clipboardRetention)
+		manager.ApplyRetention(retention)
 		c.panel.Update(func() {
 			if c.closing {
 				return
@@ -47,7 +50,7 @@ func (c *controller) startClipboard() {
 			c.clipboardReady = true
 			c.clipboardError = manager.Store().LastError()
 			items := manager.Store().Search("", clipboard.FilterAll)
-			c.view.ClipboardAvailable = c.clipboardError == ""
+			c.view.ClipboardAvailable = manager.Store().Available()
 			c.view.ClipboardError = c.clipboardError
 			if c.view.Clipboard() {
 				c.view.Filter()
@@ -62,23 +65,28 @@ func (c *controller) startClipboard() {
 			case <-c.ctx.Done():
 				return
 			case <-c.clipboardRequests:
-				if c.closing || !c.clipboardEnabled.Load() {
+				if c.ctx.Err() != nil || !c.clipboardEnabled.Load() {
 					continue
 				}
 				before := c.clipboardEvents.Load()
+				previousError := manager.Store().LastError()
 				changed := manager.Capture()
-				if !changed {
+				if !changed && manager.Store().LastError() == previousError {
 					continue
 				}
-				log.Printf("clipboard captured")
-				c.clipboardEvents.Store(before + 1)
+				if changed {
+					log.Printf("clipboard captured")
+					c.clipboardEvents.Store(before + 1)
+				} else {
+					log.Printf("clipboard capture failed: %s", manager.Store().LastError())
+				}
 				c.panel.Update(func() {
 					if c.closing {
 						return
 					}
 					c.clipboardError = manager.Store().LastError()
 					c.view.ClipboardError = c.clipboardError
-					c.view.ClipboardAvailable = c.clipboardError == ""
+					c.view.ClipboardAvailable = manager.Store().Available()
 					if c.view.Clipboard() {
 						c.view.Filter()
 					}
@@ -139,9 +147,46 @@ func (c *controller) clipboardSummary() string {
 }
 
 func (c *controller) clearClipboardHistory() {
-	if c.clipboard == nil {
+	if c.clipboard == nil || c.clipboardConfirm || c.closing {
 		return
 	}
+	c.clipboardConfirm = true
+	parent := c.panel
+	if c.settings != nil && windows.ForegroundWindow() == c.settings.NativeHandle() {
+		parent = c.settings
+	}
+	options := mygo.MessageOptions{
+		Parent: parent, Type: mygo.MessageWarning,
+		Title:         c.text("清空剪贴板历史？", "Clear clipboard history?"),
+		Message:       c.text("删除全部历史记录，包括置顶内容和图片？", "Delete every entry, including pinned items and images?"),
+		Detail:        c.text("此操作无法撤销。", "This action cannot be undone."),
+		Buttons:       []string{c.text("取消", "Cancel"), c.text("清空全部历史", "Clear all history")},
+		DefaultButton: 0, CancelButton: 0,
+	}
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		result, err := mygo.Dialog.Message(options)
+		if c.ctx.Err() != nil {
+			return
+		}
+		c.panel.Update(func() {
+			c.clipboardConfirm = false
+			if c.closing {
+				return
+			}
+			if err != nil {
+				log.Printf("clipboard clear confirmation failed: %v", err)
+				return
+			}
+			if result.Button == 1 {
+				c.clearClipboardHistoryConfirmed()
+			}
+		})
+	}()
+}
+
+func (c *controller) clearClipboardHistoryConfirmed() {
 	if !c.clipboard.Clear() {
 		c.clipboardError = c.view.Text("无法清空剪贴板历史", "Could not clear clipboard history")
 		log.Printf("clipboard clear failed: %v", c.clipboard.Store().LastError())
@@ -279,9 +324,9 @@ func (c *controller) writeClipboardItem(item clipboard.Item) bool {
 			err = readErr
 			break
 		}
-		err = windows.WriteClipboardPNG(data, true)
+		err = windows.WriteClipboardPNG(c.panel.NativeHandle(), data, true)
 	default:
-		err = windows.WriteClipboardText(item.Text, true)
+		err = windows.WriteClipboardText(c.panel.NativeHandle(), item.Text, true)
 	}
 	if err != nil {
 		c.view.Status = c.view.Text("复制失败，请重试", "Could not copy; please retry")

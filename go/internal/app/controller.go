@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -65,6 +63,7 @@ type controller struct {
 	messageHost            *windows.MessageHost
 	clipboard              *clipboard.Manager
 	clipboardReady         bool
+	clipboardConfirm       bool
 	clipboardError         string
 	clipboardFilter        clipboard.Filter
 	clipboardRequests      chan struct{}
@@ -186,7 +185,7 @@ func newController(started time.Time, profile profile) *controller {
 	return c
 }
 
-func (c *controller) ready() {
+func (c *controller) ready(command windows.Activation, hidden bool) {
 	c.panel = mygo.NewWindow(mygo.WindowOptions{
 		Title: "Tinycast Go Preview", Panel: true, Hidden: true, Frameless: true,
 		Width: int(theme.PanelWidth), Height: c.panelHeight(), DisableResize: true,
@@ -200,7 +199,7 @@ func (c *controller) ready() {
 		}
 	})
 	c.panel.OnBlur(func() {
-		if !c.closing && !c.menuOpen && !c.ownsForeground() {
+		if !c.closing && !c.menuOpen && !c.clipboardConfirm && !c.ownsForeground() {
 			c.hide()
 		}
 	})
@@ -231,16 +230,8 @@ func (c *controller) ready() {
 	c.startClipboardHost()
 	c.applyDoubleTap()
 	c.scan()
-	if slices.Contains(os.Args[1:], "--diagnostics") {
-		c.openDiagnostics()
-	} else if slices.Contains(os.Args[1:], "--clipboard") {
-		c.openClipboard()
-	} else if slices.Contains(os.Args[1:], "--calculator") {
-		c.openCalculatorHistory()
-	} else if slices.Contains(os.Args[1:], "--emoji") {
-		c.openEmoji()
-	} else if !slices.Contains(os.Args[1:], "--hidden") {
-		c.show()
+	if command != windows.ActivatePanel || !hidden {
+		c.activate(command)
 	}
 	log.Printf("ready elapsed_us=%d hwnd=%d", time.Since(c.started).Microseconds(), c.panel.NativeHandle())
 }
@@ -612,6 +603,6 @@ func (c *controller) finish() {
 	case <-done:
 	case <-time.After(time.Second):
 		c.instance.HoldIdentityUntilExit()
-		log.Print("shutdown worker deadline exceeded")
+		log.Print("shutdown worker deadline exceeded; pending persistence may be incomplete")
 	}
 }
