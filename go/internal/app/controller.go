@@ -19,6 +19,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/quicklinks"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/snippets"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
@@ -123,10 +124,15 @@ type controller struct {
 	emojiTone                string
 	commands                 *commands.Store
 	quicklinks               *quicklinks.Store
+	snippets                 *snippets.Repository
+	snippetSnapshot          snippets.Snapshot
+	snippetError             string
 	featureCommands          bool
 	featureQuicklinks        bool
+	featureSnippets          bool
 	commandsShowInLauncher   bool
 	quicklinksShowInLauncher bool
+	snippetsShowInLauncher   bool
 	commandConfirm           bool
 	pendingArgs              *argumentSession
 	clipboardSuppress        atomic.Bool
@@ -150,6 +156,8 @@ func newController(started time.Time, profile profile) *controller {
 	c.loadSettings()
 	c.commands = commands.Open(filepath.Join(profile.settings, "custom-commands.json"))
 	c.quicklinks = quicklinks.Load(filepath.Join(profile.settings, "quicklinks.json"))
+	c.snippets = snippets.NewRepository(filepath.Join(profile.data, "snippets"))
+	c.reloadSnippets()
 	c.clipboardDisabledDraft = strings.Join(c.clipboardDisabled, "; ")
 	c.calcHistoryPath = filepath.Join(profile.settings, "calculator-history.json")
 	c.calcHistory = domaincalc.LoadHistory(c.calcHistoryPath)
@@ -385,6 +393,9 @@ func (c *controller) open(application domain.Application) {
 		return
 	case domain.KindQuicklink:
 		c.startQuicklink(application)
+		return
+	case domain.KindSnippet:
+		c.startSnippet(application)
 		return
 	}
 	if c.launcher != nil && c.view.Query != "" && application.ID != "" {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/quicklink"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/snippet"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/template"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
@@ -47,6 +48,16 @@ func (c *controller) refreshExtras() {
 				continue
 			}
 			extras = append(extras, domain.Application{ID: quicklink.EntryID(link.ID), Name: link.Name, Kind: domain.KindQuicklink})
+		}
+	}
+	if c.featureSnippets && c.snippetsShowInLauncher && c.snippets != nil {
+		for _, record := range c.snippetSnapshot.Records {
+			if !record.Enabled {
+				continue
+			}
+			entry := domain.Application{ID: snippet.EntryID(record.ID), Name: record.Name, Kind: domain.KindSnippet}
+			extras = append(extras, entry)
+			keywords[entry.ID] = record.Keyword
 		}
 	}
 	c.launcher.SetExtras(extras, keywords)
@@ -318,5 +329,7 @@ func (c *controller) submitArguments(entry domain.Application, values []string) 
 			return
 		}
 		c.openQuicklink(link, output.Text)
+	case domain.KindSnippet:
+		c.submitSnippetArguments(session, args)
 	}
 }

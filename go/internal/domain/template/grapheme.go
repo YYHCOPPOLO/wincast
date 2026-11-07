@@ -2,6 +2,10 @@ package template
 
 import "unicode"
 
+// GraphemeCount reports extended grapheme clusters, the unit caret movement
+// uses when a cursor token repositions the caret after insertion.
+func GraphemeCount(text string) int { return graphemeCount(text) }
+
 // graphemeCount approximates UAX #29 extended grapheme clusters for caret
 // movement: combining marks, joiners, variation selectors, skin-tone
 // modifiers, keycaps, regional-indicator pairs and CRLF stay one cluster.
