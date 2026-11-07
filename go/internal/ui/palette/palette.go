@@ -274,7 +274,7 @@ func (v *View) applications(c *ui.Context, tokens theme.Tokens) {
 	v.list.Selected = &v.Chosen
 	v.list.Key = func(i int) any { return stableKey(v.Results[i]) }
 	v.list.Label = func(i int) string { return v.Results[i].Name }
-	list := ui.List(c, &v.list, len(v.Results), func(i int) { v.row(c, i, tokens) }).Grow(1).Padding(0, 8).
+	list := components.ResultList(c, tokens, &v.list, len(v.Results), func(i int) { v.row(c, i, tokens) }).Grow(1).Padding(0, 8).
 		Label(v.Text("应用程序搜索结果", "Application search results"))
 	if list.Submitted() {
 		v.open()
@@ -326,7 +326,7 @@ func (v *View) calculatorHistoryBody(c *ui.Context, tokens theme.Tokens) {
 		return v.CalcHistory[i].Expression + "\x00" + v.CalcHistory[i].Result
 	}
 	v.calcHistoryList.Label = func(i int) string { return v.CalcHistory[i].Expression }
-	list := ui.List(c, &v.calcHistoryList, len(v.CalcHistory), func(i int) {
+	list := components.ResultList(c, tokens, &v.calcHistoryList, len(v.CalcHistory), func(i int) {
 		entry := v.CalcHistory[i]
 		components.ResultRow(c, tokens, components.Row{
 			Fallback: "=",
@@ -1006,7 +1006,7 @@ func (v *View) clipboardBody(c *ui.Context, tokens theme.Tokens) {
 			v.clipboardList.Selected = &v.ClipboardChosen
 			v.clipboardList.Key = func(i int) any { return v.ClipboardItems[i].ID }
 			v.clipboardList.Label = func(i int) string { return clipboardRowTitle(v.ClipboardItems[i], v.Chinese) }
-			list := ui.List(c, &v.clipboardList, len(v.ClipboardItems), func(i int) {
+			list := components.ResultList(c, tokens, &v.clipboardList, len(v.ClipboardItems), func(i int) {
 				v.clipboardRow(c, i, tokens)
 			}).Grow(1).Padding(0, 8).Label(v.Text("剪贴板历史", "Clipboard history"))
 			if list.Submitted() {

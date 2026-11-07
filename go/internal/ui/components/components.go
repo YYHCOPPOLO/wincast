@@ -25,6 +25,20 @@ type Row struct {
 	Selected bool
 }
 
+// ResultList leaves selection painting to ResultRow. MyGo's default list
+// paints its own accent-colored row behind the content; a larger content
+// radius otherwise exposes that darker fill at all four corners.
+func ResultList(c *ui.Context, tokens theme.Tokens, state *ui.ListState, count int, row func(int)) ui.Element {
+	previous := c.Theme()
+	listTheme := *previous
+	listTheme.Accent = ui.Transparent
+	listTheme.AccentText = tokens.Text
+	listTheme.Radius = theme.RowRadius
+	c.SetTheme(&listTheme)
+	defer c.SetTheme(previous)
+	return ui.List(c, state, count, row)
+}
+
 func ResultRow(c *ui.Context, tokens theme.Tokens, row Row) {
 	fill := ui.Transparent
 	if row.Selected {
