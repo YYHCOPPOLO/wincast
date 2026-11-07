@@ -386,6 +386,11 @@ func (c *controller) settingsView(ctx *ui.Context) {
 					ui.Text(ctx, c.clipboardError).FontSize(theme.TrailingFont).TextColor(tokens.Destructive).SingleLine()
 				}
 			})
+			components.FormRow(ctx, tokens, c.text("Emoji 肤色", "Emoji skin tone"), func() {
+				if ui.Button(ctx, c.view.EmojiTone.Label()).Clicked() {
+					c.cycleEmojiTone()
+				}
+			})
 		})
 
 		components.Card(ctx, tokens, func() {

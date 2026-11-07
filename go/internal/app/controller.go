@@ -14,6 +14,9 @@ import (
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/diagnostics"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
+	calcservice "github.com/YYHCOPPOLO/wincast/go/internal/features/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
@@ -109,6 +112,11 @@ type controller struct {
 	lookupElapsed          time.Duration
 	lookupCount            uint64
 	displaySummary         []string
+	calcHistory            *domaincalc.History
+	calcHistoryPath        string
+	calcRates              *calcservice.Rates
+	calcRegion             string
+	emojiTone              string
 }
 
 func newController(started time.Time, profile profile) *controller {
@@ -128,6 +136,12 @@ func newController(started time.Time, profile profile) *controller {
 	c.notes = storage.NewFileNotes(filepath.Join(profile.data, "notes"))
 	c.loadSettings()
 	c.clipboardDisabledDraft = strings.Join(c.clipboardDisabled, "; ")
+	c.calcHistoryPath = filepath.Join(profile.settings, "calculator-history.json")
+	c.calcHistory = domaincalc.LoadHistory(c.calcHistoryPath)
+	c.calcRates = calcservice.NewRates(filepath.Join(profile.cache, "currency-rates.json"))
+	c.calcRegion = domaincalc.CurrencyForLocale(windows.UserLocale())
+	c.emojiTone = c.settingsDocument.String("emojiSkinTone", "none")
+	c.clampEmojiTone()
 	preferences, preferencesErr := launcher.LoadPreferences(filepath.Join(profile.settings, "launcher"))
 	if preferencesErr != nil {
 		log.Printf("launcher preferences load failed: %v", preferencesErr)
@@ -139,25 +153,34 @@ func newController(started time.Time, profile profile) *controller {
 		Filtered: func(elapsed time.Duration, count int) {
 			log.Printf("filter elapsed_us=%d results=%d", elapsed.Microseconds(), count)
 		},
-		Search:             c.search,
-		Favorite:           c.openFavorite,
-		FavoriteSlot:       c.launcherPrefs.FavoriteSlot,
-		ToggleFavorite:     c.toggleFavorite,
-		ToggleExpanded:     c.toggleExpanded,
-		SaveAlias:          c.saveAlias,
-		SetHidden:          c.setHidden,
-		ToggleShowHidden:   c.toggleShowHidden,
-		ClipboardSearch:    c.clipboardSearch,
-		ClipboardPaste:     c.pasteClipboardItem,
-		ClipboardCopy:      c.copyClipboardItem,
-		ClipboardPin:       c.toggleClipboardPin,
-		ClipboardDelete:    c.deleteClipboardItem,
-		ClipboardImage:     c.clipboardBitmap,
-		ClipboardPinned:    c.pasteClipboardSlot,
-		SetClipboardFilter: c.setClipboardFilter,
+		Search:                c.search,
+		Favorite:              c.openFavorite,
+		FavoriteSlot:          c.launcherPrefs.FavoriteSlot,
+		ToggleFavorite:        c.toggleFavorite,
+		ToggleExpanded:        c.toggleExpanded,
+		SaveAlias:             c.saveAlias,
+		SetHidden:             c.setHidden,
+		ToggleShowHidden:      c.toggleShowHidden,
+		ClipboardSearch:       c.clipboardSearch,
+		ClipboardPaste:        c.pasteClipboardItem,
+		ClipboardCopy:         c.copyClipboardItem,
+		ClipboardPin:          c.toggleClipboardPin,
+		ClipboardDelete:       c.deleteClipboardItem,
+		ClipboardImage:        c.clipboardBitmap,
+		ClipboardPinned:       c.pasteClipboardSlot,
+		SetClipboardFilter:    c.setClipboardFilter,
+		Calculate:             c.calculate,
+		CalculatorHistory:     c.calculatorHistory,
+		CopyCalculator:        c.copyCalculatorResult,
+		CopyCalculatorHistory: c.copyCalculatorHistory,
+		OpenCalculatorHistory: c.openCalculatorHistory,
+		EmojiSearch:           c.emojiSearch,
+		EmojiPaste:            c.pasteEmoji,
+		CycleEmojiTone:        c.cycleEmojiTone,
 	})
 	c.applyViewAppearance()
 	c.view.Expanded = !c.compactMode
+	c.view.EmojiTone = emoji.ToneFromRaw(c.emojiTone)
 	c.view.DictionaryAvailable = c.featureDictionary && c.dictionaryReady
 	c.view.OnLookup = c.lookup
 	return c
@@ -204,6 +227,7 @@ func (c *controller) ready() {
 	c.startRankingWriter()
 	c.startClipboard()
 	c.startClipboardImages()
+	c.startCalculatorRates()
 	c.startClipboardHost()
 	c.applyDoubleTap()
 	c.scan()
@@ -211,6 +235,10 @@ func (c *controller) ready() {
 		c.openDiagnostics()
 	} else if slices.Contains(os.Args[1:], "--clipboard") {
 		c.openClipboard()
+	} else if slices.Contains(os.Args[1:], "--calculator") {
+		c.openCalculatorHistory()
+	} else if slices.Contains(os.Args[1:], "--emoji") {
+		c.openEmoji()
 	} else if !slices.Contains(os.Args[1:], "--hidden") {
 		c.show()
 	}
@@ -360,6 +388,14 @@ func (c *controller) menu() {
 		c.clipboardMenu()
 		return
 	}
+	if c.view.Mode == palette.ModeCalculatorHistory {
+		c.calculatorMenu()
+		return
+	}
+	if c.view.Mode == palette.ModeEmoji {
+		c.emojiMenu()
+		return
+	}
 	menu := components.Menu([]components.MenuAction{
 		{Label: c.view.Text("打开选中应用", "Open selected application"), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: func() {
 			if c.view.Chosen >= 0 && c.view.Chosen < len(c.view.Results) {
@@ -378,11 +414,59 @@ func (c *controller) menu() {
 		{Label: c.view.Text("粘回原窗口", "Paste to previous window"), Accelerator: "Ctrl+Shift+Enter", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), true) }},
 		{Separator: true},
 		{Label: c.view.Text("剪贴板历史…", "Clipboard history…"), Click: c.openClipboard},
+		{Label: c.view.Text("计算器历史…", "Calculator history…"), Click: c.openCalculatorHistory},
+		{Label: c.view.Text("Emoji 与符号…", "Emoji & Symbols…"), Click: c.openEmoji},
 		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("笔记…", "Notes…"), Disabled: !c.featureNotes, Click: c.openEditor},
 		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: c.openDiagnostics},
 		{Separator: true},
+		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
+	})
+	menu.Popup(c.panel)
+}
+
+func (c *controller) emojiMenu() {
+	selected := c.view.EmojiChosen >= 0 && c.view.EmojiChosen < len(c.view.EmojiItems)
+	menu := components.Menu([]components.MenuAction{
+		{Label: c.view.Text("粘回选中 Emoji", "Paste selected emoji"), Disabled: !selected, Click: func() {
+			if selected {
+				c.pasteEmoji(c.view.EmojiItems[c.view.EmojiChosen].Glyph)
+			}
+		}},
+		{Label: c.view.Text("切换肤色", "Change skin tone") + " · " + c.view.EmojiTone.Label(), Click: func() {
+			c.cycleEmojiTone()
+			c.view.Filter()
+		}},
+		{Separator: true},
+		{Label: c.view.Text("返回启动器", "Back to launcher"), Accelerator: "Esc", Click: c.view.SetModeLauncher},
+		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
+		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
+	})
+	menu.Popup(c.panel)
+}
+
+func (c *controller) calculatorMenu() {
+	var selected *domaincalc.HistoryEntry
+	if c.view.Chosen >= 0 && c.view.Chosen < len(c.view.CalcHistory) {
+		entry := c.view.CalcHistory[c.view.Chosen]
+		selected = &entry
+	}
+	canCopyResult := c.view.Chosen < 0 && c.view.CalcResult != nil && !c.view.CalcResult.IsError()
+	menu := components.Menu([]components.MenuAction{
+		{Label: c.view.Text("复制当前答案", "Copy current answer"), Disabled: !canCopyResult, Click: func() {
+			if canCopyResult {
+				c.copyCalculatorResult(*c.view.CalcResult)
+			}
+		}},
+		{Label: c.view.Text("复制选中历史", "Copy selected history"), Disabled: selected == nil, Click: func() {
+			if selected != nil {
+				c.copyCalculatorHistory(*selected)
+			}
+		}},
+		{Separator: true},
+		{Label: c.view.Text("返回启动器", "Back to launcher"), Accelerator: "Esc", Click: c.view.SetModeLauncher},
+		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)

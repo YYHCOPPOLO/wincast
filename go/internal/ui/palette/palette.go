@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
@@ -18,6 +20,8 @@ const (
 	ModeLauncher Mode = iota
 	ModeDictionary
 	ModeClipboard
+	ModeCalculatorHistory
+	ModeEmoji
 )
 
 // Callbacks are the user's intent. The view never performs I/O and never
@@ -46,6 +50,16 @@ type Callbacks struct {
 	ClipboardImage     func(clipboard.Item) *ui.Bitmap
 	ClipboardPinned    func(byte)
 	SetClipboardFilter func(clipboard.Filter)
+
+	Calculate             func(query string) *domaincalc.Result
+	CalculatorHistory     func(query string) []domaincalc.HistoryEntry
+	CopyCalculator        func(domaincalc.Result)
+	CopyCalculatorHistory func(domaincalc.HistoryEntry)
+	OpenCalculatorHistory func()
+
+	EmojiSearch    func(query string, tone emoji.SkinTone) []emoji.Emoji
+	EmojiPaste     func(string)
+	CycleEmojiTone func() emoji.SkinTone
 }
 
 // View is UI-thread-owned display state. Callbacks send user intent back to
@@ -75,6 +89,8 @@ type View struct {
 	DictionaryLoading   bool
 	DictionaryError     string
 	Definition          *Definition
+	Suggestions         []string
+	PendingToast        string
 	dictionaryScroll    ui.ScrollState
 	OnLookup            func(string)
 
@@ -85,6 +101,15 @@ type View struct {
 	ClipboardChosen    int
 	clipboardList      ui.ListState
 	clipboardPreview   ui.ScrollState
+
+	CalcResult      *domaincalc.Result
+	CalcHistory     []domaincalc.HistoryEntry
+	calcHistoryList ui.ListState
+
+	EmojiItems  []emoji.Emoji
+	EmojiTone   emoji.SkinTone
+	EmojiChosen int
+	emojiScroll ui.ScrollState
 }
 
 func New(chinese bool, callbacks Callbacks) *View {
@@ -113,8 +138,18 @@ func (v *View) Render(c *ui.Context) {
 	c.Root().Background(tokens.Surface)
 	c.OnShortcut(ui.Ctrl, ui.KeyK, v.callbacks.Menu)
 	c.OnShortcut(0, ui.KeyEscape, v.escape)
-	c.OnShortcut(0, ui.KeyDown, func() { v.choose(v.currentChosen() + 1) })
-	c.OnShortcut(0, ui.KeyUp, func() { v.choose(v.currentChosen() - 1) })
+	c.OnShortcut(0, ui.KeyDown, func() { v.moveVertical(1) })
+	c.OnShortcut(0, ui.KeyUp, func() { v.moveVertical(-1) })
+	c.OnShortcut(0, ui.KeyLeft, func() {
+		if v.Mode == ModeEmoji {
+			v.moveHorizontal(-1)
+		}
+	})
+	c.OnShortcut(0, ui.KeyRight, func() {
+		if v.Mode == ModeEmoji {
+			v.moveHorizontal(1)
+		}
+	})
 	c.OnShortcut(0, ui.KeyEnter, v.open)
 	v.renderAlias(c, tokens)
 	ui.Column(c).Fill().Children(func() {
@@ -130,6 +165,10 @@ func (v *View) Render(c *ui.Context) {
 				placeholder = v.Text("查询词典…", "Look up a word…")
 			case ModeClipboard:
 				placeholder = v.Text("搜索剪贴板…", "Search clipboard…")
+			case ModeCalculatorHistory:
+				placeholder = v.Text("搜索计算历史…", "Search calculator history…")
+			case ModeEmoji:
+				placeholder = v.Text("搜索 Emoji…", "Search emoji…")
 			}
 			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).FontSize(theme.SearchFont).
 				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey).Changed() {
@@ -146,6 +185,10 @@ func (v *View) Render(c *ui.Context) {
 			v.dictionaryBody(c, tokens)
 		case ModeClipboard:
 			v.clipboardBody(c, tokens)
+		case ModeCalculatorHistory:
+			v.calculatorHistoryBody(c, tokens)
+		case ModeEmoji:
+			v.emojiBody(c, tokens)
 		default:
 			v.applications(c, tokens)
 		}
@@ -156,6 +199,10 @@ func (v *View) Render(c *ui.Context) {
 		}
 		components.Footer(c, tokens, status, v.footerHints(), v.callbacks.Menu)
 	})
+	if v.PendingToast != "" {
+		c.Toast(v.PendingToast)
+		v.PendingToast = ""
+	}
 }
 
 func (v *View) defaultStatus() string {
@@ -170,6 +217,10 @@ func (v *View) defaultStatus() string {
 		return v.Text("剪贴板历史", "Clipboard history")
 	case ModeDictionary:
 		return v.Text("ECDICT 词典", "ECDICT dictionary")
+	case ModeCalculatorHistory:
+		return v.Text("计算历史", "Calculator history")
+	case ModeEmoji:
+		return v.Text("Emoji 与符号 · 肤色 "+v.EmojiTone.Label(), "Emoji & Symbols · "+v.EmojiTone.Label())
 	default:
 		return v.Text("Go 预览 · Alt+Shift+Space", "Go Preview · Alt+Shift+Space")
 	}
@@ -179,7 +230,14 @@ func (v *View) footerHints() string {
 	switch v.Mode {
 	case ModeClipboard:
 		return v.Text("Enter 粘回  Ctrl+C 复制  Ctrl+. 置顶  Ctrl+P 筛选", "Enter Paste  Ctrl+C Copy  Ctrl+. Pin  Ctrl+P Filter")
+	case ModeCalculatorHistory:
+		return v.Text("Enter 复制结果  Esc 返回", "Enter Copy  Esc Back")
+	case ModeEmoji:
+		return v.Text("Enter 粘回  Ctrl+T 肤色  Esc 返回", "Enter Paste  Ctrl+T Skin tone  Esc Back")
 	default:
+		if v.CalcResult != nil {
+			return v.Text("Enter 复制答案  ↑↓ 选择", "Enter Copy answer  ↑↓ Select")
+		}
 		return v.Text("Tab 词典   ↑↓ 选择", "Tab Dictionary   ↑↓ Select")
 	}
 }
@@ -208,6 +266,7 @@ func (v *View) renderAlias(c *ui.Context, tokens theme.Tokens) {
 }
 
 func (v *View) applications(c *ui.Context, tokens theme.Tokens) {
+	v.calcCard(c, tokens)
 	label := v.Text("应用程序", "Applications")
 	if v.ShowHidden {
 		label = v.Text("应用程序（含隐藏）", "Applications (including hidden)")
@@ -228,6 +287,132 @@ func (v *View) applications(c *ui.Context, tokens theme.Tokens) {
 		}
 		ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
 	}
+}
+
+func (v *View) calcCard(c *ui.Context, tokens theme.Tokens) {
+	if v.CalcResult == nil {
+		return
+	}
+	fill := ui.Transparent
+	if v.Chosen < 0 {
+		fill = tokens.Selection
+	}
+	result := v.CalcResult
+	ui.Column(c).FillWidth().Padding(8, 18).Gap(3).Radius(theme.RowRadius).
+		Background(fill).Children(func() {
+		ui.Text(c, result.Expression).FontSize(theme.TrailingFont).
+			TextColor(tokens.TextTertiary).SingleLine()
+		color := tokens.Text
+		if result.IsError() {
+			color = tokens.Destructive
+		}
+		ui.Text(c, result.Display).FontSize(theme.HeadingFont).TextColor(color).SingleLine().Role(ui.RoleStatus)
+		if result.SourceBadge != "" || result.TargetBadge != "" {
+			ui.Row(c).Gap(8).Children(func() {
+				if result.SourceBadge != "" {
+					ui.Text(c, result.SourceBadge).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+				}
+				if result.TargetBadge != "" {
+					ui.Text(c, "→ "+result.TargetBadge).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+				}
+			})
+		}
+	})
+}
+
+func (v *View) calculatorHistoryBody(c *ui.Context, tokens theme.Tokens) {
+	v.calcCard(c, tokens)
+	v.calcHistoryList.Selected = &v.Chosen
+	v.calcHistoryList.Key = func(i int) any {
+		return v.CalcHistory[i].Expression + "\x00" + v.CalcHistory[i].Result
+	}
+	v.calcHistoryList.Label = func(i int) string { return v.CalcHistory[i].Expression }
+	list := ui.List(c, &v.calcHistoryList, len(v.CalcHistory), func(i int) {
+		entry := v.CalcHistory[i]
+		components.ResultRow(c, tokens, components.Row{
+			Fallback: "=",
+			Title:    entry.Expression,
+			Subtitle: entry.Result,
+			Selected: i == v.Chosen,
+		})
+	}).Grow(1).Padding(0, 8).Label(v.Text("计算历史", "Calculator history"))
+	if list.Submitted() {
+		v.open()
+	}
+	if len(v.CalcHistory) == 0 && v.CalcResult == nil {
+		message := v.Text("没有计算历史", "No calculator history")
+		if v.Query != "" {
+			message = v.Text("没有匹配的计算", "No matching calculations")
+		}
+		ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
+	}
+}
+
+func (v *View) emojiBody(c *ui.Context, tokens theme.Tokens) {
+	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, v.Text("Emoji 与符号", "Emoji & Symbols")).FontSize(theme.SectionFont).
+			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+		if ui.Button(c, v.Text("肤色: ", "Skin: ")+v.EmojiTone.Label()).Clicked() {
+			v.cycleEmojiTone()
+		}
+	})
+	ui.Scroll(c).Grow(1).TrackScroll(&v.emojiScroll).Children(func() {
+		ui.Column(c).FillWidth().Padding(8, 18).Gap(8).Children(func() {
+			if len(v.EmojiItems) == 0 {
+				message := v.Text("没有匹配的 Emoji", "No matching emoji")
+				if v.Query == "" {
+					message = v.Text("正在载入 Emoji…", "Loading emoji…")
+				}
+				ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
+				return
+			}
+			group := ""
+			var row []int
+			flush := func() {
+				if len(row) == 0 {
+					return
+				}
+				indexes := row
+				row = nil
+				ui.Grid(c).Columns(emoji.GridColumns).Gap(6).Children(func() {
+					for _, index := range indexes {
+						v.emojiCell(c, index, tokens)
+					}
+				})
+			}
+			for index, item := range v.EmojiItems {
+				if item.Group != group {
+					flush()
+					group = item.Group
+					ui.Text(c, group).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+				}
+				row = append(row, index)
+				if len(row) >= emoji.GridColumns {
+					flush()
+				}
+			}
+			flush()
+		})
+	})
+}
+
+func (v *View) emojiCell(c *ui.Context, index int, tokens theme.Tokens) {
+	item := v.EmojiItems[index]
+	fill := ui.Transparent
+	if index == v.EmojiChosen {
+		fill = tokens.Selection
+	}
+	ui.Text(c, item.Glyph).FontSize(26).Height(50).TextAlign(ui.Center).
+		Background(fill).Radius(10).Label(item.Name).Role(ui.RoleButton).
+		OnClick(func() { v.EmojiChosen = index })
+}
+
+func (v *View) cycleEmojiTone() {
+	if v.callbacks.CycleEmojiTone == nil {
+		return
+	}
+	v.EmojiTone = v.callbacks.CycleEmojiTone()
+	v.Filter()
 }
 
 func (v *View) row(c *ui.Context, i int, tokens theme.Tokens) {
@@ -318,6 +503,11 @@ func (v *View) textKey(key ui.TextKey) bool {
 				v.callbacks.ToggleExpanded()
 			}
 			return true
+		case ui.KeyT:
+			if v.Mode == ModeEmoji {
+				v.cycleEmojiTone()
+				return true
+			}
 		}
 	}
 	if key.Mods != 0 {
@@ -330,12 +520,16 @@ func (v *View) textKey(key ui.TextKey) bool {
 	case ui.KeyEscape:
 		v.escape()
 	case ui.KeyDown:
-		v.choose(v.currentChosen() + 1)
+		v.moveVertical(1)
 	case ui.KeyUp:
-		v.choose(v.currentChosen() - 1)
+		v.moveVertical(-1)
 	case ui.KeyTab:
-		if v.Mode == ModeClipboard {
+		if v.Mode != ModeLauncher {
 			return false
+		}
+		if strings.TrimSpace(key.Text()) == "" {
+			v.SetModeClipboard()
+			return true
 		}
 		v.Query = key.Text()
 		v.ToggleDictionary()
@@ -375,7 +569,7 @@ func digitKey(key ui.Key) (byte, bool) {
 func (v *View) escape() {
 	if v.Query == "" {
 		switch v.Mode {
-		case ModeClipboard, ModeDictionary:
+		case ModeClipboard, ModeDictionary, ModeCalculatorHistory, ModeEmoji:
 			v.SetModeLauncher()
 			return
 		}
@@ -411,17 +605,58 @@ func (v *View) open() {
 	case ModeClipboard:
 		v.pasteSelectedClipboard()
 		return
+	case ModeCalculatorHistory:
+		if v.Chosen < 0 && v.CalcResult != nil {
+			v.copyCalculator()
+			return
+		}
+		if v.Chosen >= 0 && v.Chosen < len(v.CalcHistory) && v.callbacks.CopyCalculatorHistory != nil {
+			v.callbacks.CopyCalculatorHistory(v.CalcHistory[v.Chosen])
+		}
+		return
+	case ModeEmoji:
+		if v.EmojiChosen >= 0 && v.EmojiChosen < len(v.EmojiItems) && v.callbacks.EmojiPaste != nil {
+			v.callbacks.EmojiPaste(v.EmojiItems[v.EmojiChosen].Glyph)
+		}
+		return
+	}
+	if v.Chosen < 0 && v.CalcResult != nil {
+		v.copyCalculator()
+		return
 	}
 	if v.Chosen >= 0 && v.Chosen < len(v.Results) {
 		v.callbacks.Open(v.Results[v.Chosen])
 	}
 }
 
+func (v *View) copyCalculator() {
+	if v.CalcResult != nil && v.callbacks.CopyCalculator != nil {
+		v.callbacks.CopyCalculator(*v.CalcResult)
+	}
+}
+
 func (v *View) currentChosen() int {
-	if v.Mode == ModeClipboard {
+	switch v.Mode {
+	case ModeClipboard:
 		return v.ClipboardChosen
+	case ModeEmoji:
+		return v.EmojiChosen
 	}
 	return v.Chosen
+}
+
+func (v *View) moveVertical(step int) {
+	if v.Mode == ModeEmoji {
+		v.choose(v.EmojiChosen + step*emoji.GridColumns)
+		return
+	}
+	v.choose(v.currentChosen() + step)
+}
+
+func (v *View) moveHorizontal(step int) {
+	if v.Mode == ModeEmoji {
+		v.choose(v.EmojiChosen + step)
+	}
 }
 
 func (v *View) choose(i int) {
@@ -436,19 +671,50 @@ func (v *View) choose(i int) {
 		v.ClipboardChosen = max(0, min(i, len(v.ClipboardItems)-1))
 		v.clipboardList.ScrollIntoView(v.ClipboardChosen)
 		return
-	}
-	if len(v.Results) == 0 {
-		v.Chosen = -1
+	case ModeCalculatorHistory:
+		minimum := 0
+		if v.CalcResult != nil {
+			minimum = -1
+		}
+		maximum := len(v.CalcHistory) - 1
+		if maximum < minimum {
+			v.Chosen = -1
+			return
+		}
+		v.Chosen = max(minimum, min(i, maximum))
+		if v.Chosen >= 0 {
+			v.calcHistoryList.ScrollIntoView(v.Chosen)
+		}
+		return
+	case ModeEmoji:
+		if len(v.EmojiItems) == 0 {
+			v.EmojiChosen = -1
+			return
+		}
+		v.EmojiChosen = max(0, min(i, len(v.EmojiItems)-1))
 		return
 	}
-	v.Chosen = max(0, min(i, len(v.Results)-1))
-	v.list.ScrollIntoView(v.Chosen)
+	minimum := 0
+	if v.CalcResult != nil {
+		minimum = -1
+	}
+	if len(v.Results) == 0 {
+		v.Chosen = minimum
+		return
+	}
+	v.Chosen = max(minimum, min(i, len(v.Results)-1))
+	if v.Chosen >= 0 {
+		v.list.ScrollIntoView(v.Chosen)
+	}
 }
 
 func (v *View) Filter() {
 	switch v.Mode {
 	case ModeDictionary:
+		v.CalcResult = nil
+		v.CalcHistory = nil
 		v.Definition = nil
+		v.Suggestions = nil
 		v.DictionaryError = ""
 		v.dictionaryScroll.X, v.dictionaryScroll.Y = 0, 0
 		if v.OnLookup != nil {
@@ -456,6 +722,8 @@ func (v *View) Filter() {
 		}
 		return
 	case ModeClipboard:
+		v.CalcResult = nil
+		v.CalcHistory = nil
 		if v.callbacks.ClipboardSearch != nil {
 			v.ClipboardItems = v.callbacks.ClipboardSearch(v.Query, v.ClipboardFilter)
 		} else {
@@ -463,9 +731,35 @@ func (v *View) Filter() {
 		}
 		v.choose(0)
 		return
+	case ModeCalculatorHistory:
+		if v.callbacks.Calculate != nil {
+			v.CalcResult = v.callbacks.Calculate(v.Query)
+		}
+		if v.callbacks.CalculatorHistory != nil {
+			v.CalcHistory = v.callbacks.CalculatorHistory(v.Query)
+		}
+		if v.CalcResult != nil {
+			v.choose(-1)
+		} else {
+			v.choose(0)
+		}
+		return
+	case ModeEmoji:
+		v.CalcResult = nil
+		v.CalcHistory = nil
+		if v.callbacks.EmojiSearch != nil {
+			v.EmojiItems = v.callbacks.EmojiSearch(v.Query, v.EmojiTone)
+		} else {
+			v.EmojiItems = nil
+		}
+		v.choose(0)
+		return
 	}
 	if v.OnLookup != nil {
 		v.OnLookup("") // cancel a lookup after returning to Applications
+	}
+	if v.callbacks.Calculate != nil {
+		v.CalcResult = v.callbacks.Calculate(v.Query)
 	}
 	started := time.Now()
 	if v.callbacks.Search != nil {
@@ -473,7 +767,11 @@ func (v *View) Filter() {
 	} else {
 		v.Results = domain.Filter(v.Apps, v.Query)
 	}
-	v.choose(0)
+	if v.CalcResult != nil {
+		v.choose(-1)
+	} else {
+		v.choose(0)
+	}
 	if v.callbacks.Filtered != nil {
 		v.callbacks.Filtered(time.Since(started), len(v.Results))
 	}
@@ -488,7 +786,42 @@ func (v *View) SetModeLauncher() {
 	v.Query = v.launcherQuery
 	v.inputText.Set(v.launcherQuery)
 	v.launcherQuery = ""
-	v.Chosen, v.ClipboardChosen = -1, -1
+	v.Chosen, v.ClipboardChosen, v.EmojiChosen = -1, -1, -1
+	v.CalcHistory = nil
+	v.EmojiItems = nil
+	v.Filter()
+	v.Input.Focus()
+}
+
+func (v *View) SetModeEmoji() {
+	if v.Mode == ModeEmoji {
+		v.Input.Focus()
+		return
+	}
+	if v.Mode == ModeLauncher {
+		v.launcherQuery = v.Query
+	}
+	v.Mode = ModeEmoji
+	v.Query = ""
+	v.inputText.Set("")
+	v.EmojiChosen = -1
+	v.Filter()
+	v.Input.Focus()
+}
+
+func (v *View) SetModeCalculatorHistory() {
+	if v.Mode == ModeCalculatorHistory {
+		v.Input.Focus()
+		return
+	}
+	if v.Mode == ModeLauncher {
+		v.launcherQuery = v.Query
+	}
+	v.Mode = ModeCalculatorHistory
+	v.Query = ""
+	v.inputText.Set("")
+	v.Chosen = -1
+	v.EmojiItems = nil
 	v.Filter()
 	v.Input.Focus()
 }
@@ -505,11 +838,16 @@ func (v *View) SetModeClipboard() {
 	v.Query = ""
 	v.inputText.Set("")
 	v.ClipboardChosen = -1
+	v.CalcResult = nil
+	v.CalcHistory = nil
+	v.EmojiItems = nil
 	v.Filter()
 	v.Input.Focus()
 }
 
 func (v *View) Clipboard() bool { return v.Mode == ModeClipboard }
+
+func (v *View) InDictionary() bool { return v.Mode == ModeDictionary }
 
 // ChooseClipboard moves the clipboard selection after a store mutation.
 func (v *View) ChooseClipboard(index int) {
@@ -532,6 +870,9 @@ func (v *View) ToggleDictionary() {
 	v.launcherQuery = v.inputText.String()
 	v.Query = v.inputText.String()
 	v.Mode = ModeDictionary
+	v.CalcResult = nil
+	v.CalcHistory = nil
+	v.EmojiItems = nil
 	v.dictionaryScroll.X, v.dictionaryScroll.Y = 0, 0
 	v.Filter()
 	v.Input.Focus()

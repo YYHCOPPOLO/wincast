@@ -10,6 +10,7 @@ import (
 
 type Definition struct {
 	Word, Phonetic string
+	Badges         []string
 	Sections       []DefinitionSection
 }
 
@@ -30,11 +31,26 @@ func (v *View) dictionaryBody(c *ui.Context, tokens theme.Tokens) {
 					message = v.DictionaryError
 				}
 				ui.Text(c, message).TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
+				if len(v.Suggestions) > 0 {
+					ui.Text(c, v.Text("你是不是想找：", "Did you mean:")).FontSize(theme.SectionFont).
+						TextColor(tokens.TextTertiary)
+					ui.Column(c).Gap(4).Children(func() {
+						for _, suggestion := range v.Suggestions {
+							if ui.Button(c, suggestion).Clicked() {
+								v.SetQuery(suggestion)
+							}
+						}
+					})
+				}
 				return
 			}
 			ui.Text(c, v.Definition.Word).FontSize(theme.HeadingFont).Bold().Role(ui.RoleHeading)
 			if v.Definition.Phonetic != "" {
 				ui.Text(c, v.Definition.Phonetic).TextColor(tokens.TextTertiary)
+			}
+			if len(v.Definition.Badges) > 0 {
+				ui.Text(c, strings.Join(v.Definition.Badges, " · ")).FontSize(theme.TrailingFont).
+					TextColor(tokens.TextTertiary).Selectable()
 			}
 			for _, section := range v.Definition.Sections {
 				if section.Text == "" {
@@ -59,7 +75,10 @@ func (v *View) CopyText() string {
 	var text strings.Builder
 	text.WriteString(v.Definition.Word)
 	if v.Definition.Phonetic != "" {
-		fmt.Fprintf(&text, " /%s/", v.Definition.Phonetic)
+		fmt.Fprintf(&text, "  %s", v.Definition.Phonetic)
+	}
+	if len(v.Definition.Badges) > 0 {
+		fmt.Fprintf(&text, "\n%s", strings.Join(v.Definition.Badges, " · "))
 	}
 	for _, section := range v.Definition.Sections {
 		if section.Text != "" {

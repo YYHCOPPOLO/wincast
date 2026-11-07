@@ -26,6 +26,9 @@ func (c *controller) copyText(text string, paste bool) {
 		return
 	}
 	c.view.Status = c.view.Text("已复制", "Copied")
+	if c.view.InDictionary() {
+		c.view.PendingToast = c.view.Text("已复制词条", "Dictionary entry copied")
+	}
 	if !paste {
 		return
 	}

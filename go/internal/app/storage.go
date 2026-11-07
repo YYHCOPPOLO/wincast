@@ -95,6 +95,10 @@ func (c *controller) startStorage() {
 				}
 				started := time.Now()
 				entry, lookupErr := dict.Lookup(request.ctx, request.query)
+				var suggestions []string
+				if lookupErr == nil && entry == nil {
+					suggestions, _ = dict.Suggestions(request.ctx, request.query, 8)
+				}
 				elapsed := time.Since(started)
 				if c.ctx.Err() != nil {
 					continue
@@ -119,7 +123,8 @@ func (c *controller) startStorage() {
 						return
 					}
 					c.view.Definition = c.definition(entry)
-					log.Printf("dictionary lookup elapsed_us=%d found=%t", elapsed.Microseconds(), entry != nil)
+					c.view.Suggestions = suggestions
+					log.Printf("dictionary lookup elapsed_us=%d found=%t suggestions=%d", elapsed.Microseconds(), entry != nil, len(suggestions))
 				})
 			}
 		}
@@ -166,14 +171,95 @@ func (c *controller) definition(entry *dictionary.Entry) *palette.Definition {
 		return nil
 	}
 	v := c.view
-	return &palette.Definition{Word: entry.Word, Phonetic: entry.Phonetic, Sections: []palette.DefinitionSection{
-		{Label: v.Text("中文释义", "Chinese"), Text: strings.ReplaceAll(entry.Translation, `\n`, "\n")},
-		{Label: v.Text("英文释义", "English"), Text: strings.ReplaceAll(entry.Definition, `\n`, "\n")},
-		{Label: v.Text("词性", "Part of speech"), Text: entry.POS},
-		{Label: v.Text("词形", "Inflections"), Text: entry.Exchange},
+	var badges []string
+	if entry.Collins > 0 {
+		stars := int(entry.Collins)
+		if stars > 5 {
+			stars = 5
+		}
+		badges = append(badges, fmt.Sprintf("%s %s", v.Text("柯林斯", "Collins"), strings.Repeat("★", stars)))
+	}
+	if entry.Oxford > 0 {
+		badges = append(badges, v.Text("牛津", "Oxford"))
+	}
+	for _, tag := range strings.Fields(entry.Tag) {
+		badges = append(badges, tag)
+	}
+	return &palette.Definition{Word: entry.Word, Phonetic: entry.Phonetic, Badges: badges, Sections: []palette.DefinitionSection{
+		{Label: v.Text("中文释义", "Chinese"), Text: dictionaryLines(entry.Translation)},
+		{Label: v.Text("英文释义", "English"), Text: dictionaryLines(entry.Definition)},
+		{Label: v.Text("词性", "Part of speech"), Text: formatDictionaryPOS(entry.POS)},
+		{Label: v.Text("词形", "Inflections"), Text: formatDictionaryExchange(entry.Exchange, v.Chinese)},
 		{Label: v.Text("标签", "Tags"), Text: entry.Tag},
 		{Label: v.Text("词频与词典", "Frequency and dictionaries"), Text: fmt.Sprintf("Collins %d · Oxford %d · BNC %d · COCA %d", entry.Collins, entry.Oxford, entry.BNC, entry.Frequency)},
-		{Label: v.Text("详情", "Details"), Text: entry.Detail},
-		{Label: v.Text("音频", "Audio"), Text: entry.Audio},
+		{Label: v.Text("详情", "Details"), Text: dictionaryLines(entry.Detail)},
+		{Label: v.Text("音频", "Audio"), Text: dictionaryLines(entry.Audio)},
 	}}
+}
+
+func dictionaryLines(raw string) string {
+	raw = strings.ReplaceAll(raw, `\r`, "\n")
+	raw = strings.ReplaceAll(raw, `\n`, "\n")
+	var lines []string
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && line != `""` {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatDictionaryPOS(raw string) string {
+	var parts []string
+	for _, token := range strings.Split(strings.ReplaceAll(raw, `\`, " "), "/") {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		if kind, share, ok := strings.Cut(token, ":"); ok && strings.TrimSpace(share) != "" {
+			parts = append(parts, strings.TrimSpace(kind)+" "+strings.TrimSpace(share)+"%")
+		} else {
+			parts = append(parts, token)
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+func formatDictionaryExchange(raw string, chinese bool) string {
+	labels := map[byte]string{
+		'0': "Lemma", 'p': "Past", 'd': "Past participle", 'i': "Present participle",
+		'3': "Third person singular", 'r': "Comparative", 't': "Superlative",
+		's': "Plural", 'f': "Alternate plural",
+	}
+	if chinese {
+		labels = map[byte]string{
+			'0': "原形", 'p': "过去式", 'd': "过去分词", 'i': "现在分词",
+			'3': "第三人称单数", 'r': "比较级", 't': "最高级", 's': "复数", 'f': "复数变体",
+		}
+	}
+	var lines []string
+	for _, item := range strings.Split(raw, "/") {
+		code, value, ok := strings.Cut(item, ":")
+		code, value = strings.TrimSpace(code), strings.TrimSpace(value)
+		if !ok || value == "" {
+			continue
+		}
+		if code == "1" {
+			var derived []string
+			for _, c := range value {
+				if label, ok := labels[byte(c)]; ok {
+					derived = append(derived, label)
+				}
+			}
+			if len(derived) > 0 {
+				lines = append(lines, strings.Join(derived, " / "))
+			}
+			continue
+		}
+		if label, ok := labels[code[0]]; ok && len(code) == 1 {
+			lines = append(lines, label+" "+value)
+		}
+	}
+	return strings.Join(lines, "\n")
 }

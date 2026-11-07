@@ -54,6 +54,47 @@ func (s *Store) Lookup(ctx context.Context, query string) (*Entry, error) {
 	return s.first(ctx, "SELECT "+columns+" FROM words WHERE sw=? "+order+" LIMIT 1", key)
 }
 
+// Suggestions returns prefix neighbours for a miss, best first. A query past
+// the last matching word backs off one character at a time.
+func (s *Store) Suggestions(ctx context.Context, query string, limit int) ([]string, error) {
+	prefix := searchKey(strings.TrimSpace(query))
+	if prefix == "" || limit <= 0 {
+		return nil, nil
+	}
+	for {
+		words, err := s.prefixWords(ctx, prefix, strings.TrimSpace(query), limit)
+		if err != nil {
+			return nil, err
+		}
+		if len(words) > 0 || len(prefix) == 1 {
+			return words, nil
+		}
+		prefix = prefix[:len(prefix)-1]
+		if prefix == "" {
+			return nil, nil
+		}
+	}
+}
+
+func (s *Store) prefixWords(ctx context.Context, prefix, query string, limit int) ([]string, error) {
+	end := prefix + "\U0010FFFF"
+	statement := "SELECT word FROM words WHERE sw >= ? AND sw < ? AND word <> ? COLLATE NOCASE " + order + " LIMIT ?"
+	rows, err := s.db.QueryContext(ctx, statement, prefix, end, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var words []string
+	for rows.Next() {
+		var word string
+		if err := rows.Scan(&word); err != nil {
+			return nil, err
+		}
+		words = append(words, word)
+	}
+	return words, rows.Err()
+}
+
 func (s *Store) first(ctx context.Context, statement, query string) (*Entry, error) {
 	var entry Entry
 	err := s.db.QueryRowContext(ctx, statement, query).Scan(&entry.Word, &entry.Phonetic, &entry.Definition, &entry.Translation,
