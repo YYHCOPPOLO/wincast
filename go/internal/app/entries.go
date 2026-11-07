@@ -264,6 +264,9 @@ func (c *controller) startQuicklink(application domain.Application) {
 		c.panel.Update(func() {})
 		return
 	}
+	if !c.panel.IsVisible() {
+		c.target = windows.ForegroundTarget()
+	}
 	c.entryContextAsync(application, template.UsesSelection(link.Destination), func(context template.Context) {
 		c.expandQuicklink(application, link, context)
 	})

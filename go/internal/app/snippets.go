@@ -76,6 +76,9 @@ func (c *controller) startSnippet(application domain.Application) {
 		c.panel.Update(func() {})
 		return
 	}
+	if !c.panel.IsVisible() {
+		c.target = windows.ForegroundTarget()
+	}
 	c.entryContextAsync(application, template.UsesSelection(record.Body), func(captured template.Context) {
 		output := template.ExpandSnippet(record.Body, captured, nil, c.snippetList(), record.ID)
 		if len(output.Arguments) > 0 {

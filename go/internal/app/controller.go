@@ -23,6 +23,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/editors"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo"
@@ -84,6 +85,10 @@ type controller struct {
 	notes                    storage.NoteRepository
 	notesRoot                string
 	notesDeleteConfirm       bool
+	formModel                *editors.Model
+	workflowDeleteConfirm    bool
+	snippetConsent           bool
+	itemHotkeys              map[string]bool
 	launcher                 *launcher.Service
 	launcherPrefs            *launcher.Preferences
 	catalog                  []domain.Application
@@ -155,7 +160,7 @@ func newController(started time.Time, profile profile) *controller {
 		clipboardImages:   make(map[string]*ui.Bitmap), clipboardPending: make(map[string]bool),
 		clipboardImageRequests: make(chan clipboardImageRequest, 16),
 		systemDark:             windows.SystemDark(), appearance: "system", language: defaultLanguage(),
-		featureDictionary: true, featureNotes: true,
+		featureDictionary: true, featureNotes: true, itemHotkeys: make(map[string]bool),
 	}
 	c.clipboardEnabled.Store(true)
 	c.notesRoot = filepath.Join(profile.data, "notes")
@@ -266,6 +271,7 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 	c.startClipboardHost()
 	c.applyDoubleTap()
 	c.applyKeywordListener()
+	c.reconcileItemHotkeys()
 	c.scan()
 	if command != windows.ActivatePanel || !hidden {
 		c.activate(command)

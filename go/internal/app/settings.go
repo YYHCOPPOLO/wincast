@@ -425,6 +425,8 @@ func (c *controller) settingsView(ctx *ui.Context) {
 					})
 				})
 
+				c.workflowSettings(ctx, tokens)
+
 				components.Card(ctx, tokens, func() {
 					ui.Text(ctx, c.text("输入", "Input")).FontSize(theme.SectionFont).
 						TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
@@ -552,6 +554,9 @@ func (c *controller) setFeature(key string, enabled bool) {
 	if key == "commandsEnabled" || key == "quicklinksEnabled" || key == "snippetsEnabled" ||
 		key == "commandsShowInLauncher" || key == "quicklinksShowInLauncher" || key == "snippetsShowInLauncher" {
 		c.refreshExtras()
+	}
+	if key == "commandsEnabled" || key == "quicklinksEnabled" || key == "snippetsEnabled" {
+		c.reconcileItemHotkeys()
 	}
 }
 
