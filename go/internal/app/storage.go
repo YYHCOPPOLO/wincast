@@ -257,8 +257,10 @@ func formatDictionaryExchange(raw string, chinese bool) string {
 			}
 			continue
 		}
-		if label, ok := labels[code[0]]; ok && len(code) == 1 {
-			lines = append(lines, label+" "+value)
+		if len(code) == 1 {
+			if label, ok := labels[code[0]]; ok {
+				lines = append(lines, label+" "+value)
+			}
 		}
 	}
 	return strings.Join(lines, "\n")

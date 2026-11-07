@@ -979,19 +979,22 @@ func clipboardRowFallback(item clipboard.Item, chinese bool) string {
 func collapseClipboardText(text string, maxChars int) string {
 	var builder strings.Builder
 	chars := 0
+	lastSpace := false
 	for _, r := range text {
 		if chars == maxChars {
 			break
 		}
 		if r == '\n' || r == '\r' || r == '\t' || r == ' ' {
-			if builder.Len() > 0 && !strings.HasSuffix(builder.String(), " ") {
+			if builder.Len() > 0 && !lastSpace {
 				builder.WriteByte(' ')
 				chars++
+				lastSpace = true
 			}
 			continue
 		}
 		builder.WriteRune(r)
 		chars++
+		lastSpace = false
 	}
 	return strings.TrimRight(builder.String(), " ")
 }
