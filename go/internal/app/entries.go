@@ -11,6 +11,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/snippet"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/template"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/windowcommand"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/quicklinks"
@@ -70,6 +71,13 @@ func (c *controller) refreshExtras() {
 		extras = append(extras, domain.Application{
 			ID: id.EntryID(), Name: id.Name(c.language == "zh"), Kind: domain.KindSystemAction,
 		})
+	}
+	if c.featureWindowManagement && c.windowShowInLauncher {
+		for _, id := range windowcommand.All {
+			extras = append(extras, domain.Application{
+				ID: id.EntryID(), Name: id.Name(c.language == "zh"), Kind: domain.KindWindowCommand,
+			})
+		}
 	}
 	c.launcher.SetExtras(extras, keywords)
 	if c.view.Mode == palette.ModeLauncher {

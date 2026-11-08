@@ -23,12 +23,13 @@ type Application struct {
 type Kind string
 
 const (
-	KindApplication  Kind = ""
-	KindCommand      Kind = "command"
-	KindQuicklink    Kind = "quicklink"
-	KindSnippet      Kind = "snippet"
-	KindFileSearch   Kind = "file-search"
-	KindSystemAction Kind = "system-action"
+	KindApplication   Kind = ""
+	KindCommand       Kind = "command"
+	KindQuicklink     Kind = "quicklink"
+	KindSnippet       Kind = "snippet"
+	KindFileSearch    Kind = "file-search"
+	KindSystemAction  Kind = "system-action"
+	KindWindowCommand Kind = "window-command"
 )
 
 // Mode is the palette state that selects both the query source and the rows.

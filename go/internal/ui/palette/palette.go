@@ -557,6 +557,8 @@ func (v *View) entryFallback(application domain.Application) string {
 		return v.Text("文件", "FILE")
 	case domain.KindSystemAction:
 		return v.Text("系统", "SYS")
+	case domain.KindWindowCommand:
+		return v.Text("窗口", "WIN")
 	}
 	return application.Name
 }

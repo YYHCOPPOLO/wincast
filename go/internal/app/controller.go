@@ -15,6 +15,7 @@ import (
 	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/windowcommand"
 	calcservice "github.com/YYHCOPPOLO/wincast/go/internal/features/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
@@ -22,6 +23,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/quicklinks"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/snippets"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/windowmanagement"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
@@ -152,6 +154,11 @@ type controller struct {
 	fileSearchIgnoresDraft   string
 	systemConfirming         systemaction.ID
 	volumeLoading            bool
+	featureWindowManagement  bool
+	windowShowInLauncher     bool
+	windowGap                int
+	windowCycle              bool
+	windowManager            *windowmanagement.Manager
 	commandsShowInLauncher   bool
 	quicklinksShowInLauncher bool
 	snippetsShowInLauncher   bool
@@ -184,6 +191,7 @@ func newController(started time.Time, profile profile) *controller {
 	c.reloadSnippets()
 	c.fileSearch = files.New()
 	c.fileSearch.Apply(c.fileSearchScopes, c.fileSearchIgnores)
+	c.windowManager = windowmanagement.New()
 	c.fileSearchScopesDraft = strings.Join(c.fileSearchScopes, "; ")
 	c.fileSearchIgnoresDraft = strings.Join(c.fileSearchIgnores, "; ")
 	c.clipboardDisabledDraft = strings.Join(c.clipboardDisabled, "; ")
@@ -445,6 +453,11 @@ func (c *controller) open(application domain.Application) {
 			c.runSystemAction(id)
 		}
 		return
+	case domain.KindWindowCommand:
+		if id, ok := windowcommand.FromEntryID(application.ID); ok {
+			c.runWindowCommand(id)
+		}
+		return
 	}
 	c.hide()
 	if err := mygo.Shell.LaunchApp(mygo.InstalledApp{ID: application.ID, Name: application.Name, Path: application.Path}); err != nil {
@@ -509,6 +522,7 @@ func (c *controller) menu() {
 		{Label: c.view.Text("Emoji 与符号…", "Emoji & Symbols…"), Click: c.openEmoji},
 		{Label: c.view.Text("搜索文件…", "Search files…"), Disabled: !c.featureFileSearch, Click: c.openFileSearch},
 		{Label: c.view.Text("系统操作", "System actions"), Submenu: c.systemActionMenu()},
+		{Label: c.view.Text("窗口布局", "Window layout"), Submenu: c.windowCommandMenu(), Disabled: !c.featureWindowManagement},
 		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("笔记…", "Notes…"), Disabled: !c.featureNotes, Click: c.openEditor},

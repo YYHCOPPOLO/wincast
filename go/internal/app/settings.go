@@ -47,6 +47,10 @@ func (c *controller) loadSettings() {
 	c.featureFileSearch = document.Bool("fileSearchEnabled", false)
 	c.fileSearchScopes = document.Strings("fileSearchScopes", domainfiles.DefaultScopes())
 	c.fileSearchIgnores = document.Strings("fileSearchIgnorePatterns", nil)
+	c.featureWindowManagement = document.Bool("windowManagementEnabled", false)
+	c.windowShowInLauncher = document.Bool("windowManagementShowInLauncher", true)
+	c.windowGap = document.Int("windowManagementGap", 0)
+	c.windowCycle = document.Bool("windowManagementCycleOnRepeat", false)
 	c.commandsShowInLauncher = document.Bool("commandsShowInLauncher", true)
 	c.quicklinksShowInLauncher = document.Bool("quicklinksShowInLauncher", true)
 	c.snippetsShowInLauncher = document.Bool("snippetsShowInLauncher", true)
@@ -81,6 +85,11 @@ func (c *controller) clampSettings() {
 	case 1, 7, 30, 90, 180, 365, -1:
 	default:
 		c.clipboardRetention = clipboard.DefaultRetentionDays
+	}
+	switch c.windowGap {
+	case 0, 8, 16, 24:
+	default:
+		c.windowGap = 0
 	}
 }
 
@@ -426,6 +435,32 @@ func (c *controller) settingsView(ctx *ui.Context) {
 							}
 						})
 					})
+					components.FormRow(ctx, tokens, c.text("窗口管理", "Window management"), func() {
+						enabled := c.featureWindowManagement
+						ui.Switch(ctx, &enabled).Label(c.text("移动和调整前台窗口", "Move and resize the frontmost window"))
+						if enabled != c.featureWindowManagement {
+							c.setFeature("windowManagementEnabled", enabled)
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("窗口间距", "Window gap"), func() {
+						if ui.Button(ctx, c.text(fmt.Sprintf("%d DIP", c.windowGap), fmt.Sprintf("%d DIP", c.windowGap))).Clicked() {
+							c.cycleWindowGap()
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("循环半屏", "Cycle halves"), func() {
+						enabled := c.windowCycle
+						ui.Switch(ctx, &enabled).Label(c.text("重复同一命令时轮换半屏比例", "Cycle half-screen fractions on repeat"))
+						if enabled != c.windowCycle {
+							c.setFeature("windowManagementCycleOnRepeat", enabled)
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("显示在启动器", "Show in launcher"), func() {
+						enabled := c.windowShowInLauncher
+						ui.Switch(ctx, &enabled).Label(c.text("允许搜索窗口命令", "Make window commands searchable"))
+						if enabled != c.windowShowInLauncher {
+							c.setFeature("windowManagementShowInLauncher", enabled)
+						}
+					})
 					components.FormRow(ctx, tokens, c.text("保留时间", "Retention"), func() {
 						if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).Clicked() {
 							c.setClipboardRetention(cycleClipboardRetention(c.clipboardRetention))
@@ -582,6 +617,14 @@ func (c *controller) setFeature(key string, enabled bool) {
 			c.view.SetModeLauncher()
 		}
 		c.refreshExtras()
+	case "windowManagementEnabled":
+		c.featureWindowManagement = enabled
+		c.refreshExtras()
+	case "windowManagementShowInLauncher":
+		c.windowShowInLauncher = enabled
+		c.refreshExtras()
+	case "windowManagementCycleOnRepeat":
+		c.windowCycle = enabled
 	case "commandsShowInLauncher":
 		c.commandsShowInLauncher = enabled
 	case "quicklinksShowInLauncher":
@@ -651,6 +694,23 @@ func userHomeDirectory() string {
 		return ""
 	}
 	return home
+}
+
+func (c *controller) cycleWindowGap() {
+	switch c.windowGap {
+	case 0:
+		c.windowGap = 8
+	case 8:
+		c.windowGap = 16
+	case 16:
+		c.windowGap = 24
+	default:
+		c.windowGap = 0
+	}
+	if c.settingsDocument != nil && c.settingsWritable {
+		_ = c.settingsDocument.Set("windowManagementGap", c.windowGap)
+	}
+	c.queueSettingsSave()
 }
 
 func (c *controller) setCompact(enabled bool) {
