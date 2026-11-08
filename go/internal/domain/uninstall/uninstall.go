@@ -198,15 +198,18 @@ func DedupeNested(items []Candidate) []Candidate {
 		return items
 	}
 	out := make([]Candidate, 0, len(items))
-	for _, item := range items {
-		contained := false
-		for _, kept := range out {
-			if IsDescendant(item.Path, kept.Path) {
-				contained = true
+	for index, item := range items {
+		nested := false
+		for other, candidate := range items {
+			if other == index {
+				continue
+			}
+			if IsDescendant(item.Path, candidate.Path) {
+				nested = true
 				break
 			}
 		}
-		if !contained {
+		if !nested {
 			out = append(out, item)
 		}
 	}

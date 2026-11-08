@@ -696,10 +696,27 @@ func (v *View) uninstallBody(c *ui.Context, tokens theme.Tokens) {
 		}
 		row := ui.Row(c).Height(theme.RowHeight).Padding(6, 10).Gap(12).AlignItems(ui.Center).
 			Radius(theme.RowRadius).Background(fill).Children(func() {
-			checked := item.Selected
-			ui.Checkbox(c, &checked, "").Label(item.Name).Disabled(!item.Removable)
-			if checked != item.Selected {
-				v.setUninstallSelected(i, checked)
+			box := ui.Box(c).Size(16, 16).Radius(4).Shrink(0)
+			if item.Removable {
+				box.Cursor(ui.CursorPointer)
+			}
+			if item.Selected {
+				box.Background(tokens.Accent).DrawOver(func(p *ui.Painter, r ui.Rect) {
+					var check ui.Path
+					check.MoveTo(r.X+r.W*0.20, r.Y+r.H*0.52).
+						LineTo(r.X+r.W*0.42, r.Y+r.H*0.74).
+						LineTo(r.X+r.W*0.80, r.Y+r.H*0.28)
+					p.StrokePath(&check, 1.8, tokens.AccentText)
+				})
+			} else {
+				border := tokens.Border.Mix(tokens.Text, 0.25)
+				if !item.Removable {
+					border = tokens.Line2
+				}
+				box.Background(tokens.Surface).Border(1, border)
+			}
+			if item.Removable {
+				box.OnClick(func() { v.setUninstallSelected(i, !item.Selected) })
 			}
 			ui.Column(c).Grow(1).Gap(1).Children(func() {
 				color := tokens.Text
@@ -812,6 +829,7 @@ func (v *View) SetModeUninstall(target string) {
 	v.UninstallItems = nil
 	v.UninstallError = ""
 	v.UninstallLoading = true
+	v.Status = ""
 	v.Filter()
 	v.Input.Focus()
 }
@@ -1499,6 +1517,7 @@ func (v *View) SetModeSchedule() {
 	v.CalcHistory = nil
 	v.EmojiItems = nil
 	v.FileSearchItems = nil
+	v.Status = ""
 	v.Filter()
 	v.Input.Focus()
 }

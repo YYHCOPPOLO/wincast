@@ -161,7 +161,6 @@ type controller struct {
 	autoJoinConfirms         bool
 	joinWindowMinutes        int64
 	calendarError            string
-	calendarLoading          bool
 	calendarFetching         bool
 	calendarRevision         uint64
 	calendarTickerStarted    bool

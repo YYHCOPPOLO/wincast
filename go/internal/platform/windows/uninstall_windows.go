@@ -130,6 +130,9 @@ const fileAddFile = 0x0002 // FILE_ADD_FILE, not exported by x/sys/windows.
 // recycleSupported rejects drives where SHFileOperation would have to delete
 // permanently because they have no Recycle Bin.
 func recycleSupported(path string) (bool, string) {
+	if recyclePolicyDisabled() {
+		return false, "Recycle Bin is disabled by policy"
+	}
 	volume := filepath.VolumeName(path)
 	if volume == "" {
 		return false, "no volume"
@@ -153,6 +156,30 @@ const (
 	driveRemovable = 2
 	driveFixed     = 3
 )
+
+// recyclePolicyDisabled reads the documented Explorer policies that turn the
+// Recycle Bin off entirely. With those set, FOF_ALLOWUNDO would delete
+// permanently, so those rows are locked instead.
+func recyclePolicyDisabled() bool {
+	paths := []string{
+		`Software\Microsoft\Windows\CurrentVersion\Policies\Explorer`,
+		`Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket`,
+	}
+	for _, hive := range []registry.Key{registry.CURRENT_USER, registry.LOCAL_MACHINE} {
+		for _, path := range paths {
+			key, err := registry.OpenKey(hive, path, registry.QUERY_VALUE)
+			if err != nil {
+				continue
+			}
+			value, _, err := key.GetIntegerValue("NoRecycleFiles")
+			key.Close()
+			if err == nil && value == 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // PathLocked reports whether the current user can remove a path without
 // escalation. The check opens the object with DELETE and its parent with the

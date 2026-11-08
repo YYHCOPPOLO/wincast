@@ -75,7 +75,6 @@ func (c *controller) refreshCalendar() {
 		return
 	}
 	c.calendarFetching = true
-	c.calendarLoading = true
 	if c.view.Mode == palette.ModeSchedule {
 		c.view.ScheduleLoading = true
 	}
@@ -90,10 +89,12 @@ func (c *controller) refreshCalendar() {
 		}
 		c.panel.Update(func() {
 			if c.closing || revision != c.calendarRevision {
+				if !c.featureCalendar {
+					c.calendar.Clear()
+				}
 				return
 			}
 			c.calendarFetching = false
-			c.calendarLoading = false
 			if err != nil {
 				c.calendarError = c.calendarErrorText(err)
 				log.Printf("calendar refresh failed: %v", err)
@@ -123,7 +124,6 @@ func (c *controller) setCalendarEnabled(enabled bool) {
 		c.featureCalendar = false
 		c.calendarRevision++
 		c.calendarFetching = false
-		c.calendarLoading = false
 		c.calendarError = ""
 		c.calendar.Clear()
 		c.view.ScheduleLoading = false
@@ -138,7 +138,6 @@ func (c *controller) setCalendarEnabled(enabled bool) {
 	if c.featureCalendar {
 		return
 	}
-	c.calendarLoading = true
 	revision := c.calendarRevision + 1
 	c.calendarRevision = revision
 	c.view.ScheduleLoading = true
@@ -151,9 +150,11 @@ func (c *controller) setCalendarEnabled(enabled bool) {
 		}
 		c.panel.Update(func() {
 			if c.closing || revision != c.calendarRevision {
+				if !c.featureCalendar {
+					c.calendar.Clear()
+				}
 				return
 			}
-			c.calendarLoading = false
 			if err != nil {
 				c.calendarError = c.calendarErrorText(err)
 				c.view.ScheduleLoading = false
