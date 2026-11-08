@@ -249,6 +249,55 @@ func (p *Preferences) ResetRanking(id string) {
 	}
 }
 
+// RankingEmpty reports whether no query has a learned choice.
+func (p *Preferences) RankingEmpty() bool {
+	for _, byItem := range p.Ranking {
+		if len(byItem) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// ClearRanking forgets every learned query and writes the empty table.
+func (p *Preferences) ClearRanking() error {
+	if err := p.writable("ranking.json"); err != nil {
+		return err
+	}
+	previous := p.Ranking
+	p.Ranking = make(map[string]map[string]domain.RankingRecord)
+	if err := p.SaveRanking(); err != nil {
+		p.Ranking = previous
+		return err
+	}
+	return nil
+}
+
+// ReplaceRanking installs a learned table wholesale, as a backup import does:
+// merging two machines' frecency tables describes neither machine.
+func (p *Preferences) ReplaceRanking(records []domain.RankingRecord) error {
+	if err := p.writable("ranking.json"); err != nil {
+		return err
+	}
+	next := make(map[string]map[string]domain.RankingRecord)
+	for _, record := range records {
+		if record.Query == "" || record.ItemKey == "" {
+			continue
+		}
+		if next[record.Query] == nil {
+			next[record.Query] = make(map[string]domain.RankingRecord)
+		}
+		next[record.Query][record.ItemKey] = record
+	}
+	previous := p.Ranking
+	p.Ranking = next
+	if err := p.SaveRanking(); err != nil {
+		p.Ranking = previous
+		return err
+	}
+	return nil
+}
+
 func (p *Preferences) evict() {
 	total := 0
 	for _, byItem := range p.Ranking {

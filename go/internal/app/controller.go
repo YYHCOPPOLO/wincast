@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemsettings"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/windowcommand"
 	aifeature "github.com/YYHCOPPOLO/wincast/go/internal/features/ai"
 	calcservice "github.com/YYHCOPPOLO/wincast/go/internal/features/calculator"
@@ -24,8 +26,10 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
 	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/migration"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/quickactions"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/quicklinks"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/settings"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/snippets"
 	uninstallfeature "github.com/YYHCOPPOLO/wincast/go/internal/features/uninstall"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/windowmanagement"
@@ -42,150 +46,191 @@ import (
 const previewShortcut = "Alt+Shift+Space"
 
 type controller struct {
-	ctx                      context.Context
-	cancel                   context.CancelFunc
-	workers                  sync.WaitGroup
-	panel                    *mygo.Window
-	tray                     *mygo.Tray
-	view                     *palette.View
-	started                  time.Time
-	showRequested            time.Time
-	closing                  bool
-	menuOpen                 bool
-	panelSizePending         bool
-	scanning                 bool
-	target                   windows.Target
-	scale                    float64
-	icons                    map[iconKey]*ui.Bitmap
-	pendingIcons             map[iconKey]bool
-	iconRequests             chan iconKey
-	pasteCancel              context.CancelFunc
-	pasteID                  uint64
-	profile                  profile
-	instance                 *windows.Instance
-	diagnostic               *mygo.Window
-	settings                 *mygo.Window
-	settingsScroll           ui.ScrollState
-	settingsPath             string
-	settingsDocument         *storage.Document
-	settingsErr              error
-	settingsWritable         bool
-	settingsStatus           string
-	settingsWrites           chan settingsWrite
-	appearance               string
-	language                 string
-	systemDark               bool
-	messageHost              *windows.MessageHost
-	clipboard                *clipboard.Manager
-	clipboardReady           bool
-	clipboardConfirm         bool
-	clipboardError           string
-	clipboardFilter          clipboard.Filter
-	clipboardRequests        chan struct{}
-	clipboardRetention       int64
-	clipboardDisabled        []string
-	clipboardDisabledDraft   string
-	clipboardImages          map[string]*ui.Bitmap
-	clipboardImageBytes      int64
-	clipboardPending         map[string]bool
-	clipboardImageRequests   chan clipboardImageRequest
-	clipboardEvents          atomic.Uint64
-	editor                   *notesWindow
-	notes                    storage.NoteRepository
-	notesRoot                string
-	notesDeleteConfirm       bool
-	formModel                *editors.Model
-	workflowDeleteConfirm    bool
-	snippetConsent           bool
-	itemHotkeys              map[string]bool
-	launcher                 *launcher.Service
-	launcherPrefs            *launcher.Preferences
-	catalog                  []domain.Application
-	rankingWrites            chan []byte
-	featureDictionary        bool
-	featureNotes             bool
-	clipboardEnabled         atomic.Bool
-	dictionaryReady          bool
-	hotkey                   string
-	hotkeyDraft              string
-	hotkeyRegistered         bool
-	hotkeyOwned              string
-	customDirsDraft          string
-	compactMode              bool
-	doubleTap                string
-	doubleTapVK              atomic.Uint32
-	doubleTapHeld            atomic.Bool
-	lastDoubleTap            atomic.Int64
-	lastToggle               atomic.Int64
-	doubleTapStop            func()
-	keywordStop              func()
-	expander                 *snippets.Expander
-	snippetsEnabled          atomic.Bool
-	keywordDelivery          uint64
-	snapshot                 diagnostics.Snapshot
-	cpuPercent               float64
-	cpuMeasured              bool
-	exeBytes                 int64
-	storeStatus              string
-	dictionaryStatus         string
-	catalogInfo              storage.CatalogInfo
-	catalogRequests          chan []storage.Application
-	lookupRequests           chan lookupRequest
-	lookupCancel             context.CancelFunc
-	lookupID                 uint64
-	lookupCanceled           uint64
-	lookupElapsed            time.Duration
-	lookupCount              uint64
-	displaySummary           []string
-	calcHistory              *domaincalc.History
-	calcHistoryPath          string
-	calcRates                *calcservice.Rates
-	calcRegion               string
-	emojiTone                string
-	commands                 *commands.Store
-	quicklinks               *quicklinks.Store
-	snippets                 *snippets.Repository
-	snippetSnapshot          snippets.Snapshot
-	snippetError             string
-	featureCommands          bool
-	featureQuicklinks        bool
-	featureSnippets          bool
-	featureFileSearch        bool
-	fileSearch               *files.Session
-	fileSearchRevision       uint64
-	fileSearchScopes         []string
-	fileSearchIgnores        []string
-	fileSearchScopesDraft    string
-	fileSearchIgnoresDraft   string
-	calendar                 *calendar.Store
-	featureCalendar          bool
-	calendarShowInLauncher   bool
-	autoJoin                 bool
-	autoJoinConfirms         bool
-	joinWindowMinutes        int64
-	calendarError            string
-	calendarFetching         bool
-	calendarRevision         uint64
-	calendarTickerStarted    bool
-	autoJoinBusy             bool
-	uninstall                *uninstallfeature.Scanner
-	uninstallTarget          domain.Application
-	uninstallRevision        uint64
-	uninstallConfirm         bool
-	uninstallBusy            bool
-	systemConfirming         systemaction.ID
-	volumeLoading            bool
-	featureWindowManagement  bool
-	windowShowInLauncher     bool
-	windowGap                int
-	windowCycle              bool
-	windowManager            *windowmanagement.Manager
-	commandsShowInLauncher   bool
-	quicklinksShowInLauncher bool
-	snippetsShowInLauncher   bool
-	commandConfirm           bool
-	pendingArgs              *argumentSession
-	clipboardSuppress        atomic.Bool
+	ctx                          context.Context
+	cancel                       context.CancelFunc
+	workers                      sync.WaitGroup
+	panel                        *mygo.Window
+	tray                         *mygo.Tray
+	view                         *palette.View
+	started                      time.Time
+	showRequested                time.Time
+	closing                      bool
+	menuOpen                     bool
+	panelSizePending             bool
+	scanning                     bool
+	target                       windows.Target
+	scale                        float64
+	icons                        map[iconKey]*ui.Bitmap
+	pendingIcons                 map[iconKey]bool
+	iconRequests                 chan iconKey
+	pasteCancel                  context.CancelFunc
+	pasteID                      uint64
+	profile                      profile
+	instance                     *windows.Instance
+	diagnostic                   *mygo.Window
+	settings                     *mygo.Window
+	onboarding                   *mygo.Window
+	onboardingStep               int
+	supportWindow                *mygo.Window
+	supportAskedAt               int64
+	supportFirstSeenAt           int64
+	supportLoaded                bool
+	settingsScroll               ui.ScrollState
+	settingsTab                  settings.Tab
+	settingsFilter               string
+	settingsAliasID              string
+	settingsAliasDraft           string
+	settingsStatus               string
+	settingsConfirmRanking       bool
+	settingsPath                 string
+	settingsDocument             *storage.Document
+	settingsErr                  error
+	settingsWritable             bool
+	openOnCursorScreen           bool
+	launchAtLogin                bool
+	showInTray                   bool
+	popToRootTimeout             int64
+	showFavoritesInCompact       bool
+	paletteDraggable             bool
+	supportReminders             bool
+	extensionsEnabled            bool
+	extensionsShowInLauncher     bool
+	hiddenAt                     time.Time
+	backupStatus                 string
+	backupBusy                   bool
+	raycastPassphrase            string
+	raycastPath                  string
+	raycastStatus                string
+	backupSettings               bool
+	backupClipboard              bool
+	backupSnippets               bool
+	backupNotes                  bool
+	backupLearning               bool
+	migrationSource              string
+	migrationPreview             *migration.Preview
+	migrationStatus              string
+	migrationBusy                bool
+	migrationSnapshots           []migration.Snapshot
+	migrationSnapshotsLoaded     bool
+	migrationRestoreConfirm      string
+	settingsWrites               chan settingsWrite
+	appearance                   string
+	language                     string
+	systemDark                   bool
+	messageHost                  *windows.MessageHost
+	clipboard                    *clipboard.Manager
+	clipboardReady               bool
+	clipboardConfirm             bool
+	clipboardError               string
+	clipboardFilter              clipboard.Filter
+	clipboardRequests            chan struct{}
+	clipboardRetention           int64
+	clipboardDisabled            []string
+	clipboardDisabledDraft       string
+	clipboardImages              map[string]*ui.Bitmap
+	clipboardImageBytes          int64
+	clipboardPending             map[string]bool
+	clipboardImageRequests       chan clipboardImageRequest
+	clipboardEvents              atomic.Uint64
+	editor                       *notesWindow
+	notes                        storage.NoteRepository
+	notesRoot                    string
+	notesDeleteConfirm           bool
+	formModel                    *editors.Model
+	workflowDeleteConfirm        bool
+	snippetConsent               bool
+	itemHotkeys                  map[string]bool
+	launcher                     *launcher.Service
+	launcherPrefs                *launcher.Preferences
+	catalog                      []domain.Application
+	rankingWrites                chan []byte
+	featureDictionary            bool
+	applicationsShowInLauncher   bool
+	systemSettingsShowInLauncher bool
+	systemActionsShowInLauncher  bool
+	featureNotes                 bool
+	clipboardEnabled             atomic.Bool
+	dictionaryReady              bool
+	hotkey                       string
+	hotkeyDraft                  string
+	hotkeyRegistered             bool
+	hotkeyOwned                  string
+	customDirsDraft              string
+	compactMode                  bool
+	doubleTap                    string
+	doubleTapVK                  atomic.Uint32
+	doubleTapHeld                atomic.Bool
+	lastDoubleTap                atomic.Int64
+	lastToggle                   atomic.Int64
+	doubleTapStop                func()
+	keywordStop                  func()
+	expander                     *snippets.Expander
+	snippetsEnabled              atomic.Bool
+	keywordDelivery              uint64
+	snapshot                     diagnostics.Snapshot
+	cpuPercent                   float64
+	cpuMeasured                  bool
+	exeBytes                     int64
+	storeStatus                  string
+	dictionaryStatus             string
+	catalogInfo                  storage.CatalogInfo
+	catalogRequests              chan []storage.Application
+	lookupRequests               chan lookupRequest
+	lookupCancel                 context.CancelFunc
+	lookupID                     uint64
+	lookupCanceled               uint64
+	lookupElapsed                time.Duration
+	lookupCount                  uint64
+	displaySummary               []string
+	calcHistory                  *domaincalc.History
+	calcHistoryPath              string
+	calcRates                    *calcservice.Rates
+	calcRegion                   string
+	emojiTone                    string
+	commands                     *commands.Store
+	quicklinks                   *quicklinks.Store
+	snippets                     *snippets.Repository
+	snippetSnapshot              snippets.Snapshot
+	snippetError                 string
+	featureCommands              bool
+	featureQuicklinks            bool
+	featureSnippets              bool
+	featureFileSearch            bool
+	fileSearch                   *files.Session
+	fileSearchRevision           uint64
+	fileSearchScopes             []string
+	fileSearchIgnores            []string
+	fileSearchScopesDraft        string
+	fileSearchIgnoresDraft       string
+	calendar                     *calendar.Store
+	featureCalendar              bool
+	calendarShowInLauncher       bool
+	autoJoin                     bool
+	autoJoinConfirms             bool
+	joinWindowMinutes            int64
+	calendarError                string
+	calendarFetching             bool
+	calendarRevision             uint64
+	calendarTickerStarted        bool
+	autoJoinBusy                 bool
+	uninstall                    *uninstallfeature.Scanner
+	uninstallTarget              domain.Application
+	uninstallRevision            uint64
+	uninstallConfirm             bool
+	uninstallBusy                bool
+	systemConfirming             systemaction.ID
+	volumeLoading                bool
+	featureWindowManagement      bool
+	windowShowInLauncher         bool
+	windowGap                    int
+	windowCycle                  bool
+	windowManager                *windowmanagement.Manager
+	commandsShowInLauncher       bool
+	quicklinksShowInLauncher     bool
+	snippetsShowInLauncher       bool
+	commandConfirm               bool
+	pendingArgs                  *argumentSession
+	clipboardSuppress            atomic.Bool
 
 	aiEnabled             bool
 	aiConnections         []domainai.Connection
@@ -235,9 +280,14 @@ func newController(started time.Time, profile profile) *controller {
 		clipboardImageRequests: make(chan clipboardImageRequest, 16),
 		systemDark:             windows.SystemDark(), appearance: "system", language: defaultLanguage(),
 		featureDictionary: true, featureNotes: true, itemHotkeys: make(map[string]bool),
+		backupSettings: true, backupClipboard: true, backupSnippets: true,
+		backupNotes: true, backupLearning: true,
 	}
 	c.clipboardEnabled.Store(true)
 	c.notesRoot = filepath.Join(profile.data, "notes")
+	if roaming, err := os.UserConfigDir(); err == nil {
+		c.migrationSource = filepath.Join(roaming, storage.DailyID)
+	}
 	c.notes = storage.NewFileNotes(c.notesRoot)
 	c.aiKeys = aifeature.OpenKeyStore(profile.settings)
 	c.aiKeyStatus = make(map[string]bool)
@@ -271,6 +321,7 @@ func newController(started time.Time, profile profile) *controller {
 	}
 	c.launcherPrefs = preferences
 	c.launcher = launcher.New(preferences)
+	c.launcher.SetApplicationsEnabled(c.applicationsShowInLauncher)
 	c.view = palette.New(c.language == "zh", palette.Callbacks{
 		Open: c.open, Hide: c.hide, Menu: c.menu, AppMenu: c.appMenu, CopyText: c.copyText, Icon: c.icon,
 		Filtered: func(elapsed time.Duration, count int) {
@@ -333,7 +384,10 @@ func newController(started time.Time, profile profile) *controller {
 	c.view.EmojiTone = emoji.ToneFromRaw(c.emojiTone)
 	c.view.DictionaryAvailable = c.featureDictionary && c.dictionaryReady
 	c.view.OnLookup = c.lookup
+	c.view.ShowFavoritesInCompact = c.showFavoritesInCompact
+	c.view.Draggable = c.paletteDraggable
 	c.refreshExtras()
+	c.refreshCompactFavorites()
 	return c
 }
 
@@ -368,9 +422,22 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 	})
 	c.logDisplays()
 	c.applyHotkey()
-	if err := c.setupTray(); err != nil {
-		log.Printf("tray unavailable: %v", err)
-		c.view.Status = c.view.Text("无法创建托盘图标", "Could not create the tray icon")
+	if c.launchAtLogin {
+		if err := windows.ApplyLaunchAtLogin(settings.LaunchAtLoginKey, true); err != nil {
+			log.Printf("launch at login apply failed: %v", err)
+		}
+	} else if windows.LaunchAtLoginMatches(settings.LaunchAtLoginKey) {
+		// Remove only an entry pointing at this executable; another identity's
+		// startup entry (for example the daily copy) must survive a preview run.
+		if err := windows.ApplyLaunchAtLogin(settings.LaunchAtLoginKey, false); err != nil {
+			log.Printf("launch at login removal failed: %v", err)
+		}
+	}
+	if c.showInTray {
+		if err := c.setupTray(); err != nil {
+			log.Printf("tray unavailable: %v", err)
+			c.view.Status = c.view.Text("无法创建托盘图标", "Could not create the tray icon")
+		}
 	}
 	c.startIcons()
 	c.startStorage()
@@ -386,6 +453,8 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 	c.applyKeywordListener()
 	c.reconcileItemHotkeys()
 	c.scan()
+	c.showOnboardingIfNeeded()
+	c.startSupportReminders()
 	if command != windows.ActivatePanel || !hidden {
 		c.activate(command)
 	}
@@ -401,7 +470,10 @@ func (c *controller) logDisplays() {
 }
 
 func (c *controller) place() {
-	display := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
+	display := mygo.Screen.PrimaryDisplay()
+	if c.openOnCursorScreen {
+		display = mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
+	}
 	width, _ := c.panel.Size()
 	area := display.WorkArea
 	x := area.X + max(0, (area.Width-width)/2)
@@ -429,6 +501,10 @@ func (c *controller) showPanel(reset bool) {
 	c.showRequested = time.Now()
 	if !c.panel.IsVisible() {
 		c.target = windows.ForegroundTarget()
+		if reset && c.popToRootTimeout > 0 && !c.hiddenAt.IsZero() &&
+			time.Since(c.hiddenAt) < time.Duration(c.popToRootTimeout)*time.Second {
+			reset = false
+		}
 		if reset {
 			c.pendingArgs = nil
 			c.view.ResetLauncher(!c.compactMode)
@@ -446,6 +522,7 @@ func (c *controller) showPanel(reset bool) {
 func (c *controller) hide() {
 	if c.panel != nil && c.panel.IsVisible() {
 		started := time.Now()
+		c.hiddenAt = started
 		c.panel.Hide()
 		log.Printf("hide elapsed_us=%d", time.Since(started).Microseconds())
 	}
@@ -541,6 +618,16 @@ func (c *controller) open(application domain.Application) {
 	case domain.KindSystemAction:
 		if id, ok := systemaction.FromEntryID(application.ID); ok {
 			c.runSystemAction(id)
+		}
+		return
+	case domain.KindSystemSettings:
+		if uri, ok := systemsettings.URI(application.ID); ok {
+			c.hide()
+			if err := quicklinks.Open(uri); err != nil {
+				log.Printf("system settings open failed: %v", err)
+				c.view.Status = c.view.Text("无法打开系统设置", "Could not open System Settings")
+				c.showPanel(false)
+			}
 		}
 		return
 	case domain.KindWindowCommand:
@@ -677,7 +764,8 @@ func (c *controller) finishMenu() {
 // row's own menu may edit.
 func persistentEntry(kind domain.Kind) bool {
 	switch kind {
-	case domain.KindApplication, domain.KindCommand, domain.KindQuicklink, domain.KindSnippet:
+	case domain.KindApplication, domain.KindCommand, domain.KindQuicklink, domain.KindSnippet,
+		domain.KindSystemSettings, domain.KindSystemAction, domain.KindWindowCommand:
 		return true
 	default:
 		return false
@@ -704,6 +792,8 @@ func (c *controller) openLabel(application domain.Application) string {
 		return c.view.Text("运行快捷操作", "Run Quick Action")
 	case domain.KindSystemAction:
 		return c.view.Text("运行操作", "Run Action")
+	case domain.KindSystemSettings:
+		return c.view.Text("打开系统设置", "Open System Settings")
 	case domain.KindWindowCommand:
 		return c.view.Text("执行窗口命令", "Run Window Command")
 	}

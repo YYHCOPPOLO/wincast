@@ -111,6 +111,14 @@ func (d *Document) Set(key string, value any) error {
 	return nil
 }
 
+// SetRaw stores an already-encoded JSON value, preserving exactly what an
+// imported file carried for a key the caller validated.
+func (d *Document) SetRaw(key string, value json.RawMessage) {
+	copied := make(json.RawMessage, len(value))
+	copy(copied, value)
+	d.values[key] = copied
+}
+
 func (d *Document) Delete(key string) {
 	delete(d.values, key)
 }

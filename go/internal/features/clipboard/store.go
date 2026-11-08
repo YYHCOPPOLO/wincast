@@ -7,7 +7,9 @@ package clipboard
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -360,6 +362,36 @@ func (s *Store) LastError() string {
 }
 
 func (s *Store) ImagesDir() string { return s.images }
+
+// AllItems returns the complete stored history, including rows outside the
+// in-memory window, newest first. Backup export uses it.
+func (s *Store) AllItems() []Item {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil || s.closed {
+		return nil
+	}
+	rows, err := s.db.Query(`SELECT id, created_at, pinned_at, kind, text, image_path
+		FROM items ORDER BY rowid DESC`)
+	if err != nil {
+		s.lastErr = err
+		return nil
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		item, err := scanItem(rows)
+		if err != nil {
+			s.lastErr = err
+			return items
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		s.lastErr = err
+	}
+	return items
+}
 
 func (s *Store) SetMaxAgeSeconds(seconds int64) {
 	s.mu.Lock()
@@ -728,6 +760,177 @@ func (s *Store) reinsertLocked(item Item, createdAt, pinnedAt int64) bool {
 	}
 	s.lastErr = nil
 	return true
+}
+
+// ImportItem restores one item with its original timestamps. Text is deduped
+// by exact body and images by absolute path; an existing row keeps its place.
+func (s *Store) ImportItem(item Item) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil || s.closed {
+		return false
+	}
+	if item.Kind == KindText {
+		if item.Text == "" {
+			s.lastErr = errors.New("imported text is empty")
+			return false
+		}
+		var existing string
+		err := s.db.QueryRow("SELECT id FROM items WHERE kind = 'text' AND text = ? LIMIT 1", item.Text).Scan(&existing)
+		if err == nil {
+			s.lastErr = nil
+			return true
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			s.lastErr = err
+			return false
+		}
+	} else {
+		if item.ImagePath == "" || !fileExists(item.ImagePath) {
+			s.lastErr = errors.New("imported image is missing")
+			return false
+		}
+		var existing string
+		err := s.db.QueryRow("SELECT id FROM items WHERE kind = 'image' AND image_path = ? LIMIT 1", item.ImagePath).Scan(&existing)
+		if err == nil {
+			s.lastErr = nil
+			return true
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			s.lastErr = err
+			return false
+		}
+	}
+	created := item.CreatedAt
+	if created <= 0 {
+		created = time.Now().Unix()
+	}
+	var pin any
+	if item.PinnedAt > 0 {
+		pin = s.nextPinStampLocked()
+	}
+	kind, text, imagePath := "text", any(item.Text), any(nil)
+	if item.Kind == KindImage {
+		kind, text, imagePath = "image", nil, item.ImagePath
+	}
+	if err := s.execInsertLocked("INSERT INTO items(id, created_at, pinned_at, kind, text, image_path) VALUES (?, ?, ?, ?, ?, ?)",
+		newID(), created, pin, kind, text, imagePath); err != nil {
+		return false
+	}
+	if items, err := loadItems(context.Background(), s.db); err == nil {
+		s.items = items
+	}
+	return true
+}
+
+// ImportImage writes a PNG named by its content hash and restores its row.
+// Importing the same bundle twice lands on the same file and adds nothing.
+func (s *Store) ImportImage(png []byte, createdAt, pinnedAt int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil || s.closed || len(png) == 0 {
+		return false
+	}
+	if err := checkedDirectory(s.images); err != nil {
+		s.lastErr = err
+		return false
+	}
+	sum := sha256.Sum256(png)
+	path := filepath.Join(s.images, hex.EncodeToString(sum[:])+".png")
+	if !fileExists(path) {
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			s.lastErr = err
+			return false
+		}
+		if _, err := file.Write(png); err != nil {
+			file.Close()
+			os.Remove(path)
+			s.lastErr = err
+			return false
+		}
+		if err := file.Sync(); err != nil {
+			file.Close()
+			os.Remove(path)
+			s.lastErr = err
+			return false
+		}
+		if err := file.Close(); err != nil {
+			os.Remove(path)
+			s.lastErr = err
+			return false
+		}
+	}
+	return s.importImageLocked(path, createdAt, pinnedAt)
+}
+
+func (s *Store) importImageLocked(path string, createdAt, pinnedAt int64) bool {
+	var existing string
+	err := s.db.QueryRow("SELECT id FROM items WHERE kind = 'image' AND image_path = ? LIMIT 1", path).Scan(&existing)
+	if err == nil {
+		s.lastErr = nil
+		return true
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		s.lastErr = err
+		return false
+	}
+	created := createdAt
+	if created <= 0 {
+		created = time.Now().Unix()
+	}
+	var pin any
+	if pinnedAt > 0 {
+		pin = s.nextPinStampLocked()
+	}
+	if err := s.execInsertLocked("INSERT INTO items(id, created_at, pinned_at, kind, text, image_path) VALUES (?, ?, ?, 'image', NULL, ?)",
+		newID(), created, pin, path); err != nil {
+		return false
+	}
+	if items, err := loadItems(context.Background(), s.db); err == nil {
+		s.items = items
+	}
+	return true
+}
+
+// ReadLegacy reads a closed legacy clipboard database without modifying it.
+// The database and its WAL are copied to a temporary directory first, so a
+// committed row still in the WAL is visible and the source is untouched.
+func ReadLegacy(ctx context.Context, dir string) ([]Item, error) {
+	temp, err := os.MkdirTemp("", "tinycast-legacy-clipboard-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(temp)
+	for _, name := range []string{"clipboard.sqlite3", "clipboard.sqlite3-wal", "clipboard.sqlite3-shm"} {
+		source := filepath.Join(dir, name)
+		if !fileExists(source) {
+			continue
+		}
+		if err := copyFile(source, filepath.Join(temp, name)); err != nil {
+			return nil, err
+		}
+	}
+	db, err := storage.OpenSQLite(ctx, filepath.Join(temp, "clipboard.sqlite3"), true)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.QueryContext(ctx, `SELECT id, created_at, pinned_at, kind, text, image_path
+		FROM items ORDER BY rowid DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Item
+	for rows.Next() {
+		item, err := scanItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (s *Store) findLocked(id string) (Item, bool) {

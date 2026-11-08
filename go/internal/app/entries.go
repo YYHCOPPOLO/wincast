@@ -11,6 +11,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/quicklink"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/snippet"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemsettings"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/template"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/windowcommand"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
@@ -85,10 +86,15 @@ func (c *controller) refreshExtras() {
 			})
 		}
 	}
-	for _, id := range systemaction.All {
-		extras = append(extras, domain.Application{
-			ID: id.EntryID(), Name: id.Name(c.language == "zh"), Kind: domain.KindSystemAction,
-		})
+	if c.systemActionsShowInLauncher {
+		for _, id := range systemaction.All {
+			extras = append(extras, domain.Application{
+				ID: id.EntryID(), Name: id.Name(c.language == "zh"), Kind: domain.KindSystemAction,
+			})
+		}
+	}
+	if c.systemSettingsShowInLauncher {
+		extras = append(extras, systemsettings.Entries()...)
 	}
 	if c.featureWindowManagement && c.windowShowInLauncher {
 		for _, id := range windowcommand.All {

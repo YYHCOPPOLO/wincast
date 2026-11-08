@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
-	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo"
@@ -38,11 +36,47 @@ func (c *controller) loadSettings() {
 	}
 	c.settingsDocument = document
 	c.settingsWritable = true
-	c.language = document.String("language", defaultLanguage())
+	c.readSettingsDocument()
+	c.clampSettings()
+}
+
+// readSettingsDocument copies every modeled value out of the current settings
+// document. Import and migration reuse it after merging new keys.
+func (c *controller) readSettingsDocument() {
+	document := c.settingsDocument
+	if document == nil {
+		return
+	}
+	c.language = document.String("language", "")
+	if c.language == "" {
+		switch raw := document.String("uiLanguage", ""); {
+		case strings.HasPrefix(raw, "zh"):
+			c.language = "zh"
+		case raw == "en":
+			c.language = "en"
+		default:
+			c.language = defaultLanguage()
+		}
+	}
 	c.appearance = document.String("appearance", "system")
+	c.openOnCursorScreen = document.Bool("openOnCursorScreen", true)
+	c.launchAtLogin = document.Bool("launchAtLogin", false)
+	c.showInTray = document.Bool("showInMenuBar", true)
+	c.popToRootTimeout = int64(document.Int("popToRootTimeout", 0))
+	c.showFavoritesInCompact = document.Bool("showFavoritesInCompactMode", true)
+	c.paletteDraggable = document.Bool("paletteDraggable", false)
+	c.supportReminders = document.Bool("supportReminders", true)
+	c.extensionsEnabled = document.Bool("extensionsEnabled", false)
+	c.extensionsShowInLauncher = document.Bool("extensionsShowInLauncher", true)
 	c.featureDictionary = document.Bool("dictionaryEnabled", true)
+	c.applicationsShowInLauncher = document.Bool("applicationsShowInLauncher", true)
+	c.systemSettingsShowInLauncher = document.Bool("systemSettingsShowInLauncher", true)
+	c.systemActionsShowInLauncher = document.Bool("systemActionsShowInLauncher", true)
 	c.featureNotes = document.Bool("notesEnabled", true)
-	c.featureCommands = document.Bool("commandsEnabled", false)
+	c.featureCommands = document.Bool("customCommandsEnabled", false)
+	if document.Has("commandsEnabled") {
+		c.featureCommands = document.Bool("commandsEnabled", false)
+	}
 	c.featureQuicklinks = document.Bool("quicklinksEnabled", false)
 	c.featureSnippets = document.Bool("snippetsEnabled", false)
 	c.featureFileSearch = document.Bool("fileSearchEnabled", false)
@@ -57,7 +91,10 @@ func (c *controller) loadSettings() {
 	c.autoJoin = document.Bool("autoJoinMeetings", false)
 	c.autoJoinConfirms = document.Bool("autoJoinConfirms", true)
 	c.joinWindowMinutes = int64(document.Int("joinWindowMinutes", 5))
-	c.commandsShowInLauncher = document.Bool("commandsShowInLauncher", true)
+	c.commandsShowInLauncher = document.Bool("customCommandsShowInLauncher", true)
+	if document.Has("commandsShowInLauncher") {
+		c.commandsShowInLauncher = document.Bool("commandsShowInLauncher", true)
+	}
 	c.quicklinksShowInLauncher = document.Bool("quicklinksShowInLauncher", true)
 	c.snippetsShowInLauncher = document.Bool("snippetsShowInLauncher", true)
 	c.clipboardEnabled.Store(document.Bool("clipboardMonitorEnabled", true))
@@ -69,7 +106,6 @@ func (c *controller) loadSettings() {
 	c.customDirsDraft = strings.Join(c.customDirectories(), "; ")
 	c.compactMode = document.Bool("compactMode", false)
 	c.loadAISettings()
-	c.clampSettings()
 }
 
 func defaultLanguage() string {
@@ -360,410 +396,6 @@ func (c *controller) setClipboardDisabledApps(text string) {
 		c.clipboard.SetDisabledApps(apps)
 	}
 	c.settingsStatus = c.text("排除列表已更新", "Excluded apps updated")
-}
-
-func (c *controller) settingsView(ctx *ui.Context) {
-	tokens := theme.For(c.dark())
-	ctx.SetTheme(tokens.Theme())
-	ctx.Root().Background(tokens.Page)
-	ui.Column(ctx).Fill().Padding(24).Gap(18).Children(func() {
-		ui.Text(ctx, c.text("设置", "Settings")).FontSize(24).Bold().Role(ui.RoleHeading)
-		ui.Text(ctx, c.text("更改会应用于当前 Tinycast。", "Changes apply to this Tinycast application.")).
-			FontSize(theme.SectionFont).TextColor(tokens.TextTertiary)
-
-		ui.Scroll(ctx).Grow(1).TrackScroll(&c.settingsScroll).Children(func() {
-			ui.Column(ctx).FillWidth().Gap(18).Children(func() {
-				components.Card(ctx, tokens, func() {
-					components.FormRow(ctx, tokens, c.text("外观", "Appearance"), func() {
-						selected := appearanceIndex(c.appearance)
-						ui.Segmented(ctx, &selected,
-							c.text("跟随系统", "System"), c.text("浅色", "Light"), c.text("深色", "Dark")).Grow(1)
-						if value := appearanceValue(selected); value != c.appearance {
-							c.setAppearance(value)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("语言", "Language"), func() {
-						selected := 0
-						if c.language == "en" {
-							selected = 1
-						}
-						ui.Segmented(ctx, &selected, "中文", "English").Grow(1)
-						language := "zh"
-						if selected == 1 {
-							language = "en"
-						}
-						if language != c.language {
-							c.setLanguage(language)
-						}
-					})
-				})
-
-				components.Card(ctx, tokens, func() {
-					ui.Text(ctx, c.text("功能", "Features")).FontSize(theme.SectionFont).
-						TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
-					components.FormRow(ctx, tokens, c.text("词典", "Dictionary"), func() {
-						enabled := c.featureDictionary
-						ui.Switch(ctx, &enabled).Label(c.text("Tab 查询词典", "Look up words with Tab"))
-						if enabled != c.featureDictionary {
-							c.setFeature("dictionaryEnabled", enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("笔记", "Notes"), func() {
-						enabled := c.featureNotes
-						ui.Switch(ctx, &enabled).Label(c.text("独立笔记窗口", "Separate notes window"))
-						if enabled != c.featureNotes {
-							c.setFeature("notesEnabled", enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("剪贴板监听", "Clipboard monitor"), func() {
-						enabled := c.clipboardEnabled.Load()
-						ui.Switch(ctx, &enabled).Label(c.text("保存文本和图片历史", "Keep text and image history"))
-						if enabled != c.clipboardEnabled.Load() {
-							c.setFeature("clipboardMonitorEnabled", enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("文件搜索", "File search"), func() {
-						enabled := c.featureFileSearch
-						ui.Switch(ctx, &enabled).Label(c.text("搜索文件和文件夹", "Search files and folders"))
-						if enabled != c.featureFileSearch {
-							c.setFeature("fileSearchEnabled", enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("搜索范围", "Search scopes"), func() {
-						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.TextInput(ctx, &c.fileSearchScopesDraft).Grow(1).
-								Label(c.text("目录或 ~，用分号分隔", "Directories or ~, separated by semicolons"))
-							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-								c.applyFileSearchScopes()
-							}
-						})
-					})
-					components.FormRow(ctx, tokens, c.text("忽略规则", "Ignore rules"), func() {
-						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.TextInput(ctx, &c.fileSearchIgnoresDraft).Grow(1).
-								Label(c.text("名称或通配符，用分号分隔", "Names or globs, separated by semicolons"))
-							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-								c.applyFileSearchIgnores()
-							}
-						})
-					})
-					components.FormRow(ctx, tokens, c.text("窗口管理", "Window management"), func() {
-						enabled := c.featureWindowManagement
-						ui.Switch(ctx, &enabled).Label(c.text("移动和调整前台窗口", "Move and resize the frontmost window"))
-						if enabled != c.featureWindowManagement {
-							c.setFeature("windowManagementEnabled", enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("窗口间距", "Window gap"), func() {
-						if ui.Button(ctx, c.text(fmt.Sprintf("%d DIP", c.windowGap), fmt.Sprintf("%d DIP", c.windowGap))).Clicked() {
-							c.cycleWindowGap()
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("循环半屏", "Cycle halves"), func() {
-						enabled := c.windowCycle
-						ui.Switch(ctx, &enabled).Label(c.text("重复同一命令时轮换半屏比例", "Cycle half-screen fractions on repeat"))
-						if enabled != c.windowCycle {
-							c.setFeature("windowManagementCycleOnRepeat", enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("显示在启动器", "Show in launcher"), func() {
-						enabled := c.windowShowInLauncher
-						ui.Switch(ctx, &enabled).Label(c.text("允许搜索窗口命令", "Make window commands searchable"))
-						if enabled != c.windowShowInLauncher {
-							c.setFeature("windowManagementShowInLauncher", enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("日历", "Calendar"), func() {
-						enabled := c.featureCalendar
-						ui.Switch(ctx, &enabled).Label(c.text("读取 Windows 日历和会议链接", "Read Windows calendar and meeting links"))
-						if enabled != c.featureCalendar {
-							c.setFeature("calendarEnabled", enabled)
-						}
-					})
-					if c.featureCalendar {
-						components.FormRow(ctx, tokens, c.text("自动入会", "Auto join"), func() {
-							enabled := c.autoJoin
-							ui.Switch(ctx, &enabled).Label(c.text("会议开始时自动加入", "Join meetings when they start"))
-							if enabled != c.autoJoin {
-								c.setFeature("autoJoinMeetings", enabled)
-							}
-						})
-						components.FormRow(ctx, tokens, c.text("入会前确认", "Confirm join"), func() {
-							enabled := c.autoJoinConfirms
-							ui.Switch(ctx, &enabled).Label(c.text("自动入会前询问", "Ask before joining automatically"))
-							if enabled != c.autoJoinConfirms {
-								c.setFeature("autoJoinConfirms", enabled)
-							}
-						})
-						components.FormRow(ctx, tokens, c.text("提前量", "Join window"), func() {
-							if ui.Button(ctx, c.text(fmt.Sprintf("%d 分钟", c.joinWindowMinutes), fmt.Sprintf("%d min", c.joinWindowMinutes))).Clicked() {
-								c.cycleJoinWindow()
-							}
-						})
-						components.FormRow(ctx, tokens, c.text("显示在启动器", "Show in launcher"), func() {
-							enabled := c.calendarShowInLauncher
-							ui.Switch(ctx, &enabled).Label(c.text("允许搜索我的日程", "Make My Schedule searchable"))
-							if enabled != c.calendarShowInLauncher {
-								c.setFeature("calendarShowInLauncher", enabled)
-							}
-						})
-						if c.calendarError != "" {
-							ui.Text(ctx, c.calendarError).FontSize(theme.TrailingFont).TextColor(tokens.Destructive).SingleLine()
-						}
-					}
-					components.FormRow(ctx, tokens, c.text("保留时间", "Retention"), func() {
-						if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).Clicked() {
-							c.setClipboardRetention(cycleClipboardRetention(c.clipboardRetention))
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("排除应用", "Excluded apps"), func() {
-						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.TextInput(ctx, &c.clipboardDisabledDraft).Grow(1).
-								Label(c.text("按可执行文件名排除，用分号分隔", "Excluded executable names, separated by semicolons"))
-							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-								c.setClipboardDisabledApps(c.clipboardDisabledDraft)
-							}
-						})
-					})
-					components.FormRow(ctx, tokens, c.text("剪贴板历史", "Clipboard history"), func() {
-						if ui.Button(ctx, c.text("清空历史", "Clear history")).Clicked() {
-							c.clearClipboardHistory()
-						}
-						if c.clipboardError != "" {
-							ui.Text(ctx, c.clipboardError).FontSize(theme.TrailingFont).TextColor(tokens.Destructive).SingleLine()
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("Emoji 肤色", "Emoji skin tone"), func() {
-						if ui.Button(ctx, c.view.EmojiTone.Label()).Clicked() {
-							c.cycleEmojiTone()
-						}
-					})
-				})
-
-				c.workflowSettings(ctx, tokens)
-
-				components.Card(ctx, tokens, func() {
-					ui.Text(ctx, "AI").FontSize(theme.SectionFont).
-						TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
-					components.FormRow(ctx, tokens, c.text("AI", "AI"), func() {
-						enabled := c.aiEnabled
-						ui.Switch(ctx, &enabled).Label(c.text("启用 AI 对话与快捷操作", "Enable AI chat and Quick Actions"))
-						if enabled != c.aiEnabled {
-							c.setAIEnabled(enabled)
-						}
-					})
-					if c.aiConfigError != "" {
-						ui.Text(ctx, c.aiConfigError).FontSize(theme.TrailingFont).
-							TextColor(tokens.Destructive).SingleLine()
-					}
-					if !c.aiEnabled {
-						ui.Text(ctx, c.text("默认关闭；打开后才会连接 AI 服务并保存对话历史。",
-							"Off by default. Enabling starts provider requests and chat history.")).
-							FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
-						return
-					}
-					components.FormRow(ctx, tokens, c.text("默认模型", "Default model"), func() {
-						if ui.Button(ctx, c.aiModelLabel()).Clicked() {
-							c.cycleAIDefaultModel()
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("联网搜索", "Web search"), func() {
-						enabled := c.aiWebSearch
-						ui.Switch(ctx, &enabled).Label(c.text("OpenRouter 使用 web 插件", "Use the web plugin on OpenRouter"))
-						if enabled != c.aiWebSearch {
-							c.setAIWebSearch(enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("系统提示", "System prompt"), func() {
-						enabled := c.aiSystemPromptEnabled
-						ui.Switch(ctx, &enabled).Label(c.text("发送内置 Tinycast 提示", "Send the built-in Tinycast prompt"))
-						if enabled != c.aiSystemPromptEnabled {
-							c.setAISystemPromptEnabled(enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("提示文本", "Prompt text"), func() {
-						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.TextInput(ctx, &c.aiSystemPromptDraft).Grow(1).
-								Label(c.text("附加到内置提示之后", "Appended after the built-in prompt"))
-							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-								c.applyAISystemPrompt(c.aiSystemPromptDraft)
-							}
-						})
-					})
-					components.FormRow(ctx, tokens, c.text("历史保留", "History retention"), func() {
-						if ui.Button(ctx, c.aiRetentionLabel()).Clicked() {
-							c.cycleAIRetention()
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("打开方式", "Opening"), func() {
-						if ui.Button(ctx, c.aiOpensToLabel()).Clicked() {
-							c.cycleAIOpensTo()
-						}
-					})
-					for index, connection := range c.aiConnections {
-						index, connection := index, connection
-						components.FormRow(ctx, tokens, connection.Title(), func() {
-							ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-								ui.Column(ctx).Grow(1).Gap(1).Children(func() {
-									ui.Text(ctx, connection.BaseURL).FontSize(theme.TrailingFont).
-										TextColor(tokens.TextSecondary).SingleLine()
-									keyState := c.text("未设置密钥", "No key")
-									if c.aiConnectionKeySaved(index) {
-										keyState = c.text("密钥已保存在本机", "Key saved on this PC")
-									}
-									ui.Text(ctx, c.aiConnectionModel(connection)+" · "+keyState).
-										FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary).SingleLine()
-								})
-								if ui.Button(ctx, c.text("编辑", "Edit")).Clicked() {
-									c.editAIConnection(index)
-								}
-								if ui.Button(ctx, c.text("移除", "Remove")).Clicked() {
-									c.removeAIConnection(index)
-								}
-							})
-						})
-					}
-					if c.aiConnEditing >= 0 {
-						components.FormRow(ctx, tokens, c.text("服务商", "Provider"), func() {
-							if ui.Button(ctx, c.aiConnDraftProvider.Title()).Clicked() {
-								c.cycleAIConnectionProvider()
-							}
-						})
-						components.FormRow(ctx, tokens, c.text("服务地址", "Base URL"), func() {
-							ui.TextInput(ctx, &c.aiConnDraftURL).Grow(1).
-								Label(c.text("HTTPS；本机回环可用 HTTP", "HTTPS; loopback may use HTTP"))
-						})
-						components.FormRow(ctx, tokens, c.text("模型", "Model"), func() {
-							ui.TextInput(ctx, &c.aiConnDraftModel).Grow(1).
-								Label(c.text("例如 gpt-4.1-mini", "For example gpt-4.1-mini"))
-						})
-						components.FormRow(ctx, tokens, c.text("API 密钥", "API key"), func() {
-							ui.TextInput(ctx, &c.aiConnDraftKey).Grow(1).Password().
-								Label(c.text("留空以保留已保存的密钥", "Leave empty to keep the saved key"))
-						})
-						if c.aiConnDraftErr != "" {
-							ui.Text(ctx, c.aiConnDraftErr).FontSize(theme.TrailingFont).
-								TextColor(tokens.Destructive).SingleLine()
-						}
-						ui.Row(ctx).Gap(8).Children(func() {
-							if ui.Button(ctx, c.text("保存连接", "Save connection")).Clicked() {
-								c.saveAIConnection()
-							}
-							if ui.Button(ctx, c.text("取消", "Cancel")).Clicked() {
-								c.cancelAIConnectionEdit()
-							}
-						})
-					} else {
-						if ui.Button(ctx, c.text("添加连接…", "Add connection…")).Clicked() {
-							c.startNewAIConnection()
-						}
-					}
-					components.FormRow(ctx, tokens, "ChatGPT", func() {
-						ui.Text(ctx, c.text("订阅版暂不可用；请使用 API 连接。",
-							"ChatGPT subscription is not available yet. Use an API connection.")).
-							FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
-					})
-				})
-
-				components.Card(ctx, tokens, func() {
-					ui.Text(ctx, c.text("快捷操作", "Quick Actions")).FontSize(theme.SectionFont).
-						TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
-					components.FormRow(ctx, tokens, c.text("启用", "Enable"), func() {
-						enabled := c.quickActionsEnabled
-						ui.Switch(ctx, &enabled).Label(c.text("对选中文本运行 AI 操作", "Run AI actions on selected text"))
-						if enabled != c.quickActionsEnabled {
-							c.setQuickActionsEnabled(enabled)
-						}
-					})
-					if !c.quickActionsEnabled {
-						return
-					}
-					components.FormRow(ctx, tokens, c.text("翻译语言", "Translate to"), func() {
-						if ui.Button(ctx, c.quickActionLanguageLabel()).Clicked() {
-							c.cycleQuickActionLanguage()
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("模型", "Model"), func() {
-						if ui.Button(ctx, c.quickActionModelLabel()).Clicked() {
-							c.cycleQuickActionModel()
-						}
-					})
-				})
-
-				components.Card(ctx, tokens, func() {
-					ui.Text(ctx, c.text("输入", "Input")).FontSize(theme.SectionFont).
-						TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
-					components.FormRow(ctx, tokens, c.text("全局热键", "Shortcut"), func() {
-						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.TextInput(ctx, &c.hotkeyDraft).Grow(1).Label(c.text("全局热键", "Global shortcut"))
-							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-								c.setHotkey(c.hotkeyDraft)
-							}
-						})
-					})
-					components.FormRow(ctx, tokens, c.text("应用目录", "App directories"), func() {
-						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.TextInput(ctx, &c.customDirsDraft).Grow(1).
-								Label(c.text("自定义应用目录，用分号分隔", "Custom application directories, separated by semicolons"))
-							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-								c.setCustomDirectories(c.customDirsDraft)
-							}
-						})
-					})
-					components.FormRow(ctx, tokens, c.text("精简模式", "Compact mode"), func() {
-						enabled := c.compactMode
-						ui.Switch(ctx, &enabled).Label(c.text("只显示搜索栏，Ctrl+E 切换", "Show only the search bar; Ctrl+E toggles"))
-						if enabled != c.compactMode {
-							c.setCompact(enabled)
-						}
-					})
-					components.FormRow(ctx, tokens, c.text("双击修饰键", "Double-tap modifier"), func() {
-						selected := doubleTapIndex(c.doubleTap)
-						ui.Segmented(ctx, &selected, c.text("无", "None"), "Ctrl", "Alt", "Shift").Grow(1)
-						if value := doubleTapValue(selected); value != c.doubleTap {
-							c.setDoubleTap(value)
-						}
-					})
-				})
-
-				components.Card(ctx, tokens, func() {
-					ui.Text(ctx, c.text("数据与诊断", "Data and diagnostics")).FontSize(theme.SectionFont).
-						TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
-					components.FormRow(ctx, tokens, c.text("运行状态", "Runtime"), func() {
-						ui.Text(ctx, c.text("运行中", "Running")+" · "+c.started.Format("15:04:05")).
-							FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
-					})
-					components.FormRow(ctx, tokens, c.text("设置目录", "Settings"), func() {
-						ui.Text(ctx, c.profile.settings).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
-					})
-					components.FormRow(ctx, tokens, c.text("缓存目录", "Cache"), func() {
-						ui.Text(ctx, c.profile.cache).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
-					})
-					components.FormRow(ctx, tokens, c.text("词典库", "Dictionary"), func() {
-						ui.Text(ctx, c.profile.dictionary).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
-					})
-					components.FormRow(ctx, tokens, c.text("索引条目", "Catalog"), func() {
-						count := c.text("等待索引", "Waiting for the index")
-						if c.catalogInfo.Count > 0 {
-							count = fmt.Sprintf("%d", c.catalogInfo.Count)
-						}
-						ui.Text(ctx, count).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
-					})
-					components.FormRow(ctx, tokens, c.text("剪贴板事件", "Clipboard events"), func() {
-						ui.Text(ctx, c.clipboardSummary()).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
-					})
-				})
-			})
-		})
-
-		status := c.settingsStatus
-		if c.settingsErr != nil {
-			status = c.text("设置文件无法读取；已禁用写入以保留原文件", "Settings are unreadable; writes are disabled to preserve the file")
-		}
-		if status != "" {
-			ui.Text(ctx, status).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
-		}
-	})
 }
 
 func (c *controller) setAppearance(value string) {

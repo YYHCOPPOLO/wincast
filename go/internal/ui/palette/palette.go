@@ -105,35 +105,38 @@ type Callbacks struct {
 // View is UI-thread-owned display state. Callbacks send user intent back to
 // the app; no disk, SQL or shell work runs as the view is constructed.
 type View struct {
-	Query               string
-	Apps                []domain.Application
-	Results             []domain.Application
-	Loading             bool
-	Status              string
-	Shortcut            string
-	Chinese             bool
-	ForcedDark          *bool
-	Expanded            bool
-	ShowHidden          bool
-	Chosen              int
-	Input               ui.Handle
-	inputText           *ui.TextBuffer
-	list                ui.ListState
-	AliasOpen           bool
-	AliasText           string
-	AliasTarget         domain.Application
-	aliasInput          ui.Handle
-	callbacks           Callbacks
-	Mode                Mode
-	launcherQuery       string
-	DictionaryAvailable bool
-	DictionaryLoading   bool
-	DictionaryError     string
-	Definition          *Definition
-	Suggestions         []string
-	PendingToast        string
-	dictionaryScroll    ui.ScrollState
-	OnLookup            func(string)
+	Query                  string
+	Apps                   []domain.Application
+	Results                []domain.Application
+	Loading                bool
+	Status                 string
+	Shortcut               string
+	Chinese                bool
+	ForcedDark             *bool
+	Expanded               bool
+	ShowHidden             bool
+	ShowFavoritesInCompact bool
+	CompactFavorites       []domain.Application
+	Draggable              bool
+	Chosen                 int
+	Input                  ui.Handle
+	inputText              *ui.TextBuffer
+	list                   ui.ListState
+	AliasOpen              bool
+	AliasText              string
+	AliasTarget            domain.Application
+	aliasInput             ui.Handle
+	callbacks              Callbacks
+	Mode                   Mode
+	launcherQuery          string
+	DictionaryAvailable    bool
+	DictionaryLoading      bool
+	DictionaryError        string
+	Definition             *Definition
+	Suggestions            []string
+	PendingToast           string
+	dictionaryScroll       ui.ScrollState
+	OnLookup               func(string)
 
 	ClipboardItems     []clipboard.Item
 	ClipboardFilter    clipboard.Filter
@@ -230,6 +233,9 @@ func (v *View) Render(c *ui.Context) {
 	v.renderAlias(c, tokens)
 	v.renderVolume(c, tokens)
 	ui.Column(c).Fill().Children(func() {
+		if v.Draggable && v.Mode == ModeLauncher {
+			ui.Row(c).FillWidth().Height(6).DragWindow()
+		}
 		ui.Row(c).Height(theme.HeaderHeight+2*theme.HeaderPadding).
 			Padding(theme.HeaderPadding, 20).Gap(14).AlignItems(ui.Center).Children(func() {
 			if v.Mode == ModeLauncher {
@@ -276,6 +282,9 @@ func (v *View) Render(c *ui.Context) {
 			}
 		})
 		if !v.Expanded {
+			if v.Mode == ModeLauncher && v.ShowFavoritesInCompact && len(v.CompactFavorites) > 0 {
+				v.compactFavorites(c)
+			}
 			return
 		}
 		ui.Divider(c)
@@ -454,6 +463,24 @@ func (v *View) renderAlias(c *ui.Context, tokens theme.Tokens) {
 				v.AliasOpen = false
 			}
 		})
+	})
+}
+
+// compactFavorites pins the first favorite slots under the compact search
+// field, mirroring the original compact bar: one chip per ⌘1–⌘9 / Ctrl+1–9
+// slot, and a click launches that slot through the existing callback.
+func (v *View) compactFavorites(c *ui.Context) {
+	ui.Row(c).FillWidth().Padding(4, 18).Gap(6).Children(func() {
+		for index, app := range v.CompactFavorites {
+			if index >= 9 {
+				break
+			}
+			digit := byte('1' + index)
+			label := fmt.Sprintf("%d  %s", index+1, app.Name)
+			if ui.Button(c, label).Clicked() && v.callbacks.Favorite != nil {
+				v.callbacks.Favorite(digit)
+			}
+		}
 	})
 }
 

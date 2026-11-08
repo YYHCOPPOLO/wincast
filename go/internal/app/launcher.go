@@ -58,6 +58,7 @@ func (c *controller) toggleFavorite() {
 	} else {
 		c.view.Status = c.view.Text("已取消收藏", "Removed from favorites")
 	}
+	c.refreshCompactFavorites()
 	c.view.Filter()
 }
 
@@ -83,6 +84,7 @@ func (c *controller) setHidden(application domain.Application, hidden bool) {
 	if !hidden {
 		c.view.Status = c.view.Text("已显示此应用", "Application shown")
 	}
+	c.refreshCompactFavorites()
 	c.view.Filter()
 }
 

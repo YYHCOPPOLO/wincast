@@ -188,6 +188,19 @@ func (c *controller) refreshSettingsWindow() {
 	}
 }
 
+// updateUI applies a worker's result on the panel's UI thread and repaints an
+// open settings window. The panel outlives feature windows, so a closed
+// settings window cannot make the callback dereference a nil window.
+func (c *controller) updateUI(fn func()) {
+	if c.panel == nil {
+		return
+	}
+	c.panel.Update(func() {
+		fn()
+		c.refreshSettingsWindow()
+	})
+}
+
 func (c *controller) calendarErrorText(err error) string {
 	if windows.CalendarUnavailable(err) {
 		return c.text("无法访问日历；请在 Windows 设置中允许日历访问", "Calendar access is unavailable; allow it in Windows Settings")

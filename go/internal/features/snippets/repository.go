@@ -127,6 +127,49 @@ func (r *Repository) Create(name, keyword string, enabled, showConfirmation bool
 	return snippet.Snippet{}, errors.New("could not claim a snippet file name")
 }
 
+// ImportFile writes one Markdown file from a backup verbatim. The bundle's
+// name is sanitized, .md is enforced and an existing file is never replaced;
+// a numeric suffix claims a free name instead.
+func (r *Repository) ImportFile(name string, data []byte) (string, error) {
+	base := filepath.Base(strings.ReplaceAll(name, "\\", "/"))
+	base = strings.TrimSpace(base)
+	if base == "" || base == "." || base == ".." {
+		return "", errors.New("invalid snippet file name")
+	}
+	if !strings.HasSuffix(strings.ToLower(base), ".md") {
+		base += ".md"
+	}
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	if err := os.MkdirAll(r.dir, 0o700); err != nil {
+		return "", fmt.Errorf("open snippet library: %w", err)
+	}
+	for suffix := 1; suffix <= 10000; suffix++ {
+		candidate := base
+		if suffix > 1 {
+			candidate = fmt.Sprintf("%s-%d.md", stem, suffix)
+		}
+		path := filepath.Join(r.dir, candidate)
+		handle, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				continue
+			}
+			return "", fmt.Errorf("import snippet: %w", err)
+		}
+		_, writeErr := handle.Write(data)
+		if writeErr == nil {
+			writeErr = handle.Sync()
+		}
+		closeErr := handle.Close()
+		if writeErr != nil || closeErr != nil {
+			os.Remove(path)
+			return "", fmt.Errorf("import snippet: %w", errors.Join(writeErr, closeErr))
+		}
+		return path, nil
+	}
+	return "", errors.New("could not claim a snippet file name")
+}
+
 // Save replaces one existing file only when the loaded revision still matches.
 func (r *Repository) Save(record snippet.Snippet) (snippet.Snippet, error) {
 	path, err := r.validated(record.ID)

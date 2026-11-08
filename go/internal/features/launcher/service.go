@@ -19,11 +19,16 @@ type Service struct {
 	fields      map[string]domain.SearchFields
 	extraFields map[string]domain.SearchFields
 	prefs       *Preferences
+	showApps    bool
 }
 
 func New(prefs *Preferences) *Service {
-	return &Service{fields: make(map[string]domain.SearchFields), extraFields: make(map[string]domain.SearchFields), prefs: prefs}
+	return &Service{fields: make(map[string]domain.SearchFields), extraFields: make(map[string]domain.SearchFields), prefs: prefs, showApps: true}
 }
+
+// SetApplicationsEnabled hides every installed application from search while
+// keeping commands, quicklinks, snippets and system entries reachable.
+func (s *Service) SetApplicationsEnabled(enabled bool) { s.showApps = enabled }
 
 // SetExtras replaces the command, quicklink and snippet entries that share
 // the launcher's ranking. keywords carries a snippet's keyword, the only
@@ -124,12 +129,14 @@ func (s *Service) Search(query string, showHidden bool, now time.Time) []domain.
 		}
 		results = append(results, scored{app: app, score: score + s.prefs.Boost(query, key, now)})
 	}
-	for _, app := range s.apps {
-		key := app.ID
-		if key == "" {
-			key = strings.ToLower(app.Path)
+	if s.showApps {
+		for _, app := range s.apps {
+			key := app.ID
+			if key == "" {
+				key = strings.ToLower(app.Path)
+			}
+			consider(app, key, s.fields[key])
 		}
-		consider(app, key, s.fields[key])
 	}
 	for _, extra := range s.extras {
 		consider(extra, extra.ID, s.extraFields[extra.ID])
@@ -159,15 +166,20 @@ func (s *Service) emptyQuery(showHidden bool) []domain.Application {
 		if !ok || (!showHidden && s.prefs.IsHidden(id)) {
 			continue
 		}
+		if !s.showApps && app.Kind == "" {
+			continue
+		}
 		apps = append(apps, app)
 		added[app.ID] = true
 	}
 	rest := make([]domain.Application, 0, len(s.apps))
-	for _, app := range s.apps {
-		if added[app.ID] || (!showHidden && s.prefs.IsHidden(app.ID)) {
-			continue
+	if s.showApps {
+		for _, app := range s.apps {
+			if added[app.ID] || (!showHidden && s.prefs.IsHidden(app.ID)) {
+				continue
+			}
+			rest = append(rest, app)
 		}
-		rest = append(rest, app)
 	}
 	sort.SliceStable(rest, func(i, j int) bool {
 		left, right := strings.ToLower(rest[i].Name), strings.ToLower(rest[j].Name)
