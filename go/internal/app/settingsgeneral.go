@@ -88,12 +88,18 @@ func (c *controller) setShowFavoritesInCompact(enabled bool) {
 	c.showFavoritesInCompact = enabled
 	c.refreshCompactFavorites()
 	c.setGeneralBool("showFavoritesInCompactMode", enabled, nil)
+	if c.panel != nil {
+		c.panel.Update(func() {})
+	}
 }
 
 func (c *controller) setPaletteDraggable(enabled bool) {
 	c.paletteDraggable = enabled
 	c.view.Draggable = enabled
 	c.setGeneralBool("paletteDraggable", enabled, nil)
+	if c.panel != nil {
+		c.panel.Update(func() {})
+	}
 }
 
 func (c *controller) setSupportReminders(enabled bool) {
@@ -203,11 +209,11 @@ func (c *controller) refreshCompactFavorites() {
 		return
 	}
 	c.view.ShowFavoritesInCompact = c.showFavoritesInCompact
-	favorites := make([]domain.Application, 0, 10)
+	favorites := make([]domain.Application, 0, 5)
 	for _, id := range c.launcherPrefs.FavoriteOrder() {
 		if application, ok := c.launcher.Application(id); ok {
 			favorites = append(favorites, application)
-			if len(favorites) == 10 {
+			if len(favorites) == 5 {
 				break
 			}
 		}

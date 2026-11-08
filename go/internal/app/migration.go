@@ -150,16 +150,22 @@ func (c *controller) migrateLegacy() {
 	c.migrationBusy = true
 	c.migrationStatus = c.text("正在迁移…", "Migrating…")
 	clipboardSource := legacyClipboardSource()
+	skipAI := c.aiEnabled
+	target := c.migrationTarget()
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
 		result, err := migration.Apply(migration.Options{
-			Source: source, ClipboardSource: clipboardSource, Target: c.migrationTarget(),
-			Resolve: c.resolveLegacyID, SkipAIHistory: c.aiEnabled,
+			Source: source, Target: target,
+			Resolve: c.resolveLegacyID, SkipAIHistory: skipAI,
 		})
+		var clipboardErr error
 		clipboardImported := 0
 		if err == nil && c.clipboard != nil {
-			clipboardImported = c.importLegacyClipboard(clipboardSource)
+			clipboardImported, clipboardErr = c.importLegacyClipboard(clipboardSource)
+			if clipboardErr != nil {
+				result.Warnings = append(result.Warnings, c.text("剪贴板导入失败：", "clipboard import failed: ")+clipboardErr.Error())
+			}
 		}
 		c.updateUI(func() {
 			if c.closing {
@@ -173,6 +179,7 @@ func (c *controller) migrateLegacy() {
 			}
 			c.reloadAfterMigration()
 			c.migrationSnapshotsLoaded = false
+			c.migrationPreview = nil
 			c.migrationStatus = fmt.Sprintf(c.text("迁移完成：设置 %d、片段 %d、笔记 %d、收藏 %d、学习 %d、剪贴板 %d；快照 %s",
 				"Migrated: settings %d, snippets %d, notes %d, favorites %d, learning %d, clips %d; snapshot %s"),
 				result.Settings, result.Snippets, result.Notes, result.Favorites, result.Ranking, clipboardImported, result.Snapshot)
@@ -183,10 +190,10 @@ func (c *controller) migrateLegacy() {
 	}()
 }
 
-func (c *controller) importLegacyClipboard(source string) int {
+func (c *controller) importLegacyClipboard(source string) (int, error) {
 	items, err := clipboard.ReadLegacy(c.ctx, source)
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	store := c.clipboard.Store()
 	imported := 0
@@ -205,7 +212,7 @@ func (c *controller) importLegacyClipboard(source string) int {
 			imported++
 		}
 	}
-	return imported
+	return imported, nil
 }
 
 // reloadAfterMigration reloads every store whose files a migration replaced.
@@ -226,6 +233,7 @@ func (c *controller) reloadAfterMigration() {
 		c.launcherPrefs = preferences
 	}
 	c.launcher = launcher.New(c.launcherPrefs)
+	c.queueSettingsSave()
 	c.scan()
 	c.refreshExtras()
 	c.view.Filter()

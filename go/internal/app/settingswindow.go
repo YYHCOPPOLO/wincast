@@ -37,12 +37,13 @@ func (c *controller) settingsView(ctx *ui.Context) {
 					}
 				})
 			}
-		}).Width(210)
+		}).Width(210).FillHeight()
 		if sidebar.Changed() {
 			if tab, ok := settings.TabFromID(selected); ok {
 				c.settingsTab = tab
 				c.settingsScroll = ui.ScrollState{}
 				c.settingsStatus = ""
+				c.updateSettingsTitle()
 			}
 		}
 		ui.Scroll(ctx).Grow(1).TrackScroll(&c.settingsScroll).Children(func() {

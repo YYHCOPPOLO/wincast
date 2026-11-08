@@ -275,7 +275,16 @@ func (c *controller) openSettings() {
 		c.settings.OnClosed(func() { c.settings = nil })
 	}
 	showWindow(c.settings)
+	c.updateSettingsTitle()
 	c.settings.Center()
+}
+
+func (c *controller) updateSettingsTitle() {
+	if c.settings == nil {
+		return
+	}
+	prefix := c.text("Tinycast 设置 · ", "Tinycast Settings · ")
+	c.settings.SetTitle(prefix + c.settingsTab.Title(c.language == "zh"))
 }
 
 func appearanceIndex(value string) int {
@@ -417,6 +426,7 @@ func (c *controller) setLanguage(value string) {
 		_ = c.settingsDocument.Set("language", value)
 	}
 	c.queueSettingsSave()
+	c.updateSettingsTitle()
 }
 
 func (c *controller) setFeature(key string, enabled bool) {

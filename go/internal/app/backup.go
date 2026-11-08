@@ -255,6 +255,10 @@ func (c *controller) importBackup() {
 				bundle, err = backup.Read(data)
 			}
 		}
+		clipboardApplied := 0
+		if err == nil && bundle != nil && c.clipboard != nil {
+			clipboardApplied = c.importBackupClipboard(bundle)
+		}
 		c.updateUI(func() {
 			if c.closing {
 				return
@@ -269,9 +273,29 @@ func (c *controller) importBackup() {
 				c.backupStatus = c.text("已取消导入", "Import cancelled")
 				return
 			}
-			c.applyBackup(bundle)
+			c.applyBackup(bundle, clipboardApplied)
 		})
 	}()
+}
+
+// importBackupClipboard restores clips on the worker; the store serializes its
+// own access, and a long history never blocks the settings window.
+func (c *controller) importBackupClipboard(bundle *backup.Bundle) int {
+	store := c.clipboard.Store()
+	applied := 0
+	for _, item := range bundle.Clipboard {
+		if item.Kind == "image" {
+			png, ok := bundle.Images[item.Image]
+			if ok && store.ImportImage(png, item.CreatedAt, item.PinnedAt) {
+				applied++
+			}
+			continue
+		}
+		if store.ImportItem(clipboard.Item{Kind: clipboard.KindText, Text: item.Text, CreatedAt: item.CreatedAt, PinnedAt: item.PinnedAt}) {
+			applied++
+		}
+	}
+	return applied
 }
 
 func (c *controller) importRaycast() {
@@ -351,7 +375,7 @@ func (c *controller) applyRaycast(payload *backup.RaycastPayload) {
 	c.refreshSettingsWindow()
 }
 
-func (c *controller) applyBackup(bundle *backup.Bundle) {
+func (c *controller) applyBackup(bundle *backup.Bundle, clipboardApplied int) {
 	summary := make([]string, 0, 5)
 	settingsApplied := 0
 	if applied := backup.ApplyableSettings(bundle.Settings); len(applied) > 0 && c.settingsDocument != nil {
@@ -366,19 +390,7 @@ func (c *controller) applyBackup(bundle *backup.Bundle) {
 	}
 	summary = append(summary, fmt.Sprintf(c.text("%d 项设置", "%d settings"), settingsApplied))
 
-	clipboardApplied := 0
-	if c.clipboard != nil && (len(bundle.Clipboard) > 0 || len(bundle.Images) > 0) {
-		store := c.clipboard.Store()
-		for _, item := range bundle.Clipboard {
-			if item.Kind == "image" {
-				png, ok := bundle.Images[item.Image]
-				if ok && store.ImportImage(png, item.CreatedAt, item.PinnedAt) {
-					clipboardApplied++
-				}
-			} else if store.ImportItem(clipboard.Item{Kind: clipboard.KindText, Text: item.Text, CreatedAt: item.CreatedAt, PinnedAt: item.PinnedAt}) {
-				clipboardApplied++
-			}
-		}
+	if clipboardApplied > 0 {
 		c.refreshClipboardView()
 	}
 	summary = append(summary, fmt.Sprintf(c.text("%d 条剪贴板", "%d clips"), clipboardApplied))

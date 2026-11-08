@@ -304,6 +304,7 @@ func sortedKeys[T any](values map[string]T) []string {
 // geometry: a backup must never enable something the receiving user did not.
 var excluded = map[string]bool{
 	"snippetsEnabled":            true, // doubles as keystroke-listening consent
+	"snippetHotkeys":             true, // per-machine snippet file IDs
 	"extensionsEnabled":          true, // doubles as third-party-code consent
 	"extensionPackageManager":    true,
 	"extensionRegistries":        true,
@@ -394,25 +395,4 @@ func ApplyableSettings(settings map[string]json.RawMessage) map[string]json.RawM
 		}
 	}
 	return applied
-}
-
-// ExcludedReason explains why a key never travels, for the record and tests
-// that do not exist; callers may surface it in the UI.
-func ExcludedReason(key string) string {
-	switch key {
-	case "snippetsEnabled":
-		return "keystroke-listening consent"
-	case "extensionsEnabled":
-		return "third-party-code consent"
-	case "calendarEnabled", "autoJoinMeetings", "cameraPreview":
-		return "calendar/camera access consent"
-	case "quickActionsEnabled":
-		return "keystroke delivery into other apps"
-	case "aiEnabled", "aiConnections", "aiDefaultModel", "aiWebSearch", "aiSystemPrompt",
-		"aiSystemPromptEnabled", "aiRetentionDays", "aiOpensTo", "aiNewChatAfterMinutes",
-		"quickActionModel", "quickActionLanguage", "quickActionPreviews":
-		return "AI destination or standing instruction"
-	default:
-		return ""
-	}
 }

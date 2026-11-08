@@ -472,16 +472,24 @@ func (v *View) renderAlias(c *ui.Context, tokens theme.Tokens) {
 func (v *View) compactFavorites(c *ui.Context) {
 	ui.Row(c).FillWidth().Padding(4, 18).Gap(6).Children(func() {
 		for index, app := range v.CompactFavorites {
-			if index >= 9 {
+			if index >= 5 {
 				break
 			}
 			digit := byte('1' + index)
-			label := fmt.Sprintf("%d  %s", index+1, app.Name)
+			label := fmt.Sprintf("%d  %s", index+1, truncateLabel(app.Name, 12))
 			if ui.Button(c, label).Clicked() && v.callbacks.Favorite != nil {
 				v.callbacks.Favorite(digit)
 			}
 		}
 	})
+}
+
+func truncateLabel(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit-1]) + "…"
 }
 
 func (v *View) applications(c *ui.Context, tokens theme.Tokens) {

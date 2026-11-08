@@ -86,6 +86,9 @@ func (c *controller) onboardingView(ctx *ui.Context) {
 				FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
 			if ui.Button(ctx, c.text("打开备份设置", "Open backup settings")).Clicked() {
 				c.settingsTab = settings.Backup
+				if c.onboarding != nil {
+					c.onboarding.Hide()
+				}
 				c.openSettings()
 			}
 		}

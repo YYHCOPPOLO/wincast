@@ -64,11 +64,10 @@ type Result struct {
 // Options configures Apply. Resolve maps a legacy entry key to the current
 // launcher's business ID; nil keeps only records that already match.
 type Options struct {
-	Source          string
-	ClipboardSource string
-	Target          Target
-	Resolve         func(string) (string, bool)
-	SkipAIHistory   bool
+	Source        string
+	Target        Target
+	Resolve       func(string) (string, bool)
+	SkipAIHistory bool
 }
 
 type legacy struct {
@@ -88,6 +87,9 @@ func PreviewOf(source, targetSettings, clipboardSource string) (Preview, error) 
 	if targetSettings != "" {
 		if _, err := os.Stat(filepath.Join(targetSettings, "settings.json")); err == nil {
 			preview.Warnings = append(preview.Warnings, "target settings.json exists; migrated fields will be merged")
+		}
+		if _, err := os.Stat(filepath.Join(targetSettings, Marker)); err == nil {
+			preview.Warnings = append(preview.Warnings, "this profile already carries a migration marker; importing again is idempotent")
 		}
 	}
 	if clipboardSource != "" {
@@ -189,7 +191,21 @@ func countLauncher(source string) (favorites, hidden, ranking int) {
 }
 
 func countClipboard(source string) (int, error) {
-	db, err := storage.OpenSQLite(context.Background(), filepath.Join(source, "clipboard.sqlite3"), true)
+	temp, err := os.MkdirTemp("", "tinycast-migration-count-*")
+	if err != nil {
+		return 0, err
+	}
+	defer os.RemoveAll(temp)
+	for _, name := range []string{"clipboard.sqlite3", "clipboard.sqlite3-wal", "clipboard.sqlite3-shm"} {
+		path := filepath.Join(source, name)
+		if !fileExists(path) {
+			continue
+		}
+		if err := copyFile(path, filepath.Join(temp, name)); err != nil {
+			return 0, err
+		}
+	}
+	db, err := storage.OpenSQLite(context.Background(), filepath.Join(temp, "clipboard.sqlite3"), true)
 	if err != nil {
 		return 0, err
 	}

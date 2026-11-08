@@ -93,17 +93,20 @@ func (c *controller) startSupportReminders() {
 }
 
 func (c *controller) maybeShowSupport() {
-	if !c.supportReminders || !c.supportLoaded {
-		return
-	}
-	if !supportDue(c.supportFirstSeenAt, c.supportAskedAt, time.Now()) {
+	if c.panel == nil {
 		return
 	}
 	c.panel.Update(func() {
-		if c.closing || c.supportWindow != nil || c.onboarding != nil {
+		if c.closing || !c.supportReminders || !c.supportLoaded {
+			return
+		}
+		if c.supportWindow != nil || c.onboarding != nil {
 			return
 		}
 		if c.panel.IsVisible() || (c.settings != nil && c.settings.IsVisible()) {
+			return
+		}
+		if !supportDue(c.supportFirstSeenAt, c.supportAskedAt, time.Now()) {
 			return
 		}
 		c.showSupportWindow()
