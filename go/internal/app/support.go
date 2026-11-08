@@ -70,7 +70,7 @@ func supportDue(firstSeenAt, lastAskedAt int64, now time.Time) bool {
 }
 
 func (c *controller) startSupportReminders() {
-	if !c.supportReminders {
+	if !c.supportReminders || c.supportLoaded {
 		return
 	}
 	state := c.loadSupportState()

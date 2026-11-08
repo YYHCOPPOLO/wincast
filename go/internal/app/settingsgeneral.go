@@ -105,6 +105,9 @@ func (c *controller) setPaletteDraggable(enabled bool) {
 func (c *controller) setSupportReminders(enabled bool) {
 	c.supportReminders = enabled
 	c.setGeneralBool("supportReminders", enabled, nil)
+	if enabled && !c.supportLoaded {
+		c.startSupportReminders()
+	}
 }
 
 func (c *controller) setExtensionsEnabled(enabled bool) {
