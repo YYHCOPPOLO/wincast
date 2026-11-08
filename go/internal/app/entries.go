@@ -60,6 +60,11 @@ func (c *controller) refreshExtras() {
 			keywords[entry.ID] = record.Keyword
 		}
 	}
+	if c.featureFileSearch {
+		extras = append(extras, domain.Application{
+			ID: "file-search", Name: c.text("搜索文件…", "Search Files…"), Kind: domain.KindFileSearch,
+		})
+	}
 	c.launcher.SetExtras(extras, keywords)
 	if c.view.Mode == palette.ModeLauncher {
 		c.view.Filter()

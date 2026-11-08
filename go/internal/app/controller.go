@@ -17,6 +17,7 @@ import (
 	calcservice "github.com/YYHCOPPOLO/wincast/go/internal/features/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
+	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/quicklinks"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/snippets"
@@ -141,6 +142,13 @@ type controller struct {
 	featureCommands          bool
 	featureQuicklinks        bool
 	featureSnippets          bool
+	featureFileSearch        bool
+	fileSearch               *files.Session
+	fileSearchRevision       uint64
+	fileSearchScopes         []string
+	fileSearchIgnores        []string
+	fileSearchScopesDraft    string
+	fileSearchIgnoresDraft   string
 	commandsShowInLauncher   bool
 	quicklinksShowInLauncher bool
 	snippetsShowInLauncher   bool
@@ -171,6 +179,10 @@ func newController(started time.Time, profile profile) *controller {
 	c.snippets = snippets.NewRepository(filepath.Join(profile.data, "snippets"))
 	c.expander = snippets.NewExpander()
 	c.reloadSnippets()
+	c.fileSearch = files.New()
+	c.fileSearch.Apply(c.fileSearchScopes, c.fileSearchIgnores)
+	c.fileSearchScopesDraft = strings.Join(c.fileSearchScopes, "; ")
+	c.fileSearchIgnoresDraft = strings.Join(c.fileSearchIgnores, "; ")
 	c.clipboardDisabledDraft = strings.Join(c.clipboardDisabled, "; ")
 	c.calcHistoryPath = filepath.Join(profile.settings, "calculator-history.json")
 	c.calcHistory = domaincalc.LoadHistory(c.calcHistoryPath)
@@ -215,6 +227,10 @@ func newController(started time.Time, profile profile) *controller {
 		EmojiPaste:            c.pasteEmoji,
 		CycleEmojiTone:        c.cycleEmojiTone,
 		SubmitArguments:       c.submitArguments,
+		FileSearch:            c.startFileSearch,
+		OpenFile:              c.openFileHit,
+		RevealFile:            c.revealFileHit,
+		CopyFilePath:          c.copyFileHitPath,
 	})
 	c.applyViewAppearance()
 	c.view.Expanded = !c.compactMode
@@ -416,6 +432,9 @@ func (c *controller) open(application domain.Application) {
 	case domain.KindSnippet:
 		c.startSnippet(application)
 		return
+	case domain.KindFileSearch:
+		c.openFileSearch()
+		return
 	}
 	c.hide()
 	if err := mygo.Shell.LaunchApp(mygo.InstalledApp{ID: application.ID, Name: application.Name, Path: application.Path}); err != nil {
@@ -454,6 +473,10 @@ func (c *controller) menu() {
 		c.emojiMenu()
 		return
 	}
+	if c.view.Mode == palette.ModeFileSearch {
+		c.fileSearchMenu()
+		return
+	}
 	menu := components.Menu([]components.MenuAction{
 		{Label: c.view.Text("打开选中应用", "Open selected application"), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: func() {
 			if c.view.Chosen >= 0 && c.view.Chosen < len(c.view.Results) {
@@ -474,6 +497,7 @@ func (c *controller) menu() {
 		{Label: c.view.Text("剪贴板历史…", "Clipboard history…"), Click: c.openClipboard},
 		{Label: c.view.Text("计算器历史…", "Calculator history…"), Click: c.openCalculatorHistory},
 		{Label: c.view.Text("Emoji 与符号…", "Emoji & Symbols…"), Click: c.openEmoji},
+		{Label: c.view.Text("搜索文件…", "Search files…"), Disabled: !c.featureFileSearch, Click: c.openFileSearch},
 		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("笔记…", "Notes…"), Disabled: !c.featureNotes, Click: c.openEditor},

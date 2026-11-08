@@ -27,6 +27,7 @@ const (
 	KindCommand     Kind = "command"
 	KindQuicklink   Kind = "quicklink"
 	KindSnippet     Kind = "snippet"
+	KindFileSearch  Kind = "file-search"
 )
 
 // Mode is the palette state that selects both the query source and the rows.

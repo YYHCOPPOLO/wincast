@@ -3,9 +3,11 @@ package app
 import (
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 
+	domainfiles "github.com/YYHCOPPOLO/wincast/go/internal/domain/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
@@ -42,6 +44,9 @@ func (c *controller) loadSettings() {
 	c.featureCommands = document.Bool("commandsEnabled", false)
 	c.featureQuicklinks = document.Bool("quicklinksEnabled", false)
 	c.featureSnippets = document.Bool("snippetsEnabled", false)
+	c.featureFileSearch = document.Bool("fileSearchEnabled", false)
+	c.fileSearchScopes = document.Strings("fileSearchScopes", domainfiles.DefaultScopes())
+	c.fileSearchIgnores = document.Strings("fileSearchIgnorePatterns", nil)
 	c.commandsShowInLauncher = document.Bool("commandsShowInLauncher", true)
 	c.quicklinksShowInLauncher = document.Bool("quicklinksShowInLauncher", true)
 	c.snippetsShowInLauncher = document.Bool("snippetsShowInLauncher", true)
@@ -396,6 +401,31 @@ func (c *controller) settingsView(ctx *ui.Context) {
 							c.setFeature("clipboardMonitorEnabled", enabled)
 						}
 					})
+					components.FormRow(ctx, tokens, c.text("文件搜索", "File search"), func() {
+						enabled := c.featureFileSearch
+						ui.Switch(ctx, &enabled).Label(c.text("搜索文件和文件夹", "Search files and folders"))
+						if enabled != c.featureFileSearch {
+							c.setFeature("fileSearchEnabled", enabled)
+						}
+					})
+					components.FormRow(ctx, tokens, c.text("搜索范围", "Search scopes"), func() {
+						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.TextInput(ctx, &c.fileSearchScopesDraft).Grow(1).
+								Label(c.text("目录或 ~，用分号分隔", "Directories or ~, separated by semicolons"))
+							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
+								c.applyFileSearchScopes()
+							}
+						})
+					})
+					components.FormRow(ctx, tokens, c.text("忽略规则", "Ignore rules"), func() {
+						ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.TextInput(ctx, &c.fileSearchIgnoresDraft).Grow(1).
+								Label(c.text("名称或通配符，用分号分隔", "Names or globs, separated by semicolons"))
+							if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
+								c.applyFileSearchIgnores()
+							}
+						})
+					})
 					components.FormRow(ctx, tokens, c.text("保留时间", "Retention"), func() {
 						if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).Clicked() {
 							c.setClipboardRetention(cycleClipboardRetention(c.clipboardRetention))
@@ -543,6 +573,15 @@ func (c *controller) setFeature(key string, enabled bool) {
 	case "snippetsEnabled":
 		c.featureSnippets = enabled
 		c.applyKeywordListener()
+	case "fileSearchEnabled":
+		c.featureFileSearch = enabled
+		if c.fileSearch != nil {
+			c.fileSearch.Cancel()
+		}
+		if !enabled && c.view.Mode == palette.ModeFileSearch {
+			c.view.SetModeLauncher()
+		}
+		c.refreshExtras()
 	case "commandsShowInLauncher":
 		c.commandsShowInLauncher = enabled
 	case "quicklinksShowInLauncher":
@@ -561,6 +600,57 @@ func (c *controller) setFeature(key string, enabled bool) {
 	if key == "commandsEnabled" || key == "quicklinksEnabled" || key == "snippetsEnabled" {
 		c.reconcileItemHotkeys()
 	}
+}
+
+func (c *controller) applyFileSearchScopes() {
+	scopes := splitSettingList(c.fileSearchScopesDraft)
+	normalized := domainfiles.NormalizeScopes(scopes, userHomeDirectory())
+	if len(normalized) == 0 {
+		normalized = domainfiles.DefaultScopes()
+	}
+	c.fileSearchScopes = normalized
+	c.fileSearchScopesDraft = strings.Join(normalized, "; ")
+	if c.settingsDocument != nil && c.settingsWritable {
+		_ = c.settingsDocument.Set("fileSearchScopes", normalized)
+	}
+	c.queueSettingsSave()
+	if c.fileSearch != nil {
+		c.fileSearch.Apply(c.fileSearchScopes, c.fileSearchIgnores)
+	}
+	c.settingsStatus = c.text("搜索范围已更新", "Search scopes updated")
+}
+
+func (c *controller) applyFileSearchIgnores() {
+	ignores := splitSettingList(c.fileSearchIgnoresDraft)
+	c.fileSearchIgnores = ignores
+	c.fileSearchIgnoresDraft = strings.Join(ignores, "; ")
+	if c.settingsDocument != nil && c.settingsWritable {
+		_ = c.settingsDocument.Set("fileSearchIgnorePatterns", ignores)
+	}
+	c.queueSettingsSave()
+	if c.fileSearch != nil {
+		c.fileSearch.Apply(c.fileSearchScopes, c.fileSearchIgnores)
+	}
+	c.settingsStatus = c.text("忽略规则已更新", "Ignore rules updated")
+}
+
+func splitSettingList(text string) []string {
+	var values []string
+	for _, part := range strings.FieldsFunc(text, func(r rune) bool { return r == ';' || r == '\n' || r == '\r' }) {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
+}
+
+func userHomeDirectory() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
 }
 
 func (c *controller) setCompact(enabled bool) {

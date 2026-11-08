@@ -8,7 +8,9 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
+	filesearch "github.com/YYHCOPPOLO/wincast/go/internal/domain/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
+	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo/ui"
@@ -23,6 +25,7 @@ const (
 	ModeCalculatorHistory
 	ModeEmoji
 	ModeArguments
+	ModeFileSearch
 )
 
 // Callbacks are the user's intent. The view never performs I/O and never
@@ -64,6 +67,11 @@ type Callbacks struct {
 	CycleEmojiTone func() emoji.SkinTone
 
 	SubmitArguments func(domain.Application, []string)
+
+	FileSearch   func(query string)
+	OpenFile     func(filesearch.Hit)
+	RevealFile   func(filesearch.Hit)
+	CopyFilePath func(filesearch.Hit)
 }
 
 // View is UI-thread-owned display state. Callbacks send user intent back to
@@ -120,6 +128,11 @@ type View struct {
 
 	Argument     *ArgumentForm
 	argumentList ui.ListState
+
+	FileSearchItems []filesearch.Hit
+	FileSearchState files.State
+	FileSearchError string
+	fileSearchList  ui.ListState
 }
 
 func New(chinese bool, callbacks Callbacks) *View {
@@ -174,6 +187,8 @@ func (v *View) Render(c *ui.Context) {
 				placeholder = v.Text("搜索计算历史…", "Search calculator history…")
 			case ModeEmoji:
 				placeholder = v.Text("搜索 Emoji…", "Search emoji…")
+			case ModeFileSearch:
+				placeholder = v.Text("搜索文件和文件夹…", "Search files and folders…")
 			case ModeArguments:
 				if current := v.argumentCurrent(); current != nil {
 					placeholder = current.Name
@@ -203,6 +218,8 @@ func (v *View) Render(c *ui.Context) {
 			v.calculatorHistoryBody(c, tokens)
 		case ModeEmoji:
 			v.emojiBody(c, tokens)
+		case ModeFileSearch:
+			v.fileSearchBody(c, tokens)
 		case ModeArguments:
 			v.argumentsBody(c, tokens)
 		default:
@@ -237,6 +254,14 @@ func (v *View) defaultStatus() string {
 		return v.Text("计算历史", "Calculator history")
 	case ModeEmoji:
 		return v.Text("Emoji 与符号 · 肤色 "+v.EmojiTone.Label(), "Emoji & Symbols · "+v.EmojiTone.Label())
+	case ModeFileSearch:
+		if v.FileSearchError != "" {
+			return v.FileSearchError
+		}
+		if v.FileSearchState == files.Failed {
+			return v.Text("文件搜索不可用", "File search is unavailable")
+		}
+		return v.Text("文件搜索", "File search")
 	case ModeArguments:
 		return v.Text("填写模板参数", "Template arguments")
 	default:
@@ -252,6 +277,8 @@ func (v *View) footerHints() string {
 		return v.Text("Enter 复制结果  Esc 返回", "Enter Copy  Esc Back")
 	case ModeEmoji:
 		return v.Text("Enter 粘回  Ctrl+T 肤色  Esc 返回", "Enter Paste  Ctrl+T Skin tone  Esc Back")
+	case ModeFileSearch:
+		return v.Text("Enter 打开  Ctrl+Shift+C 复制路径  Esc 返回", "Enter Open  Ctrl+Shift+C Copy path  Esc Back")
 	case ModeArguments:
 		return v.Text("Enter 确认  Backspace 上一步  Esc 取消", "Enter Confirm  Backspace Back  Esc Cancel")
 	default:
@@ -423,6 +450,44 @@ func (v *View) emojiCell(c *ui.Context, index int, tokens theme.Tokens) {
 	}
 }
 
+func (v *View) fileSearchBody(c *ui.Context, tokens theme.Tokens) {
+	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, v.Text("文件与文件夹", "Files and folders")).FontSize(theme.SectionFont).
+			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+		if v.FileSearchState == files.Searching {
+			ui.Text(c, v.Text("搜索中…", "Searching…")).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+		}
+	})
+	v.fileSearchList.Selected = &v.Chosen
+	v.fileSearchList.Key = func(i int) any { return v.FileSearchItems[i].ID() }
+	v.fileSearchList.Label = func(i int) string { return v.FileSearchItems[i].Name }
+	list := components.ResultList(c, tokens, &v.fileSearchList, len(v.FileSearchItems), func(i int) {
+		hit := v.FileSearchItems[i]
+		fallback := v.Text("文件", "FILE")
+		if hit.IsDirectory {
+			fallback = v.Text("目录", "DIR")
+		}
+		components.ResultRow(c, tokens, components.Row{
+			Fallback: fallback, Title: hit.Name, Subtitle: hit.Parent, Selected: i == v.Chosen,
+		})
+	}).Grow(1).Padding(0, 8).Label(v.Text("文件搜索结果", "File search results"))
+	if list.Submitted() {
+		v.open()
+	}
+	if len(v.FileSearchItems) == 0 {
+		message := v.Text("没有找到文件", "No files found")
+		switch {
+		case v.Query == "":
+			message = v.Text("输入以搜索文件和文件夹", "Type to search files and folders")
+		case v.FileSearchState == files.Searching || v.FileSearchState == files.Idle:
+			message = v.Text("正在搜索文件…", "Searching files…")
+		case v.FileSearchState == files.Failed:
+			message = v.Text("文件搜索不可用", "File search is unavailable")
+		}
+		ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
+	}
+}
+
 func (v *View) cycleEmojiTone() {
 	if v.callbacks.CycleEmojiTone == nil {
 		return
@@ -453,6 +518,8 @@ func (v *View) entryFallback(application domain.Application) string {
 		return v.Text("链接", "LINK")
 	case domain.KindSnippet:
 		return v.Text("片段", "SNIP")
+	case domain.KindFileSearch:
+		return v.Text("文件", "FILE")
 	}
 	return application.Name
 }
@@ -534,6 +601,12 @@ func (v *View) textKey(key ui.TextKey) bool {
 			v.deleteSelectedClipboard()
 			return true
 		}
+	}
+	if key.Mods == ui.Ctrl|ui.Shift && key.Key == ui.KeyC && v.Mode == ModeFileSearch {
+		if v.Chosen >= 0 && v.Chosen < len(v.FileSearchItems) && v.callbacks.CopyFilePath != nil {
+			v.callbacks.CopyFilePath(v.FileSearchItems[v.Chosen])
+		}
+		return true
 	}
 	if key.Mods == ui.Ctrl|ui.Shift && (key.Key == ui.KeyEnter || key.Key == ui.KeyC) {
 		v.syncQuery(key.Text())
@@ -646,7 +719,7 @@ func (v *View) escape() {
 	}
 	if v.Query == "" {
 		switch v.Mode {
-		case ModeClipboard, ModeDictionary, ModeCalculatorHistory, ModeEmoji:
+		case ModeClipboard, ModeDictionary, ModeCalculatorHistory, ModeEmoji, ModeFileSearch:
 			v.SetModeLauncher()
 			return
 		}
@@ -708,6 +781,11 @@ func (v *View) open() {
 	case ModeEmoji:
 		if v.EmojiChosen >= 0 && v.EmojiChosen < len(v.EmojiItems) && v.callbacks.EmojiPaste != nil {
 			v.callbacks.EmojiPaste(v.EmojiItems[v.EmojiChosen].Glyph)
+		}
+		return
+	case ModeFileSearch:
+		if v.Chosen >= 0 && v.Chosen < len(v.FileSearchItems) && v.callbacks.OpenFile != nil {
+			v.callbacks.OpenFile(v.FileSearchItems[v.Chosen])
 		}
 		return
 	}
@@ -795,6 +873,14 @@ func (v *View) choose(i int) {
 		}
 		v.EmojiChosen = chosen
 		return
+	case ModeFileSearch:
+		if len(v.FileSearchItems) == 0 {
+			v.Chosen = -1
+			return
+		}
+		v.Chosen = max(0, min(i, len(v.FileSearchItems)-1))
+		v.fileSearchList.ScrollIntoView(v.Chosen)
+		return
 	}
 	minimum := 0
 	if v.CalcResult != nil {
@@ -855,6 +941,20 @@ func (v *View) Filter() {
 		v.emojiScroll.X, v.emojiScroll.Y = 0, 0
 		v.emojiReveal = true
 		v.choose(0)
+		return
+	case ModeFileSearch:
+		v.CalcResult = nil
+		v.CalcHistory = nil
+		v.EmojiItems = nil
+		v.FileSearchError = ""
+		if strings.TrimSpace(v.Query) == "" {
+			v.FileSearchState = files.Idle
+			v.FileSearchItems = nil
+			v.Chosen = -1
+		}
+		if v.callbacks.FileSearch != nil {
+			v.callbacks.FileSearch(v.Query)
+		}
 		return
 	}
 	if v.OnLookup != nil {
@@ -950,6 +1050,38 @@ func (v *View) SetModeCalculatorHistory() {
 	v.EmojiItems = nil
 	v.Filter()
 	v.Input.Focus()
+}
+
+func (v *View) SetModeFileSearch() {
+	v.SetExpanded(true)
+	if v.Mode == ModeFileSearch {
+		v.Input.Focus()
+		return
+	}
+	if v.Mode == ModeLauncher {
+		v.launcherQuery = v.Query
+	}
+	v.Mode = ModeFileSearch
+	v.Query = ""
+	v.inputText.Set("")
+	v.Chosen = -1
+	v.CalcResult = nil
+	v.CalcHistory = nil
+	v.EmojiItems = nil
+	v.Filter()
+	v.Input.Focus()
+}
+
+func (v *View) SetFileSearchResults(state files.State, hits []filesearch.Hit, errText string) {
+	if state == files.Searching {
+		v.FileSearchState = state
+		return
+	}
+	v.FileSearchState = state
+	v.FileSearchItems = hits
+	v.FileSearchError = errText
+	v.fileSearchList.ScrollIntoView(0)
+	v.choose(0)
 }
 
 func (v *View) SetModeClipboard() {
