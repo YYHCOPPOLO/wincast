@@ -30,6 +30,7 @@ const (
 	KindFileSearch    Kind = "file-search"
 	KindSystemAction  Kind = "system-action"
 	KindWindowCommand Kind = "window-command"
+	KindCalendar      Kind = "calendar"
 )
 
 // Mode is the palette state that selects both the query source and the rows.

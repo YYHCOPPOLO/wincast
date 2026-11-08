@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	domainfiles "github.com/YYHCOPPOLO/wincast/go/internal/domain/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
@@ -51,6 +52,11 @@ func (c *controller) loadSettings() {
 	c.windowShowInLauncher = document.Bool("windowManagementShowInLauncher", true)
 	c.windowGap = document.Int("windowManagementGap", 0)
 	c.windowCycle = document.Bool("windowManagementCycleOnRepeat", false)
+	c.featureCalendar = document.Bool("calendarEnabled", false)
+	c.calendarShowInLauncher = document.Bool("calendarShowInLauncher", true)
+	c.autoJoin = document.Bool("autoJoinMeetings", false)
+	c.autoJoinConfirms = document.Bool("autoJoinConfirms", true)
+	c.joinWindowMinutes = int64(document.Int("joinWindowMinutes", 5))
 	c.commandsShowInLauncher = document.Bool("commandsShowInLauncher", true)
 	c.quicklinksShowInLauncher = document.Bool("quicklinksShowInLauncher", true)
 	c.snippetsShowInLauncher = document.Bool("snippetsShowInLauncher", true)
@@ -90,6 +96,11 @@ func (c *controller) clampSettings() {
 	case 0, 8, 16, 24:
 	default:
 		c.windowGap = 0
+	}
+	switch c.joinWindowMinutes {
+	case 1, 2, 5, 10, 15:
+	default:
+		c.joinWindowMinutes = 5
 	}
 }
 
@@ -461,6 +472,44 @@ func (c *controller) settingsView(ctx *ui.Context) {
 							c.setFeature("windowManagementShowInLauncher", enabled)
 						}
 					})
+					components.FormRow(ctx, tokens, c.text("日历", "Calendar"), func() {
+						enabled := c.featureCalendar
+						ui.Switch(ctx, &enabled).Label(c.text("读取 Windows 日历和会议链接", "Read Windows calendar and meeting links"))
+						if enabled != c.featureCalendar {
+							c.setFeature("calendarEnabled", enabled)
+						}
+					})
+					if c.featureCalendar {
+						components.FormRow(ctx, tokens, c.text("自动入会", "Auto join"), func() {
+							enabled := c.autoJoin
+							ui.Switch(ctx, &enabled).Label(c.text("会议开始时自动加入", "Join meetings when they start"))
+							if enabled != c.autoJoin {
+								c.setFeature("autoJoinMeetings", enabled)
+							}
+						})
+						components.FormRow(ctx, tokens, c.text("入会前确认", "Confirm join"), func() {
+							enabled := c.autoJoinConfirms
+							ui.Switch(ctx, &enabled).Label(c.text("自动入会前询问", "Ask before joining automatically"))
+							if enabled != c.autoJoinConfirms {
+								c.setFeature("autoJoinConfirms", enabled)
+							}
+						})
+						components.FormRow(ctx, tokens, c.text("提前量", "Join window"), func() {
+							if ui.Button(ctx, c.text(fmt.Sprintf("%d 分钟", c.joinWindowMinutes), fmt.Sprintf("%d min", c.joinWindowMinutes))).Clicked() {
+								c.cycleJoinWindow()
+							}
+						})
+						components.FormRow(ctx, tokens, c.text("显示在启动器", "Show in launcher"), func() {
+							enabled := c.calendarShowInLauncher
+							ui.Switch(ctx, &enabled).Label(c.text("允许搜索我的日程", "Make My Schedule searchable"))
+							if enabled != c.calendarShowInLauncher {
+								c.setFeature("calendarShowInLauncher", enabled)
+							}
+						})
+						if c.calendarError != "" {
+							ui.Text(ctx, c.calendarError).FontSize(theme.TrailingFont).TextColor(tokens.Destructive).SingleLine()
+						}
+					}
 					components.FormRow(ctx, tokens, c.text("保留时间", "Retention"), func() {
 						if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).Clicked() {
 							c.setClipboardRetention(cycleClipboardRetention(c.clipboardRetention))
@@ -587,6 +636,10 @@ func (c *controller) setLanguage(value string) {
 }
 
 func (c *controller) setFeature(key string, enabled bool) {
+	if key == "calendarEnabled" {
+		c.setCalendarEnabled(enabled)
+		return
+	}
 	switch key {
 	case "dictionaryEnabled":
 		c.featureDictionary = enabled
@@ -625,6 +678,16 @@ func (c *controller) setFeature(key string, enabled bool) {
 		c.refreshExtras()
 	case "windowManagementCycleOnRepeat":
 		c.windowCycle = enabled
+	case "calendarShowInLauncher":
+		c.calendarShowInLauncher = enabled
+		c.refreshExtras()
+	case "autoJoinMeetings":
+		c.autoJoin = enabled
+		if enabled && c.featureCalendar && c.calendar != nil {
+			c.calendar.ArmNow(time.Now().Unix())
+		}
+	case "autoJoinConfirms":
+		c.autoJoinConfirms = enabled
 	case "commandsShowInLauncher":
 		c.commandsShowInLauncher = enabled
 	case "quicklinksShowInLauncher":

@@ -17,6 +17,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/windowcommand"
 	calcservice "github.com/YYHCOPPOLO/wincast/go/internal/features/calculator"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/calendar"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
 	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
@@ -152,6 +153,18 @@ type controller struct {
 	fileSearchIgnores        []string
 	fileSearchScopesDraft    string
 	fileSearchIgnoresDraft   string
+	calendar                 *calendar.Store
+	featureCalendar          bool
+	calendarShowInLauncher   bool
+	autoJoin                 bool
+	autoJoinConfirms         bool
+	joinWindowMinutes        int64
+	calendarError            string
+	calendarLoading          bool
+	calendarFetching         bool
+	calendarRevision         uint64
+	calendarTickerStarted    bool
+	autoJoinBusy             bool
 	systemConfirming         systemaction.ID
 	volumeLoading            bool
 	featureWindowManagement  bool
@@ -191,6 +204,7 @@ func newController(started time.Time, profile profile) *controller {
 	c.reloadSnippets()
 	c.fileSearch = files.New()
 	c.fileSearch.Apply(c.fileSearchScopes, c.fileSearchIgnores)
+	c.calendar = calendar.New(c.joinWindowMinutes)
 	c.windowManager = windowmanagement.New()
 	c.fileSearchScopesDraft = strings.Join(c.fileSearchScopes, "; ")
 	c.fileSearchIgnoresDraft = strings.Join(c.fileSearchIgnores, "; ")
@@ -242,6 +256,8 @@ func newController(started time.Time, profile profile) *controller {
 		OpenFile:              c.openFileHit,
 		RevealFile:            c.revealFileHit,
 		CopyFilePath:          c.copyFileHitPath,
+		JoinMeeting:           c.joinMeeting,
+		CopyMeetingLink:       c.copyMeetingLink,
 		ApplyVolume:           c.applyVolume,
 		CloseVolume:           c.closeVolumeDialog,
 	})
@@ -295,6 +311,7 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 	c.startSettingsWriter()
 	c.startRankingWriter()
 	c.startClipboard()
+	c.startCalendar()
 	c.startClipboardImages()
 	c.startCalculatorRates()
 	c.startClipboardHost()
@@ -448,6 +465,9 @@ func (c *controller) open(application domain.Application) {
 	case domain.KindFileSearch:
 		c.openFileSearch()
 		return
+	case domain.KindCalendar:
+		c.openSchedule()
+		return
 	case domain.KindSystemAction:
 		if id, ok := systemaction.FromEntryID(application.ID); ok {
 			c.runSystemAction(id)
@@ -500,6 +520,10 @@ func (c *controller) menu() {
 		c.fileSearchMenu()
 		return
 	}
+	if c.view.Mode == palette.ModeSchedule {
+		c.scheduleMenu()
+		return
+	}
 	menu := components.Menu([]components.MenuAction{
 		{Label: c.view.Text("打开选中应用", "Open selected application"), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: func() {
 			if c.view.Chosen >= 0 && c.view.Chosen < len(c.view.Results) {
@@ -521,6 +545,7 @@ func (c *controller) menu() {
 		{Label: c.view.Text("计算器历史…", "Calculator history…"), Click: c.openCalculatorHistory},
 		{Label: c.view.Text("Emoji 与符号…", "Emoji & Symbols…"), Click: c.openEmoji},
 		{Label: c.view.Text("搜索文件…", "Search files…"), Disabled: !c.featureFileSearch, Click: c.openFileSearch},
+		{Label: c.view.Text("我的日程…", "My Schedule…"), Disabled: !c.featureCalendar, Click: c.openSchedule},
 		{Label: c.view.Text("系统操作", "System actions"), Submenu: c.systemActionMenu()},
 		{Label: c.view.Text("窗口布局", "Window layout"), Submenu: c.windowCommandMenu(), Disabled: !c.featureWindowManagement},
 		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},

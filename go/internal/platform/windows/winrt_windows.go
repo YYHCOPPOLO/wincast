@@ -27,7 +27,7 @@ var (
 )
 
 const (
-	roInitMultithreaded = 0
+	roInitMultithreaded = 1
 	asyncStarted        = 0
 	asyncCompleted      = 1
 	asyncCanceled       = 2
@@ -136,7 +136,10 @@ func awaitOperation(operation uintptr, timeout time.Duration) (uintptr, error) {
 			return 0, fmt.Errorf("WinRT operation failed: 0x%08x", code)
 		}
 		if time.Now().After(deadline) {
-			comCall(operation, 9) // Cancel
+			// Cancelling a WinRT operation whose provider is unavailable has
+			// been observed to fault inside the proxy. Releasing the reference
+			// at the caller is safe; the completed callback owns its own
+			// lifetime.
 			return 0, errors.New("WinRT operation timed out")
 		}
 		time.Sleep(10 * time.Millisecond)

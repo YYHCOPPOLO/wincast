@@ -9,6 +9,7 @@ import (
 	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	filesearch "github.com/YYHCOPPOLO/wincast/go/internal/domain/filesearch"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/meeting"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
@@ -26,6 +27,7 @@ const (
 	ModeEmoji
 	ModeArguments
 	ModeFileSearch
+	ModeSchedule
 )
 
 // Callbacks are the user's intent. The view never performs I/O and never
@@ -72,6 +74,9 @@ type Callbacks struct {
 	OpenFile     func(filesearch.Hit)
 	RevealFile   func(filesearch.Hit)
 	CopyFilePath func(filesearch.Hit)
+
+	JoinMeeting     func(meeting.Event)
+	CopyMeetingLink func(meeting.Event)
 
 	ApplyVolume func(float64)
 	CloseVolume func()
@@ -137,6 +142,12 @@ type View struct {
 	FileSearchError string
 	fileSearchList  ui.ListState
 
+	ScheduleEvents  []meeting.Event
+	ScheduleItems   []meeting.Event
+	ScheduleLoading bool
+	ScheduleError   string
+	scheduleList    ui.ListState
+
 	VolumeOpen  bool
 	VolumeValue float64
 }
@@ -196,6 +207,8 @@ func (v *View) Render(c *ui.Context) {
 				placeholder = v.Text("搜索 Emoji…", "Search emoji…")
 			case ModeFileSearch:
 				placeholder = v.Text("搜索文件和文件夹…", "Search files and folders…")
+			case ModeSchedule:
+				placeholder = v.Text("搜索日程…", "Search schedule…")
 			case ModeArguments:
 				if current := v.argumentCurrent(); current != nil {
 					placeholder = current.Name
@@ -227,6 +240,8 @@ func (v *View) Render(c *ui.Context) {
 			v.emojiBody(c, tokens)
 		case ModeFileSearch:
 			v.fileSearchBody(c, tokens)
+		case ModeSchedule:
+			v.scheduleBody(c, tokens)
 		case ModeArguments:
 			v.argumentsBody(c, tokens)
 		default:
@@ -269,6 +284,14 @@ func (v *View) defaultStatus() string {
 			return v.Text("文件搜索不可用", "File search is unavailable")
 		}
 		return v.Text("文件搜索", "File search")
+	case ModeSchedule:
+		if v.ScheduleError != "" {
+			return v.ScheduleError
+		}
+		if v.ScheduleLoading {
+			return v.Text("正在读取日历…", "Loading calendar…")
+		}
+		return v.Text("我的日程", "My schedule")
 	case ModeArguments:
 		return v.Text("填写模板参数", "Template arguments")
 	default:
@@ -286,6 +309,8 @@ func (v *View) footerHints() string {
 		return v.Text("Enter 粘回  Ctrl+T 肤色  Esc 返回", "Enter Paste  Ctrl+T Skin tone  Esc Back")
 	case ModeFileSearch:
 		return v.Text("Enter 打开  Ctrl+Shift+C 复制路径  Esc 返回", "Enter Open  Ctrl+Shift+C Copy path  Esc Back")
+	case ModeSchedule:
+		return v.Text("Enter 入会  Ctrl+Shift+C 复制链接  Esc 返回", "Enter Join  Ctrl+Shift+C Copy link  Esc Back")
 	case ModeArguments:
 		return v.Text("Enter 确认  Backspace 上一步  Esc 取消", "Enter Confirm  Backspace Back  Esc Cancel")
 	default:
@@ -523,6 +548,103 @@ func (v *View) fileSearchBody(c *ui.Context, tokens theme.Tokens) {
 	}
 }
 
+func (v *View) scheduleBody(c *ui.Context, tokens theme.Tokens) {
+	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, v.Text("日程", "Schedule")).FontSize(theme.SectionFont).
+			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+		if v.ScheduleLoading {
+			ui.Text(c, v.Text("正在读取…", "Loading…")).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+		}
+	})
+	v.scheduleList.Selected = &v.Chosen
+	v.scheduleList.Key = func(i int) any { return v.ScheduleItems[i].ID }
+	v.scheduleList.Label = func(i int) string { return v.ScheduleItems[i].Title }
+	list := components.ResultList(c, tokens, &v.scheduleList, len(v.ScheduleItems), func(i int) {
+		event := v.ScheduleItems[i]
+		fallback := event.CalendarName
+		if fallback == "" {
+			fallback = v.Text("日程", "CAL")
+		}
+		title := event.Title
+		if title == "" {
+			title = v.Text("(无标题)", "(Untitled)")
+		}
+		components.ResultRow(c, tokens, components.Row{
+			Fallback: fallback, Title: title, Trailing: v.scheduleCountdown(event.Start),
+			Selected: i == v.Chosen,
+		})
+	}).Grow(1).Padding(0, 8).Label(v.Text("日程列表", "Schedule"))
+	if list.Submitted() {
+		v.open()
+	}
+	if len(v.ScheduleItems) == 0 {
+		message := v.Text("没有即将开始的日程", "No upcoming events")
+		switch {
+		case v.ScheduleError != "":
+			message = v.ScheduleError
+		case v.ScheduleLoading:
+			message = v.Text("正在读取日历…", "Loading calendar…")
+		case strings.TrimSpace(v.Query) != "":
+			message = v.Text("没有匹配的日程", "No matching events")
+		}
+		ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
+	}
+}
+
+func (v *View) scheduleCountdown(start int64) string {
+	now := time.Now().Unix()
+	delta := start - now
+	if delta > 0 {
+		return fmt.Sprintf(v.Text("%d 分钟后", "in %d min"), (delta+59)/60)
+	}
+	elapsed := -delta / 60
+	if elapsed == 0 {
+		return v.Text("现在", "now")
+	}
+	return fmt.Sprintf(v.Text("%d 分钟前", "%d min ago"), elapsed)
+}
+
+// SetScheduleEvents replaces the snapshot and filters it again. A selection
+// is kept by event ID so a minute tick does not jump the highlight.
+func (v *View) SetScheduleEvents(events []meeting.Event, errText string) {
+	v.ScheduleEvents = events
+	v.ScheduleError = errText
+	v.ScheduleLoading = false
+	v.filterSchedule(false)
+}
+
+func (v *View) filterSchedule(reset bool) {
+	selected := ""
+	if !reset && v.Chosen >= 0 && v.Chosen < len(v.ScheduleItems) {
+		selected = v.ScheduleItems[v.Chosen].ID
+	}
+	query := strings.ToLower(strings.TrimSpace(v.Query))
+	items := make([]meeting.Event, 0, len(v.ScheduleEvents))
+	for _, event := range v.ScheduleEvents {
+		if query != "" && !strings.Contains(strings.ToLower(event.Title), query) &&
+			!strings.Contains(strings.ToLower(event.CalendarName), query) {
+			continue
+		}
+		items = append(items, event)
+	}
+	v.ScheduleItems = items
+	v.Chosen = -1
+	if selected != "" {
+		for index, event := range items {
+			if event.ID == selected {
+				v.Chosen = index
+				break
+			}
+		}
+	}
+	if v.Chosen < 0 && len(items) > 0 {
+		v.Chosen = 0
+	}
+	if v.Chosen >= 0 {
+		v.scheduleList.ScrollIntoView(v.Chosen)
+	}
+}
+
 func (v *View) cycleEmojiTone() {
 	if v.callbacks.CycleEmojiTone == nil {
 		return
@@ -559,6 +681,8 @@ func (v *View) entryFallback(application domain.Application) string {
 		return v.Text("系统", "SYS")
 	case domain.KindWindowCommand:
 		return v.Text("窗口", "WIN")
+	case domain.KindCalendar:
+		return v.Text("日程", "CAL")
 	}
 	return application.Name
 }
@@ -644,6 +768,12 @@ func (v *View) textKey(key ui.TextKey) bool {
 	if key.Mods == ui.Ctrl|ui.Shift && key.Key == ui.KeyC && v.Mode == ModeFileSearch {
 		if v.Chosen >= 0 && v.Chosen < len(v.FileSearchItems) && v.callbacks.CopyFilePath != nil {
 			v.callbacks.CopyFilePath(v.FileSearchItems[v.Chosen])
+		}
+		return true
+	}
+	if key.Mods == ui.Ctrl|ui.Shift && key.Key == ui.KeyC && v.Mode == ModeSchedule {
+		if v.Chosen >= 0 && v.Chosen < len(v.ScheduleItems) && v.callbacks.CopyMeetingLink != nil {
+			v.callbacks.CopyMeetingLink(v.ScheduleItems[v.Chosen])
 		}
 		return true
 	}
@@ -758,7 +888,7 @@ func (v *View) escape() {
 	}
 	if v.Query == "" {
 		switch v.Mode {
-		case ModeClipboard, ModeDictionary, ModeCalculatorHistory, ModeEmoji, ModeFileSearch:
+		case ModeClipboard, ModeDictionary, ModeCalculatorHistory, ModeEmoji, ModeFileSearch, ModeSchedule:
 			v.SetModeLauncher()
 			return
 		}
@@ -825,6 +955,11 @@ func (v *View) open() {
 	case ModeFileSearch:
 		if v.Chosen >= 0 && v.Chosen < len(v.FileSearchItems) && v.callbacks.OpenFile != nil {
 			v.callbacks.OpenFile(v.FileSearchItems[v.Chosen])
+		}
+		return
+	case ModeSchedule:
+		if v.Chosen >= 0 && v.Chosen < len(v.ScheduleItems) && v.callbacks.JoinMeeting != nil {
+			v.callbacks.JoinMeeting(v.ScheduleItems[v.Chosen])
 		}
 		return
 	}
@@ -920,6 +1055,14 @@ func (v *View) choose(i int) {
 		v.Chosen = max(0, min(i, len(v.FileSearchItems)-1))
 		v.fileSearchList.ScrollIntoView(v.Chosen)
 		return
+	case ModeSchedule:
+		if len(v.ScheduleItems) == 0 {
+			v.Chosen = -1
+			return
+		}
+		v.Chosen = max(0, min(i, len(v.ScheduleItems)-1))
+		v.scheduleList.ScrollIntoView(v.Chosen)
+		return
 	}
 	minimum := 0
 	if v.CalcResult != nil {
@@ -994,6 +1137,13 @@ func (v *View) Filter() {
 		if v.callbacks.FileSearch != nil {
 			v.callbacks.FileSearch(v.Query)
 		}
+		return
+	case ModeSchedule:
+		v.CalcResult = nil
+		v.CalcHistory = nil
+		v.EmojiItems = nil
+		v.FileSearchItems = nil
+		v.filterSchedule(true)
 		return
 	}
 	if v.OnLookup != nil {
@@ -1121,6 +1271,27 @@ func (v *View) SetFileSearchResults(state files.State, hits []filesearch.Hit, er
 	v.FileSearchError = errText
 	v.fileSearchList.ScrollIntoView(0)
 	v.choose(0)
+}
+
+func (v *View) SetModeSchedule() {
+	v.SetExpanded(true)
+	if v.Mode == ModeSchedule {
+		v.Input.Focus()
+		return
+	}
+	if v.Mode == ModeLauncher {
+		v.launcherQuery = v.Query
+	}
+	v.Mode = ModeSchedule
+	v.Query = ""
+	v.inputText.Set("")
+	v.Chosen = -1
+	v.CalcResult = nil
+	v.CalcHistory = nil
+	v.EmojiItems = nil
+	v.FileSearchItems = nil
+	v.Filter()
+	v.Input.Focus()
 }
 
 func (v *View) SetModeClipboard() {

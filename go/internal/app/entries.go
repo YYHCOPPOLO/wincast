@@ -67,6 +67,11 @@ func (c *controller) refreshExtras() {
 			ID: "file-search", Name: c.text("搜索文件…", "Search Files…"), Kind: domain.KindFileSearch,
 		})
 	}
+	if c.featureCalendar && c.calendarShowInLauncher {
+		extras = append(extras, domain.Application{
+			ID: "schedule", Name: c.text("我的日程…", "My Schedule…"), Kind: domain.KindCalendar,
+		})
+	}
 	for _, id := range systemaction.All {
 		extras = append(extras, domain.Application{
 			ID: id.EntryID(), Name: id.Name(c.language == "zh"), Kind: domain.KindSystemAction,
