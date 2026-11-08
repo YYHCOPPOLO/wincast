@@ -154,6 +154,7 @@ func (c *controller) openAIChat() {
 	c.view.SetModeAI(c.aiDraft)
 	c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
 	c.view.SetAIStreaming(c.aiStreaming)
+	c.view.FollowAITail()
 	c.showPanel(false)
 	c.panel.Update(func() {})
 }
@@ -245,6 +246,7 @@ func (c *controller) openAIConversation(id string) {
 	c.view.SetModeAI(c.aiDraft)
 	c.view.SetAIChat(c.aiSession.Messages, "", false, false)
 	c.view.SetAIStreaming(false)
+	c.view.FollowAITail()
 	c.showPanel(false)
 	c.panel.Update(func() {})
 }
@@ -261,32 +263,27 @@ func (c *controller) sendAIMessage(text string) {
 		return
 	}
 	if !c.aiEnabled {
-		c.aiNotice = c.text("AI 已关闭", "AI is disabled")
-		c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
+		c.aiNoticeNow(c.text("AI 已关闭", "AI is disabled"))
 		return
 	}
 	selection := c.aiDefaultModel
 	if selection == nil {
-		c.aiNotice = c.text("请在设置中选择默认 AI 模型。", "Choose a default AI model in Settings.")
-		c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
+		c.aiNoticeNow(c.text("请在设置中选择默认 AI 模型。", "Choose a default AI model in Settings."))
 		return
 	}
 	if selection.Kind == domainai.SelectionChatGPT {
-		c.aiNotice = c.text("ChatGPT 订阅暂未提供；请选择 API 连接。",
-			"ChatGPT chat is not available yet. Choose an API connection.")
-		c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
+		c.aiNoticeNow(c.text("ChatGPT 订阅暂未提供；请选择 API 连接。",
+			"ChatGPT chat is not available yet. Choose an API connection."))
 		return
 	}
 	connection, ok := c.aiConnection(selection.Connection)
 	if !ok {
-		c.aiNotice = c.text("请在设置中选择 API 连接。", "Choose an API connection in Settings.")
-		c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
+		c.aiNoticeNow(c.text("请在设置中选择 API 连接。", "Choose an API connection in Settings."))
 		return
 	}
 	provider, err := aifeature.ProviderFor(connection, selection.Model, c.aiKeys)
 	if err != nil {
-		c.aiNotice = c.aiErrorText(err)
-		c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
+		c.aiNoticeNow(c.aiErrorText(err))
 		return
 	}
 	now := time.Now().Unix()
@@ -303,7 +300,16 @@ func (c *controller) sendAIMessage(text string) {
 	c.view.ClearAIComposer()
 	c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, true)
 	c.view.SetAIStreaming(true)
+	c.view.FollowAITail()
 	c.streamAI(provider, request)
+	c.panel.Update(func() {})
+}
+
+// aiNoticeNow shows a send failure without changing the transcript.
+func (c *controller) aiNoticeNow(text string) {
+	c.aiNotice = text
+	c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
+	c.panel.Update(func() {})
 }
 
 func (c *controller) streamAI(provider *aifeature.Provider, request domainai.Request) {
@@ -479,6 +485,9 @@ func (c *controller) setAIDefaultModel(selection *domainai.ModelSelection) {
 	c.persistAISettings()
 	c.refreshAIChatView()
 	c.refreshSettingsWindow()
+	if c.panel != nil {
+		c.panel.Update(func() {})
+	}
 }
 
 // refreshAIChatView keeps the palette header, transcript and streaming flag in
@@ -756,6 +765,7 @@ func (c *controller) saveAIConnection() {
 	}
 	c.aiConfigError = ""
 	c.persistAISettings()
+	c.refreshAIKeyStatus()
 	c.aiConnEditing = -1
 	c.aiConnDraftKey = ""
 	c.aiConnDraftErr = ""
@@ -783,6 +793,7 @@ func (c *controller) removeAIConnection(index int) {
 		c.aiConnEditing--
 	}
 	c.persistAISettings()
+	c.refreshAIKeyStatus()
 	c.refreshAIChatView()
 	c.refreshExtras()
 	c.refreshSettingsWindow()
@@ -792,7 +803,15 @@ func (c *controller) aiConnectionKeySaved(index int) bool {
 	if index < 0 || index >= len(c.aiConnections) {
 		return false
 	}
-	return c.aiKeys.Has(c.aiConnections[index].ID)
+	return c.aiKeyStatus[c.aiConnections[index].ID]
+}
+
+func (c *controller) refreshAIKeyStatus() {
+	status := make(map[string]bool, len(c.aiConnections))
+	for _, connection := range c.aiConnections {
+		status[connection.ID] = c.aiKeys.Has(connection.ID)
+	}
+	c.aiKeyStatus = status
 }
 
 func (c *controller) aiConnectionModel(connection domainai.Connection) string {
@@ -885,6 +904,10 @@ func (c *controller) aiErrorTextText(message string) string {
 		return c.text("AI 服务地址无效。", "The provider endpoint is invalid.")
 	case "Unsupported AI provider.":
 		return c.text("不支持该 AI 服务商。", "Unsupported AI provider.")
+	case domainai.ErrInvalidURL.Error():
+		return c.text("请输入有效的服务地址。", "Enter a valid provider base URL.")
+	case domainai.ErrInsecureURL.Error():
+		return c.text("远程 AI 服务需要 HTTPS 地址。", "Remote AI providers require an HTTPS base URL.")
 	case "Cancelled":
 		return c.text("已取消", "Cancelled")
 	case aiMessagePlaceholder:
@@ -927,6 +950,7 @@ func (c *controller) newAIChatFromMenu() {
 	if !c.panel.IsVisible() {
 		c.showPanel(false)
 	}
+	c.panel.Update(func() {})
 }
 
 func (c *controller) quickActionMenu() []components.MenuAction {
@@ -963,6 +987,9 @@ func (c *controller) aiModelMenu() {
 		})
 	}
 	components.Menu(actions).Popup(c.panel)
+	if c.panel != nil && c.panel.IsVisible() && c.panel.IsFocused() {
+		c.view.Input.Focus()
+	}
 }
 
 func checkedAccelerator(current, choice *domainai.ModelSelection) string {
@@ -973,14 +1000,6 @@ func checkedAccelerator(current, choice *domainai.ModelSelection) string {
 		return "✓"
 	}
 	return ""
-}
-
-func (c *controller) aiHistoryChoose(index int) {
-	items := c.view.AIHistoryItems
-	if index < 0 || index >= len(items) {
-		return
-	}
-	c.openAIConversation(items[index].ID)
 }
 
 // routeAIEntry opens an AI Chat or Quick Action launcher row.

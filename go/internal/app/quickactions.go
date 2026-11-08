@@ -44,7 +44,11 @@ func (c *controller) runQuickAction(action domainai.QuickAction) {
 	}
 	selection := c.quickActionSelection()
 	if selection == nil {
-		c.view.PendingToast = c.text("请在设置中选择快捷操作模型。", "Choose a Quick Action model in Settings.")
+		if c.quickActionModel != nil && c.quickActionModel.Kind == domainai.SelectionChatGPT {
+			c.view.PendingToast = c.text("ChatGPT 订阅暂未提供。", "ChatGPT chat is not available yet.")
+		} else {
+			c.view.PendingToast = c.text("请在设置中选择快捷操作模型。", "Choose a Quick Action model in Settings.")
+		}
 		return
 	}
 	connection, ok := c.aiConnection(selection.Connection)
@@ -65,17 +69,19 @@ func (c *controller) runQuickAction(action domainai.QuickAction) {
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
-		defer func() {
+		releaseClipboard := func() {
 			time.Sleep(150 * time.Millisecond)
 			c.clipboardSuppress.Store(false)
-		}()
+		}
 		captureCtx, cancel := context.WithTimeout(c.ctx, 2*time.Second)
 		text, captureErr := windows.CaptureSelection(captureCtx, target, owner)
 		cancel()
 		if c.ctx.Err() != nil {
+			releaseClipboard()
 			return
 		}
 		if captureErr != nil {
+			releaseClipboard()
 			log.Printf("quick action selection capture failed: %v", captureErr)
 			c.panel.Update(func() {
 				if c.closing {
@@ -84,6 +90,10 @@ func (c *controller) runQuickAction(action domainai.QuickAction) {
 				c.showFailure(c.text("无法读取选中文本", "Could not read the selection"),
 					action.Title(), c.text("请选中文本后再试。", "Select text and try again."))
 			})
+			return
+		}
+		releaseClipboard()
+		if c.ctx.Err() != nil {
 			return
 		}
 		request := domainai.Request{
@@ -138,6 +148,9 @@ func (c *controller) quickActionChanged(generation uint64) {
 		return
 	}
 	snapshot := c.qa.Snapshot()
+	if generation != 0 && snapshot.Generation != generation {
+		return
+	}
 	if snapshot.Preview {
 		if c.qaWindow == nil {
 			c.createQuickActionWindow()
@@ -160,7 +173,6 @@ func (c *controller) quickActionChanged(generation uint64) {
 		}
 		c.qa.Reset()
 	}
-	_ = generation
 }
 
 func (c *controller) createQuickActionWindow() {
@@ -294,7 +306,14 @@ func (c *controller) applyQuickActionResult() {
 						"The result was copied to the clipboard; paste it manually."))
 			})
 		}
-		c.qa.Reset()
+		c.panel.Update(func() {
+			if c.closing || c.qa == nil {
+				return
+			}
+			if c.qa.Snapshot().Generation == snapshot.Generation {
+				c.qa.Reset()
+			}
+		})
 	}()
 }
 

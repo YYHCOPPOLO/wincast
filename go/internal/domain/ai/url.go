@@ -41,6 +41,9 @@ func ValidateURL(raw string) (ParsedURL, error) {
 	if parsed.User != nil {
 		return ParsedURL{}, ErrInvalidURL
 	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return ParsedURL{}, ErrInvalidURL
+	}
 	host := parsed.Hostname()
 	if host == "" {
 		return ParsedURL{}, ErrInvalidURL

@@ -13,14 +13,15 @@ import (
 
 // Snapshot is a consistent copy for the UI thread.
 type Snapshot struct {
-	Action   domainai.QuickAction
-	Target   windows.Target
-	Result   string
-	Running  bool
-	Accepted bool
-	Canceled bool
-	Failed   bool
-	Preview  bool
+	Generation uint64
+	Action     domainai.QuickAction
+	Target     windows.Target
+	Result     string
+	Running    bool
+	Accepted   bool
+	Canceled   bool
+	Failed     bool
+	Preview    bool
 }
 
 type Coordinator struct {
@@ -99,7 +100,8 @@ func (c *Coordinator) Snapshot() Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return Snapshot{
-		Action: c.action, Target: c.target, Result: c.result.String(),
+		Generation: c.generation,
+		Action:     c.action, Target: c.target, Result: c.result.String(),
 		Running: c.running, Accepted: c.accepted, Canceled: c.canceled,
 		Failed: c.failed, Preview: c.preview,
 	}

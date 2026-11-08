@@ -552,6 +552,10 @@ func (c *controller) settingsView(ctx *ui.Context) {
 							c.setAIEnabled(enabled)
 						}
 					})
+					if c.aiConfigError != "" {
+						ui.Text(ctx, c.aiConfigError).FontSize(theme.TrailingFont).
+							TextColor(tokens.Destructive).SingleLine()
+					}
 					if !c.aiEnabled {
 						ui.Text(ctx, c.text("默认关闭；打开后才会连接 AI 服务并保存对话历史。",
 							"Off by default. Enabling starts provider requests and chat history.")).
@@ -659,10 +663,6 @@ func (c *controller) settingsView(ctx *ui.Context) {
 							"ChatGPT subscription is not available yet. Use an API connection.")).
 							FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
 					})
-					if c.aiConfigError != "" {
-						ui.Text(ctx, c.aiConfigError).FontSize(theme.TrailingFont).
-							TextColor(tokens.Destructive).SingleLine()
-					}
 				})
 
 				components.Card(ctx, tokens, func() {

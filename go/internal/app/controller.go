@@ -220,6 +220,7 @@ type controller struct {
 	qaWindow              *mygo.Window
 	qaScroll              ui.ScrollState
 	qaApplied             bool
+	aiKeyStatus           map[string]bool
 }
 
 func newController(started time.Time, profile profile) *controller {
@@ -238,7 +239,10 @@ func newController(started time.Time, profile profile) *controller {
 	c.clipboardEnabled.Store(true)
 	c.notesRoot = filepath.Join(profile.data, "notes")
 	c.notes = storage.NewFileNotes(c.notesRoot)
+	c.aiKeys = aifeature.OpenKeyStore(profile.settings)
+	c.aiKeyStatus = make(map[string]bool)
 	c.loadSettings()
+	c.refreshAIKeyStatus()
 	c.commands = commands.Open(filepath.Join(profile.settings, "custom-commands.json"))
 	c.quicklinks = quicklinks.Load(filepath.Join(profile.settings, "quicklinks.json"))
 	c.snippets = snippets.NewRepository(filepath.Join(profile.data, "snippets"))
@@ -258,7 +262,6 @@ func newController(started time.Time, profile profile) *controller {
 	c.calcRegion = domaincalc.CurrencyForLocale(windows.UserLocale())
 	c.emojiTone = c.settingsDocument.String("emojiSkinTone", "none")
 	c.clampEmojiTone()
-	c.aiKeys = aifeature.OpenKeyStore(profile.settings)
 	c.aiHistory = aifeature.NewHistory(profile.settings)
 	c.aiSession = domainai.NewSession(c.newAIID(), time.Now().Unix())
 	c.qa = quickactions.New()

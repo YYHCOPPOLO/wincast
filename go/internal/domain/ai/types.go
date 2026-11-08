@@ -161,6 +161,9 @@ func CompletionEndpoint(p ProviderKind, baseURL string) string {
 		if strings.HasSuffix(base, "/messages") {
 			return base
 		}
+		if strings.HasSuffix(base, "/v1") {
+			return base + "/messages"
+		}
 		return base + "/v1/messages"
 	}
 	if strings.HasSuffix(base, "/chat/completions") {

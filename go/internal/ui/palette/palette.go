@@ -2,6 +2,7 @@ package palette
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -89,14 +90,13 @@ type Callbacks struct {
 	CopyUninstallPath   func(string)
 	RevealUninstallPath func(string)
 
-	AISend         func(string)
-	AICancel       func()
-	AINew          func()
-	AIHistory      func(string) []domainai.Conversation
-	AIOpen         func(string)
-	AIModelMenu    func()
-	AILeave        func(string)
-	AIHistoryClose func()
+	AISend      func(string)
+	AICancel    func()
+	AINew       func()
+	AIHistory   func(string) []domainai.Conversation
+	AIOpen      func(string)
+	AIModelMenu func()
+	AILeave     func(string)
 
 	ApplyVolume func(float64)
 	CloseVolume func()
@@ -1845,6 +1845,12 @@ func (v *View) aiHistoryBody(c *ui.Context, tokens theme.Tokens) {
 	}
 }
 
+// FollowAITail pins the transcript to its newest turn. The scroll container
+// clamps the sentinel to the real end on the next layout.
+func (v *View) FollowAITail() {
+	v.aiScroll.Y = math.MaxFloat32
+}
+
 func (v *View) SetModeClipboard() {
 	v.SetExpanded(true)
 	if v.Mode == ModeClipboard {
@@ -1960,8 +1966,8 @@ func (v *View) ToggleDictionary() {
 // quiet hover surface with a stroked arrow instead of a boxed text button.
 func (v *View) backButton(c *ui.Context, tokens theme.Tokens) {
 	button := ui.ButtonBase(c).Size(30, 30).Radius(theme.ControlRadius).
-		Tooltip(v.Text("返回启动器 (Esc)", "Back to launcher (Esc)")).
-		Label(v.Text("返回启动器", "Back to launcher")).
+		Tooltip(v.Text("返回 (Esc)", "Back (Esc)")).
+		Label(v.Text("返回", "Back")).
 		Cursor(ui.CursorPointer)
 	fill := ui.Transparent
 	switch {

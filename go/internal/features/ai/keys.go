@@ -25,10 +25,27 @@ func OpenKeyStore(settingsDir string) *KeyStore {
 }
 
 func (k *KeyStore) path(id string) (string, error) {
-	if !storage.ValidID(id) {
+	if !safeKeyID(id) {
 		return "", errors.New("invalid connection identity")
 	}
 	return filepath.Join(k.dir, id+".dpapi"), nil
+}
+
+// safeKeyID keeps a saved connection's entropy text while refusing names that
+// could escape the key directory.
+func safeKeyID(id string) bool {
+	if id == "" || len(id) > 128 || id == "." || id == ".." {
+		return false
+	}
+	if strings.ContainsAny(id, `/\:*?"<>|`) {
+		return false
+	}
+	for _, r := range id {
+		if r < 0x20 {
+			return false
+		}
+	}
+	return true
 }
 
 func (k *KeyStore) Get(id string) (string, bool) {
@@ -38,6 +55,9 @@ func (k *KeyStore) Get(id string) (string, bool) {
 	}
 	sealed, err := os.ReadFile(path)
 	if err != nil {
+		return "", false
+	}
+	if len(sealed) == 0 || len(sealed) > 64<<10 {
 		return "", false
 	}
 	plain, err := windows.Unprotect(sealed, []byte(id))
