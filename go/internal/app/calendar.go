@@ -343,7 +343,7 @@ func (c *controller) scheduleMenu() {
 		{Label: c.text("返回启动器", "Back to launcher"), Accelerator: "Esc", Click: c.view.SetModeLauncher},
 		{Separator: true},
 		{Label: c.text("设置…", "Settings…"), Click: c.openSettings},
-		{Label: c.text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
+		{Label: c.text("退出", "Quit"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)
 }

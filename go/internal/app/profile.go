@@ -7,6 +7,7 @@ import (
 )
 
 const previewID = storage.PreviewID
+const appName = "Tinycast"
 
 type profile struct {
 	settings   string

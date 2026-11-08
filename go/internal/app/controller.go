@@ -43,7 +43,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const previewShortcut = "Alt+Shift+Space"
+const defaultShortcut = "Alt+Space"
 
 type controller struct {
 	ctx                          context.Context
@@ -393,7 +393,7 @@ func newController(started time.Time, profile profile) *controller {
 
 func (c *controller) ready(command windows.Activation, hidden bool) {
 	c.panel = mygo.NewWindow(mygo.WindowOptions{
-		Title: "Tinycast Go Preview", Panel: true, Hidden: true, Frameless: true,
+		Title: "Tinycast", Panel: true, Hidden: true, Frameless: true,
 		Width: int(theme.PanelWidth), Height: c.panelHeight(), DisableResize: true,
 		BackgroundColor: "light-dark(#ffffff, #232327)",
 		Content:         ui.View(c.view.Render),
@@ -459,6 +459,9 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 		c.activate(command)
 	}
 	log.Printf("ready elapsed_us=%d hwnd=%d", time.Since(c.started).Microseconds(), c.panel.NativeHandle())
+	// One snapshot per start makes handle/goroutine/working-set growth visible
+	// across long lifecycle runs without opening the diagnostics window.
+	c.refreshDiagnostics()
 }
 
 func (c *controller) logDisplays() {
@@ -741,7 +744,7 @@ func (c *controller) popupAppMenu() {
 		{Label: c.view.Text("笔记…", "Notes…"), Disabled: !c.featureNotes, Click: c.openEditor},
 		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: c.openDiagnostics},
 		{Separator: true},
-		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
+		{Label: c.view.Text("退出", "Quit"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)
 }
@@ -816,7 +819,7 @@ func (c *controller) emojiMenu() {
 		{Separator: true},
 		{Label: c.view.Text("返回启动器", "Back to launcher"), Accelerator: "Esc", Click: c.view.SetModeLauncher},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
-		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
+		{Label: c.view.Text("退出", "Quit"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)
 }
@@ -842,7 +845,7 @@ func (c *controller) calculatorMenu() {
 		{Separator: true},
 		{Label: c.view.Text("返回启动器", "Back to launcher"), Accelerator: "Esc", Click: c.view.SetModeLauncher},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
-		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
+		{Label: c.view.Text("退出", "Quit"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)
 }
@@ -883,7 +886,7 @@ func (c *controller) clipboardMenu() {
 		{Label: c.view.Text("返回启动器", "Back to launcher"), Accelerator: "Esc", Click: c.view.SetModeLauncher},
 		{Separator: true},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
-		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
+		{Label: c.view.Text("退出", "Quit"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)
 }
@@ -942,20 +945,20 @@ func (c *controller) ownsForeground() bool {
 }
 
 func (c *controller) setupTray() error {
-	tray, err := mygo.NewTray(mygo.TrayOptions{ID: previewID, Icon: trayIcon(), ToolTip: "Tinycast Go Preview"})
+	tray, err := mygo.NewTray(mygo.TrayOptions{ID: previewID, Icon: trayIcon(), ToolTip: "Tinycast"})
 	if err != nil {
 		return fmt.Errorf("create tray: %w", err)
 	}
 	c.tray = tray
 	tray.OnClick(c.show)
 	tray.SetMenu(components.Menu([]components.MenuAction{
-		{Label: c.view.Text("打开 Tinycast Go 预览", "Open Tinycast Go Preview"), Accelerator: previewShortcut, Click: c.show},
+		{Label: c.view.Text("打开 Tinycast", "Open Tinycast"), Accelerator: defaultShortcut, Click: c.show},
 		{Separator: true},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("笔记…", "Notes…"), Click: c.openEditor},
 		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: c.openDiagnostics},
 		{Separator: true},
-		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
+		{Label: c.view.Text("退出", "Quit"), Click: mygo.App.Quit},
 	}))
 	return nil
 }

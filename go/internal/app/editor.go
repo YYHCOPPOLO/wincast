@@ -71,7 +71,7 @@ func (c *controller) createNotesWindow() {
 	})
 	geometry := c.loadNotesGeometry()
 	editor.window = mygo.NewWindow(mygo.WindowOptions{
-		Title:           "Tinycast Go Preview Notes",
+		Title:           "Tinycast Notes",
 		Width:           geometry.Width,
 		Height:          geometry.Height,
 		Hidden:          true,

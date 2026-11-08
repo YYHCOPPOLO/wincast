@@ -19,7 +19,7 @@ func (c *controller) openDiagnostics() {
 	c.refreshDiagnostics()
 	if c.diagnostic == nil {
 		c.diagnostic = mygo.NewWindow(mygo.WindowOptions{
-			Title: "Tinycast Go Preview — Diagnostics", Width: 760, Height: 640,
+			Title: "Tinycast — Diagnostics", Width: 760, Height: 640,
 			Hidden: true, Content: ui.View(c.diagnosticsView),
 		})
 		// A diagnostic window has no unsaved user document. Closing releases
@@ -55,7 +55,7 @@ func (c *controller) diagnosticsView(ctx *ui.Context) {
 	t := ctx.Theme()
 	ui.Column(ctx).Fill().Children(func() {
 		ui.Row(ctx).Padding(20).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(ctx, c.view.Text("Tinycast 预览诊断", "Tinycast Preview Diagnostics")).FontSize(22).Grow(1).Role(ui.RoleHeading)
+			ui.Text(ctx, c.view.Text("Tinycast 诊断", "Tinycast Diagnostics")).FontSize(22).Grow(1).Role(ui.RoleHeading)
 			if ui.Button(ctx, c.view.Text("打开搜索面板", "Open search panel")).Clicked() {
 				c.show()
 			}
@@ -90,15 +90,15 @@ func (c *controller) diagnosticsView(ctx *ui.Context) {
 					lookup = fmt.Sprintf("last lookup %dµs · canceled requests %d", c.lookupElapsed.Microseconds(), c.lookupCanceled)
 				}
 				row(c.view.Text("词典查询", "Dictionary lookup"), lookup)
-				row(c.view.Text("预览设置", "Preview settings"), c.profile.settings)
-				row(c.view.Text("预览缓存", "Preview cache"), c.profile.cache)
+				row(c.view.Text("设置目录", "Settings folder"), c.profile.settings)
+				row(c.view.Text("缓存目录", "Cache folder"), c.profile.cache)
 				row(c.view.Text("日志", "Logs"), c.profile.logs)
 			})
 		})
 		ui.Divider(ctx)
 		ui.Row(ctx).Padding(12, 20).Gap(12).Children(func() {
-			ui.Text(ctx, c.view.Text("Alt+Shift+Space 唤出 · Tab 切换词典", "Alt+Shift+Space opens the panel · Tab switches dictionary")).FontSize(12).TextColor(t.TextMuted).Grow(1)
-			if ui.Button(ctx, c.view.Text("退出预览", "Quit Preview")).Clicked() {
+			ui.Text(ctx, c.view.Text("Alt+Space 唤出 · Tab 切换词典", "Alt+Space opens the panel · Tab switches dictionary")).FontSize(12).TextColor(t.TextMuted).Grow(1)
+			if ui.Button(ctx, c.view.Text("退出", "Quit")).Clicked() {
 				mygo.App.Quit()
 			}
 		})

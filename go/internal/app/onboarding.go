@@ -67,8 +67,8 @@ func (c *controller) onboardingView(ctx *ui.Context) {
 		switch c.onboardingStep {
 		case 0:
 			ui.TextInput(ctx, &c.hotkeyDraft).Label(c.text("全局快捷键", "Global shortcut")).
-				Placeholder(previewShortcut).Grow(1)
-			ui.Text(ctx, c.text("例如 Alt+Shift+Space；点击“应用”立即生效。", "For example Alt+Shift+Space; Apply takes effect immediately.")).
+				Placeholder(defaultShortcut).Grow(1)
+			ui.Text(ctx, c.text("例如 Alt+Space；点击“应用”立即生效。", "For example Alt+Space; Apply takes effect immediately.")).
 				FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
 			if ui.Button(ctx, c.text("应用快捷键", "Apply shortcut")).Clicked() {
 				c.setHotkey(c.hotkeyDraft)

@@ -21,7 +21,7 @@ func Run() (runErr error) {
 	if err != nil {
 		return err
 	}
-	mygo.App.SetName(previewID)
+	mygo.App.SetName(appName)
 	mygo.App.SetPath(mygo.PathUserData, p.settings)
 	mygo.App.SetPath(mygo.PathCache, p.cache)
 	mygo.App.SetPath(mygo.PathLogs, p.logs)

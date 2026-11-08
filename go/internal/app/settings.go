@@ -100,7 +100,7 @@ func (c *controller) readSettingsDocument() {
 	c.clipboardEnabled.Store(document.Bool("clipboardMonitorEnabled", true))
 	c.clipboardRetention = int64(document.Int("clipboardRetentionDays", clipboard.DefaultRetentionDays))
 	c.clipboardDisabled = document.Strings("clipboardDisabledApps", clipboard.DefaultDisabledApps)
-	c.hotkey = document.String("hotkey", previewShortcut)
+	c.hotkey = document.String("hotkey", defaultShortcut)
 	c.hotkeyDraft = c.hotkey
 	c.doubleTap = document.String("doubleTapModifier", "none")
 	c.customDirsDraft = strings.Join(c.customDirectories(), "; ")
@@ -264,7 +264,7 @@ func (c *controller) openSettings() {
 	c.hide()
 	if c.settings == nil {
 		c.settings = mygo.NewWindow(mygo.WindowOptions{
-			Title:           "Tinycast Go Preview Settings",
+			Title:           "Tinycast Settings",
 			Width:           int(theme.SettingsWidth),
 			Height:          int(theme.SettingsHeight),
 			Hidden:          true,
