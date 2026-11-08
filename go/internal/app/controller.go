@@ -12,16 +12,19 @@ import (
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/diagnostics"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	domainai "github.com/YYHCOPPOLO/wincast/go/internal/domain/ai"
 	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/windowcommand"
+	aifeature "github.com/YYHCOPPOLO/wincast/go/internal/features/ai"
 	calcservice "github.com/YYHCOPPOLO/wincast/go/internal/features/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/calendar"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
 	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/quickactions"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/quicklinks"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/snippets"
 	uninstallfeature "github.com/YYHCOPPOLO/wincast/go/internal/features/uninstall"
@@ -183,6 +186,40 @@ type controller struct {
 	commandConfirm           bool
 	pendingArgs              *argumentSession
 	clipboardSuppress        atomic.Bool
+
+	aiEnabled             bool
+	aiConnections         []domainai.Connection
+	aiDefaultModel        *domainai.ModelSelection
+	aiWebSearch           bool
+	aiSystemPrompt        string
+	aiSystemPromptDraft   string
+	aiSystemPromptEnabled bool
+	aiRetention           int64
+	aiOpensTo             int64
+	aiNewChatAfter        int64
+	quickActionsEnabled   bool
+	quickActionModel      *domainai.ModelSelection
+	quickActionLanguage   string
+	aiKeys                *aifeature.KeyStore
+	aiHistory             *aifeature.History
+	aiSession             domainai.Session
+	aiDraft               string
+	aiStreaming           bool
+	aiThinking            bool
+	aiNotice              string
+	aiConfigError         string
+	aiGeneration          uint64
+	aiCancel              context.CancelFunc
+	aiConnEditing         int
+	aiConnDraftProvider   domainai.ProviderKind
+	aiConnDraftURL        string
+	aiConnDraftModel      string
+	aiConnDraftKey        string
+	aiConnDraftErr        string
+	qa                    *quickactions.Coordinator
+	qaWindow              *mygo.Window
+	qaScroll              ui.ScrollState
+	qaApplied             bool
 }
 
 func newController(started time.Time, profile profile) *controller {
@@ -221,6 +258,10 @@ func newController(started time.Time, profile profile) *controller {
 	c.calcRegion = domaincalc.CurrencyForLocale(windows.UserLocale())
 	c.emojiTone = c.settingsDocument.String("emojiSkinTone", "none")
 	c.clampEmojiTone()
+	c.aiKeys = aifeature.OpenKeyStore(profile.settings)
+	c.aiHistory = aifeature.NewHistory(profile.settings)
+	c.aiSession = domainai.NewSession(c.newAIID(), time.Now().Unix())
+	c.qa = quickactions.New()
 	preferences, preferencesErr := launcher.LoadPreferences(filepath.Join(profile.settings, "launcher"))
 	if preferencesErr != nil {
 		log.Printf("launcher preferences load failed: %v", preferencesErr)
@@ -264,15 +305,28 @@ func newController(started time.Time, profile profile) *controller {
 		CopyFilePath:          c.copyFileHitPath,
 		JoinMeeting:           c.joinMeeting,
 		CopyMeetingLink:       c.copyMeetingLink,
-		ConfirmUninstall:      c.confirmUninstall,
-		CopyUninstallPath:     c.copyUninstallPath,
-		RevealUninstallPath:   c.revealUninstallPath,
-		ApplyVolume:           c.applyVolume,
-		CloseVolume:           c.closeVolumeDialog,
+		AISend:                c.sendAIMessage,
+		AICancel:              c.cancelAIStream,
+		AINew:                 c.newAIChatFromMenu,
+		AIHistory:             c.aiHistorySearch,
+		AIOpen:                c.openAIConversation,
+		AIModelMenu:           c.aiModelMenu,
+		AILeave: func(text string) {
+			c.aiDraft = text
+		},
+		ConfirmUninstall:    c.confirmUninstall,
+		CopyUninstallPath:   c.copyUninstallPath,
+		RevealUninstallPath: c.revealUninstallPath,
+		ApplyVolume:         c.applyVolume,
+		CloseVolume:         c.closeVolumeDialog,
 	})
 	c.applyViewAppearance()
 	c.view.Expanded = !c.compactMode
 	c.view.Shortcut = c.hotkey
+	c.view.AIAvailable = c.aiEnabled
+	c.view.AIModelLabel = c.aiModelLabel()
+	c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
+	c.view.SetAIStreaming(c.aiStreaming)
 	c.view.EmojiTone = emoji.ToneFromRaw(c.emojiTone)
 	c.view.DictionaryAvailable = c.featureDictionary && c.dictionaryReady
 	c.view.OnLookup = c.lookup
@@ -321,6 +375,7 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 	c.startRankingWriter()
 	c.startClipboard()
 	c.startCalendar()
+	c.startAI()
 	c.startClipboardImages()
 	c.startCalculatorRates()
 	c.startClipboardHost()
@@ -462,6 +517,9 @@ func (c *controller) open(application domain.Application) {
 		c.queueRankingSave()
 	}
 	switch application.Kind {
+	case domain.KindAI, domain.KindQuickAction:
+		c.routeAIEntry(application)
+		return
 	case domain.KindCommand:
 		c.startCommand(application)
 		return
@@ -526,6 +584,10 @@ func (c *controller) menu() {
 		c.uninstallMenu()
 		return
 	}
+	if c.view.Mode == palette.ModeAI || c.view.Mode == palette.ModeAIHistory {
+		c.aiMenu()
+		return
+	}
 	if !c.view.Expanded || c.view.Mode == palette.ModeDictionary || c.view.Mode == palette.ModeArguments {
 		c.popupAppMenu()
 		return
@@ -579,6 +641,8 @@ func (c *controller) popupAppMenu() {
 		{Label: c.view.Text("Emoji 与符号…", "Emoji & Symbols…"), Click: c.openEmoji},
 		{Label: c.view.Text("搜索文件…", "Search files…"), Disabled: !c.featureFileSearch, Click: c.openFileSearch},
 		{Label: c.view.Text("我的日程…", "My Schedule…"), Disabled: !c.featureCalendar, Click: c.openSchedule},
+		{Label: c.view.Text("AI 对话…", "AI Chat…"), Disabled: !c.aiEnabled, Click: c.openAIChat},
+		{Label: c.view.Text("快捷操作", "Quick Actions"), Submenu: c.quickActionMenu()},
 		{Label: c.view.Text("系统操作", "System actions"), Submenu: c.systemActionMenu()},
 		{Label: c.view.Text("窗口布局", "Window layout"), Submenu: c.windowCommandMenu(), Disabled: !c.featureWindowManagement},
 		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},
@@ -631,6 +695,10 @@ func (c *controller) openLabel(application domain.Application) string {
 		return c.view.Text("搜索文件…", "Search Files…")
 	case domain.KindCalendar:
 		return c.view.Text("打开日程", "Open Schedule")
+	case domain.KindAI:
+		return c.view.Text("打开 AI 对话", "Open AI Chat")
+	case domain.KindQuickAction:
+		return c.view.Text("运行快捷操作", "Run Quick Action")
 	case domain.KindSystemAction:
 		return c.view.Text("运行操作", "Run Action")
 	case domain.KindWindowCommand:
@@ -804,6 +872,13 @@ func (c *controller) stop() {
 	}
 	c.closing = true
 	c.cancel()
+	if c.aiCancel != nil {
+		c.aiCancel()
+		c.aiCancel = nil
+	}
+	if c.qa != nil {
+		c.qa.Cancel()
+	}
 	c.instance.StopServing()
 	mygo.GlobalShortcut.UnregisterAll()
 	if c.messageHost != nil {
@@ -824,6 +899,8 @@ func (c *controller) finish() {
 	go func() { c.workers.Wait(); close(done) }()
 	select {
 	case <-done:
+		c.closeAIHistory()
+		aifeature.CloseHTTPIdleConnections()
 	case <-time.After(time.Second):
 		c.instance.HoldIdentityUntilExit()
 		log.Print("shutdown worker deadline exceeded; pending persistence may be incomplete")

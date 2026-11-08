@@ -210,3 +210,42 @@ func integrityLevel(pid uint32) (uint64, error) {
 	}
 	return strconv.ParseUint(value[last+1:], 10, 32)
 }
+
+// ReplaceSelection pastes text over the target's live selection. The target
+// identity is checked before and after focus is restored, and the previous
+// clipboard text is put back after the paste. An empty result is never sent.
+func ReplaceSelection(ctx context.Context, target Target, owner uintptr, text string) error {
+	if text == "" {
+		return errors.New("the replacement is empty")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := target.CheckEditable(); err != nil {
+		return err
+	}
+	previous, hadPrevious := ReadClipboardText()
+	if err := WriteClipboardText(owner, text, true); err != nil {
+		return err
+	}
+	restore := func() {
+		if hadPrevious {
+			_ = WriteClipboardText(0, previous, false)
+		} else {
+			_ = WriteClipboardText(0, "", false)
+		}
+	}
+	sequence := ClipboardSequence()
+	if err := target.Restore(owner); err != nil {
+		restore()
+		return err
+	}
+	time.Sleep(40 * time.Millisecond)
+	if err := target.Paste(ctx, sequence); err != nil {
+		restore()
+		return err
+	}
+	time.Sleep(40 * time.Millisecond)
+	restore()
+	return nil
+}

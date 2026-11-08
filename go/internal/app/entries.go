@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	domainai "github.com/YYHCOPPOLO/wincast/go/internal/domain/ai"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/quicklink"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/snippet"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
@@ -71,6 +72,18 @@ func (c *controller) refreshExtras() {
 		extras = append(extras, domain.Application{
 			ID: "schedule", Name: c.text("我的日程…", "My Schedule…"), Kind: domain.KindCalendar,
 		})
+	}
+	if c.aiEnabled {
+		extras = append(extras, domain.Application{
+			ID: "ai-chat", Name: c.text("AI 对话…", "AI Chat…"), Kind: domain.KindAI,
+		})
+	}
+	if c.quickActionsEnabled {
+		for _, action := range domainai.AllQuickActions() {
+			extras = append(extras, domain.Application{
+				ID: action.EntryID(), Name: action.Title(), Kind: domain.KindQuickAction,
+			})
+		}
 	}
 	for _, id := range systemaction.All {
 		extras = append(extras, domain.Application{

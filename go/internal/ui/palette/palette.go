@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	domainai "github.com/YYHCOPPOLO/wincast/go/internal/domain/ai"
 	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	filesearch "github.com/YYHCOPPOLO/wincast/go/internal/domain/filesearch"
@@ -13,6 +14,7 @@ import (
 	domainuninstall "github.com/YYHCOPPOLO/wincast/go/internal/domain/uninstall"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/chat"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo/ui"
@@ -30,6 +32,8 @@ const (
 	ModeFileSearch
 	ModeSchedule
 	ModeUninstall
+	ModeAI
+	ModeAIHistory
 )
 
 // Callbacks are the user's intent. The view never performs I/O and never
@@ -84,6 +88,15 @@ type Callbacks struct {
 	ConfirmUninstall    func()
 	CopyUninstallPath   func(string)
 	RevealUninstallPath func(string)
+
+	AISend         func(string)
+	AICancel       func()
+	AINew          func()
+	AIHistory      func(string) []domainai.Conversation
+	AIOpen         func(string)
+	AIModelMenu    func()
+	AILeave        func(string)
+	AIHistoryClose func()
 
 	ApplyVolume func(float64)
 	CloseVolume func()
@@ -162,6 +175,18 @@ type View struct {
 	UninstallError   string
 	uninstallList    ui.ListState
 
+	AIMessages      []domainai.ChatMessage
+	AINotice        string
+	AIThinking      bool
+	AIStreaming     bool
+	AIAvailable     bool
+	AIModelLabel    string
+	aiScroll        ui.ScrollState
+	aiDraft         string
+	AIHistoryItems  []domainai.Conversation
+	AIHistoryChosen int
+	aiHistoryList   ui.ListState
+
 	VolumeOpen  bool
 	VolumeValue float64
 }
@@ -199,6 +224,9 @@ func (v *View) Render(c *ui.Context) {
 		c.OnShortcut(0, ui.KeyRight, func() { v.moveHorizontal(1) })
 	}
 	c.OnShortcut(0, ui.KeyEnter, v.open)
+	if v.Mode == ModeAI && v.callbacks.AINew != nil {
+		c.OnShortcut(ui.Ctrl, ui.KeyN, v.callbacks.AINew)
+	}
 	v.renderAlias(c, tokens)
 	v.renderVolume(c, tokens)
 	ui.Column(c).Fill().Children(func() {
@@ -225,6 +253,10 @@ func (v *View) Render(c *ui.Context) {
 				placeholder = v.Text("搜索日程…", "Search schedule…")
 			case ModeUninstall:
 				placeholder = v.Text("搜索卸载项…", "Search items…")
+			case ModeAI:
+				placeholder = v.Text("问点什么…", "Ask anything…")
+			case ModeAIHistory:
+				placeholder = v.Text("搜索对话…", "Search chats…")
 			case ModeArguments:
 				if current := v.argumentCurrent(); current != nil {
 					placeholder = current.Name
@@ -238,6 +270,9 @@ func (v *View) Render(c *ui.Context) {
 			}
 			if v.Mode == ModeClipboard && v.Expanded {
 				v.clipboardFilterButton(c, tokens)
+			}
+			if v.Mode == ModeAI && v.Expanded {
+				v.aiModelButton(c, tokens)
 			}
 		})
 		if !v.Expanded {
@@ -260,6 +295,10 @@ func (v *View) Render(c *ui.Context) {
 			v.scheduleBody(c, tokens)
 		case ModeUninstall:
 			v.uninstallBody(c, tokens)
+		case ModeAI:
+			chat.Body(c, tokens, v.AIMessages, v.AINotice, v.AIThinking, v.AIStreaming, v.Chinese, &v.aiScroll)
+		case ModeAIHistory:
+			v.aiHistoryBody(c, tokens)
 		case ModeArguments:
 			v.argumentsBody(c, tokens)
 		default:
@@ -319,6 +358,16 @@ func (v *View) defaultStatus() string {
 		}
 		selected := domainuninstall.SelectedCount(v.UninstallAll)
 		return fmt.Sprintf(v.Text("已选择 %d / %d 项", "%d of %d selected"), selected, len(v.UninstallAll))
+	case ModeAI:
+		if v.AINotice != "" {
+			return v.AINotice
+		}
+		if v.AIStreaming {
+			return v.Text("正在回复…", "Streaming…")
+		}
+		return v.Text("AI 对话", "AI Chat")
+	case ModeAIHistory:
+		return fmt.Sprintf(v.Text("%d 段对话", "%d chats"), len(v.AIHistoryItems))
 	case ModeArguments:
 		return v.Text("填写模板参数", "Template arguments")
 	default:
@@ -340,6 +389,13 @@ func (v *View) footerHints() string {
 		return v.Text("Enter 入会  Ctrl+Shift+C 复制链接  Esc 返回", "Enter Join  Ctrl+Shift+C Copy link  Esc Back")
 	case ModeUninstall:
 		return v.Text("Enter 卸载  Ctrl+Enter 选择  Ctrl+Shift+C 复制路径  Esc 返回", "Enter Uninstall  Ctrl+Enter Select  Ctrl+Shift+C Copy path  Esc Back")
+	case ModeAI:
+		if v.AIStreaming {
+			return v.Text("Enter 停止  Ctrl+N 新对话  Ctrl+K 操作", "Enter Stop  Ctrl+N New chat  Ctrl+K Actions")
+		}
+		return v.Text("Enter 发送  Ctrl+N 新对话  Ctrl+K 操作", "Enter Send  Ctrl+N New chat  Ctrl+K Actions")
+	case ModeAIHistory:
+		return v.Text("Enter 打开  Esc 返回", "Enter Open  Esc Back")
 	case ModeArguments:
 		return v.Text("Enter 确认  Backspace 上一步  Esc 取消", "Enter Confirm  Backspace Back  Esc Cancel")
 	default:
@@ -1108,10 +1164,19 @@ func (v *View) tab(backward bool) {
 	if v.Mode == ModeLauncher {
 		if !backward && strings.TrimSpace(query) != "" && v.DictionaryAvailable {
 			v.ToggleDictionary()
+		} else if !backward && strings.TrimSpace(query) == "" && v.AIAvailable {
+			if v.callbacks.AILeave != nil {
+				v.callbacks.AILeave(query)
+			}
+			v.SetModeAI("")
 		} else {
 			v.SetModeClipboard()
 			v.SetQuery(query)
 		}
+		return
+	}
+	if v.Mode == ModeAI || v.Mode == ModeAIHistory {
+		v.SetModeClipboard()
 		return
 	}
 	v.SetModeLauncher()
@@ -1151,6 +1216,12 @@ func (v *View) escape() {
 	}
 	if v.Query == "" {
 		switch v.Mode {
+		case ModeAIHistory:
+			v.back()
+			return
+		case ModeAI:
+			v.back()
+			return
 		case ModeClipboard, ModeDictionary, ModeCalculatorHistory, ModeEmoji, ModeFileSearch, ModeSchedule, ModeUninstall:
 			v.SetModeLauncher()
 			return
@@ -1230,6 +1301,23 @@ func (v *View) open() {
 			v.callbacks.ConfirmUninstall()
 		}
 		return
+	case ModeAI:
+		if v.AIStreaming {
+			if v.callbacks.AICancel != nil {
+				v.callbacks.AICancel()
+			}
+			return
+		}
+		if strings.TrimSpace(v.Query) != "" && v.callbacks.AISend != nil {
+			v.callbacks.AISend(v.Query)
+		}
+		return
+	case ModeAIHistory:
+		if v.AIHistoryChosen >= 0 && v.AIHistoryChosen < len(v.AIHistoryItems) &&
+			v.callbacks.AIOpen != nil {
+			v.callbacks.AIOpen(v.AIHistoryItems[v.AIHistoryChosen].ID)
+		}
+		return
 	}
 	if v.Chosen < 0 && v.CalcResult != nil {
 		v.copyCalculator()
@@ -1252,6 +1340,8 @@ func (v *View) currentChosen() int {
 		return v.ClipboardChosen
 	case ModeEmoji:
 		return v.EmojiChosen
+	case ModeAIHistory:
+		return v.AIHistoryChosen
 	}
 	return v.Chosen
 }
@@ -1269,6 +1359,10 @@ func (v *View) moveVertical(step int) {
 		v.choose(emoji.VerticalSelection(v.EmojiItems, v.EmojiChosen, step))
 		return
 	}
+	if v.Mode == ModeAI {
+		v.aiScroll.Y = max(0, v.aiScroll.Y+float32(step)*theme.RowHeight*2)
+		return
+	}
 	v.choose(v.currentChosen() + step)
 }
 
@@ -1281,6 +1375,8 @@ func (v *View) moveHorizontal(step int) {
 func (v *View) choose(i int) {
 	switch v.Mode {
 	case ModeDictionary:
+		return
+	case ModeAI:
 		return
 	case ModeClipboard:
 		v.chooseClipboard(i, false)
@@ -1338,6 +1434,14 @@ func (v *View) choose(i int) {
 		}
 		v.Chosen = max(0, min(i, len(v.UninstallItems)-1))
 		v.uninstallList.ScrollIntoView(v.Chosen)
+		return
+	case ModeAIHistory:
+		if len(v.AIHistoryItems) == 0 {
+			v.AIHistoryChosen = -1
+			return
+		}
+		v.AIHistoryChosen = max(0, min(i, len(v.AIHistoryItems)-1))
+		v.aiHistoryList.ScrollIntoView(v.AIHistoryChosen)
 		return
 	}
 	minimum := 0
@@ -1429,6 +1533,11 @@ func (v *View) Filter() {
 		v.ScheduleItems = nil
 		v.filterUninstall(true)
 		return
+	case ModeAI:
+		return
+	case ModeAIHistory:
+		v.filterAIHistory()
+		return
 	}
 	if v.OnLookup != nil {
 		v.OnLookup("") // cancel a lookup after returning to Applications
@@ -1457,6 +1566,9 @@ func (v *View) CountStatus() string {
 }
 
 func (v *View) SetModeLauncher() {
+	if v.Mode == ModeAI && v.callbacks.AILeave != nil {
+		v.callbacks.AILeave(v.Query)
+	}
 	v.Mode = ModeLauncher
 	v.Argument = nil
 	v.Query = v.launcherQuery
@@ -1579,11 +1691,168 @@ func (v *View) SetModeSchedule() {
 	v.Input.Focus()
 }
 
+func (v *View) SetModeAI(draft string) {
+	v.SetExpanded(true)
+	if v.Mode == ModeAI {
+		v.Input.Focus()
+		return
+	}
+	if v.Mode == ModeLauncher {
+		v.launcherQuery = v.Query
+	}
+	v.Mode = ModeAI
+	v.Query = draft
+	v.inputText.Set(draft)
+	v.Chosen, v.ClipboardChosen, v.EmojiChosen, v.AIHistoryChosen = -1, -1, -1, -1
+	v.CalcResult = nil
+	v.CalcHistory = nil
+	v.EmojiItems = nil
+	v.FileSearchItems = nil
+	v.ScheduleItems = nil
+	v.UninstallItems = nil
+	v.Input.Focus()
+}
+
+func (v *View) SetModeAIHistory() {
+	v.SetExpanded(true)
+	if v.Mode == ModeAIHistory {
+		v.Input.Focus()
+		return
+	}
+	if v.Mode == ModeLauncher {
+		v.launcherQuery = v.Query
+	}
+	if v.Mode == ModeAI {
+		v.aiDraft = v.Query
+	}
+	v.Mode = ModeAIHistory
+	v.Query = ""
+	v.inputText.Set("")
+	v.AIHistoryChosen = -1
+	v.CalcResult = nil
+	v.CalcHistory = nil
+	v.EmojiItems = nil
+	v.FileSearchItems = nil
+	v.ScheduleItems = nil
+	v.UninstallItems = nil
+	v.Filter()
+	v.Input.Focus()
+}
+
+// SetAIChat replaces the transcript snapshot. Messages are shared with the
+// controller; the last assistant text grows in place while streaming.
+func (v *View) SetAIChat(messages []domainai.ChatMessage, notice string, thinking, streaming bool) {
+	v.AIMessages = messages
+	v.AINotice = notice
+	v.AIThinking = thinking
+	v.AIStreaming = streaming
+}
+
+func (v *View) SetAIStreaming(streaming bool) {
+	v.AIStreaming = streaming
+}
+
+// ClearAIComposer empties the input after a message was sent. The transcript
+// keeps the turn; only the composer is cleared.
+func (v *View) ClearAIComposer() {
+	v.Query = ""
+	v.inputText.Set("")
+	v.Input.Focus()
+}
+
+func (v *View) SetAIHistory(items []domainai.Conversation) {
+	v.AIHistoryItems = items
+	selected := ""
+	if v.AIHistoryChosen >= 0 && v.AIHistoryChosen < len(items) {
+		selected = items[v.AIHistoryChosen].ID
+	}
+	v.AIHistoryChosen = -1
+	if selected != "" {
+		for index, item := range items {
+			if item.ID == selected {
+				v.AIHistoryChosen = index
+				break
+			}
+		}
+	}
+	if v.AIHistoryChosen < 0 && len(items) > 0 {
+		v.AIHistoryChosen = 0
+	}
+	if v.AIHistoryChosen >= 0 {
+		v.aiHistoryList.ScrollIntoView(v.AIHistoryChosen)
+	}
+}
+
+func (v *View) filterAIHistory() {
+	selected := ""
+	if v.AIHistoryChosen >= 0 && v.AIHistoryChosen < len(v.AIHistoryItems) {
+		selected = v.AIHistoryItems[v.AIHistoryChosen].ID
+	}
+	if v.callbacks.AIHistory != nil {
+		v.AIHistoryItems = v.callbacks.AIHistory(v.Query)
+	} else {
+		query := strings.ToLower(strings.TrimSpace(v.Query))
+		items := make([]domainai.Conversation, 0, len(v.AIHistoryItems))
+		for _, item := range v.AIHistoryItems {
+			if query != "" && !strings.Contains(strings.ToLower(item.Title), query) &&
+				!strings.Contains(strings.ToLower(item.Preview), query) {
+				continue
+			}
+			items = append(items, item)
+		}
+		v.AIHistoryItems = items
+	}
+	v.AIHistoryChosen = -1
+	if selected != "" {
+		for index, item := range v.AIHistoryItems {
+			if item.ID == selected {
+				v.AIHistoryChosen = index
+				break
+			}
+		}
+	}
+	if v.AIHistoryChosen < 0 && len(v.AIHistoryItems) > 0 {
+		v.AIHistoryChosen = 0
+	}
+	if v.AIHistoryChosen >= 0 {
+		v.aiHistoryList.ScrollIntoView(v.AIHistoryChosen)
+	}
+}
+
+func (v *View) aiHistoryBody(c *ui.Context, tokens theme.Tokens) {
+	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, v.Text("对话历史", "Chat History")).FontSize(theme.SectionFont).
+			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+	})
+	v.aiHistoryList.Selected = &v.AIHistoryChosen
+	v.aiHistoryList.Label = func(i int) string { return v.AIHistoryItems[i].Title }
+	list := components.ResultList(c, tokens, &v.aiHistoryList, len(v.AIHistoryItems), func(i int) {
+		item := v.AIHistoryItems[i]
+		components.ResultRow(c, tokens, components.Row{
+			Fallback: "AI", Title: item.Title, Subtitle: item.Preview,
+			Trailing: fmt.Sprintf("%d", item.MessageCount), Selected: i == v.AIHistoryChosen,
+		})
+	}).Grow(1).Padding(0, 8).Label(v.Text("对话历史", "Chat history"))
+	if list.Submitted() {
+		v.open()
+	}
+	if len(v.AIHistoryItems) == 0 {
+		message := v.Text("还没有对话", "No chats yet")
+		if strings.TrimSpace(v.Query) != "" {
+			message = v.Text("没有匹配的对话", "No matching chats")
+		}
+		ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
+	}
+}
+
 func (v *View) SetModeClipboard() {
 	v.SetExpanded(true)
 	if v.Mode == ModeClipboard {
 		v.Input.Focus()
 		return
+	}
+	if v.Mode == ModeAI && v.callbacks.AILeave != nil {
+		v.callbacks.AILeave(v.Query)
 	}
 	if v.Mode == ModeLauncher {
 		v.launcherQuery = v.Query
@@ -1714,6 +1983,19 @@ func (v *View) backButton(c *ui.Context, tokens theme.Tokens) {
 		p.Line(r.X+r.W*0.26, r.Y+r.H*0.50, r.X+r.W*0.76, r.Y+r.H*0.50, 1.7, color)
 	})
 	if button.Clicked() {
+		v.back()
+	}
+}
+
+// back leaves history to the chat and any other mode to the launcher. Leaving
+// chat remembers its draft before the mode changes.
+func (v *View) back() {
+	switch v.Mode {
+	case ModeAIHistory:
+		v.SetModeAI(v.aiDraft)
+	case ModeAI:
+		v.SetModeLauncher()
+	default:
 		v.SetModeLauncher()
 	}
 }
@@ -1754,6 +2036,42 @@ func (v *View) clipboardFilterButton(c *ui.Context, tokens theme.Tokens) {
 			}
 		}
 	})
+}
+
+// aiModelButton shows the current default model and opens the controller's
+// model menu. The menu is native so it can carry every saved connection.
+func (v *View) aiModelButton(c *ui.Context, tokens theme.Tokens) {
+	label := v.AIModelLabel
+	if label == "" {
+		label = v.Text("选择模型", "Choose model")
+	}
+	button := ui.ButtonBase(c).Height(28).Padding(3, 10).Gap(6).Radius(theme.ControlRadius).
+		MaxWidth(280).Tooltip(v.Text("选择 AI 模型", "Choose AI model")).
+		Label(v.Text("选择 AI 模型", "Choose AI model")).Cursor(ui.CursorPointer)
+	fill := tokens.Muted
+	switch {
+	case button.Pressed():
+		fill = tokens.Border
+	case button.Hovered():
+		fill = tokens.SurfacePress
+	}
+	color := tokens.Fg2
+	if button.Hovered() {
+		color = tokens.Text
+	}
+	button.Background(fill).TextColor(color).Children(func() {
+		ui.Text(c, label).FontSize(theme.TrailingFont).SingleLine()
+		ui.Box(c).Size(10, 10).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
+			var chevron ui.Path
+			chevron.MoveTo(r.X+r.W*0.20, r.Y+r.H*0.38).
+				LineTo(r.X+r.W*0.50, r.Y+r.H*0.66).
+				LineTo(r.X+r.W*0.80, r.Y+r.H*0.38)
+			p.StrokePath(&chevron, 1.5, tokens.TextTertiary)
+		})
+	})
+	if button.Clicked() && v.callbacks.AIModelMenu != nil {
+		v.callbacks.AIModelMenu()
+	}
 }
 
 func (v *View) clipboardBody(c *ui.Context, tokens theme.Tokens) {

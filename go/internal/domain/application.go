@@ -31,6 +31,8 @@ const (
 	KindSystemAction  Kind = "system-action"
 	KindWindowCommand Kind = "window-command"
 	KindCalendar      Kind = "calendar"
+	KindAI            Kind = "ai"
+	KindQuickAction   Kind = "quick-action"
 )
 
 // Mode is the palette state that selects both the query source and the rows.
