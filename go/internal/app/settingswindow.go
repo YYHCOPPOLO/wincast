@@ -27,7 +27,7 @@ func (c *controller) settingsView(ctx *ui.Context) {
 	ctx.SetTheme(tokens.Theme())
 	ctx.Root().Background(tokens.Page)
 	zh := c.language == "zh"
-	ui.Row(ctx).Fill().Children(func() {
+	ui.Row(ctx).Fill().AlignItems(ui.Stretch).Children(func() {
 		selected := c.settingsTab.ID()
 		sidebar := ui.Sidebar(ctx, &selected, func() {
 			for _, section := range settings.AllSections() {
