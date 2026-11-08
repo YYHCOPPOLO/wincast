@@ -1,16 +1,16 @@
 # Tinycast for Windows
 
-Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测；界面与交互对齐 macOS 版 [Tinycast](https://github.com/abue-ammar/tinycast)，用 Rust + Slint 独立重写。
+Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测；界面与交互对齐 macOS 版 [Tinycast](https://github.com/abue-ammar/tinycast)，用 Go + MyGo 原生 UI 独立重写。`crates/` 下的 Rust + Slint 实现保留为上一代 Windows 版本，供对照与回滚。
 
 **简体中文** | [English](README.en.md)
 
-从 [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) 下载。
+当前 `mygo` 分支的 Go 重写尚未对外发布；已有 [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) 是上一代 Rust + Slint 版本。Go 版请从源码构建（见下），产物为 `Tinycast.exe` 或 `Tinycast Setup 0.2.0 amd64.exe`。
 
 ## 功能
 
 - **应用启动器**：模糊搜索开始菜单、AppX 和自定义目录；收藏槽 Ctrl+1…9 / Ctrl+0
 - **系统操作**：锁屏、睡眠、音量、深色模式、回收站、`ms-settings:` 页面
-- **剪贴板历史**：文本与图片，支持搜索、钉住、粘回唤出前的窗口
+- **剪贴板历史**：Ctrl+~ 呼出；文本与图片，支持搜索、钉住、粘回唤出前的窗口
 - **计算器**：数学、单位、汇率、日期；Enter 复制并写入历史
 - **词典**：输入英文单词或短语后按 Tab，显示 ECDICT 的全部释义（本地数据，不调用 AI）
 - **命令与快捷链接**：自定义命令、链接和全局热键
@@ -25,8 +25,8 @@ Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测�
 
 ## 安装
 
-1. 从 [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) 下载 `tinycast-*-windows-x64.zip`，解压到任意目录。
-2. 运行 `tinycast.exe`，程序常驻托盘。
+1. 构建或取得 Go 产物后，复制到任意目录；路径可以包含空格和中文。
+2. 运行 `Tinycast.exe`，程序常驻托盘。
 3. 按 **Alt+Space** 唤出。
 
 需要 **Windows 11 24H2（build 26100）及以上**，x64。
@@ -38,7 +38,8 @@ Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测�
 | 显示 / 隐藏面板 | Alt+Space（可在设置中修改） |
 | 启动当前结果 | Enter |
 | 清空 / 关闭 | Esc |
-| 启动器 / 查词 / AI / 剪贴板 | Tab |
+| 启动器 / 查词 / AI | Tab |
+| 剪贴板历史 | Ctrl+~ |
 | 当前行操作 | Ctrl+K |
 | 收藏槽 | Ctrl+1…9、Ctrl+0 |
 
@@ -46,12 +47,15 @@ Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测�
 
 ## 从源码构建
 
-需要 Rust stable（MSVC）与 Visual Studio 2022 Build Tools（MSVC 和 Windows SDK）。
+需要 [Go 1.27.3](https://go.dev/dl/)；MyGo v0.6.4 作为固定版本的 Go tool 依赖，由 `go.mod` 拉取，不需要单独安装。
 
 ```powershell
-cargo build -p tinycast --release
-.\target\release\tinycast.exe
+cd go
+go tool mygo build -platform windows/amd64
+.\build\windows-amd64\Tinycast.exe
 ```
+
+生产产物同时生成 NSIS 安装包；`tools/package-release.ps1` 会把 exe、图标、第三方许可和 `release.json`（含 SHA-256）整理到 `go\build\release\`，不会上传或签名。Rust + Slint 旧版仍可用 `cargo build -p tinycast --release` 构建。
 
 词典数据不在 exe 里：先从 [ECDICT](https://github.com/skywind3000/ECDICT)（固定提交）下载 CSV，再本地构建一次（约 97 MB，770,611 条）：
 
@@ -59,15 +63,16 @@ cargo build -p tinycast --release
 pwsh -NoProfile -File tools/build-dict.ps1
 ```
 
-脚本把 CSV 缓存到 `%TEMP%`，生成 `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`，并在旁边写入 MIT 许可。`-Force` 可重建；没有数据库时 Tab 仍是原来的 启动器 → AI/剪贴板。
+脚本把 CSV 缓存到 `%TEMP%`，生成 `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`，并在旁边写入 MIT 许可。`-Force` 可重建；没有数据库时 Tab 只在 启动器 ↔ AI 之间切换，剪贴板历史始终用 Ctrl+~ 打开。
 
 ## 数据
 
 | 内容 | 位置 |
 | --- | --- |
-| 设置、聊天、笔记、片段、学习排序 | `%APPDATA%\com.tinycast.win\` |
-| 剪贴板历史与图片缓存 | exe 同目录下的 `data\` |
-| 词典数据（ECDICT，由 `tools/build-dict.ps1` 生成） | `%APPDATA%\com.tinycast.win\Dictionary\` |
+| 设置、聊天、笔记、片段、学习排序（Go 版） | `%APPDATA%\com.tinycast.win.go-preview\` |
+| 剪贴板历史与图片缓存（Go 版） | exe 同目录下的 `data\` |
+| Rust + Slint 旧版数据（迁移来源） | `%APPDATA%\com.tinycast.win\` |
+| 词典数据（ECDICT，由 `tools/build-dict.ps1` 生成） | `%APPDATA%\com.tinycast.win\Dictionary\`（两个版本只读共享） |
 | API Key | DPAPI 加密，不进入备份 |
 
 ## 许可

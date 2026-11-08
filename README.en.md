@@ -1,16 +1,16 @@
 # Tinycast for Windows
 
-A native launcher for Windows 11. One exe, no Electron, no WebView, no telemetry. The UI and behavior follow the macOS [Tinycast](https://github.com/abue-ammar/tinycast); this is an independent Rust + Slint rewrite.
+A native launcher for Windows 11. One exe, no Electron, no WebView, no telemetry. The UI and behavior follow the macOS [Tinycast](https://github.com/abue-ammar/tinycast); this is an independent Go + MyGo native-UI rewrite. The Rust + Slint implementation under `crates/` is kept as the previous Windows release for comparison and rollback.
 
 [简体中文](README.md) | **English**
 
-Download from [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest).
+The Go rewrite on the `mygo` branch is not published yet; the [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) page holds the previous Rust + Slint build. Build the Go version from source (below); its artifacts are `Tinycast.exe` and `Tinycast Setup 0.2.0 amd64.exe`.
 
 ## Features
 
 - **App launcher**: fuzzy search Start Menu, AppX and custom folders; favorite slots Ctrl+1…9 / Ctrl+0
 - **System actions**: lock, sleep, volume, dark mode, recycle bin, `ms-settings:` pages
-- **Clipboard history**: text and images, search, pin, paste back to the previous window
+- **Clipboard history**: opens with Ctrl+~; text and images, search, pin, paste back to the previous window
 - **Calculator**: math, units, currencies, dates; Enter copies and saves history
 - **Dictionary**: type an English word or phrase and press Tab for the whole ECDICT entry (local data, no AI call)
 - **Commands & quicklinks**: custom commands, links and global hotkeys
@@ -25,8 +25,8 @@ Off by default (enable in Settings): file search, Notes, snippets, window manage
 
 ## Install
 
-1. Download `tinycast-*-windows-x64.zip` from [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) and unpack it anywhere.
-2. Run `tinycast.exe`. It stays in the tray.
+1. Build the Go artifacts or copy them anywhere; the path may contain spaces or non-ASCII characters.
+2. Run `Tinycast.exe`. It stays in the tray.
 3. Press **Alt+Space**.
 
 Requires **Windows 11 24H2 (build 26100) or later**, x64.
@@ -38,7 +38,8 @@ Requires **Windows 11 24H2 (build 26100) or later**, x64.
 | Show / hide the palette | Alt+Space (configurable) |
 | Run the selected result | Enter |
 | Clear / close | Esc |
-| Launcher / dictionary / AI / Clipboard | Tab |
+| Launcher / dictionary / AI | Tab |
+| Clipboard history | Ctrl+~ |
 | Actions for the current row | Ctrl+K |
 | Favorite slots | Ctrl+1…9, Ctrl+0 |
 
@@ -46,12 +47,15 @@ Settings: right-click the tray icon → Settings. Switch **简体中文 / Englis
 
 ## Build from source
 
-Rust stable (MSVC) plus Visual Studio 2022 Build Tools (MSVC and Windows SDK).
+Requires [Go 1.27.3](https://go.dev/dl/); MyGo v0.6.4 is a pinned Go tool dependency from `go.mod`, not a separate install.
 
 ```powershell
-cargo build -p tinycast --release
-.\target\release\tinycast.exe
+cd go
+go tool mygo build -platform windows/amd64
+.\build\windows-amd64\Tinycast.exe
 ```
+
+The production build also writes an NSIS installer. `tools/package-release.ps1` stages the exe, icon, third-party licenses and a `release.json` with SHA-256 hashes under `go\build\release\`; it does not upload or sign anything. The previous Rust + Slint app still builds with `cargo build -p tinycast --release`.
 
 The dictionary data stays out of the exe: build it once from [ECDICT](https://github.com/skywind3000/ECDICT) at the pinned commit (~97 MB, 770,611 entries):
 
@@ -59,15 +63,16 @@ The dictionary data stays out of the exe: build it once from [ECDICT](https://gi
 pwsh -NoProfile -File tools/build-dict.ps1
 ```
 
-The script caches the CSV in `%TEMP%`, writes `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`, and drops the MIT notice next to it. `-Force` rebuilds; without the database Tab keeps the old launcher → AI/Clipboard ring.
+The script caches the CSV in `%TEMP%`, writes `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`, and drops the MIT notice next to it. `-Force` rebuilds; without the database Tab only rings between the launcher and AI, and clipboard history always opens with Ctrl+~.
 
 ## Data
 
 | What | Where |
 | --- | --- |
-| Settings, chats, notes, snippets, learning rank | `%APPDATA%\com.tinycast.win\` |
-| Clipboard history and image cache | `data\` next to the exe |
-| Dictionary data (ECDICT, built by `tools/build-dict.ps1`) | `%APPDATA%\com.tinycast.win\Dictionary\` |
+| Settings, chats, notes, snippets, learning rank (Go build) | `%APPDATA%\com.tinycast.win.go-preview\` |
+| Clipboard history and image cache (Go build) | `data\` next to the exe |
+| Rust + Slint data (migration source) | `%APPDATA%\com.tinycast.win\` |
+| Dictionary data (ECDICT, built by `tools/build-dict.ps1`) | `%APPDATA%\com.tinycast.win\Dictionary\` (read-only for both builds) |
 | API keys | DPAPI-protected, excluded from backups |
 
 ## License

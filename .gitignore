@@ -7,3 +7,5 @@ worktrees/
 AGENTS.md
 docs/
 tools/update-local.ps1
+/go/build/
+/go/cmd/tinycast/*.syso
