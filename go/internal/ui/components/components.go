@@ -69,18 +69,25 @@ func KeyCap(c *ui.Context, tokens theme.Tokens, label string) {
 		Radius(theme.KeyCapRadius).Background(tokens.Muted)
 }
 
-// Footer is the palette's permanent action bar. onMenu is nil when the view
-// has no menu in this mode.
-func Footer(c *ui.Context, tokens theme.Tokens, status, hints string, onMenu func()) {
+// Footer is the palette's permanent action bar. onActions opens the selected
+// row's menu; onAppMenu opens the application menu. Either is nil when the
+// view has no menu in this mode.
+func Footer(c *ui.Context, tokens theme.Tokens, status, hints string, onActions, onAppMenu func()) {
 	ui.Row(c).Height(theme.BottomBarHeight).Padding(10, 16).Gap(10).AlignItems(ui.Center).Children(func() {
+		if onAppMenu != nil {
+			if ui.Button(c, "T").Label("Tinycast").Width(theme.MenuButton).Height(theme.MenuButton).
+				Radius(theme.MenuButton / 2).Clicked() {
+				onAppMenu()
+			}
+		}
 		ui.Text(c, status).FontSize(theme.SectionFont).TextColor(tokens.TextSecondary).
 			Grow(1).SingleLine().Role(ui.RoleStatus)
 		if hints != "" {
 			ui.Text(c, hints).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).SingleLine()
 		}
-		if onMenu != nil {
+		if onActions != nil {
 			if ui.Button(c, "···").Label("Actions").Clicked() {
-				onMenu()
+				onActions()
 			}
 		}
 	})

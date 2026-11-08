@@ -228,7 +228,7 @@ func newController(started time.Time, profile profile) *controller {
 	c.launcherPrefs = preferences
 	c.launcher = launcher.New(preferences)
 	c.view = palette.New(c.language == "zh", palette.Callbacks{
-		Open: c.open, Hide: c.hide, Menu: c.menu, CopyText: c.copyText, Icon: c.icon,
+		Open: c.open, Hide: c.hide, Menu: c.menu, AppMenu: c.appMenu, CopyText: c.copyText, Icon: c.icon,
 		Filtered: func(elapsed time.Duration, count int) {
 			log.Printf("filter elapsed_us=%d results=%d", elapsed.Microseconds(), count)
 		},
@@ -501,18 +501,7 @@ func (c *controller) menu() {
 		return
 	}
 	c.menuOpen = true
-	defer func() {
-		c.menuOpen = false
-		if !c.closing && c.panel.IsVisible() {
-			if c.panel.IsFocused() {
-				c.view.Input.Focus()
-			} else {
-				// Blur during TrackPopupMenu is intentionally deferred, not
-				// forgotten when the user switches to another window.
-				c.hide()
-			}
-		}
-	}()
+	defer c.finishMenu()
 	if c.view.Mode == palette.ModeClipboard {
 		c.clipboardMenu()
 		return
@@ -537,20 +526,48 @@ func (c *controller) menu() {
 		c.uninstallMenu()
 		return
 	}
-	application, applicationSelected := c.selected()
-	canUninstall := applicationSelected && application.Kind == domain.KindApplication
+	if !c.view.Expanded || c.view.Mode == palette.ModeDictionary || c.view.Mode == palette.ModeArguments {
+		c.popupAppMenu()
+		return
+	}
+	application, ok := c.selected()
+	if !ok {
+		return
+	}
+	actions := []components.MenuAction{
+		{Label: c.openLabel(application), Accelerator: "↵", Click: func() { c.open(application) }},
+	}
+	if persistentEntry(application.Kind) {
+		actions = append(actions,
+			components.MenuAction{Separator: true},
+			components.MenuAction{Label: c.favoriteLabel(), Accelerator: "Ctrl+D", Click: c.toggleFavorite},
+			components.MenuAction{Label: c.view.Text("设置别名…", "Set alias…"), Click: c.openAliasDialog},
+			components.MenuAction{Label: c.hideLabel(), Click: c.toggleSelectedHidden},
+		)
+	}
+	if application.Kind == domain.KindApplication {
+		actions = append(actions,
+			components.MenuAction{Separator: true},
+			components.MenuAction{Label: c.view.Text("卸载应用…", "Uninstall application…"), Click: c.openUninstallSelected},
+		)
+	}
+	components.Menu(actions).Popup(c.panel)
+}
+
+// appMenu holds commands that belong to Tinycast itself rather than to the
+// highlighted row: refreshing the catalog, feature screens, settings and quit.
+func (c *controller) appMenu() {
+	if c.closing || c.menuOpen {
+		return
+	}
+	c.menuOpen = true
+	defer c.finishMenu()
+	c.popupAppMenu()
+}
+
+func (c *controller) popupAppMenu() {
 	menu := components.Menu([]components.MenuAction{
-		{Label: c.view.Text("打开选中应用", "Open selected application"), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: func() {
-			if c.view.Chosen >= 0 && c.view.Chosen < len(c.view.Results) {
-				c.open(c.view.Results[c.view.Chosen])
-			}
-		}},
 		{Label: c.view.Text("刷新应用程序", "Refresh applications"), Click: c.scan},
-		{Separator: true},
-		{Label: c.favoriteLabel(), Accelerator: "Ctrl+D", Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: c.toggleFavorite},
-		{Label: c.view.Text("设置别名…", "Set alias…"), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: c.openAliasDialog},
-		{Label: c.view.Text("卸载应用…", "Uninstall application…"), Disabled: !canUninstall, Click: c.openUninstallSelected},
-		{Label: c.hideLabel(), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: c.toggleSelectedHidden},
 		{Label: c.showHiddenLabel(), Click: c.toggleShowHidden},
 		{Label: c.expandLabel(), Accelerator: "Ctrl+E", Click: c.toggleExpanded},
 		{Separator: true},
@@ -572,6 +589,54 @@ func (c *controller) menu() {
 		{Label: c.view.Text("退出预览", "Quit Preview"), Click: mygo.App.Quit},
 	})
 	menu.Popup(c.panel)
+}
+
+// finishMenu restores input focus, or hides a panel that lost focus while the
+// native menu was tracking the pointer.
+func (c *controller) finishMenu() {
+	c.menuOpen = false
+	if !c.closing && c.panel.IsVisible() {
+		if c.panel.IsFocused() {
+			c.view.Input.Focus()
+		} else {
+			// Blur during TrackPopupMenu is intentionally deferred, not
+			// forgotten when the user switches to another window.
+			c.hide()
+		}
+	}
+}
+
+// persistentEntry reports whether a row carries user preferences that the
+// row's own menu may edit.
+func persistentEntry(kind domain.Kind) bool {
+	switch kind {
+	case domain.KindApplication, domain.KindCommand, domain.KindQuicklink, domain.KindSnippet:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *controller) openLabel(application domain.Application) string {
+	switch application.Kind {
+	case domain.KindApplication:
+		return c.view.Text("打开应用", "Open Application")
+	case domain.KindCommand:
+		return c.view.Text("运行命令", "Run Command")
+	case domain.KindQuicklink:
+		return c.view.Text("打开链接", "Open Quicklink")
+	case domain.KindSnippet:
+		return c.view.Text("展开片段", "Expand Snippet")
+	case domain.KindFileSearch:
+		return c.view.Text("搜索文件…", "Search Files…")
+	case domain.KindCalendar:
+		return c.view.Text("打开日程", "Open Schedule")
+	case domain.KindSystemAction:
+		return c.view.Text("运行操作", "Run Action")
+	case domain.KindWindowCommand:
+		return c.view.Text("执行窗口命令", "Run Window Command")
+	}
+	return c.view.Text("打开", "Open")
 }
 
 func (c *controller) emojiMenu() {

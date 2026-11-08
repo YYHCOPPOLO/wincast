@@ -38,6 +38,7 @@ type Callbacks struct {
 	Open             func(domain.Application)
 	Hide             func()
 	Menu             func()
+	AppMenu          func()
 	CopyText         func(string, bool)
 	Icon             func(domain.Application) *ui.Bitmap
 	Filtered         func(time.Duration, int)
@@ -269,7 +270,7 @@ func (v *View) Render(c *ui.Context) {
 		if status == "" {
 			status = v.defaultStatus()
 		}
-		components.Footer(c, tokens, status, v.footerHints(), v.callbacks.Menu)
+		components.Footer(c, tokens, status, v.footerHints(), v.callbacks.Menu, v.callbacks.AppMenu)
 	})
 	if v.PendingToast != "" {
 		c.Toast(v.PendingToast)
@@ -408,7 +409,6 @@ func (v *View) applications(c *ui.Context, tokens theme.Tokens) {
 	}
 	components.Section(c, tokens, label)
 	v.list.Selected = &v.Chosen
-	v.list.Key = func(i int) any { return stableKey(v.Results[i]) }
 	v.list.Label = func(i int) string { return v.Results[i].Name }
 	list := components.ResultList(c, tokens, &v.list, len(v.Results), func(i int) { v.row(c, i, tokens) }).Grow(1).Padding(0, 8).
 		Label(v.Text("应用程序搜索结果", "Application search results"))
@@ -458,9 +458,6 @@ func (v *View) calcCard(c *ui.Context, tokens theme.Tokens) {
 func (v *View) calculatorHistoryBody(c *ui.Context, tokens theme.Tokens) {
 	v.calcCard(c, tokens)
 	v.calcHistoryList.Selected = &v.Chosen
-	v.calcHistoryList.Key = func(i int) any {
-		return v.CalcHistory[i].Expression + "\x00" + v.CalcHistory[i].Result
-	}
 	v.calcHistoryList.Label = func(i int) string { return v.CalcHistory[i].Expression }
 	list := components.ResultList(c, tokens, &v.calcHistoryList, len(v.CalcHistory), func(i int) {
 		entry := v.CalcHistory[i]
@@ -547,7 +544,6 @@ func (v *View) fileSearchBody(c *ui.Context, tokens theme.Tokens) {
 		}
 	})
 	v.fileSearchList.Selected = &v.Chosen
-	v.fileSearchList.Key = func(i int) any { return v.FileSearchItems[i].ID() }
 	v.fileSearchList.Label = func(i int) string { return v.FileSearchItems[i].Name }
 	list := components.ResultList(c, tokens, &v.fileSearchList, len(v.FileSearchItems), func(i int) {
 		hit := v.FileSearchItems[i]
@@ -585,7 +581,6 @@ func (v *View) scheduleBody(c *ui.Context, tokens theme.Tokens) {
 		}
 	})
 	v.scheduleList.Selected = &v.Chosen
-	v.scheduleList.Key = func(i int) any { return v.ScheduleItems[i].ID }
 	v.scheduleList.Label = func(i int) string { return v.ScheduleItems[i].Title }
 	list := components.ResultList(c, tokens, &v.scheduleList, len(v.ScheduleItems), func(i int) {
 		event := v.ScheduleItems[i]
@@ -686,7 +681,6 @@ func (v *View) uninstallBody(c *ui.Context, tokens theme.Tokens) {
 		}
 	})
 	v.uninstallList.Selected = &v.Chosen
-	v.uninstallList.Key = func(i int) any { return v.UninstallItems[i].ID }
 	v.uninstallList.Label = func(i int) string { return v.UninstallItems[i].Name }
 	list := components.ResultList(c, tokens, &v.uninstallList, len(v.UninstallItems), func(i int) {
 		item := v.UninstallItems[i]
@@ -896,13 +890,6 @@ func (v *View) favoriteDigit(id string) byte {
 		return '0'
 	}
 	return 0
-}
-
-func stableKey(application domain.Application) string {
-	if application.ID != "" {
-		return application.ID
-	}
-	return application.Path
 }
 
 func (v *View) textKey(key ui.TextKey) bool {
@@ -1716,7 +1703,6 @@ func (v *View) clipboardBody(c *ui.Context, tokens theme.Tokens) {
 	ui.Row(c).FillWidth().Grow(1).Children(func() {
 		ui.Column(c).Width(290).FillHeight().Children(func() {
 			v.clipboardList.Selected = &v.ClipboardChosen
-			v.clipboardList.Key = func(i int) any { return v.ClipboardItems[i].ID }
 			v.clipboardList.Label = func(i int) string { return clipboardRowTitle(v.ClipboardItems[i], v.Chinese) }
 			list := components.ResultList(c, tokens, &v.clipboardList, len(v.ClipboardItems), func(i int) {
 				v.clipboardRow(c, i, tokens)
