@@ -29,7 +29,7 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 			return
 		}
 		components.FormRow(ctx, tokens, c.text("默认模型", "Default model"), func() {
-			if ui.Button(ctx, c.aiModelLabel()).Clicked() {
+			if ui.Button(ctx, c.aiModelLabel()).AlignSelf(ui.Start).Clicked() {
 				c.cycleAIDefaultModel()
 			}
 		})
@@ -57,12 +57,12 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 			})
 		})
 		components.FormRow(ctx, tokens, c.text("历史保留", "History retention"), func() {
-			if ui.Button(ctx, c.aiRetentionLabel()).Clicked() {
+			if ui.Button(ctx, c.aiRetentionLabel()).AlignSelf(ui.Start).Clicked() {
 				c.cycleAIRetention()
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("打开方式", "Opening"), func() {
-			if ui.Button(ctx, c.aiOpensToLabel()).Clicked() {
+			if ui.Button(ctx, c.aiOpensToLabel()).AlignSelf(ui.Start).Clicked() {
 				c.cycleAIOpensTo()
 			}
 		})
@@ -91,7 +91,7 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 		}
 		if c.aiConnEditing >= 0 {
 			components.FormRow(ctx, tokens, c.text("服务商", "Provider"), func() {
-				if ui.Button(ctx, c.aiConnDraftProvider.Title()).Clicked() {
+				if ui.Button(ctx, c.aiConnDraftProvider.Title()).AlignSelf(ui.Start).Clicked() {
 					c.cycleAIConnectionProvider()
 				}
 			})
@@ -120,7 +120,7 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 				}
 			})
 		} else {
-			if ui.Button(ctx, c.text("添加连接…", "Add connection…")).Clicked() {
+			if ui.Button(ctx, c.text("添加连接…", "Add connection…")).AlignSelf(ui.Start).Clicked() {
 				c.startNewAIConnection()
 			}
 		}
@@ -147,12 +147,12 @@ func (c *controller) quickActionsSettingsPage(ctx *ui.Context, tokens theme.Toke
 			return
 		}
 		components.FormRow(ctx, tokens, c.text("翻译语言", "Translate to"), func() {
-			if ui.Button(ctx, c.quickActionLanguageLabel()).Clicked() {
+			if ui.Button(ctx, c.quickActionLanguageLabel()).AlignSelf(ui.Start).Clicked() {
 				c.cycleQuickActionLanguage()
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("模型", "Model"), func() {
-			if ui.Button(ctx, c.quickActionModelLabel()).Clicked() {
+			if ui.Button(ctx, c.quickActionModelLabel()).AlignSelf(ui.Start).Clicked() {
 				c.cycleQuickActionModel()
 			}
 		})

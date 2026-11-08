@@ -10,7 +10,7 @@ Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测�
 
 - **应用启动器**：模糊搜索开始菜单、AppX 和自定义目录；收藏槽 Ctrl+1…9 / Ctrl+0
 - **系统操作**：锁屏、睡眠、音量、深色模式、回收站、`ms-settings:` 页面
-- **剪贴板历史**：文本与图片，支持搜索、钉住、粘回唤出前的窗口
+- **剪贴板历史**：Ctrl+~ 呼出；文本与图片，支持搜索、钉住、粘回唤出前的窗口
 - **计算器**：数学、单位、汇率、日期；Enter 复制并写入历史
 - **词典**：输入英文单词或短语后按 Tab，显示 ECDICT 的全部释义（本地数据，不调用 AI）
 - **命令与快捷链接**：自定义命令、链接和全局热键
@@ -38,7 +38,8 @@ Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测�
 | 显示 / 隐藏面板 | Alt+Space（可在设置中修改） |
 | 启动当前结果 | Enter |
 | 清空 / 关闭 | Esc |
-| 启动器 / 查词 / AI / 剪贴板 | Tab |
+| 启动器 / 查词 / AI | Tab |
+| 剪贴板历史 | Ctrl+~ |
 | 当前行操作 | Ctrl+K |
 | 收藏槽 | Ctrl+1…9、Ctrl+0 |
 
@@ -62,7 +63,7 @@ go tool mygo build -platform windows/amd64
 pwsh -NoProfile -File tools/build-dict.ps1
 ```
 
-脚本把 CSV 缓存到 `%TEMP%`，生成 `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`，并在旁边写入 MIT 许可。`-Force` 可重建；没有数据库时 Tab 仍是原来的 启动器 → AI/剪贴板。
+脚本把 CSV 缓存到 `%TEMP%`，生成 `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`，并在旁边写入 MIT 许可。`-Force` 可重建；没有数据库时 Tab 只在 启动器 ↔ AI 之间切换，剪贴板历史始终用 Ctrl+~ 打开。
 
 ## 数据
 

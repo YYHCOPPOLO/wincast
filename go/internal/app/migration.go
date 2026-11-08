@@ -98,7 +98,7 @@ func (c *controller) renderMigrationCard(ctx *ui.Context, tokens theme.Tokens, z
 			for index := 0; index < limit; index++ {
 				snapshot := c.migrationSnapshots[index]
 				components.FormRow(ctx, tokens, snapshot.At.Format("2006-01-02 15:04:05"), func() {
-					button := ui.Button(ctx, c.text("恢复…", "Restore…"))
+					button := ui.Button(ctx, c.text("恢复…", "Restore…")).AlignSelf(ui.Start)
 					if c.migrationBusy {
 						button.Disabled(true)
 					}

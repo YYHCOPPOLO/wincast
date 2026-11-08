@@ -155,6 +155,7 @@ type controller struct {
 	hotkeyDraft                  string
 	hotkeyRegistered             bool
 	hotkeyOwned                  string
+	clipboardHotkeys             bool
 	customDirsDraft              string
 	compactMode                  bool
 	doubleTap                    string
@@ -730,7 +731,7 @@ func (c *controller) popupAppMenu() {
 		{Label: c.view.Text("复制文本 / 词条", "Copy text / entry"), Accelerator: "Ctrl+Shift+C", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), false) }},
 		{Label: c.view.Text("粘回原窗口", "Paste to previous window"), Accelerator: "Ctrl+Shift+Enter", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), true) }},
 		{Separator: true},
-		{Label: c.view.Text("剪贴板历史…", "Clipboard history…"), Click: c.openClipboard},
+		{Label: c.view.Text("剪贴板历史…", "Clipboard history…"), Accelerator: "Ctrl+~", Click: c.openClipboard},
 		{Label: c.view.Text("计算器历史…", "Calculator history…"), Click: c.openCalculatorHistory},
 		{Label: c.view.Text("Emoji 与符号…", "Emoji & Symbols…"), Click: c.openEmoji},
 		{Label: c.view.Text("搜索文件…", "Search files…"), Disabled: !c.featureFileSearch, Click: c.openFileSearch},

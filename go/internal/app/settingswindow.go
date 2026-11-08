@@ -121,7 +121,7 @@ func (c *controller) generalSettingsPage(ctx *ui.Context, tokens theme.Tokens, z
 			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("学习排序", "Learned ranking"), func() {
 			label := c.text("重置…", "Reset…")
-			button := ui.Button(ctx, label)
+			button := ui.Button(ctx, label).AlignSelf(ui.Start)
 			if c.launcherPrefs != nil && c.launcherPrefs.RankingEmpty() {
 				button.Disabled(true)
 			}
@@ -216,7 +216,7 @@ func (c *controller) generalSettingsPage(ctx *ui.Context, tokens theme.Tokens, z
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("返回根搜索", "Pop to Root Search"), func() {
-			if ui.Button(ctx, c.popToRootLabel()).Clicked() {
+			if ui.Button(ctx, c.popToRootLabel()).AlignSelf(ui.Start).Clicked() {
 				c.cyclePopToRoot()
 			}
 		})
@@ -410,7 +410,7 @@ func (c *controller) commandsPage(ctx *ui.Context, tokens theme.Tokens, zh bool)
 				})
 			}
 		}
-		if ui.Button(ctx, c.text("新建命令", "New command")).Clicked() {
+		if ui.Button(ctx, c.text("新建命令", "New command")).AlignSelf(ui.Start).Clicked() {
 			c.newCommand()
 		}
 	})
@@ -450,7 +450,7 @@ func (c *controller) quicklinksPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 				})
 			}
 		}
-		if ui.Button(ctx, c.text("新建快捷链接", "New quicklink")).Clicked() {
+		if ui.Button(ctx, c.text("新建快捷链接", "New quicklink")).AlignSelf(ui.Start).Clicked() {
 			c.newQuicklink()
 		}
 	})
@@ -492,14 +492,16 @@ func (c *controller) snippetsPage(ctx *ui.Context, tokens theme.Tokens, zh bool)
 				c.confirmWorkflowDelete(editors.Snippet, record.ID, record.Name)
 			})
 		}
-		if ui.Button(ctx, c.text("新建片段", "New snippet")).Clicked() {
-			c.newSnippet()
-		}
-		if ui.Button(ctx, c.text("片段目录", "Snippets folder")).Clicked() {
-			if err := openExternalURL(c.snippets.Directory()); err != nil {
-				c.settingsStatus = c.text("无法打开片段目录", "Could not open the snippets folder")
+		ui.Row(ctx).Gap(8).AlignItems(ui.Center).Children(func() {
+			if ui.Button(ctx, c.text("新建片段", "New snippet")).Clicked() {
+				c.newSnippet()
 			}
-		}
+			if ui.Button(ctx, c.text("片段目录", "Snippets folder")).Clicked() {
+				if err := openExternalURL(c.snippets.Directory()); err != nil {
+					c.settingsStatus = c.text("无法打开片段目录", "Could not open the snippets folder")
+				}
+			}
+		})
 	})
 	c.renderWorkflowEditor(ctx, tokens)
 }
@@ -591,7 +593,7 @@ func (c *controller) windowSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("窗口间距", "Window gap"), func() {
-			if ui.Button(ctx, fmt.Sprintf("%d DIP", c.windowGap)).Clicked() {
+			if ui.Button(ctx, fmt.Sprintf("%d DIP", c.windowGap)).AlignSelf(ui.Start).Clicked() {
 				c.cycleWindowGap()
 			}
 		})
@@ -610,7 +612,7 @@ func (c *controller) clipboardSettingsPage(ctx *ui.Context, tokens theme.Tokens,
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("保留时间", "Retention"), func() {
-			if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).Clicked() {
+			if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).AlignSelf(ui.Start).Clicked() {
 				c.setClipboardRetention(cycleClipboardRetention(c.clipboardRetention))
 			}
 		})
@@ -624,7 +626,7 @@ func (c *controller) clipboardSettingsPage(ctx *ui.Context, tokens theme.Tokens,
 			})
 		})
 		components.FormRow(ctx, tokens, c.text("剪贴板历史", "Clipboard history"), func() {
-			if ui.Button(ctx, c.text("清空历史", "Clear history")).Clicked() {
+			if ui.Button(ctx, c.text("清空历史", "Clear history")).AlignSelf(ui.Start).Clicked() {
 				c.clearClipboardHistory()
 			}
 			if c.clipboardError != "" {
@@ -639,7 +641,7 @@ func (c *controller) emojiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh 
 		ui.Text(ctx, c.text("表情与符号", "Emoji & Symbols")).FontSize(theme.SectionFont).
 			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("肤色", "Skin tone"), func() {
-			if ui.Button(ctx, c.view.EmojiTone.Label()).Clicked() {
+			if ui.Button(ctx, c.view.EmojiTone.Label()).AlignSelf(ui.Start).Clicked() {
 				c.cycleEmojiTone()
 			}
 		})
@@ -673,7 +675,7 @@ func (c *controller) calendarSettingsPage(ctx *ui.Context, tokens theme.Tokens, 
 				}
 			})
 			components.FormRow(ctx, tokens, c.text("提前量", "Join window"), func() {
-				if ui.Button(ctx, fmt.Sprintf(c.text("%d 分钟", "%d min"), c.joinWindowMinutes)).Clicked() {
+				if ui.Button(ctx, fmt.Sprintf(c.text("%d 分钟", "%d min"), c.joinWindowMinutes)).AlignSelf(ui.Start).Clicked() {
 					c.cycleJoinWindow()
 				}
 			})
@@ -745,12 +747,12 @@ func (c *controller) aboutSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh 
 				FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 		})
 		components.FormRow(ctx, tokens, c.text("项目主页", "Project"), func() {
-			if ui.Button(ctx, projectURL).Clicked() {
+			if ui.Button(ctx, projectURL).AlignSelf(ui.Start).Clicked() {
 				_ = c.openPermissionSettingsURL(projectURL)
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("支持 Tinycast…", "Support Tinycast…"), func() {
-			if ui.Button(ctx, c.text("在 Polar 支持", "Support on Polar")).Clicked() {
+			if ui.Button(ctx, c.text("在 Polar 支持", "Support on Polar")).AlignSelf(ui.Start).Clicked() {
 				_ = c.openPermissionSettingsURL(supportCheckoutURL)
 			}
 		})

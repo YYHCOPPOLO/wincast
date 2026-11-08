@@ -10,7 +10,7 @@ The Go rewrite on the `mygo` branch is not published yet; the [Releases](https:/
 
 - **App launcher**: fuzzy search Start Menu, AppX and custom folders; favorite slots Ctrl+1…9 / Ctrl+0
 - **System actions**: lock, sleep, volume, dark mode, recycle bin, `ms-settings:` pages
-- **Clipboard history**: text and images, search, pin, paste back to the previous window
+- **Clipboard history**: opens with Ctrl+~; text and images, search, pin, paste back to the previous window
 - **Calculator**: math, units, currencies, dates; Enter copies and saves history
 - **Dictionary**: type an English word or phrase and press Tab for the whole ECDICT entry (local data, no AI call)
 - **Commands & quicklinks**: custom commands, links and global hotkeys
@@ -38,7 +38,8 @@ Requires **Windows 11 24H2 (build 26100) or later**, x64.
 | Show / hide the palette | Alt+Space (configurable) |
 | Run the selected result | Enter |
 | Clear / close | Esc |
-| Launcher / dictionary / AI / Clipboard | Tab |
+| Launcher / dictionary / AI | Tab |
+| Clipboard history | Ctrl+~ |
 | Actions for the current row | Ctrl+K |
 | Favorite slots | Ctrl+1…9, Ctrl+0 |
 
@@ -62,7 +63,7 @@ The dictionary data stays out of the exe: build it once from [ECDICT](https://gi
 pwsh -NoProfile -File tools/build-dict.ps1
 ```
 
-The script caches the CSV in `%TEMP%`, writes `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`, and drops the MIT notice next to it. `-Force` rebuilds; without the database Tab keeps the old launcher → AI/Clipboard ring.
+The script caches the CSV in `%TEMP%`, writes `%APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite`, and drops the MIT notice next to it. `-Force` rebuilds; without the database Tab only rings between the launcher and AI, and clipboard history always opens with Ctrl+~.
 
 ## Data
 

@@ -12,11 +12,39 @@ import (
 
 const doubleTapWindow = 350 * time.Millisecond
 
+// The clipboard page left the Tab ring, so its own shortcut is the way in.
+// The grave key carries "~" on most layouts, which needs Shift: both chords
+// open the page, so the hint in the palette matches what people press.
+const (
+	clipboardShortcut      = "Ctrl+`"
+	clipboardShiftShortcut = "Ctrl+Shift+`"
+)
+
 func (c *controller) applyHotkey() {
 	if err := c.registerHotkey(c.hotkey); err != nil {
 		c.view.Status = c.view.Text("热键被占用或格式无效", "Shortcut is occupied or invalid")
 		log.Printf("shortcut unavailable: %v", err)
 	}
+	c.registerClipboardHotkey()
+}
+
+// registerClipboardHotkey installs the fixed clipboard shortcut once. A
+// failure is logged rather than surfaced: the palette hotkey and the app menu
+// still reach the page, so a taken chord must not look like a broken app.
+func (c *controller) registerClipboardHotkey() {
+	if c.clipboardHotkeys {
+		return
+	}
+	installed := false
+	for _, accel := range []string{clipboardShortcut, clipboardShiftShortcut} {
+		if err := mygo.GlobalShortcut.Register(accel, c.openClipboard); err != nil {
+			log.Printf("clipboard shortcut unavailable %s: %v", accel, err)
+			continue
+		}
+		log.Printf("clipboard shortcut registered %s", accel)
+		installed = true
+	}
+	c.clipboardHotkeys = installed
 }
 
 // registerHotkey installs accel and restores the previous shortcut if the new

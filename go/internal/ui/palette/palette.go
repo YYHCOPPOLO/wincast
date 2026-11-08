@@ -405,14 +405,33 @@ func (v *View) footerHints() string {
 		return v.Text("Enter 发送  Ctrl+N 新对话  Ctrl+K 操作", "Enter Send  Ctrl+N New chat  Ctrl+K Actions")
 	case ModeAIHistory:
 		return v.Text("Enter 打开  Esc 返回", "Enter Open  Esc Back")
+	case ModeDictionary:
+		return v.Text("Esc 返回", "Esc Back")
 	case ModeArguments:
 		return v.Text("Enter 确认  Backspace 上一步  Esc 取消", "Enter Confirm  Backspace Back  Esc Cancel")
 	default:
 		if v.CalcResult != nil {
 			return v.Text("Enter 复制答案  ↑↓ 选择", "Enter Copy answer  ↑↓ Select")
 		}
-		return v.Text("Tab 词典   ↑↓ 选择", "Tab Dictionary   ↑↓ Select")
+		return v.launcherHints()
 	}
+}
+
+// launcherHints names the screen Tab reaches from the launcher and the
+// clipboard page's own shortcut. Clipboard history is not in the Tab ring, so
+// its summon has to be advertised here instead.
+func (v *View) launcherHints() string {
+	hints := make([]string, 0, 3)
+	switch {
+	case v.DictionaryAvailable && v.AIAvailable:
+		hints = append(hints, v.Text("Tab 词典 / AI", "Tab Dictionary / AI"))
+	case v.DictionaryAvailable:
+		hints = append(hints, v.Text("Tab 词典", "Tab Dictionary"))
+	case v.AIAvailable:
+		hints = append(hints, v.Text("Tab AI", "Tab AI"))
+	}
+	hints = append(hints, v.Text("Ctrl+~ 剪贴板", "Ctrl+~ Clipboard"), "↑↓ "+v.Text("选择", "Select"))
+	return strings.Join(hints, "   ")
 }
 
 func (v *View) renderVolume(c *ui.Context, tokens theme.Tokens) {
@@ -1195,25 +1214,26 @@ func (v *View) textKey(key ui.TextKey) bool {
 }
 
 func (v *View) tab(backward bool) {
-	query := v.Query
 	if v.Mode == ModeLauncher {
-		if !backward && strings.TrimSpace(query) != "" && v.DictionaryAvailable {
+		if !backward && strings.TrimSpace(v.Query) != "" && v.DictionaryAvailable {
 			v.ToggleDictionary()
-		} else if !backward && strings.TrimSpace(query) == "" && v.AIAvailable {
+			return
+		}
+		if !backward && strings.TrimSpace(v.Query) == "" && v.AIAvailable {
 			if v.callbacks.AILeave != nil {
-				v.callbacks.AILeave(query)
+				v.callbacks.AILeave(v.Query)
 			}
 			v.SetModeAI("")
-		} else {
-			v.SetModeClipboard()
-			v.SetQuery(query)
 		}
+		// Clipboard history has its own shortcut (Ctrl+~) and stays out of the
+		// ring, so Tab on an empty launcher leaves the list as it is.
 		return
 	}
 	if v.Mode == ModeAI || v.Mode == ModeAIHistory {
-		v.SetModeClipboard()
+		v.SetModeLauncher()
 		return
 	}
+	query := v.Query
 	v.SetModeLauncher()
 	v.SetQuery(query)
 }
