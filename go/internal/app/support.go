@@ -118,7 +118,7 @@ func (c *controller) showSupportWindow() {
 		showWindow(c.supportWindow)
 		return
 	}
-	c.supportWindow = mygo.NewWindow(mygo.WindowOptions{
+	c.supportWindow = c.newMaterialWindow(mygo.WindowOptions{
 		Title: c.text("支持 Tinycast", "Support Tinycast"),
 		Width: 460, Height: 320, Hidden: true, DisableResize: true,
 		BackgroundColor: "light-dark(#f4f4f6, #1a1a1e)",
@@ -138,9 +138,9 @@ func (c *controller) markSupportAsked() {
 }
 
 func (c *controller) supportView(ctx *ui.Context) {
-	tokens := theme.For(c.dark())
+	tokens := theme.ForContext(ctx)
 	ctx.SetTheme(tokens.Theme())
-	ctx.Root().Background(tokens.Page)
+	defer ctx.Root().Background(tokens.PageBackground(ctx.Vibrancy()))
 	ui.Column(ctx).Fill().Padding(32).Gap(14).Justify(ui.Center).Children(func() {
 		ui.Text(ctx, c.text("支持 Tinycast", "Support Tinycast")).FontSize(24).Bold().Role(ui.RoleHeading)
 		ui.Text(ctx, c.text("一个小启动器。你的支持让它保持独立。", "A small launcher. Support keeps it independent.")).

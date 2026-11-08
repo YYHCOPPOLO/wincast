@@ -24,13 +24,13 @@ const projectURL = "https://github.com/abue-ammar/tinycast"
 // settingsView is the settings window workspace: a sidebar with the original
 // four sections and nineteen pages, and one scrollable page at a time.
 func (c *controller) settingsView(ctx *ui.Context) {
-	tokens := theme.For(c.dark())
+	tokens := theme.ForContext(ctx)
 	ctx.SetTheme(tokens.Theme())
-	ctx.Root().Background(tokens.Page)
+	defer ctx.Root().Background(tokens.PageBackground(ctx.Vibrancy()))
 	zh := c.language == "zh"
 	ui.Row(ctx).Fill().AlignItems(ui.Stretch).Children(func() {
 		selected := c.settingsTab.ID()
-		sidebar := ui.Sidebar(ctx, &selected, func() {
+		sidebar := components.Sidebar(ctx, tokens, &selected, func() {
 			for _, section := range settings.AllSections() {
 				ui.SidebarSection(ctx, section.Title(zh), nil, func() {
 					for _, tab := range section.Tabs() {
@@ -38,7 +38,7 @@ func (c *controller) settingsView(ctx *ui.Context) {
 					}
 				})
 			}
-		}).Width(210).FillHeight()
+		}).Width(theme.SettingsSidebar).FillHeight()
 		if sidebar.Changed() {
 			if tab, ok := settings.TabFromID(selected); ok {
 				c.settingsTab = tab
@@ -49,11 +49,10 @@ func (c *controller) settingsView(ctx *ui.Context) {
 		}
 		ui.Scroll(ctx).Grow(1).TrackScroll(&c.settingsScroll).Children(func() {
 			ui.Column(ctx).FillWidth().Padding(24).Gap(16).Children(func() {
-				ui.Text(ctx, c.settingsTab.Title(zh)).FontSize(24).Bold().Role(ui.RoleHeading)
 				c.settingsPage(ctx, tokens, zh)
 				if c.settingsStatus != "" {
 					ui.Text(ctx, c.settingsStatus).FontSize(theme.SectionFont).
-						TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
+						TextColor(tokens.TextSecondary).Role(ui.RoleStatus)
 				}
 			})
 		})
@@ -106,7 +105,7 @@ func (c *controller) settingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool)
 func (c *controller) generalSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("全局快捷键", "Global shortcuts")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("应用启动器", "App launcher"), func() {
 			ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(ctx, &c.hotkeyDraft).Grow(1).Label(c.text("全局热键", "Global shortcut"))
@@ -119,7 +118,7 @@ func (c *controller) generalSettingsPage(ctx *ui.Context, tokens theme.Tokens, z
 
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("搜索", "Search")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("学习排序", "Learned ranking"), func() {
 			label := c.text("重置…", "Reset…")
 			button := ui.Button(ctx, label).AlignSelf(ui.Start)
@@ -143,7 +142,7 @@ func (c *controller) generalSettingsPage(ctx *ui.Context, tokens theme.Tokens, z
 
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("外观", "Appearance")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("主题", "Theme"), func() {
 			selected := appearanceIndex(c.appearance)
 			ui.Segmented(ctx, &selected,
@@ -151,6 +150,16 @@ func (c *controller) generalSettingsPage(ctx *ui.Context, tokens theme.Tokens, z
 			if value := appearanceValue(selected); value != c.appearance {
 				c.setAppearance(value)
 			}
+		})
+		components.FormRow(ctx, tokens, c.text("毛玻璃背景", "Glass background"), func() {
+			enabled := c.glassBackground
+			ui.Switch(ctx, &enabled).Label(c.text("使用 Windows 半透明背景", "Use Windows translucent backgrounds"))
+			if enabled != c.glassBackground {
+				c.setGlassBackground(enabled)
+			}
+			ui.Text(ctx, c.text("跟随 Windows 的透明效果设置；不可用时使用纯色背景。",
+				"Follows Windows transparency settings; uses a solid background when unavailable.")).
+				FontSize(theme.SectionFont).TextColor(tokens.TextSecondary)
 		})
 		components.FormRow(ctx, tokens, c.text("语言", "Language"), func() {
 			selected := 0
@@ -201,7 +210,7 @@ func (c *controller) generalSettingsPage(ctx *ui.Context, tokens theme.Tokens, z
 
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("通用", "General")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("登录时启动", "Launch at login"), func() {
 			enabled := c.launchAtLogin
 			ui.Switch(ctx, &enabled).Label(c.text("登录 Windows 后自动启动", "Start Tinycast automatically when you log in"))
@@ -280,7 +289,7 @@ func (c *controller) settingsApplications() []domain.Application {
 func (c *controller) applicationsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("所有应用", "All applications")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("启动器显示", "Show in launcher"), func() {
 			enabled := c.applicationsShowInLauncher
 			ui.Switch(ctx, &enabled).Label(c.text("在启动器搜索结果中显示应用", "Show applications in launcher search"))
@@ -304,7 +313,7 @@ func (c *controller) applicationsPage(ctx *ui.Context, tokens theme.Tokens, zh b
 func (c *controller) systemSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("Windows 设置", "Windows Settings")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("启动器显示", "Show in launcher"), func() {
 			enabled := c.systemSettingsShowInLauncher
 			ui.Switch(ctx, &enabled).Label(c.text("允许搜索系统设置", "Make System Settings searchable"))
@@ -322,7 +331,7 @@ func (c *controller) systemSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh
 func (c *controller) systemActionsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("系统操作", "System actions")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("启动器显示", "Show in launcher"), func() {
 			enabled := c.systemActionsShowInLauncher
 			ui.Switch(ctx, &enabled).Label(c.text("允许搜索系统操作", "Make system actions searchable"))
@@ -354,7 +363,7 @@ func (c *controller) settingsEntryRow(ctx *ui.Context, tokens theme.Tokens, appl
 				subtitle = application.ID
 			}
 			ui.Text(ctx, subtitle).FontSize(theme.TrailingFont).
-				TextColor(tokens.TextTertiary).SingleLine()
+				TextColor(tokens.TextSecondary).SingleLine()
 		})
 		favorite := "☆"
 		if c.launcherPrefs.IsFavorite(application.ID) {
@@ -395,7 +404,7 @@ func (c *controller) settingsEntryRow(ctx *ui.Context, tokens theme.Tokens, appl
 func (c *controller) commandsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("命令", "Commands")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		c.workflowFeature(ctx, tokens, c.text("启用命令", "Enable commands"), c.featureCommands, func(enabled bool) {
 			c.setFeature("commandsEnabled", enabled)
 		})
@@ -425,7 +434,7 @@ func (c *controller) commandsPage(ctx *ui.Context, tokens theme.Tokens, zh bool)
 func (c *controller) quicklinksPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("快捷链接", "Quicklinks")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		c.workflowFeature(ctx, tokens, c.text("启用快捷链接", "Enable quicklinks"), c.featureQuicklinks, func(enabled bool) {
 			c.setFeature("quicklinksEnabled", enabled)
 		})
@@ -465,7 +474,7 @@ func (c *controller) quicklinksPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 func (c *controller) snippetsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("片段", "Snippets")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		c.workflowFeature(ctx, tokens, c.text("启用片段", "Enable snippets"), c.featureSnippets, func(enabled bool) {
 			c.setSnippetFeature(enabled)
 		})
@@ -475,7 +484,7 @@ func (c *controller) snippetsPage(ctx *ui.Context, tokens theme.Tokens, zh bool)
 		c.launcherVisibility(ctx, tokens, "snippetsShowInLauncher", c.snippetsShowInLauncher)
 		ui.Text(ctx, c.text("启用即允许在任意应用中监听键入的关键词；不保存按键记录。",
 			"Enabling listens for typed keywords in other apps; no key log is kept.")).
-			FontSize(theme.KeyCapFont).TextColor(tokens.TextTertiary)
+			FontSize(theme.KeyCapFont).TextColor(tokens.TextSecondary)
 		if c.snippetError != "" {
 			ui.Text(ctx, c.snippetError).FontSize(theme.TrailingFont).TextColor(tokens.Destructive).SingleLine()
 		}
@@ -520,7 +529,7 @@ func (c *controller) renderWorkflowEditor(ctx *ui.Context, tokens theme.Tokens) 
 func (c *controller) notesSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("笔记", "Notes")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		c.workflowFeature(ctx, tokens, c.text("启用笔记", "Enable notes"), c.featureNotes, func(enabled bool) {
 			c.setFeature("notesEnabled", enabled)
 		})
@@ -543,7 +552,7 @@ func (c *controller) notesSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh 
 func (c *controller) fileSearchSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("文件搜索", "File search")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("启用", "Enable"), func() {
 			enabled := c.featureFileSearch
 			ui.Switch(ctx, &enabled).Label(c.text("搜索文件和文件夹", "Search files and folders"))
@@ -575,7 +584,7 @@ func (c *controller) fileSearchSettingsPage(ctx *ui.Context, tokens theme.Tokens
 func (c *controller) windowSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("窗口管理", "Window management")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("启用", "Enable"), func() {
 			enabled := c.featureWindowManagement
 			ui.Switch(ctx, &enabled).Label(c.text("移动和调整前台窗口", "Move and resize the frontmost window"))
@@ -612,7 +621,7 @@ func (c *controller) windowSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh
 func (c *controller) clipboardSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("剪贴板", "Clipboard")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("剪贴板监听", "Clipboard monitor"), func() {
 			enabled := c.clipboardEnabled.Load()
 			ui.Switch(ctx, &enabled).Label(c.text("保存文本和图片历史", "Keep text and image history"))
@@ -642,10 +651,10 @@ func (c *controller) clipboardSettingsPage(ctx *ui.Context, tokens theme.Tokens,
 
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("排除应用", "Excluded apps")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		ui.Text(ctx, c.text("来自这些应用的复制内容不会被记录。",
 			"Copies from these applications are not recorded.")).
-			FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+			FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 		for _, stem := range c.clipboardDisabled {
 			stem := stem
 			ui.Row(ctx).FillWidth().Padding(4, 8).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -671,7 +680,7 @@ func (c *controller) clipboardSettingsPage(ctx *ui.Context, tokens theme.Tokens,
 func (c *controller) emojiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("表情与符号", "Emoji & Symbols")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("肤色", "Skin tone"), func() {
 			ui.MenuButton(ctx, c.view.EmojiTone.Label(), func(m *ui.Menu) {
 				for _, tone := range emoji.AllTones {
@@ -687,7 +696,7 @@ func (c *controller) emojiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh 
 func (c *controller) calendarSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("日历", "Calendar")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("启用", "Enable"), func() {
 			enabled := c.featureCalendar
 			ui.Switch(ctx, &enabled).Label(c.text("读取 Windows 日历和会议链接", "Read the Windows calendar and meeting links"))
@@ -741,10 +750,10 @@ func (c *controller) calendarSettingsPage(ctx *ui.Context, tokens theme.Tokens, 
 func (c *controller) extensionsSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("扩展", "Extensions")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		ui.Text(ctx, c.text("此原生构建不运行第三方 JavaScript 扩展；扩展入口保持不可用。",
 			"This native build does not run third-party JavaScript extensions; extension entry points stay unavailable.")).
-			FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+			FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 		components.FormRow(ctx, tokens, c.text("启用扩展", "Enable extensions"), func() {
 			enabled := c.extensionsEnabled
 			ui.Switch(ctx, &enabled).Label(c.text("当前构建不可用", "Unavailable in this build")).Disabled(true)
@@ -759,12 +768,12 @@ func (c *controller) extensionsSettingsPage(ctx *ui.Context, tokens theme.Tokens
 func (c *controller) permissionsSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("权限", "Permissions")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		for _, permission := range settings.PermissionRows(zh) {
 			components.FormRow(ctx, tokens, permission.Title, func() {
 				ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(ctx, permission.Subtitle).FontSize(theme.TrailingFont).
-						TextColor(tokens.TextTertiary).Grow(1).SingleLine()
+						TextColor(tokens.TextSecondary).Grow(1).SingleLine()
 					if ui.Button(ctx, c.text("打开设置", "Open Settings")).Clicked() {
 						c.openPermissionSettings(permission.URI)
 					}
@@ -782,7 +791,7 @@ func (c *controller) aboutSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh 
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, "Tinycast for Windows").FontSize(18).Bold()
 		ui.Text(ctx, c.text("一个小型原生启动器。", "A small native launcher.")).
-			FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+			FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 		components.FormRow(ctx, tokens, c.text("版本", "Version"), func() {
 			ui.Text(ctx, version+" · Go "+runtime.Version()).
 				FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)

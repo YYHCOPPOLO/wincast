@@ -41,7 +41,7 @@ func (c *controller) showOnboarding() {
 		return
 	}
 	c.onboardingStep = 0
-	c.onboarding = mygo.NewWindow(mygo.WindowOptions{
+	c.onboarding = c.newMaterialWindow(mygo.WindowOptions{
 		Title: c.text("欢迎使用 Tinycast", "Welcome to Tinycast"),
 		Width: 520, Height: 400, Hidden: true, DisableResize: true,
 		BackgroundColor: "light-dark(#f4f4f6, #1a1a1e)",
@@ -56,9 +56,9 @@ func (c *controller) showOnboarding() {
 }
 
 func (c *controller) onboardingView(ctx *ui.Context) {
-	tokens := theme.For(c.dark())
+	tokens := theme.ForContext(ctx)
 	ctx.SetTheme(tokens.Theme())
-	ctx.Root().Background(tokens.Page)
+	defer ctx.Root().Background(tokens.PageBackground(ctx.Vibrancy()))
 	zh := c.language == "zh"
 	ui.Column(ctx).Fill().Padding(36).Gap(14).Justify(ui.Center).Children(func() {
 		ui.Text(ctx, onboardingTitle(c.onboardingStep, zh)).FontSize(24).Bold().Role(ui.RoleHeading)
@@ -69,21 +69,21 @@ func (c *controller) onboardingView(ctx *ui.Context) {
 			ui.TextInput(ctx, &c.hotkeyDraft).Label(c.text("全局快捷键", "Global shortcut")).
 				Placeholder(defaultShortcut).Grow(1)
 			ui.Text(ctx, c.text("例如 Alt+Space；点击“应用”立即生效。", "For example Alt+Space; Apply takes effect immediately.")).
-				FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+				FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 			if ui.Button(ctx, c.text("应用快捷键", "Apply shortcut")).Clicked() {
 				c.setHotkey(c.hotkeyDraft)
 			}
 		case 1:
 			ui.Text(ctx, c.text("Tinycast 使用 UI Automation 把内容粘贴回前台应用。Windows 不会在启动时弹出权限提示。",
 				"Tinycast uses UI Automation to paste back into the frontmost app. Windows does not prompt at launch.")).
-				FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+				FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 			if ui.Button(ctx, c.text("打开权限设置", "Open permission settings")).Clicked() {
 				c.openPermissionSettings("ms-settings:privacy-general")
 			}
 		case 2:
 			ui.Text(ctx, c.text("可在设置 → 备份 → 从 Raycast 导入中带上设置与片段；密钥与自动能力不会随导入开启。",
 				"Settings → Backup → Import from Raycast can carry settings and snippets; keys and capability grants are never enabled by an import.")).
-				FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+				FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 			if ui.Button(ctx, c.text("打开备份设置", "Open backup settings")).Clicked() {
 				c.settingsTab = settings.Backup
 				if c.onboarding != nil {

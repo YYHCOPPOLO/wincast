@@ -104,8 +104,8 @@ func (c *controller) startClipboard() {
 	}()
 }
 
-// startClipboardHost owns the Win32 message window for clipboard and theme
-// broadcasts. The callback only signals the storage worker.
+// startClipboardHost owns the Win32 message window for clipboard broadcasts.
+// The callback only signals the storage worker; MyGo owns appearance changes.
 func (c *controller) startClipboardHost() {
 	host, err := windows.StartMessageHost()
 	if err != nil {
@@ -123,19 +123,6 @@ func (c *controller) startClipboardHost() {
 		}
 	}); err != nil {
 		log.Printf("clipboard listener unavailable: %v", err)
-	}
-	if err := host.WatchTheme(func(dark bool) {
-		c.panel.Update(func() {
-			if c.closing {
-				return
-			}
-			c.systemDark = dark
-			if c.settings != nil {
-				c.settings.Update(func() {})
-			}
-		})
-	}); err != nil {
-		log.Printf("system theme listener unavailable: %v", err)
 	}
 }
 

@@ -35,10 +35,10 @@ func appVersion() string {
 func (c *controller) renderBackup(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("备份", "Backup")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		ui.Text(ctx, c.text("一个 .tinycast 文件可包含以下类别；API 密钥、AI 对话与缓存永不进入备份。",
 			"A single .tinycast file can carry the categories below; API keys, AI chats and caches never travel.")).
-			FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+			FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 		c.backupCategoryRow(ctx, tokens, c.text("设置与快捷键", "Settings & shortcuts"), &c.backupSettings)
 		c.backupCategoryRow(ctx, tokens, c.text("剪贴板历史", "Clipboard history"), &c.backupClipboard)
 		c.backupCategoryRow(ctx, tokens, c.text("片段", "Snippets"), &c.backupSnippets)
@@ -65,7 +65,7 @@ func (c *controller) renderBackup(ctx *ui.Context, tokens theme.Tokens, zh bool)
 
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("从 Raycast 导入", "Import from Raycast")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("密码", "Passphrase"), func() {
 			ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.TextInput(ctx, &c.raycastPassphrase).Grow(1).Password().
@@ -498,7 +498,7 @@ func importNoteFile(root, name string, data []byte) error {
 
 // applySettingsEffects reprojects imported settings into the live services.
 func (c *controller) applySettingsEffects() {
-	c.applyViewAppearance()
+	c.applyAppearance()
 	c.view.Chinese = c.language == "zh"
 	c.view.Shortcut = c.hotkey
 	c.view.Expanded = !c.compactMode

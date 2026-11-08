@@ -335,7 +335,7 @@ var excluded = map[string]bool{
 // importable names the keys an imported file may write. It includes the
 // original application's key spellings so an older file still applies.
 var importable = map[string]bool{
-	"appearance": true, "compactMode": true, "showFavoritesInCompactMode": true,
+	"appearance": true, "glassBackground": true, "compactMode": true, "showFavoritesInCompactMode": true,
 	"openOnCursorScreen": true, "paletteDraggable": true, "popToRootTimeout": true,
 	"launchAtLogin": true, "showInMenuBar": true, "supportReminders": true,
 	"extensionsShowInLauncher": true,

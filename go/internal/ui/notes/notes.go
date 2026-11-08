@@ -94,10 +94,11 @@ func (v *View) CloseSwitcher() { v.Switcher = false }
 func (v *View) FocusQuery() { v.queryHandle.Focus() }
 
 func (v *View) Render(c *ui.Context) {
-	dark := c.Theme().Dark
-	tokens := theme.For(dark)
+	tokens := theme.ForContext(c)
 	c.SetTheme(tokens.Theme())
-	c.Root().Background(tokens.Surface)
+	// The note switcher's ResultList temporarily changes the widget theme,
+	// which resets the root too; the window surface must be applied last.
+	defer c.Root().Background(tokens.PanelBackground(c.Vibrancy()))
 	c.OnShortcut(ui.Ctrl, ui.KeyN, v.callbacks.Create)
 	c.OnShortcut(ui.Ctrl, ui.KeyP, v.toggleSwitcher)
 	c.OnShortcut(ui.Ctrl, ui.KeyO, v.callbacks.OpenFolder)
@@ -136,6 +137,7 @@ func (v *View) Render(c *ui.Context) {
 			return
 		}
 		editor := ui.TextAreaBufferBase(c, v.Body).Grow(1).Padding(14, 16).FontSize(14).
+			TextColor(tokens.NoteText).SelectionColor(tokens.Selection).
 			Label(v.Text("笔记内容", "Note content")).OnChange(v.edited)
 		if v.focusBody {
 			editor = editor.AutoFocus()

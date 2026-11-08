@@ -59,6 +59,7 @@ func (c *controller) readSettingsDocument() {
 		}
 	}
 	c.appearance = document.String("appearance", "system")
+	c.glassBackground = document.Bool("glassBackground", true)
 	c.openOnCursorScreen = document.Bool("openOnCursorScreen", true)
 	c.launchAtLogin = document.Bool("launchAtLogin", false)
 	c.showInTray = document.Bool("showInMenuBar", true)
@@ -148,31 +149,12 @@ func (c *controller) text(zh, en string) string {
 	return en
 }
 
-func (c *controller) forcedDark() *bool {
-	switch c.appearance {
-	case "light":
-		value := false
-		return &value
-	case "dark":
-		value := true
-		return &value
-	}
-	return nil
-}
-
-func (c *controller) applyViewAppearance() {
-	if forced := c.forcedDark(); forced != nil {
-		c.view.ForcedDark = forced
-		return
-	}
-	c.view.ForcedDark = &c.systemDark
-}
-
-func (c *controller) dark() bool {
-	if forced := c.forcedDark(); forced != nil {
-		return *forced
-	}
-	return c.systemDark
+func (c *controller) applyAppearance() {
+	// Apply the same source to DWM materials, title bars, menus and every native
+	// content surface, including Notes. A missing setting follows Windows live.
+	mygo.Theme.SetSource(mygo.ThemeSource(c.appearance))
+	c.applyWindowMaterials()
+	log.Printf("appearance source=%s glass_background=%t", c.appearance, c.glassBackground)
 }
 
 func (c *controller) settingDocument() (*storage.Document, bool) {
@@ -263,7 +245,7 @@ func (c *controller) openSettings() {
 	}
 	c.hide()
 	if c.settings == nil {
-		c.settings = mygo.NewWindow(mygo.WindowOptions{
+		c.settings = c.newMaterialWindow(mygo.WindowOptions{
 			Title:           "Tinycast Settings",
 			Width:           int(theme.SettingsWidth),
 			Height:          int(theme.SettingsHeight),
@@ -474,11 +456,17 @@ func (c *controller) pickClipboardExcludedApp() {
 
 func (c *controller) setAppearance(value string) {
 	c.appearance = value
-	c.applyViewAppearance()
+	c.applyAppearance()
 	if c.settingsDocument != nil && c.settingsWritable {
 		_ = c.settingsDocument.Set("appearance", value)
 	}
 	c.queueSettingsSave()
+}
+
+func (c *controller) setGlassBackground(enabled bool) {
+	c.glassBackground = enabled
+	c.applyAppearance()
+	c.setGeneralBool("glassBackground", enabled, nil)
 }
 
 func (c *controller) setLanguage(value string) {

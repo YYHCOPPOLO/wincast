@@ -44,7 +44,7 @@ func (c *controller) renderMigrationCard(ctx *ui.Context, tokens theme.Tokens, z
 	}
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("旧版数据", "Legacy data")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		ui.Text(ctx, c.text("从旧版 Windows 应用导入设置、命令、快捷链接、片段、笔记、启动器学习和 AI 历史；迁移前会先快照当前配置。",
 			"Import settings, commands, quicklinks, snippets, notes, launcher learning and AI history from the legacy Windows app; the current profile is snapshotted first.")).
 			FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)

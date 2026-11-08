@@ -17,3 +17,32 @@ func showWindow(window *mygo.Window) {
 	}
 	window.Focus()
 }
+
+// newMaterialWindow reserves a composited surface even when glass is disabled.
+// Windows cannot add that surface later, so create it with a material and turn
+// the material off before showing the window when the saved preference is off.
+func (c *controller) newMaterialWindow(options mygo.WindowOptions) *mygo.Window {
+	options.Transparent = true
+	options.Vibrancy = mygo.VibrancyAcrylic
+	window := mygo.NewWindow(options)
+	if !c.glassBackground {
+		window.SetVibrancy(mygo.VibrancyNone)
+	}
+	return window
+}
+
+func (c *controller) applyWindowMaterials() {
+	material := mygo.VibrancyNone
+	if c.glassBackground {
+		material = mygo.VibrancyAcrylic
+	}
+	windows := []*mygo.Window{c.panel, c.settings, c.qaWindow, c.onboarding, c.supportWindow, c.diagnostic}
+	if c.editor != nil {
+		windows = append(windows, c.editor.window)
+	}
+	for _, window := range windows {
+		if window != nil {
+			window.SetVibrancy(material)
+		}
+	}
+}

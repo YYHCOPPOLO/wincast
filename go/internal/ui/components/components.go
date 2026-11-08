@@ -10,22 +10,29 @@ import (
 )
 
 func Section(c *ui.Context, tokens theme.Tokens, label string) {
-	ui.Text(c, label).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).
+	ui.Text(c, label).FontSize(theme.SectionFont).TextColor(tokens.TextSecondary).
 		Height(theme.SectionHeaderHeight).Padding(0, 10).Role(ui.RoleHeading)
+}
+
+// Hairline separates a header or footer from a scrolling list without the
+// weight of the widget theme's border.
+func Hairline(c *ui.Context, tokens theme.Tokens) {
+	ui.Box(c).FillWidth().Height(1).Background(tokens.Line2)
 }
 
 // Row is one application result. Icon is drawn at the row's pixel size; when
 // it is not ready yet the avatar keeps the row stable. IconRadius and IconFit
 // let image thumbnails crop to a rounded tile while app icons stay whole.
 type Row struct {
-	Icon       *ui.Bitmap
-	IconRadius float32
-	IconFit    ui.Fit
-	Fallback   string
-	Title      string
-	Subtitle   string
-	Trailing   string
-	Selected   bool
+	Icon           *ui.Bitmap
+	IconRadius     float32
+	IconFit        ui.Fit
+	Fallback       string
+	Title          string
+	Subtitle       string
+	Trailing       string
+	TrailingKeycap bool
+	Selected       bool
 }
 
 // ResultList leaves selection painting to ResultRow. MyGo's default list
@@ -42,13 +49,30 @@ func ResultList(c *ui.Context, tokens theme.Tokens, state *ui.ListState, count i
 	return ui.List(c, state, count, row)
 }
 
+// Sidebar uses the original's neutral hover and inactive selection. A focused
+// selection still uses the system accent, as the native macOS sidebar does.
+func Sidebar(c *ui.Context, tokens theme.Tokens, selected *string, fn func()) ui.Element {
+	previous := c.Theme()
+	sidebarTheme := *previous
+	sidebarTheme.Surface = tokens.CardFill
+	sidebarTheme.SurfaceHover = tokens.RowHover
+	sidebarTheme.SurfacePressed = tokens.Selection
+	c.SetTheme(&sidebarTheme)
+	defer c.SetTheme(previous)
+	return ui.Sidebar(c, selected, fn)
+}
+
 func ResultRow(c *ui.Context, tokens theme.Tokens, row Row) {
+	el := ui.Row(c).Height(theme.RowHeight).Padding(6, 8).Gap(10).AlignItems(ui.Center).
+		Radius(theme.RowRadius)
 	fill := ui.Transparent
-	if row.Selected {
+	switch {
+	case row.Selected:
 		fill = tokens.Selection
+	case el.Hovered():
+		fill = tokens.RowHover
 	}
-	ui.Row(c).Height(theme.RowHeight).Padding(6, 10).Gap(12).AlignItems(ui.Center).
-		Radius(theme.RowRadius).Background(fill).Children(func() {
+	el.Background(fill).Children(func() {
 		if row.Icon != nil {
 			icon := ui.Image(c, row.Icon).Size(theme.ResultRowIcon, theme.ResultRowIcon).
 				Fit(row.IconFit).Role(ui.RoleNone)
@@ -61,40 +85,88 @@ func ResultRow(c *ui.Context, tokens theme.Tokens, row Row) {
 		ui.Column(c).Grow(1).Gap(1).Children(func() {
 			ui.Text(c, row.Title).FontSize(theme.RowFont).TextColor(tokens.Text).SingleLine()
 			if row.Subtitle != "" {
-				ui.Text(c, row.Subtitle).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary).SingleLine()
+				ui.Text(c, row.Subtitle).FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
 			}
 		})
 		if row.Trailing != "" {
-			KeyCap(c, tokens, row.Trailing)
+			if row.TrailingKeycap {
+				KeyCapOutline(c, tokens, row.Trailing)
+			} else {
+				ui.Text(c, row.Trailing).FontSize(theme.TrailingFont).
+					TextColor(tokens.TextSecondary).SingleLine()
+			}
 		}
 	})
 }
 
-func KeyCap(c *ui.Context, tokens theme.Tokens, label string) {
-	ui.Text(c, label).FontSize(theme.KeyCapFont).TextColor(tokens.CtlFg).TextAlign(ui.Center).
+// KeyCapOutline is the row hint's quiet cap: bordered rather than filled, so
+// it reads beside a title without competing with the footer's own chips.
+func KeyCapOutline(c *ui.Context, tokens theme.Tokens, label string) {
+	ui.Text(c, label).FontSize(theme.KeyCapFont).TextColor(tokens.TextSecondary).TextAlign(ui.Center).
 		Height(theme.KeyCapHeight).MinWidth(theme.KeyCapHeight).Padding(1, 5).
-		Radius(theme.KeyCapRadius).Background(tokens.Muted)
+		Radius(theme.KeyCapRadius).Border(1, tokens.Border)
 }
 
-// Footer is the palette's permanent action bar. onActions opens the selected
-// row's menu; onAppMenu opens the application menu. Either is nil when the
-// view has no menu in this mode.
-func Footer(c *ui.Context, tokens theme.Tokens, status, hints string, onActions, onAppMenu func()) {
-	ui.Row(c).Height(theme.BottomBarHeight).Padding(10, 16).Gap(10).AlignItems(ui.Center).Children(func() {
-		if onAppMenu != nil {
-			if ui.Button(c, "T").Label("Tinycast").Width(theme.MenuButton).Height(theme.MenuButton).
-				Radius(theme.MenuButton / 2).Clicked() {
-				onAppMenu()
+// Footer is the palette's floating action bar. The status and the shortcut
+// hints stay quiet; the primary action pill and the app menu circle are the
+// only surfaces, so the list reads as if it continues beneath them.
+func Footer(c *ui.Context, tokens theme.Tokens, status, hints, primary string, primaryEnabled, primaryDanger bool, onPrimary, onAppMenu func()) {
+	ui.Row(c).Height(theme.BottomBarHeight).Padding(10, 14).Gap(10).AlignItems(ui.Center).Children(func() {
+		if status != "" {
+			ui.Text(c, status).FontSize(theme.SectionFont).TextColor(tokens.TextSecondary).
+				Grow(1).SingleLine().Role(ui.RoleStatus)
+		} else {
+			ui.Spacer(c).Grow(1)
+		}
+		if hints != "" {
+			ui.Text(c, hints).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).SingleLine().Shrink(1)
+		}
+		if primary != "" {
+			button := ui.ButtonBase(c).Height(28).Padding(1, 10).Gap(8).
+				Radius(theme.ControlRadius).Tooltip(primary).Label(primary).Cursor(ui.CursorPointer).
+				Disabled(!primaryEnabled)
+			fill := tokens.GlassFrost
+			switch {
+			case button.Pressed():
+				fill = tokens.ControlPress
+			case button.Hovered():
+				fill = tokens.ControlHover
+			}
+			color := tokens.Text
+			if primaryDanger {
+				color = tokens.Destructive
+			}
+			if !primaryEnabled {
+				color = tokens.TextTertiary
+			}
+			button.Background(fill).Border(1, tokens.CardStroke).Children(func() {
+				ui.Text(c, primary).FontSize(theme.TrailingFont).FontWeight(600).TextColor(color).SingleLine()
+				KeyCapOutline(c, tokens, "↵")
+			})
+			if button.Clicked() && primaryEnabled && onPrimary != nil {
+				onPrimary()
 			}
 		}
-		ui.Text(c, status).FontSize(theme.SectionFont).TextColor(tokens.TextSecondary).
-			Grow(1).SingleLine().Role(ui.RoleStatus)
-		if hints != "" {
-			ui.Text(c, hints).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).SingleLine()
-		}
-		if onActions != nil {
-			if ui.Button(c, "···").Label("Menu").Clicked() {
-				onActions()
+		if onAppMenu != nil {
+			button := ui.ButtonBase(c).Size(theme.MenuButton, theme.MenuButton).
+				Radius(theme.MenuButton / 2).Tooltip("Tinycast menu").Label("Tinycast menu").
+				Cursor(ui.CursorPointer)
+			fill := tokens.GlassFrost
+			switch {
+			case button.Pressed():
+				fill = tokens.ControlPress
+			case button.Hovered():
+				fill = tokens.ControlHover
+			}
+			button.Background(fill).Border(1, tokens.CardStroke).Children(func() {
+				ui.Row(c).Gap(3).AlignItems(ui.Center).Children(func() {
+					for range 3 {
+						ui.Box(c).Size(3, 3).Radius(1.5).Background(tokens.TextSecondary)
+					}
+				})
+			})
+			if button.Clicked() {
+				onAppMenu()
 			}
 		}
 	})
@@ -102,15 +174,15 @@ func Footer(c *ui.Context, tokens theme.Tokens, status, hints string, onActions,
 
 // Card is a settings or dialog surface: its own fill, hairline and inset.
 func Card(c *ui.Context, tokens theme.Tokens, fn func()) {
-	ui.Column(c).FillWidth().Padding(16).Gap(12).Radius(theme.CardRadius).
-		Background(tokens.Surface).Border(1, tokens.Line).Children(fn)
+	ui.Column(c).FillWidth().Padding(16).Gap(10).Radius(theme.CardRadius).
+		Background(tokens.CardFill).Border(1, tokens.CardStroke).Children(fn)
 }
 
 // FormRow aligns a label with a control that may grow.
 func FormRow(c *ui.Context, tokens theme.Tokens, label string, control func()) {
 	ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, label).FontSize(theme.FormLabelFont).TextColor(tokens.TextSecondary).
-			Width(110).SingleLine()
+		ui.Text(c, label).FontSize(theme.FormLabelFont).TextColor(tokens.Text).
+			Width(190).SingleLine()
 		ui.Column(c).Grow(1).Children(control)
 	})
 }

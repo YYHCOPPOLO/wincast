@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/diagnostics"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -18,7 +19,7 @@ func (c *controller) openDiagnostics() {
 	}
 	c.refreshDiagnostics()
 	if c.diagnostic == nil {
-		c.diagnostic = mygo.NewWindow(mygo.WindowOptions{
+		c.diagnostic = c.newMaterialWindow(mygo.WindowOptions{
 			Title: "Tinycast — Diagnostics", Width: 760, Height: 640,
 			Hidden: true, Content: ui.View(c.diagnosticsView),
 		})
@@ -52,6 +53,9 @@ func (c *controller) refreshDiagnostics() {
 }
 
 func (c *controller) diagnosticsView(ctx *ui.Context) {
+	tokens := theme.ForContext(ctx)
+	ctx.SetTheme(tokens.Theme())
+	defer ctx.Root().Background(tokens.PageBackground(ctx.Vibrancy()))
 	t := ctx.Theme()
 	ui.Column(ctx).Fill().Children(func() {
 		ui.Row(ctx).Padding(20).Gap(10).AlignItems(ui.Center).Children(func() {

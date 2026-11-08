@@ -1,9 +1,13 @@
-// Package theme carries the Magpie design tokens shared by every native view.
-// Values come from crates/tinycast-pure/src/theme.rs; the Rust implementation
-// remains the behavior oracle until the Go application replaces it.
+// Package theme carries the design tokens shared by every native view.
+// Values follow the original macOS app's design system (../tinycast, tag
+// v0.10.2), adapted to Windows' system font and control metrics.
 package theme
 
-import "github.com/egoist/mygo/ui"
+import (
+	"math"
+
+	"github.com/egoist/mygo/ui"
+)
 
 // Metrics used across the launcher, settings and future feature windows.
 const (
@@ -21,8 +25,8 @@ const (
 	KeyCapHeight        float32 = 18
 	KeyCapRadius        float32 = 6
 
-	PanelRadius   float32 = 16
-	CardRadius    float32 = 12
+	PanelRadius   float32 = 26
+	CardRadius    float32 = 10
 	ControlRadius float32 = 8
 	RowRadius     float32 = 10
 
@@ -31,14 +35,14 @@ const (
 	SettingsSidebar float32 = 215
 	SettingsRow     float32 = 48
 
-	BodyFont      float32 = 14
+	BodyFont      float32 = 13
 	SearchFont    float32 = 20
 	RowFont       float32 = 13
 	TrailingFont  float32 = 12
 	SectionFont   float32 = 11
 	KeyCapFont    float32 = 10
 	HeadingFont   float32 = 26
-	FormLabelFont float32 = 12
+	FormLabelFont float32 = 13
 
 	// Calculator answer card, from the original CalculatorCard and LeadCard.
 	CalcResultFont    float32 = 22
@@ -56,7 +60,7 @@ const (
 	CalcBadgeRadius   float32 = 6
 )
 
-// Tokens is one appearance. Build it with For, Light or Dark, never by hand.
+// Tokens is one appearance. Views use ForContext to follow the desktop accent.
 type Tokens struct {
 	Dark bool
 
@@ -69,19 +73,29 @@ type Tokens struct {
 	Line2          ui.Color
 	Card2          ui.Color
 	CardFill       ui.Color
+	CardStroke     ui.Color
 	CardHover      ui.Color
+	GlassFrost     ui.Color
 	ControlSurface ui.Color
+	ControlHover   ui.Color
+	ControlPress   ui.Color
 	Muted          ui.Color
 	Text           ui.Color
 	TextSecondary  ui.Color
 	TextTertiary   ui.Color
+	NoteText       ui.Color
 	Fg2            ui.Color
 	Faint          ui.Color
 	CtlFg          ui.Color
 	Accent         ui.Color
+	AccentHover    ui.Color
+	AccentPressed  ui.Color
 	AccentSoft     ui.Color
 	AccentText     ui.Color
+	Focus          ui.Color
 	Selection      ui.Color
+	RowHover       ui.Color
+	TextSelection  ui.Color
 	PillHover      ui.Color
 	Destructive    ui.Color
 	Success        ui.Color
@@ -90,6 +104,9 @@ type Tokens struct {
 	Amber          ui.Color
 	AmberSoft      ui.Color
 	Scrim          ui.Color
+	EmojiCell      ui.Color
+	EmojiHover     ui.Color
+	EmojiSelected  ui.Color
 }
 
 func For(dark bool) Tokens {
@@ -99,75 +116,147 @@ func For(dark bool) Tokens {
 	return Light()
 }
 
+// ForContext keeps the original's neutral ink ramp while using the desktop's
+// accent for native controls. Preferences are refreshed by MyGo on system changes.
+func ForContext(c *ui.Context) Tokens {
+	t := For(c.Theme().Dark)
+	if accent := c.Preferences().Accent; accent.A > 0 {
+		t = t.withAccent(accent)
+	}
+	return t
+}
+
+func (t Tokens) withAccent(accent ui.Color) Tokens {
+	black, white := ui.RGB(0, 0, 0), ui.RGB(255, 255, 255)
+	accent = ui.RGB(accent.R, accent.G, accent.B)
+	t.Accent = accent
+	// Compare contrast in linear sRGB, including for bright Windows accents.
+	linear := func(channel uint8) float64 {
+		x := float64(channel) / 255
+		if x <= 0.04045 {
+			return x / 12.92
+		}
+		return math.Pow((x+0.055)/1.055, 2.4)
+	}
+	luminance := 0.2126*linear(accent.R) + 0.7152*linear(accent.G) + 0.0722*linear(accent.B)
+	t.AccentText = white
+	shade := black
+	if (luminance+0.05)/0.05 > 1.05/(luminance+0.05) {
+		t.AccentText = black
+		shade = white
+	}
+	// Move away from the text color, so hover/press never weaken its contrast.
+	t.AccentHover = accent.Mix(shade, 0.10)
+	t.AccentPressed = accent.Mix(shade, 0.18)
+	t.AccentSoft = accent.Alpha(0.12)
+	t.TextSelection = accent.Alpha(0.25)
+	t.Focus = accent.Alpha(0.55)
+	if t.Dark {
+		t.AccentSoft = accent.Alpha(0.18)
+		t.TextSelection = accent.Alpha(0.35)
+		t.Focus = accent.Mix(white, 0.2).Alpha(0.60)
+	}
+	return t
+}
+
+// PanelBackground leaves Windows Acrylic visible. DWM supplies its own tint
+// and contrast treatment; adding the macOS scrim on top washes out the blur.
+// Unsupported systems and disabled glass use a fully opaque surface.
+func (t Tokens) PanelBackground(material bool) ui.Color {
+	if material {
+		return ui.Transparent
+	}
+	return t.Surface
+}
+
+func (t Tokens) PageBackground(material bool) ui.Color {
+	if material {
+		return ui.Transparent
+	}
+	return t.Page
+}
+
 func Light() Tokens {
 	return Tokens{
-		Page:           ui.Hex("#f4f4f6"),
+		Page:           ui.Hex("#f5f5f5"),
 		Surface:        ui.Hex("#ffffff"),
-		SurfaceHover:   ui.Hex("#f1f1f4"),
-		SurfacePress:   ui.Hex("#e9e9ee"),
-		Border:         ui.Hex("#e3e3e8"),
-		Line:           ui.Hex("#e3e3e8"),
-		Line2:          ui.Hex("#ececf0"),
-		Card2:          ui.Hex("#f9f9fb"),
-		CardFill:       ui.Hex("#f5f5f5"),
-		CardHover:      ui.Hex("#eaeaea"),
-		ControlSurface: ui.Hex("#ebebeb"),
-		Muted:          ui.Hex("#f1f1f4"),
-		Text:           ui.Hex("#1c1c21"),
-		TextSecondary:  ui.Hex("#63636b"),
-		TextTertiary:   ui.Hex("#85858d"),
-		Fg2:            ui.Hex("#4b4b53"),
-		Faint:          ui.Hex("#b9b9c2"),
-		CtlFg:          ui.Hex("#63636b"),
-		Accent:         ui.Hex("#4f46e5"),
-		AccentSoft:     ui.Hex("#eeedfd"),
-		AccentText:     ui.Hex("#ffffff"),
-		Selection:      ui.Hex("#ecebfb"),
-		PillHover:      ui.Hex("#e9e9ee"),
-		Destructive:    ui.Hex("#d64545"),
-		Success:        ui.Hex("#189a58"),
-		GreenSoft:      ui.Hex("#e4f6ec"),
-		RedSoft:        ui.Hex("#fbe9e9"),
-		Amber:          ui.Hex("#b45309"),
-		AmberSoft:      ui.Hex("#fbf0df"),
+		SurfaceHover:   ui.RGBA(0, 0, 0, 0.05),
+		SurfacePress:   ui.RGBA(0, 0, 0, 0.10),
+		Border:         ui.RGBA(0, 0, 0, 0.18),
+		Line:           ui.RGBA(0, 0, 0, 0.12),
+		Line2:          ui.RGBA(0, 0, 0, 0.06),
+		Card2:          ui.RGBA(0, 0, 0, 0.03),
+		CardFill:       ui.RGBA(0, 0, 0, 0.04),
+		CardStroke:     ui.RGBA(0, 0, 0, 0.10),
+		CardHover:      ui.RGBA(0, 0, 0, 0.07),
+		GlassFrost:     ui.RGBA(255, 255, 255, 0.25),
+		ControlSurface: ui.RGBA(0, 0, 0, 0.08),
+		ControlHover:   ui.RGBA(0, 0, 0, 0.045),
+		ControlPress:   ui.RGBA(0, 0, 0, 0.09),
+		Muted:          ui.RGBA(0, 0, 0, 0.08),
+		Text:           ui.RGB(0, 0, 0),
+		TextSecondary:  ui.RGBA(0, 0, 0, 0.60),
+		TextTertiary:   ui.RGBA(0, 0, 0, 0.42),
+		NoteText:       ui.RGBA(0, 0, 0, 0.85),
+		Fg2:            ui.RGBA(0, 0, 0, 0.60),
+		Faint:          ui.RGBA(0, 0, 0, 0.16),
+		CtlFg:          ui.RGBA(0, 0, 0, 0.60),
+		Selection:      ui.RGBA(0, 0, 0, 0.09),
+		RowHover:       ui.RGBA(0, 0, 0, 0.045),
+		PillHover:      ui.RGBA(0, 0, 0, 0.10),
+		Destructive:    ui.Hex("#dc2626"),
+		Success:        ui.Hex("#16a34a"),
+		GreenSoft:      ui.RGBA(22, 163, 74, 0.12),
+		RedSoft:        ui.RGBA(220, 38, 38, 0.10),
+		Amber:          ui.Hex("#d97706"),
+		AmberSoft:      ui.RGBA(217, 119, 6, 0.12),
 		Scrim:          ui.RGBA(255, 255, 255, 0.55),
-	}
+		EmojiCell:      ui.RGBA(0, 0, 0, 0.04),
+		EmojiHover:     ui.RGBA(0, 0, 0, 0.34),
+		EmojiSelected:  ui.RGBA(0, 0, 0, 0.72),
+	}.withAccent(ui.Hex("#0078d4"))
 }
 
 func Dark() Tokens {
 	return Tokens{
 		Dark:           true,
-		Page:           ui.Hex("#1a1a1e"),
-		Surface:        ui.Hex("#232327"),
-		SurfaceHover:   ui.Hex("#2d2d33"),
-		SurfacePress:   ui.Hex("#36363d"),
-		Border:         ui.Hex("#333339"),
-		Line:           ui.Hex("#333339"),
-		Line2:          ui.Hex("#2c2c32"),
-		Card2:          ui.Hex("#1f1f23"),
-		CardFill:       ui.Hex("#2e2e32"),
-		CardHover:      ui.Hex("#38383c"),
-		ControlSurface: ui.Hex("#39393d"),
-		Muted:          ui.Hex("#2d2d33"),
-		Text:           ui.Hex("#ededf1"),
-		TextSecondary:  ui.Hex("#a1a1aa"),
-		TextTertiary:   ui.Hex("#8b8b94"),
-		Fg2:            ui.Hex("#b9b9c1"),
-		Faint:          ui.Hex("#56565f"),
-		CtlFg:          ui.Hex("#a1a1aa"),
-		Accent:         ui.Hex("#a5b4fc"),
-		AccentSoft:     ui.Hex("#2b2c47"),
-		AccentText:     ui.Hex("#14142a"),
-		Selection:      ui.Hex("#33345a"),
-		PillHover:      ui.Hex("#36363d"),
-		Destructive:    ui.Hex("#f28b82"),
-		Success:        ui.Hex("#6fd99b"),
-		GreenSoft:      ui.Hex("#1e3a2b"),
-		RedSoft:        ui.Hex("#45272a"),
-		Amber:          ui.Hex("#f2b544"),
-		AmberSoft:      ui.Hex("#3f3220"),
+		Page:           ui.Hex("#1c1c1c"),
+		Surface:        ui.Hex("#242424"),
+		SurfaceHover:   ui.RGBA(255, 255, 255, 0.06),
+		SurfacePress:   ui.RGBA(255, 255, 255, 0.12),
+		Border:         ui.RGBA(255, 255, 255, 0.20),
+		Line:           ui.RGBA(255, 255, 255, 0.10),
+		Line2:          ui.RGBA(255, 255, 255, 0.06),
+		Card2:          ui.RGBA(255, 255, 255, 0.04),
+		CardFill:       ui.RGBA(255, 255, 255, 0.05),
+		CardStroke:     ui.RGBA(255, 255, 255, 0.10),
+		CardHover:      ui.RGBA(255, 255, 255, 0.08),
+		GlassFrost:     ui.RGBA(255, 255, 255, 0.05),
+		ControlSurface: ui.RGBA(255, 255, 255, 0.10),
+		ControlHover:   ui.RGBA(255, 255, 255, 0.10),
+		ControlPress:   ui.RGBA(255, 255, 255, 0.15),
+		Muted:          ui.RGBA(255, 255, 255, 0.10),
+		Text:           ui.RGB(255, 255, 255),
+		TextSecondary:  ui.RGBA(255, 255, 255, 0.60),
+		TextTertiary:   ui.RGBA(255, 255, 255, 0.40),
+		NoteText:       ui.RGBA(255, 255, 255, 0.90),
+		Fg2:            ui.RGBA(255, 255, 255, 0.60),
+		Faint:          ui.RGBA(255, 255, 255, 0.22),
+		CtlFg:          ui.RGBA(255, 255, 255, 0.60),
+		Selection:      ui.RGBA(255, 255, 255, 0.10),
+		RowHover:       ui.RGBA(255, 255, 255, 0.05),
+		PillHover:      ui.RGBA(255, 255, 255, 0.12),
+		Destructive:    ui.Hex("#f87171"),
+		Success:        ui.Hex("#4ade80"),
+		GreenSoft:      ui.RGBA(74, 222, 128, 0.15),
+		RedSoft:        ui.RGBA(248, 113, 113, 0.15),
+		Amber:          ui.Hex("#fbbf24"),
+		AmberSoft:      ui.RGBA(251, 191, 36, 0.15),
 		Scrim:          ui.RGBA(0, 0, 0, 0.40),
-	}
+		EmojiCell:      ui.RGBA(255, 255, 255, 0.045),
+		EmojiHover:     ui.RGBA(255, 255, 255, 0.42),
+		EmojiSelected:  ui.RGBA(255, 255, 255, 0.92),
+	}.withAccent(ui.Hex("#0078d4"))
 }
 
 // Theme maps the tokens onto MyGo's widget theme. Background is the panel's
@@ -178,24 +267,25 @@ func (t Tokens) Theme() *ui.Theme {
 		base = ui.DarkTheme()
 	}
 	base.Background = t.Surface
-	base.Surface = t.Muted
-	base.SurfaceHover = t.SurfaceHover
-	base.SurfacePressed = t.SurfacePress
-	base.Border = t.Border
+	base.Surface = t.GlassFrost
+	base.SurfaceHover = t.ControlHover
+	base.SurfacePressed = t.ControlPress
+	base.Border = t.CardStroke
 	base.Text = t.Text
 	base.TextMuted = t.TextSecondary
 	base.Accent = t.Accent
-	base.AccentHover = t.Accent
-	base.AccentPressed = t.Accent
+	base.AccentHover = t.AccentHover
+	base.AccentPressed = t.AccentPressed
 	base.AccentText = t.AccentText
 	base.Danger = t.Destructive
 	base.Warning = t.Amber
 	base.Success = t.Success
-	base.Selection = t.Selection
-	base.Focus = t.AccentSoft
+	base.Selection = t.TextSelection
+	base.Focus = t.Focus
 	base.Inverse = t.Text
 	base.InverseText = t.Surface
 	base.Scrollbar = t.Faint
+	base.ScrollbarWidth = 4
 	base.Radius = ControlRadius
 	base.Spacing = 4
 	base.FontSize = BodyFont

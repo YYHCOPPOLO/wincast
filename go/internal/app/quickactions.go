@@ -176,7 +176,7 @@ func (c *controller) quickActionChanged(generation uint64) {
 }
 
 func (c *controller) createQuickActionWindow() {
-	c.qaWindow = mygo.NewWindow(mygo.WindowOptions{
+	c.qaWindow = c.newMaterialWindow(mygo.WindowOptions{
 		Title:           "Tinycast Quick Action",
 		Panel:           true,
 		Hidden:          true,
@@ -211,9 +211,9 @@ func (c *controller) showQuickActionWindow() {
 }
 
 func (c *controller) renderQuickAction(ctx *ui.Context) {
-	tokens := theme.For(c.dark())
+	tokens := theme.ForContext(ctx)
 	ctx.SetTheme(tokens.Theme())
-	ctx.Root().Background(tokens.Surface)
+	defer ctx.Root().Background(tokens.PanelBackground(ctx.Vibrancy()))
 	ctx.OnShortcut(0, ui.KeyEscape, c.dismissQuickAction)
 	ctx.OnShortcut(ui.Ctrl, ui.KeyC, c.copyQuickActionResult)
 	ctx.OnShortcut(ui.Ctrl, ui.KeyEnter, c.applyQuickActionResult)

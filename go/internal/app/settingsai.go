@@ -11,7 +11,7 @@ import (
 func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, "AI").FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("AI", "AI"), func() {
 			enabled := c.aiEnabled
 			ui.Switch(ctx, &enabled).Label(c.text("启用 AI 对话与快捷操作", "Enable AI chat and Quick Actions"))
@@ -26,7 +26,7 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 		if !c.aiEnabled {
 			ui.Text(ctx, c.text("默认关闭；打开后才会连接 AI 服务并保存对话历史。",
 				"Off by default. Enabling starts provider requests and chat history.")).
-				FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+				FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 			return
 		}
 		components.FormRow(ctx, tokens, c.text("默认模型", "Default model"), func() {
@@ -98,7 +98,7 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 							keyState = c.text("密钥已保存在本机", "Key saved on this PC")
 						}
 						ui.Text(ctx, c.aiConnectionModel(connection)+" · "+keyState).
-							FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary).SingleLine()
+							FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary).SingleLine()
 					})
 					if ui.Button(ctx, c.text("编辑", "Edit")).Clicked() {
 						c.editAIConnection(index)
@@ -151,7 +151,7 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 		components.FormRow(ctx, tokens, "ChatGPT", func() {
 			ui.Text(ctx, c.text("订阅版暂不可用；请使用 API 连接。",
 				"ChatGPT subscription is not available yet. Use an API connection.")).
-				FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+				FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 		})
 	})
 }
@@ -159,7 +159,7 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 func (c *controller) quickActionsSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("快捷操作", "Quick Actions")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("启用", "Enable"), func() {
 			enabled := c.quickActionsEnabled
 			ui.Switch(ctx, &enabled).Label(c.text("对选中文本运行 AI 操作", "Run AI actions on selected text"))

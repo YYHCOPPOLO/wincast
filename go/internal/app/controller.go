@@ -115,8 +115,8 @@ type controller struct {
 	migrationRestoreConfirm      string
 	settingsWrites               chan settingsWrite
 	appearance                   string
+	glassBackground              bool
 	language                     string
-	systemDark                   bool
 	messageHost                  *windows.MessageHost
 	clipboard                    *clipboard.Manager
 	clipboardReady               bool
@@ -283,7 +283,7 @@ func newController(started time.Time, profile profile) *controller {
 		clipboardImages:   make(map[string]*ui.Bitmap), clipboardPending: make(map[string]bool),
 		clipboardThumbnails: make(map[string]*ui.Bitmap), clipboardThumbPending: make(map[string]bool),
 		clipboardImageRequests: make(chan clipboardImageRequest, 32),
-		systemDark:             windows.SystemDark(), appearance: "system", language: defaultLanguage(),
+		appearance:             "system", glassBackground: true, language: defaultLanguage(),
 		featureDictionary: true, featureNotes: true, itemHotkeys: make(map[string]bool),
 		backupSettings: true, backupClipboard: true, backupSnippets: true,
 		backupNotes: true, backupLearning: true,
@@ -380,7 +380,7 @@ func newController(started time.Time, profile profile) *controller {
 		ApplyVolume:         c.applyVolume,
 		CloseVolume:         c.closeVolumeDialog,
 	})
-	c.applyViewAppearance()
+	c.applyAppearance()
 	c.view.Expanded = !c.compactMode
 	c.view.Shortcut = c.hotkey
 	c.view.AIAvailable = c.aiEnabled
@@ -398,11 +398,10 @@ func newController(started time.Time, profile profile) *controller {
 }
 
 func (c *controller) ready(command windows.Activation, hidden bool) {
-	c.panel = mygo.NewWindow(mygo.WindowOptions{
+	c.panel = c.newMaterialWindow(mygo.WindowOptions{
 		Title: "Tinycast", Panel: true, Hidden: true, Frameless: true,
 		Width: int(theme.PanelWidth), Height: c.panelHeight(), DisableResize: true,
-		BackgroundColor: "light-dark(#ffffff, #232327)",
-		Content:         ui.View(c.view.Render),
+		Content: ui.View(c.view.Render),
 	})
 	c.panel.OnClose(func(e *mygo.CloseEvent) {
 		if !c.closing {

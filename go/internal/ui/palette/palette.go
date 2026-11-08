@@ -114,7 +114,6 @@ type View struct {
 	Status                 string
 	Shortcut               string
 	Chinese                bool
-	ForcedDark             *bool
 	Expanded               bool
 	ShowHidden             bool
 	ShowFavoritesInCompact bool
@@ -214,13 +213,11 @@ func (v *View) Text(zh, en string) string {
 func (v *View) FocusAlias() { v.aliasInput.Focus() }
 
 func (v *View) Render(c *ui.Context) {
-	dark := c.Theme().Dark
-	if v.ForcedDark != nil {
-		dark = *v.ForcedDark
-	}
-	tokens := theme.For(dark)
+	tokens := theme.ForContext(c)
 	c.SetTheme(tokens.Theme())
-	c.Root().Background(tokens.Surface)
+	// ResultList scopes its widget theme with SetTheme, which also resets the
+	// root background. Restore the window surface after every child is built.
+	defer c.Root().Background(tokens.PanelBackground(c.Vibrancy()))
 	c.OnShortcut(ui.Ctrl, ui.KeyK, v.callbacks.Menu)
 	c.OnShortcut(0, ui.KeyEscape, v.escape)
 	c.OnShortcut(0, ui.KeyDown, func() { v.moveVertical(1) })
@@ -238,12 +235,13 @@ func (v *View) Render(c *ui.Context) {
 	v.renderClipboardZoom(c, tokens)
 	ui.Column(c).Fill().Children(func() {
 		if v.Draggable && v.Mode == ModeLauncher {
-			ui.Row(c).FillWidth().Height(6).DragWindow()
+			ui.Row(c).FillWidth().Height(theme.HeaderPadding).DragWindow()
 		}
 		ui.Row(c).Height(theme.HeaderHeight+2*theme.HeaderPadding).
-			Padding(theme.HeaderPadding, 20).Gap(14).AlignItems(ui.Center).Children(func() {
+			Padding(theme.HeaderPadding, 20).Gap(12).AlignItems(ui.Center).Children(func() {
 			if v.Mode == ModeLauncher {
-				ui.Text(c, "⌕").FontSize(24).TextColor(tokens.TextTertiary)
+				ui.Text(c, "\uE721").Font("Segoe Fluent Icons").FontSize(18).
+					TextColor(tokens.TextSecondary).Width(22).TextAlign(ui.Center)
 			} else {
 				v.backButton(c, tokens)
 			}
@@ -291,10 +289,10 @@ func (v *View) Render(c *ui.Context) {
 			}
 			return
 		}
-		ui.Divider(c)
+		components.Hairline(c, tokens)
 		switch v.Mode {
 		case ModeDictionary:
-			ui.Text(c, v.Text("词典", "Dictionary")).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Padding(10, 18)
+			ui.Text(c, v.Text("词典", "Dictionary")).FontSize(theme.SectionFont).TextColor(tokens.TextSecondary).Padding(10, 18)
 			v.dictionaryBody(c, tokens)
 		case ModeClipboard:
 			v.clipboardBody(c, tokens)
@@ -317,12 +315,14 @@ func (v *View) Render(c *ui.Context) {
 		default:
 			v.applications(c, tokens)
 		}
-		ui.Divider(c)
+		components.Hairline(c, tokens)
 		status := v.Status
 		if status == "" {
 			status = v.defaultStatus()
 		}
-		components.Footer(c, tokens, status, v.footerHints(), v.callbacks.AppMenu, v.callbacks.AppMenu)
+		primary, primaryEnabled, primaryDanger := v.primaryAction()
+		components.Footer(c, tokens, status, v.footerHints(), primary, primaryEnabled,
+			primaryDanger, v.open, v.callbacks.AppMenu)
 	})
 	if v.PendingToast != "" {
 		c.Toast(v.PendingToast)
@@ -386,6 +386,51 @@ func (v *View) defaultStatus() string {
 	default:
 		return v.Text("Tinycast", "Tinycast") + " · " + v.Shortcut
 	}
+}
+
+// primaryAction names the footer pill and whether the current selection can
+// act. The set mirrors what Enter does in open(), so the pill and the key
+// never disagree.
+func (v *View) primaryAction() (label string, enabled, danger bool) {
+	switch v.Mode {
+	case ModeDictionary:
+		return "", false, false
+	case ModeClipboard:
+		active := v.ClipboardChosen >= 0 && v.ClipboardChosen < len(v.ClipboardItems)
+		return v.Text("粘回", "Paste"), active, false
+	case ModeCalculatorHistory:
+		if v.Chosen < 0 && v.CalcResult != nil {
+			return v.Text("复制答案", "Copy Answer"), true, false
+		}
+		active := v.Chosen >= 0 && v.Chosen < len(v.CalcHistory)
+		return v.Text("复制结果", "Copy Result"), active, false
+	case ModeEmoji:
+		active := v.EmojiChosen >= 0 && v.EmojiChosen < len(v.EmojiItems)
+		return v.Text("粘回", "Paste"), active, false
+	case ModeFileSearch:
+		active := v.Chosen >= 0 && v.Chosen < len(v.FileSearchItems)
+		return v.Text("打开", "Open"), active, false
+	case ModeSchedule:
+		active := v.Chosen >= 0 && v.Chosen < len(v.ScheduleItems)
+		return v.Text("入会", "Join"), active, false
+	case ModeUninstall:
+		return v.Text("卸载", "Uninstall"), len(v.UninstallAll) > 0, true
+	case ModeAI:
+		if v.AIStreaming {
+			return v.Text("停止", "Stop"), true, false
+		}
+		return v.Text("发送", "Send"), strings.TrimSpace(v.Query) != "", false
+	case ModeAIHistory:
+		active := v.AIHistoryChosen >= 0 && v.AIHistoryChosen < len(v.AIHistoryItems)
+		return v.Text("打开", "Open"), active, false
+	case ModeArguments:
+		return v.Text("确认", "Confirm"), true, false
+	}
+	if v.Chosen < 0 && v.CalcResult != nil {
+		return v.Text("复制答案", "Copy Answer"), true, false
+	}
+	active := v.Chosen >= 0 && v.Chosen < len(v.Results)
+	return v.Text("打开", "Open"), active, false
 }
 
 func (v *View) footerHints() string {
@@ -667,7 +712,7 @@ func (v *View) calculatorHistoryBody(c *ui.Context, tokens theme.Tokens) {
 func (v *View) emojiBody(c *ui.Context, tokens theme.Tokens) {
 	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, v.Text("Emoji 与符号", "Emoji & Symbols")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Grow(1).Role(ui.RoleHeading)
 		ui.MenuButton(c, v.Text("肤色: ", "Skin: ")+v.EmojiTone.Label(), func(m *ui.Menu) {
 			for _, tone := range emoji.AllTones {
 				if m.Item(tone.Label()).Checked(v.EmojiTone == tone).Chosen() {
@@ -687,7 +732,7 @@ func (v *View) emojiBody(c *ui.Context, tokens theme.Tokens) {
 				return
 			}
 			for _, section := range emoji.Sections(v.EmojiItems) {
-				ui.Text(c, section.Group).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+				ui.Text(c, section.Group).FontSize(theme.SectionFont).TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 				for start := section.Start; start < section.Start+section.Count; start += emoji.GridColumns {
 					end := min(start+emoji.GridColumns, section.Start+section.Count)
 					ui.Grid(c).FillWidth().Columns(emoji.GridColumns).Gap(6).Children(func() {
@@ -708,13 +753,20 @@ func (v *View) emojiBody(c *ui.Context, tokens theme.Tokens) {
 
 func (v *View) emojiCell(c *ui.Context, index int, tokens theme.Tokens) {
 	item := v.EmojiItems[index]
-	fill := ui.Transparent
-	if index == v.EmojiChosen {
-		fill = tokens.Selection
-	}
 	cell := ui.Text(c, item.Glyph).FontSize(30).Height(emoji.CellDip).TextAlign(ui.Center).
-		Background(fill).Radius(10).Label(item.Name).Role(ui.RoleButton).
+		Radius(12).Label(item.Name).Role(ui.RoleButton).
 		OnClick(func() { v.choose(index) })
+	fill, border := tokens.EmojiCell, ui.Transparent
+	switch {
+	case index == v.EmojiChosen:
+		fill, border = tokens.Selection, tokens.EmojiSelected
+	case cell.Hovered():
+		fill, border = tokens.RowHover, tokens.EmojiHover
+	}
+	cell.Background(fill)
+	if border.A > 0 {
+		cell.Border(2, border)
+	}
 	if v.emojiReveal && index == v.EmojiChosen {
 		sections := emoji.Sections(v.EmojiItems)
 		if len(sections) > 0 && index >= min(emoji.GridColumns, sections[0].Count) {
@@ -726,7 +778,7 @@ func (v *View) emojiCell(c *ui.Context, index int, tokens theme.Tokens) {
 func (v *View) fileSearchBody(c *ui.Context, tokens theme.Tokens) {
 	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, v.Text("文件与文件夹", "Files and folders")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Grow(1).Role(ui.RoleHeading)
 		if v.FileSearchState == files.Searching {
 			ui.Text(c, v.Text("搜索中…", "Searching…")).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
 		}
@@ -763,7 +815,7 @@ func (v *View) fileSearchBody(c *ui.Context, tokens theme.Tokens) {
 func (v *View) scheduleBody(c *ui.Context, tokens theme.Tokens) {
 	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, v.Text("日程", "Schedule")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Grow(1).Role(ui.RoleHeading)
 		if v.ScheduleLoading {
 			ui.Text(c, v.Text("正在读取…", "Loading…")).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
 		}
@@ -863,7 +915,7 @@ func (v *View) uninstallBody(c *ui.Context, tokens theme.Tokens) {
 			label += " · " + v.UninstallTarget
 		}
 		ui.Text(c, label).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Grow(1).SingleLine().Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Grow(1).SingleLine().Role(ui.RoleHeading)
 		if v.UninstallLoading {
 			ui.Text(c, v.Text("正在扫描…", "Scanning…")).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
 		}
@@ -872,12 +924,16 @@ func (v *View) uninstallBody(c *ui.Context, tokens theme.Tokens) {
 	v.uninstallList.Label = func(i int) string { return v.UninstallItems[i].Name }
 	list := components.ResultList(c, tokens, &v.uninstallList, len(v.UninstallItems), func(i int) {
 		item := v.UninstallItems[i]
+		row := ui.Row(c).Height(theme.RowHeight).Padding(6, 8).Gap(10).AlignItems(ui.Center).
+			Radius(theme.RowRadius)
 		fill := ui.Transparent
-		if i == v.Chosen {
+		switch {
+		case i == v.Chosen:
 			fill = tokens.Selection
+		case row.Hovered():
+			fill = tokens.RowHover
 		}
-		row := ui.Row(c).Height(theme.RowHeight).Padding(6, 10).Gap(12).AlignItems(ui.Center).
-			Radius(theme.RowRadius).Background(fill).Children(func() {
+		row.Background(fill).Children(func() {
 			box := ui.Box(c).Size(16, 16).Radius(4).Shrink(0)
 			if item.Removable {
 				box.Cursor(ui.CursorPointer)
@@ -895,7 +951,7 @@ func (v *View) uninstallBody(c *ui.Context, tokens theme.Tokens) {
 				if !item.Removable {
 					border = tokens.Line2
 				}
-				box.Background(tokens.Surface).Border(1, border)
+				box.Background(tokens.ControlSurface).Border(1, border)
 			}
 			if item.Removable {
 				box.OnClick(func() { v.setUninstallSelected(i, !item.Selected) })
@@ -1048,7 +1104,7 @@ func (v *View) row(c *ui.Context, i int, tokens theme.Tokens) {
 	}
 	components.ResultRow(c, tokens, components.Row{
 		Icon: v.callbacks.Icon(application), Fallback: v.entryFallback(application), Title: application.Name,
-		Trailing: trailing, Selected: i == v.Chosen,
+		Trailing: trailing, TrailingKeycap: trailing != "", Selected: i == v.Chosen,
 	})
 }
 
@@ -1891,7 +1947,7 @@ func (v *View) filterAIHistory() {
 func (v *View) aiHistoryBody(c *ui.Context, tokens theme.Tokens) {
 	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, v.Text("对话历史", "Chat History")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Grow(1).Role(ui.RoleHeading)
 	})
 	v.aiHistoryList.Selected = &v.AIHistoryChosen
 	v.aiHistoryList.Label = func(i int) string { return v.AIHistoryItems[i].Title }
@@ -2035,16 +2091,16 @@ func (v *View) ToggleDictionary() {
 // backButton is the header's return control on every non-launcher screen: a
 // quiet hover surface with a stroked arrow instead of a boxed text button.
 func (v *View) backButton(c *ui.Context, tokens theme.Tokens) {
-	button := ui.ButtonBase(c).Size(30, 30).Radius(theme.ControlRadius).
+	button := ui.ButtonBase(c).Size(22, 22).Radius(theme.ControlRadius).
 		Tooltip(v.Text("返回 (Esc)", "Back (Esc)")).
 		Label(v.Text("返回", "Back")).
 		Cursor(ui.CursorPointer)
 	fill := ui.Transparent
 	switch {
 	case button.Pressed():
-		fill = tokens.SurfacePress
+		fill = tokens.Selection
 	case button.Hovered():
-		fill = tokens.SurfaceHover
+		fill = tokens.RowHover
 	}
 	color := tokens.TextSecondary
 	if button.Hovered() {
@@ -2084,14 +2140,14 @@ func (v *View) clipboardFilterButton(c *ui.Context, tokens theme.Tokens) {
 		Tooltip(v.Text("按类型筛选 (Ctrl+P)", "Filter by type (Ctrl+P)")).
 		Label(v.Text("筛选类型", "Filter type")).
 		Cursor(ui.CursorPointer)
-	fill := tokens.Muted
+	fill := ui.Transparent
 	switch {
 	case button.Pressed():
-		fill = tokens.Border
+		fill = tokens.Selection
 	case button.Hovered():
-		fill = tokens.SurfacePress
+		fill = tokens.RowHover
 	}
-	color := tokens.Fg2
+	color := tokens.TextSecondary
 	if button.Hovered() {
 		color = tokens.Text
 	}
@@ -2124,14 +2180,14 @@ func (v *View) aiModelButton(c *ui.Context, tokens theme.Tokens) {
 	button := ui.ButtonBase(c).Height(28).Padding(3, 10).Gap(6).Radius(theme.ControlRadius).
 		MaxWidth(280).Tooltip(v.Text("选择 AI 模型", "Choose AI model")).
 		Label(v.Text("选择 AI 模型", "Choose AI model")).Cursor(ui.CursorPointer)
-	fill := tokens.Muted
+	fill := ui.Transparent
 	switch {
 	case button.Pressed():
-		fill = tokens.Border
+		fill = tokens.Selection
 	case button.Hovered():
-		fill = tokens.SurfacePress
+		fill = tokens.RowHover
 	}
-	color := tokens.Fg2
+	color := tokens.TextSecondary
 	if button.Hovered() {
 		color = tokens.Text
 	}
@@ -2153,7 +2209,7 @@ func (v *View) aiModelButton(c *ui.Context, tokens theme.Tokens) {
 func (v *View) clipboardBody(c *ui.Context, tokens theme.Tokens) {
 	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, v.Text("剪贴板历史", "Clipboard history")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
+			TextColor(tokens.TextSecondary).Grow(1).Role(ui.RoleHeading)
 		if v.ClipboardChosen >= 0 && v.ClipboardChosen < len(v.ClipboardItems) {
 			label := v.Text("置顶", "Pin")
 			if v.ClipboardItems[v.ClipboardChosen].Pinned() {

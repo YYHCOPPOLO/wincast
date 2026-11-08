@@ -33,7 +33,7 @@ func (v *View) dictionaryBody(c *ui.Context, tokens theme.Tokens) {
 				ui.Text(c, message).TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
 				if len(v.Suggestions) > 0 {
 					ui.Text(c, v.Text("你是不是想找：", "Did you mean:")).FontSize(theme.SectionFont).
-						TextColor(tokens.TextTertiary)
+						TextColor(tokens.TextSecondary)
 					ui.Column(c).Gap(4).Children(func() {
 						for _, suggestion := range v.Suggestions {
 							if ui.Button(c, suggestion).Clicked() {
@@ -57,7 +57,7 @@ func (v *View) dictionaryBody(c *ui.Context, tokens theme.Tokens) {
 					continue
 				}
 				ui.Column(c).Gap(6).Children(func() {
-					ui.Text(c, section.Label).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+					ui.Text(c, section.Label).FontSize(theme.SectionFont).TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 					ui.Text(c, section.Text)
 				})
 			}
