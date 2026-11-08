@@ -161,8 +161,8 @@ func (v *View) Render(c *ui.Context) {
 			Padding(theme.HeaderPadding, 20).Gap(14).AlignItems(ui.Center).Children(func() {
 			if v.Mode == ModeLauncher {
 				ui.Text(c, "⌕").FontSize(24).TextColor(tokens.TextTertiary)
-			} else if ui.Button(c, "‹").Size(28, 28).Label(v.Text("返回启动器", "Back to launcher")).Clicked() {
-				v.SetModeLauncher()
+			} else {
+				v.backButton(c, tokens)
 			}
 			placeholder := v.Text("搜索应用程序…", "Search applications…")
 			switch v.Mode {
@@ -184,6 +184,9 @@ func (v *View) Render(c *ui.Context) {
 			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).Height(theme.HeaderHeight).FontSize(theme.SearchFont).
 				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey).Changed() {
 				v.syncQuery(v.inputText.String())
+			}
+			if v.Mode == ModeClipboard && v.Expanded {
+				v.clipboardFilterButton(c, tokens)
 			}
 		})
 		if !v.Expanded {
@@ -1057,9 +1060,78 @@ func (v *View) ToggleDictionary() {
 	v.Input.Focus()
 }
 
+// backButton is the header's return control on every non-launcher screen: a
+// quiet hover surface with a stroked arrow instead of a boxed text button.
+func (v *View) backButton(c *ui.Context, tokens theme.Tokens) {
+	button := ui.ButtonBase(c).Size(30, 30).Radius(theme.ControlRadius).
+		Tooltip(v.Text("返回启动器 (Esc)", "Back to launcher (Esc)")).
+		Label(v.Text("返回启动器", "Back to launcher")).
+		Cursor(ui.CursorPointer)
+	fill := ui.Transparent
+	switch {
+	case button.Pressed():
+		fill = tokens.SurfacePress
+	case button.Hovered():
+		fill = tokens.SurfaceHover
+	}
+	color := tokens.TextSecondary
+	if button.Hovered() {
+		color = tokens.Text
+	}
+	button.Background(fill).Draw(func(p *ui.Painter, r ui.Rect) {
+		var head ui.Path
+		head.MoveTo(r.X+r.W*0.40, r.Y+r.H*0.30).
+			LineTo(r.X+r.W*0.24, r.Y+r.H*0.50).
+			LineTo(r.X+r.W*0.40, r.Y+r.H*0.70)
+		p.StrokePath(&head, 1.7, color)
+		p.Line(r.X+r.W*0.26, r.Y+r.H*0.50, r.X+r.W*0.76, r.Y+r.H*0.50, 1.7, color)
+	})
+	if button.Clicked() {
+		v.SetModeLauncher()
+	}
+}
+
+// clipboardFilterButton states the active type filter in the header and opens
+// the type menu. The filter is global to the history, so it stays out of the
+// per-entry action row.
+func (v *View) clipboardFilterButton(c *ui.Context, tokens theme.Tokens) {
+	button := ui.ButtonBase(c).Height(28).Padding(3, 10).Gap(6).Radius(theme.ControlRadius).
+		Tooltip(v.Text("按类型筛选 (Ctrl+P)", "Filter by type (Ctrl+P)")).
+		Label(v.Text("筛选类型", "Filter type")).
+		Cursor(ui.CursorPointer)
+	fill := tokens.Muted
+	switch {
+	case button.Pressed():
+		fill = tokens.Border
+	case button.Hovered():
+		fill = tokens.SurfacePress
+	}
+	color := tokens.Fg2
+	if button.Hovered() {
+		color = tokens.Text
+	}
+	button.Background(fill).TextColor(color).Children(func() {
+		ui.Text(c, clipboardFilterLabel(v.Chinese, v.ClipboardFilter)).FontSize(theme.TrailingFont).SingleLine()
+		ui.Box(c).Size(10, 10).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
+			var chevron ui.Path
+			chevron.MoveTo(r.X+r.W*0.20, r.Y+r.H*0.38).
+				LineTo(r.X+r.W*0.50, r.Y+r.H*0.66).
+				LineTo(r.X+r.W*0.80, r.Y+r.H*0.38)
+			p.StrokePath(&chevron, 1.5, tokens.TextTertiary)
+		})
+	})
+	button.Menu(func(m *ui.Menu) {
+		for _, option := range clipboardFilterOptions {
+			if m.Item(v.Text(option.zh, option.en)).Checked(v.ClipboardFilter == option.filter).Chosen() {
+				v.SetClipboardFilter(option.filter)
+			}
+		}
+	})
+}
+
 func (v *View) clipboardBody(c *ui.Context, tokens theme.Tokens) {
-	ui.Row(c).Padding(4, 18).Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, clipboardFilterLabel(v.Chinese, v.ClipboardFilter)).FontSize(theme.SectionFont).
+	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, v.Text("剪贴板历史", "Clipboard history")).FontSize(theme.SectionFont).
 			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
 		if v.ClipboardChosen >= 0 && v.ClipboardChosen < len(v.ClipboardItems) {
 			label := v.Text("置顶", "Pin")
@@ -1069,9 +1141,6 @@ func (v *View) clipboardBody(c *ui.Context, tokens theme.Tokens) {
 			if ui.Button(c, label).Clicked() {
 				v.pinSelectedClipboard()
 			}
-		}
-		if ui.Button(c, v.Text("筛选 Ctrl+P", "Filter Ctrl+P")).Clicked() {
-			v.CycleClipboardFilter()
 		}
 	})
 	ui.Row(c).FillWidth().Grow(1).Children(func() {
@@ -1195,10 +1264,19 @@ func collapseClipboardText(text string, maxChars int) string {
 }
 
 func (v *View) CycleClipboardFilter() {
-	next := (v.ClipboardFilter + 1) % 5
-	v.ClipboardFilter = next
+	next := (int(v.ClipboardFilter) + 1) % len(clipboardFilterOptions)
+	v.SetClipboardFilter(clipboard.Filter(next))
+}
+
+// SetClipboardFilter applies one type filter and starts the list over, so a
+// menu choice and the Ctrl+P cycle share the same reset and reload.
+func (v *View) SetClipboardFilter(filter clipboard.Filter) {
+	if v.ClipboardFilter == filter {
+		return
+	}
+	v.ClipboardFilter = filter
 	if v.callbacks.SetClipboardFilter != nil {
-		v.callbacks.SetClipboardFilter(next)
+		v.callbacks.SetClipboardFilter(filter)
 	}
 	v.ClipboardChosen = -1
 	v.Filter()
@@ -1254,33 +1332,32 @@ func (v *View) pastePinned(digit byte) {
 	}
 }
 
+// clipboardFilterOptions is the menu order, and the order Ctrl+P cycles.
+var clipboardFilterOptions = [...]struct {
+	filter clipboard.Filter
+	zh     string
+	en     string
+}{
+	{clipboard.FilterAll, "全部类型", "All Types"},
+	{clipboard.FilterText, "仅文本", "Text Only"},
+	{clipboard.FilterImages, "仅图片", "Images Only"},
+	{clipboard.FilterLinks, "仅链接", "Links Only"},
+	{clipboard.FilterEmails, "仅邮箱", "Emails Only"},
+}
+
 func clipboardFilterLabel(chinese bool, filter clipboard.Filter) string {
-	if chinese {
-		switch filter {
-		case clipboard.FilterText:
-			return "文本"
-		case clipboard.FilterImages:
-			return "图片"
-		case clipboard.FilterLinks:
-			return "链接"
-		case clipboard.FilterEmails:
-			return "邮箱"
-		default:
-			return "全部"
+	for _, option := range clipboardFilterOptions {
+		if option.filter == filter {
+			if chinese {
+				return option.zh
+			}
+			return option.en
 		}
 	}
-	switch filter {
-	case clipboard.FilterText:
-		return "Text"
-	case clipboard.FilterImages:
-		return "Images"
-	case clipboard.FilterLinks:
-		return "Links"
-	case clipboard.FilterEmails:
-		return "Emails"
-	default:
-		return "All"
+	if chinese {
+		return "全部类型"
 	}
+	return "All Types"
 }
 
 func clipboardEmptyLabel(chinese bool, filter clipboard.Filter) string {
