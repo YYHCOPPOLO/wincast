@@ -384,7 +384,7 @@ func (v *View) defaultStatus() string {
 	case ModeArguments:
 		return v.Text("填写模板参数", "Template arguments")
 	default:
-		return v.Text("Tinycast", "Tinycast") + " · " + v.Shortcut
+		return v.Shortcut
 	}
 }
 

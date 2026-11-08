@@ -1,4 +1,4 @@
-# Stage an unsigned Windows x64 release folder and archive for Tinycast.
+# Stage an unsigned Windows x64 release folder and archive for Wincast.
 #
 # This builds the Go/MyGo production package, copies the runtime artifacts and
 # third-party notices, then writes a manifest with SHA-256 hashes. It does not
@@ -16,6 +16,9 @@ $Config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $Version = $Config.version
 if (-not $Version) { throw "mygo.json has no version" }
 if (-not $Config.name) { throw "mygo.json has no name" }
+if ($Config.name -notmatch '^[A-Za-z0-9._-]+$' -or $Version -notmatch '^\d+\.\d+\.\d+([+-][A-Za-z0-9.-]+)?$') {
+    throw "mygo.json name or version is not safe for packaging"
+}
 
 $env:GOTOOLCHAIN = "local"
 $env:GOWORK = "off"
@@ -37,7 +40,11 @@ $Built = Join-Path $GoRoot ("build/windows-amd64/" + $Config.name + ".exe")
 if (-not (Test-Path -LiteralPath $Built)) { throw "missing $Built" }
 
 $StageName = "$($Config.name)-$Version-win64"
-$Stage = Join-Path $GoRoot ("build/release/" + $StageName)
+$ReleaseRoot = [IO.Path]::GetFullPath((Join-Path $GoRoot "build/release"))
+$Stage = [IO.Path]::GetFullPath((Join-Path $ReleaseRoot $StageName))
+if (-not $Stage.StartsWith($ReleaseRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "release directory is outside the build workspace: $Stage"
+}
 if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 
@@ -47,9 +54,9 @@ if (Test-Path -LiteralPath $Setup) {
     Copy-Item -LiteralPath $Setup -Destination (Join-Path $Stage ($Config.name + " Setup " + $Version + " amd64.exe"))
 }
 else {
-    Write-Warning "installer not found: $Setup"
+    throw "installer not found: $Setup"
 }
-$Icon = Join-Path $GoRoot "resources/icon.png"
+$Icon = Join-Path $GoRoot "internal/brand/assets/icon.png"
 if (Test-Path -LiteralPath $Icon) { Copy-Item -LiteralPath $Icon -Destination $Stage }
 $Notices = Join-Path $GoRoot "THIRD_PARTY_NOTICES.md"
 if (Test-Path -LiteralPath $Notices) { Copy-Item -LiteralPath $Notices -Destination $Stage }
@@ -58,7 +65,7 @@ $LicenseDir = Join-Path $Stage "licenses"
 New-Item -ItemType Directory -Force -Path $LicenseDir | Out-Null
 Push-Location $GoRoot
 try {
-    $Modules = & go list -deps -f "{{if .Module}}{{.Module.Path}}@{{.Module.Version}}{{end}}" ./cmd/tinycast |
+    $Modules = & go list -deps -f "{{if .Module}}{{.Module.Path}}@{{.Module.Version}}{{end}}" ./cmd/wincast |
         Sort-Object -Unique |
         Where-Object { $_ -and $_ -ne "github.com/YYHCOPPOLO/wincast/go@" }
     foreach ($module in $Modules) {

@@ -150,7 +150,7 @@ func WriteFileAtomic(path string, data []byte, mode fs.FileMode) error {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(directory, ".tinycast-*.tmp")
+	file, err := os.CreateTemp(directory, ".wincast-*.tmp")
 	if err != nil {
 		return err
 	}

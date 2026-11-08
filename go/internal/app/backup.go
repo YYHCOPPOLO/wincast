@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -26,18 +25,18 @@ import (
 )
 
 func appVersion() string {
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		return info.Main.Version
+	if version := mygo.App.Version(); version != "" {
+		return version
 	}
-	return "0.1.0"
+	return "0.2.0"
 }
 
 func (c *controller) renderBackup(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("备份", "Backup")).FontSize(theme.SectionFont).
 			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
-		ui.Text(ctx, c.text("一个 .tinycast 文件可包含以下类别；API 密钥、AI 对话与缓存永不进入备份。",
-			"A single .tinycast file can carry the categories below; API keys, AI chats and caches never travel.")).
+		ui.Text(ctx, c.text("一个 .wincast 文件可包含以下类别；API 密钥、AI 对话与缓存永不进入备份。",
+			"A single .wincast file can carry the categories below; API keys, AI chats and caches never travel.")).
 			FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 		c.backupCategoryRow(ctx, tokens, c.text("设置与快捷键", "Settings & shortcuts"), &c.backupSettings)
 		c.backupCategoryRow(ctx, tokens, c.text("剪贴板历史", "Clipboard history"), &c.backupClipboard)
@@ -205,9 +204,9 @@ func (c *controller) exportBackup() {
 	go func() {
 		defer c.workers.Done()
 		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-			Parent: c.settings, Title: c.text("导出 Tinycast 备份", "Export Tinycast Backup"),
-			DefaultPath: "Tinycast-" + time.Now().Format("20060102-150405") + ".tinycast",
-			Filters:     []mygo.FileFilter{{Name: "Tinycast Backup", Extensions: []string{"tinycast"}}},
+			Parent: c.settings, Title: c.text("导出 Wincast 备份", "Export Wincast Backup"),
+			DefaultPath: "Wincast-" + time.Now().Format("20060102-150405") + ".wincast",
+			Filters:     []mygo.FileFilter{{Name: "Wincast Backup", Extensions: []string{"wincast"}}},
 		})
 		if err == nil && path != "" {
 			err = c.fillBackupFiles(&input)
@@ -244,8 +243,8 @@ func (c *controller) importBackup() {
 	go func() {
 		defer c.workers.Done()
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-			Parent: c.settings, Title: c.text("导入 Tinycast 备份", "Import Tinycast Backup"),
-			Filters: []mygo.FileFilter{{Name: "Tinycast Backup", Extensions: []string{"tinycast", "zip"}}},
+			Parent: c.settings, Title: c.text("导入 Wincast 备份", "Import Wincast Backup"),
+			Filters: []mygo.FileFilter{{Name: "Wincast Backup", Extensions: []string{"wincast", "tinycast", "zip"}}},
 		})
 		var bundle *backup.Bundle
 		if err == nil && len(paths) > 0 {

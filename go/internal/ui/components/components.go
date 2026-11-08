@@ -149,7 +149,7 @@ func Footer(c *ui.Context, tokens theme.Tokens, status, hints, primary string, p
 		}
 		if onAppMenu != nil {
 			button := ui.ButtonBase(c).Size(theme.MenuButton, theme.MenuButton).
-				Radius(theme.MenuButton / 2).Tooltip("Tinycast menu").Label("Tinycast menu").
+				Radius(theme.MenuButton / 2).Tooltip("Wincast menu").Label("Wincast menu").
 				Cursor(ui.CursorPointer)
 			fill := tokens.GlassFrost
 			switch {

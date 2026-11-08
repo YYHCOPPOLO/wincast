@@ -6,8 +6,8 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 )
 
-const previewID = storage.PreviewID
-const appName = "Tinycast"
+const appID = storage.AppID
+const appName = "Wincast"
 
 type profile struct {
 	settings   string
@@ -17,13 +17,12 @@ type profile struct {
 	dictionary string
 }
 
-// previewProfile resolves the product identity. It never falls back
-// to the legacy application's writable directories; only the external
-// dictionary is shared read-only.
-func previewProfile() (profile, error) {
-	roots, err := storage.ResolveRoots(storage.Preview)
+// appProfile resolves the product identity. The previous Go profile is
+// copied once; a previously installed dictionary stays available read-only.
+func appProfile() (profile, error) {
+	roots, err := storage.ResolveRoots()
 	if err != nil {
-		return profile{}, fmt.Errorf("resolve preview paths: %w", err)
+		return profile{}, fmt.Errorf("resolve application paths: %w", err)
 	}
 	if err := roots.Ensure(); err != nil {
 		return profile{}, err

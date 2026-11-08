@@ -254,7 +254,7 @@ func (c *controller) runCommand(command commands.Command) {
 	}()
 }
 
-// showFailure reports a bounded error through Tinycast's own dialog. Callers
+// showFailure reports a bounded error through Wincast's own dialog. Callers
 // run it off the UI loop, matching the other native dialogs.
 func (c *controller) showFailure(title, subject, detail string) {
 	if c.closing {

@@ -1,12 +1,9 @@
 package app
 
 import (
-	"bytes"
-	"image"
-	"image/color"
-	"image/png"
 	"math"
 
+	"github.com/YYHCOPPOLO/wincast/go/internal/brand"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -74,16 +71,5 @@ func (c *controller) startIcons() {
 }
 
 func trayIcon() []byte {
-	image := image.NewNRGBA(image.Rect(0, 0, 32, 32))
-	ink := color.NRGBA{R: 129, G: 140, B: 248, A: 255}
-	for y := 4; y < 28; y++ {
-		for x := 4; x < 28; x++ {
-			if (y >= 5 && y <= 9) || (x >= 13 && x <= 17) {
-				image.SetNRGBA(x, y, ink)
-			}
-		}
-	}
-	var buffer bytes.Buffer
-	_ = png.Encode(&buffer, image)
-	return buffer.Bytes()
+	return brand.Tray
 }

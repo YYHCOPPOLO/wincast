@@ -32,7 +32,7 @@ func legacyClipboardSource() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(local, storage.DailyID)
+	return filepath.Join(local, storage.LegacyID)
 }
 
 func (c *controller) renderMigrationCard(ctx *ui.Context, tokens theme.Tokens, zh bool) {

@@ -14,7 +14,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 )
 
-var ErrSelf = errors.New("Tinycast cannot uninstall itself")
+var ErrSelf = errors.New("Wincast cannot uninstall itself")
 
 type Snapshot struct {
 	Target     string
@@ -168,7 +168,7 @@ func programBaseName(path string) string {
 }
 
 func isSelf(appID, name, appPath string) bool {
-	if strings.Contains(domain.Fold(appID), "com.tinycast.win") || strings.Contains(domain.Fold(name), "tinycast") {
+	if strings.Contains(domain.Fold(appID), "com.wincast.win") || strings.Contains(domain.Fold(name), "wincast") {
 		return true
 	}
 	exe, err := os.Executable()

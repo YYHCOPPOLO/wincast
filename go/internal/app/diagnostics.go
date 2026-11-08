@@ -20,7 +20,7 @@ func (c *controller) openDiagnostics() {
 	c.refreshDiagnostics()
 	if c.diagnostic == nil {
 		c.diagnostic = c.newMaterialWindow(mygo.WindowOptions{
-			Title: "Tinycast — Diagnostics", Width: 760, Height: 640,
+			Title: "Wincast — Diagnostics", Width: 760, Height: 640,
 			Hidden: true, Content: ui.View(c.diagnosticsView),
 		})
 		// A diagnostic window has no unsaved user document. Closing releases
@@ -59,7 +59,7 @@ func (c *controller) diagnosticsView(ctx *ui.Context) {
 	t := ctx.Theme()
 	ui.Column(ctx).Fill().Children(func() {
 		ui.Row(ctx).Padding(20).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(ctx, c.view.Text("Tinycast 诊断", "Tinycast Diagnostics")).FontSize(22).Grow(1).Role(ui.RoleHeading)
+			ui.Text(ctx, c.view.Text("Wincast 诊断", "Wincast Diagnostics")).FontSize(22).Grow(1).Role(ui.RoleHeading)
 			if ui.Button(ctx, c.view.Text("打开搜索面板", "Open search panel")).Clicked() {
 				c.show()
 			}

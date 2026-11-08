@@ -9,7 +9,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Fuzzy scoring floors match crates/tinycast-pure/src/search_relevance.rs.
+// Fuzzy scoring floors keep exact prefixes and word starts above subsequences.
 const (
 	fuzzyMaximum       = 100_000
 	prefixFloor        = 80_000

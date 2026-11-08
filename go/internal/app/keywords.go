@@ -110,7 +110,7 @@ func (c *controller) handleKeyword(keyword string) {
 	}
 	target := windows.ForegroundTarget()
 	if target.Window == 0 {
-		return // Tinycast itself or a system surface: never inject there.
+		return // Wincast itself or a system surface: never inject there.
 	}
 	captured := c.captureTemplateContext()
 	output := template.ExpandSnippet(record.Body, captured, nil, c.snippetList(), record.ID)

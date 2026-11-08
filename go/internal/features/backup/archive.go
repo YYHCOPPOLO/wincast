@@ -1,4 +1,4 @@
-// Package backup writes and reads Tinycast's portable backup archive: one ZIP
+// Package backup writes and reads Wincast's portable backup archive: one ZIP
 // holding a manifest, filtered settings, clipboard history, snippets, notes and
 // launcher learning. AI keys, chat history and caches never travel.
 package backup
@@ -202,7 +202,7 @@ func Export(in Input) ([]byte, error) {
 func Read(data []byte) (*Bundle, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return nil, fmt.Errorf("not a Tinycast backup: %w", err)
+		return nil, fmt.Errorf("not a Wincast backup: %w", err)
 	}
 	bundle := &Bundle{Images: make(map[string][]byte), Snippets: make(map[string][]byte),
 		Notes: make(map[string][]byte), Learning: make(map[string]json.RawMessage)}

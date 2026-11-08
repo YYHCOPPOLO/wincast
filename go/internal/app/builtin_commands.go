@@ -7,7 +7,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 )
 
-// builtinCommand is one Tinycast-owned launcher row, mirroring the original
+// builtinCommand is one Wincast-owned launcher row, mirroring the original
 // CommandCatalog: a stable "command:" identity, a localized title, and the
 // other language's title as an alternate search name. They are ordinary
 // catalog entries, so the same relevance ranking can place them above apps for

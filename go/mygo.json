@@ -1,9 +1,9 @@
 {
-  "name": "Tinycast",
-  "identifier": "com.tinycast.win.go-preview",
+  "name": "wincast",
+  "identifier": "com.wincast.win",
   "version": "0.2.0",
-  "copyright": "Tinycast contributors",
-  "main": "./cmd/tinycast",
+  "copyright": "Wincast contributors",
+  "main": "./cmd/wincast",
   "out": "build",
-  "icon": "resources/icon.png"
+  "icon": "internal/brand/assets/icon.png"
 }

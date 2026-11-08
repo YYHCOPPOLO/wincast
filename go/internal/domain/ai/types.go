@@ -96,7 +96,7 @@ func (c Connection) Title() string {
 	return c.Provider.Title()
 }
 
-// Normalize keeps JSON arrays non-null so the Rust application can still read
+// Normalize keeps JSON arrays non-null so older application versions can read
 // the file if a migrated settings file is reopened there.
 func (c Connection) Normalize() Connection {
 	if c.Models == nil {

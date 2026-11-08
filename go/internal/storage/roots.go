@@ -1,23 +1,16 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 )
 
-// RootKind separates the development preview from the daily application. The
-// two never share a writable settings, cache, data or log directory.
-type RootKind uint8
-
 const (
-	Preview RootKind = iota
-	Daily
-)
-
-const (
-	PreviewID = "com.tinycast.win.go-preview"
-	DailyID   = "com.tinycast.win"
+	LegacyGoID = "com.tinycast.win.go-preview"
+	LegacyID   = "com.tinycast.win"
+	AppID      = "com.wincast.win"
 )
 
 // Roots are the resolved directories for one application identity.
@@ -29,7 +22,7 @@ type Roots struct {
 	Dictionary string
 }
 
-func ResolveRoots(kind RootKind) (Roots, error) {
+func ResolveRoots() (Roots, error) {
 	roaming, err := os.UserConfigDir()
 	if err != nil {
 		return Roots{}, fmt.Errorf("resolve roaming directory: %w", err)
@@ -42,17 +35,52 @@ func ResolveRoots(kind RootKind) (Roots, error) {
 	if err != nil {
 		return Roots{}, err
 	}
-	id := PreviewID
-	if kind == Daily {
-		id = DailyID
+	settings := filepath.Join(roaming, AppID)
+	if err := importPreviousProfile(settings, filepath.Join(roaming, LegacyGoID)); err != nil {
+		return Roots{}, fmt.Errorf("import previous Go settings: %w", err)
+	}
+	dictionary := filepath.Join(local, AppID, "Dictionary", "ecdict.sqlite")
+	if _, err := os.Stat(dictionary); errors.Is(err, os.ErrNotExist) {
+		dictionary = filepath.Join(roaming, LegacyID, "Dictionary", "ecdict.sqlite")
 	}
 	return Roots{
-		Settings:   filepath.Join(roaming, id),
-		Cache:      filepath.Join(local, id),
-		Logs:       filepath.Join(local, id, "logs"),
+		Settings:   settings,
+		Cache:      filepath.Join(local, AppID),
+		Logs:       filepath.Join(local, AppID, "logs"),
 		Data:       filepath.Join(filepath.Dir(executable), "data"),
-		Dictionary: filepath.Join(roaming, DailyID, "Dictionary", "ecdict.sqlite"),
+		Dictionary: dictionary,
 	}, nil
+}
+
+// importPreviousProfile stages a copy on first launch. Never overwrite an
+// existing Wincast profile or remove the previous profile, including AI keys.
+func importPreviousProfile(destination, previous string) error {
+	if _, err := os.Stat(destination); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if _, err := os.Stat(previous); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	staging, err := os.MkdirTemp(filepath.Dir(destination), ".wincast-profile-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(staging)
+	if err := os.CopyFS(staging, os.DirFS(previous)); err != nil {
+		return err
+	}
+	if err := os.Rename(staging, destination); err != nil {
+		// Another first launch may have completed the same import.
+		if info, statErr := os.Stat(destination); statErr == nil && info.IsDir() {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // Ensure creates only the writable roots. The dictionary stays read-only and

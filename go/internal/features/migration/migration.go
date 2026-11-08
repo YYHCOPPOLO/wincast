@@ -191,7 +191,7 @@ func countLauncher(source string) (favorites, hidden, ranking int) {
 }
 
 func countClipboard(source string) (int, error) {
-	temp, err := os.MkdirTemp("", "tinycast-migration-count-*")
+	temp, err := os.MkdirTemp("", "wincast-migration-count-*")
 	if err != nil {
 		return 0, err
 	}

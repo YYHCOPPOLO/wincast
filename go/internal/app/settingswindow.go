@@ -3,9 +3,9 @@ package app
 import (
 	"fmt"
 	"runtime"
-	"runtime/debug"
 	"strings"
 
+	"github.com/YYHCOPPOLO/wincast/go/internal/brand"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
@@ -18,8 +18,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const supportCheckoutURL = "https://buy.polar.sh/polar_cl_NDVFC20DKQpLcNawsh97QzbARBXD3WNn8v35R0mbJmT"
-const projectURL = "https://github.com/abue-ammar/tinycast"
+const projectURL = "https://github.com/YYHCOPPOLO/wincast"
+const supportCheckoutURL = projectURL
 
 // settingsView is the settings window workspace: a sidebar with the original
 // four sections and nineteen pages, and one scrollable page at a time.
@@ -213,7 +213,7 @@ func (c *controller) generalSettingsPage(ctx *ui.Context, tokens theme.Tokens, z
 			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("登录时启动", "Launch at login"), func() {
 			enabled := c.launchAtLogin
-			ui.Switch(ctx, &enabled).Label(c.text("登录 Windows 后自动启动", "Start Tinycast automatically when you log in"))
+			ui.Switch(ctx, &enabled).Label(c.text("登录 Windows 后自动启动", "Start Wincast automatically when you log in"))
 			if enabled != c.launchAtLogin {
 				c.setLaunchAtLogin(enabled)
 			}
@@ -252,7 +252,7 @@ func (c *controller) confirmResetRanking() {
 	options := mygo.MessageOptions{
 		Parent: c.settings, Type: mygo.MessageQuestion,
 		Title:        c.text("重置学习排序？", "Reset learned launcher ranking?"),
-		Message:      c.text("Tinycast 会重新学习你偏好的结果。", "Tinycast will relearn your preferred results."),
+		Message:      c.text("Wincast 会重新学习你偏好的结果。", "Wincast will relearn your preferred results."),
 		Buttons:      []string{c.text("取消", "Cancel"), c.text("重置排序", "Reset Ranking")},
 		CancelButton: 0, DefaultButton: 0,
 	}
@@ -784,12 +784,12 @@ func (c *controller) permissionsSettingsPage(ctx *ui.Context, tokens theme.Token
 }
 
 func (c *controller) aboutSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
-	version := "dev"
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		version = info.Main.Version
-	}
+	version := appVersion()
 	components.Card(ctx, tokens, func() {
-		ui.Text(ctx, "Tinycast for Windows").FontSize(18).Bold()
+		ui.Row(ctx).Gap(14).AlignItems(ui.Center).Children(func() {
+			ui.Image(ctx, brand.IconBitmap()).Size(48, 48).Role(ui.RoleNone)
+			ui.Text(ctx, "Wincast").FontSize(18).Bold()
+		})
 		ui.Text(ctx, c.text("一个小型原生启动器。", "A small native launcher.")).
 			FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 		components.FormRow(ctx, tokens, c.text("版本", "Version"), func() {
@@ -801,14 +801,14 @@ func (c *controller) aboutSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh 
 				_ = c.openPermissionSettingsURL(projectURL)
 			}
 		})
-		components.FormRow(ctx, tokens, c.text("支持 Tinycast…", "Support Tinycast…"), func() {
-			if ui.Button(ctx, c.text("在 Polar 支持", "Support on Polar")).AlignSelf(ui.Start).Clicked() {
+		components.FormRow(ctx, tokens, c.text("支持 Wincast…", "Support Wincast…"), func() {
+			if ui.Button(ctx, c.text("在 GitHub 支持", "Support on GitHub")).AlignSelf(ui.Start).Clicked() {
 				_ = c.openPermissionSettingsURL(supportCheckoutURL)
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("支持提醒", "Support reminders"), func() {
 			enabled := c.supportReminders
-			ui.Switch(ctx, &enabled).Label(c.text("偶尔询问是否支持 Tinycast", "Occasionally ask whether to support Tinycast"))
+			ui.Switch(ctx, &enabled).Label(c.text("偶尔询问是否支持 Wincast", "Occasionally ask whether to support Wincast"))
 			if enabled != c.supportReminders {
 				c.setSupportReminders(enabled)
 			}

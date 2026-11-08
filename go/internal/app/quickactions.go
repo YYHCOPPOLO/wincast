@@ -177,7 +177,7 @@ func (c *controller) quickActionChanged(generation uint64) {
 
 func (c *controller) createQuickActionWindow() {
 	c.qaWindow = c.newMaterialWindow(mygo.WindowOptions{
-		Title:           "Tinycast Quick Action",
+		Title:           "Wincast Quick Action",
 		Panel:           true,
 		Hidden:          true,
 		Frameless:       true,

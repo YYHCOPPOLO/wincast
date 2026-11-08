@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" role="img" aria-label="Wincast">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#20353d"/>
+      <stop offset="1" stop-color="#0c1a22"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#a0ffe0"/>
+      <stop offset="1" stop-color="#2ac8ba"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#tile)"/>
+  <rect x="17" y="17" width="478" height="478" rx="111" fill="none" stroke="#ffffff" stroke-opacity=".1" stroke-width="2"/>
+  <path d="M112 178 171 326 234 210 297 326 388 170" fill="none" stroke="url(#mark)" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M330 170H388V228" fill="none" stroke="url(#mark)" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

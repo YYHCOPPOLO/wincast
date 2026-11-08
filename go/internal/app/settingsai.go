@@ -54,7 +54,7 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 		})
 		components.FormRow(ctx, tokens, c.text("系统提示", "System prompt"), func() {
 			enabled := c.aiSystemPromptEnabled
-			ui.Switch(ctx, &enabled).Label(c.text("发送内置 Tinycast 提示", "Send the built-in Tinycast prompt"))
+			ui.Switch(ctx, &enabled).Label(c.text("发送内置 Wincast 提示", "Send the built-in Wincast prompt"))
 			if enabled != c.aiSystemPromptEnabled {
 				c.setAISystemPromptEnabled(enabled)
 			}

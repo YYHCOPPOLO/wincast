@@ -14,6 +14,6 @@ func ShowStartupError(message string) {
 	if err != nil {
 		return
 	}
-	title, _ := syscall.UTF16PtrFromString("Tinycast")
+	title, _ := syscall.UTF16PtrFromString("Wincast")
 	user32.NewProc("MessageBoxW").Call(0, uintptr(unsafe.Pointer(text)), uintptr(unsafe.Pointer(title)), 0x10|0x10000)
 }

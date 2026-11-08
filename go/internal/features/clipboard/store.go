@@ -1,5 +1,5 @@
 // Package clipboard stores the clipboard history shared by the preview and
-// daily identities. The schema matches the Rust application: a text UUID is
+// daily identities. The legacy-compatible schema uses a text UUID as
 // the stable business id, rowid is recency, and image rows keep absolute PNG
 // paths so a legacy store can be moved without losing its files.
 package clipboard
@@ -897,7 +897,7 @@ func (s *Store) importImageLocked(path string, createdAt, pinnedAt int64) bool {
 // The database and its WAL are copied to a temporary directory first, so a
 // committed row still in the WAL is visible and the source is untouched.
 func ReadLegacy(ctx context.Context, dir string) ([]Item, error) {
-	temp, err := os.MkdirTemp("", "tinycast-legacy-clipboard-*")
+	temp, err := os.MkdirTemp("", "wincast-legacy-clipboard-*")
 	if err != nil {
 		return nil, err
 	}

@@ -246,7 +246,7 @@ func (c *controller) openSettings() {
 	c.hide()
 	if c.settings == nil {
 		c.settings = c.newMaterialWindow(mygo.WindowOptions{
-			Title:           "Tinycast Settings",
+			Title:           "Wincast Settings",
 			Width:           int(theme.SettingsWidth),
 			Height:          int(theme.SettingsHeight),
 			Hidden:          true,
@@ -265,7 +265,7 @@ func (c *controller) updateSettingsTitle() {
 	if c.settings == nil {
 		return
 	}
-	prefix := c.text("Tinycast 设置 · ", "Tinycast Settings · ")
+	prefix := c.text("Wincast 设置 · ", "Wincast Settings · ")
 	c.settings.SetTitle(prefix + c.settingsTab.Title(c.language == "zh"))
 }
 

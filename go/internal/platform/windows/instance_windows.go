@@ -58,16 +58,16 @@ func AcquireInstance(identifier, profile string) (*Instance, bool, error) {
 	}
 	handle, _, callErr := createMutex.Call(0, 0, uintptr(unsafe.Pointer(name)))
 	if handle == 0 {
-		return nil, false, fmt.Errorf("create preview instance lock: %w", callErr)
+		return nil, false, fmt.Errorf("create application instance lock: %w", callErr)
 	}
 	first := !errors.Is(callErr, syscall.ERROR_ALREADY_EXISTS)
 	key := sha256.Sum256([]byte(identifier + "\x00" + profile))
-	path := filepath.Join(os.TempDir(), "tinycast-"+hex.EncodeToString(key[:12])+".sock")
+	path := filepath.Join(os.TempDir(), "wincast-"+hex.EncodeToString(key[:12])+".sock")
 	// Windows AF_UNIX has a 108-byte sun_path, including the terminator.
 	// Keep a path error visible instead of silently weakening single-instance.
 	if len([]byte(path)) >= 108 {
 		_ = syscall.CloseHandle(syscall.Handle(handle))
-		return nil, false, errors.New("preview activation socket path is too long")
+		return nil, false, errors.New("application activation socket path is too long")
 	}
 	instance := &Instance{handle: syscall.Handle(handle), first: first, path: path}
 	return instance, first, nil
@@ -85,23 +85,23 @@ func (i *Instance) Listen(ctx context.Context, dispatch func(Activation)) error 
 	// Refuse to remove an unrelated file or a substituted link at that path.
 	if previous, err := os.Lstat(i.path); err == nil {
 		if previous.Mode()&os.ModeSocket == 0 {
-			return errors.New("preview activation endpoint is not a socket")
+			return errors.New("application activation endpoint is not a socket")
 		}
 		if err := os.Remove(i.path); err != nil {
 			return fmt.Errorf("remove stale preview endpoint: %w", err)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read preview activation endpoint: %w", err)
+		return fmt.Errorf("read application activation endpoint: %w", err)
 	}
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: i.path, Net: "unix"})
 	if err != nil {
-		return fmt.Errorf("listen for preview activation: %w", err)
+		return fmt.Errorf("listen for application activation: %w", err)
 	}
 	listener.SetUnlinkOnClose(false)
 	socket, err := os.Stat(i.path)
 	if err != nil {
 		listener.Close()
-		return fmt.Errorf("identify preview activation endpoint: %w", err)
+		return fmt.Errorf("identify application activation endpoint: %w", err)
 	}
 	i.listener, i.socket = listener, socket
 	go i.serve(ctx, listener, dispatch)
@@ -163,7 +163,7 @@ func (i *Instance) Forward(ctx context.Context, command Activation) error {
 		if err != nil {
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("preview activation did not become ready: %w", ctx.Err())
+				return fmt.Errorf("application activation did not become ready: %w", ctx.Err())
 			case <-ticker.C:
 				continue
 			}
@@ -176,23 +176,23 @@ func (i *Instance) Forward(ctx context.Context, command Activation) error {
 		_ = conn.SetDeadline(deadline)
 		var greeting [5]byte
 		if _, err := io.ReadFull(conn, greeting[:]); err != nil {
-			return fmt.Errorf("read preview activation readiness: %w", err)
+			return fmt.Errorf("read application activation readiness: %w", err)
 		}
 		pid := binary.LittleEndian.Uint32(greeting[1:])
 		if greeting[0] != activationVersion || pid == 0 || pid == uint32(os.Getpid()) {
-			return errors.New("invalid preview activation readiness")
+			return errors.New("invalid application activation readiness")
 		}
 		// Transfer foreground permission only to this exact peer, never ANY.
 		user32.NewProc("AllowSetForegroundWindow").Call(uintptr(pid))
 		if _, err := conn.Write([]byte{activationVersion, byte(command)}); err != nil {
-			return fmt.Errorf("send preview activation: %w", err)
+			return fmt.Errorf("send application activation: %w", err)
 		}
 		var accepted [1]byte
 		if _, err := io.ReadFull(conn, accepted[:]); err != nil {
-			return fmt.Errorf("preview activation acknowledgement is unavailable: %w", err)
+			return fmt.Errorf("application activation acknowledgement is unavailable: %w", err)
 		}
 		if accepted[0] != activationVersion {
-			return errors.New("invalid preview activation acknowledgement")
+			return errors.New("invalid application activation acknowledgement")
 		}
 		return nil
 	}

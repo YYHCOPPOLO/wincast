@@ -1,11 +1,8 @@
-/target
-**/*.rs.bk
 .worktrees/
 worktrees/
 .superpowers/
 .agents/
 AGENTS.md
 docs/
-tools/update-local.ps1
 /go/build/
-/go/cmd/tinycast/*.syso
+/go/cmd/wincast/*.syso

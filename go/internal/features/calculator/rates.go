@@ -48,7 +48,7 @@ type cachedRates struct {
 	UnitsPerBase map[string]float64 `json:"units_per_base"`
 }
 
-// UnmarshalJSON accepts both this build's object map and the Rust oracle's
+// UnmarshalJSON accepts both this build's object map and the legacy cache's
 // array of [code, unitsPerBase] pairs.
 func (c *cachedRates) UnmarshalJSON(data []byte) error {
 	var raw struct {
@@ -180,7 +180,7 @@ func (s *Rates) get(ctx context.Context, url string) ([]byte, error) {
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("User-Agent", "Tinycast/0.1 (Windows)")
+	request.Header.Set("User-Agent", "Wincast/0.2 (Windows)")
 	response, err := s.client.Do(request)
 	if err != nil {
 		return nil, err

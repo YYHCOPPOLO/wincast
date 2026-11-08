@@ -15,7 +15,7 @@ import (
 )
 
 // reloadSnippets lists the library. Every show re-lists, so files added or
-// renamed outside Tinycast appear without a watcher.
+// renamed outside Wincast appear without a watcher.
 func (c *controller) reloadSnippets() {
 	if c.snippets == nil {
 		return
@@ -54,7 +54,7 @@ func (c *controller) snippetByPath(path string) (snippet.Snippet, bool) {
 			return record, true
 		}
 	}
-	// A rename or delete outside Tinycast changes identity. Re-list once so a
+	// A rename or delete outside Wincast changes identity. Re-list once so a
 	// fresh file with the same path can still be found.
 	c.reloadSnippets()
 	for _, record := range c.snippetSnapshot.Records {
@@ -192,7 +192,7 @@ func (c *controller) logSnippetDelivery(record snippet.Snippet, delivered bool) 
 	log.Printf("snippet delivered=%t name=%q", delivered, record.Name)
 }
 
-// showToast reports completion without activating Tinycast. A native
+// showToast reports completion without activating Wincast. A native
 // notification is used because the palette is hidden after delivery.
 func (c *controller) showToast(message string) {
 	if c.closing || strings.TrimSpace(message) == "" {
@@ -201,7 +201,7 @@ func (c *controller) showToast(message string) {
 	if !mygo.NotificationsSupported() {
 		return
 	}
-	notification := mygo.NewNotification(mygo.NotificationOptions{Title: "Tinycast", Body: message, Silent: true})
+	notification := mygo.NewNotification(mygo.NotificationOptions{Title: "Wincast", Body: message, Silent: true})
 	if notification == nil {
 		return
 	}

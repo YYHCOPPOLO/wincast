@@ -153,7 +153,7 @@ func (r Roots) Protected(path string) (bool, string) {
 		return true, "under Windows"
 	}
 	if r.OwnRoot != "" && (IsDescendant(cleaned, r.OwnRoot) || IsDescendant(r.OwnRoot, cleaned)) {
-		return true, "Tinycast installation"
+		return true, "Wincast installation"
 	}
 	// A drive root is already rejected by NormalizePath; a one-component path
 	// such as C:\Temp is still too broad to claim for an app.

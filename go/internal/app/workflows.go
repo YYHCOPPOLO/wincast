@@ -330,7 +330,7 @@ func (c *controller) setSnippetFeature(enabled bool) {
 	options := mygo.MessageOptions{
 		Parent: parent, Type: mygo.MessageQuestion,
 		Title:         c.text("启用片段？", "Enable snippets?"),
-		Message:       c.text("启用后 Tinycast 会监听键入的关键词，并在本机展开片段。", "Tinycast will listen for typed keywords and expand snippets locally."),
+		Message:       c.text("启用后 Wincast 会监听键入的关键词，并在本机展开片段。", "Wincast will listen for typed keywords and expand snippets locally."),
 		Detail:        c.text("不保存按键记录，也不会上传内容。关闭功能会立即停止监听。", "No key log is kept and nothing is uploaded. Turning the feature off stops the listener."),
 		Buttons:       []string{c.text("取消", "Cancel"), c.text("启用", "Enable")},
 		DefaultButton: 0, CancelButton: 0,

@@ -28,7 +28,7 @@ func (c *controller) startCalculatorRates() {
 }
 
 // localNaiveUnix encodes local wall-clock fields as UTC seconds, matching the
-// Rust oracle's injected `now` for date grammar.
+// date grammar in local time.
 func localNaiveUnix() int64 {
 	now := time.Now()
 	return time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), 0, time.UTC).Unix()

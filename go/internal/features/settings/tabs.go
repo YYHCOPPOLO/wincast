@@ -306,4 +306,4 @@ func (a BackupAction) Title(zh bool) string {
 }
 
 // LaunchAtLoginKey is the HKCU Run value name this build owns.
-const LaunchAtLoginKey = "Tinycast"
+const LaunchAtLoginKey = "Wincast"

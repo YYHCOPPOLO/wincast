@@ -5,8 +5,8 @@
 
 .DESCRIPTION
     Downloads the pinned ECDICT CSV once into %TEMP%, builds
-    %APPDATA%\com.tinycast.win\Dictionary\ecdict.sqlite through the
-    `build_ecdict` example, and drops the upstream MIT notice next to it.
+    %LOCALAPPDATA%\com.wincast.win\Dictionary\ecdict.sqlite through the Go
+    `build-dict` command, and drops the upstream MIT notice next to it.
 
     Nothing is written inside the repository: the CSV cache, the database and
     the license all live outside it.
@@ -31,7 +31,7 @@ $ShortSha = $Commit.Substring(0, 8)
 $CsvUrl = "https://raw.githubusercontent.com/skywind3000/ECDICT/$Commit/ecdict.csv"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $CacheCsv = Join-Path $env:TEMP "ecdict-$ShortSha.csv"
-$OutDir = Join-Path $env:APPDATA 'com.tinycast.win\Dictionary'
+$OutDir = Join-Path $env:LOCALAPPDATA 'com.wincast.win\Dictionary'
 $OutDb = Join-Path $OutDir 'ecdict.sqlite'
 $LicensePath = Join-Path $OutDir 'LICENSE-ECDICT.txt'
 $MinCachedCsv = 50MB
@@ -53,17 +53,17 @@ if (-not (Test-Path -LiteralPath $CsvPath)) {
 if ((Test-Path -LiteralPath $OutDb) -and -not $Force) {
     throw "The dictionary database already exists at $OutDb. Re-run with -Force to rebuild it."
 }
-if (Get-Process -Name tinycast -ErrorAction SilentlyContinue) {
-    Write-Warning 'tinycast.exe is running. It holds the database open read-only, so rebuilding while it runs is not supported; restart it to see the new data.'
+if (Get-Process -Name wincast -ErrorAction SilentlyContinue) {
+    throw 'wincast.exe is running. Quit it before rebuilding the dictionary, then restart it to load the new data.'
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-Push-Location -LiteralPath $RepoRoot
+Push-Location -LiteralPath (Join-Path $RepoRoot 'go')
 try {
-    & cargo run -p tinycast --example build_ecdict -- --input $CsvPath --output $OutDb
+    & go run ./cmd/build-dict --input $CsvPath --output $OutDb
     if ($LASTEXITCODE -ne 0) {
-        throw "build_ecdict exited with code $LASTEXITCODE"
+        throw "build-dict exited with code $LASTEXITCODE"
     }
 }
 finally {

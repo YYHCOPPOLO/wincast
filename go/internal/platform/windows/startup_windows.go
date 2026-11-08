@@ -3,6 +3,7 @@ package windows
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
@@ -86,4 +87,31 @@ func LaunchAtLoginMatches(valueName string) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(command), strings.ToLower(executable))
+}
+
+// RemovePreviousLaunchAtLogin retires the old product entry only when it
+// belongs to this installation, preserving other installations' preferences.
+func RemovePreviousLaunchAtLogin() error {
+	command := strings.TrimSpace(LaunchAtLoginCommand("Tinycast"))
+	if command == "" {
+		return nil
+	}
+	var previous string
+	if strings.HasPrefix(command, `"`) {
+		previous, _, _ = strings.Cut(command[1:], `"`)
+	} else {
+		previous, _, _ = strings.Cut(command, " --")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(filepath.Dir(previous), filepath.Dir(executable)) {
+		return nil
+	}
+	name := filepath.Base(previous)
+	if !strings.EqualFold(name, "tinycast.exe") && !strings.EqualFold(name, "wincast.exe") {
+		return nil
+	}
+	return ApplyLaunchAtLogin("Tinycast", false)
 }

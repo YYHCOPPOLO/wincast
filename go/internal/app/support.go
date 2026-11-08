@@ -119,7 +119,7 @@ func (c *controller) showSupportWindow() {
 		return
 	}
 	c.supportWindow = c.newMaterialWindow(mygo.WindowOptions{
-		Title: c.text("支持 Tinycast", "Support Tinycast"),
+		Title: c.text("支持 Wincast", "Support Wincast"),
 		Width: 460, Height: 320, Hidden: true, DisableResize: true,
 		BackgroundColor: "light-dark(#f4f4f6, #1a1a1e)",
 		Content:         ui.View(c.supportView),
@@ -142,12 +142,12 @@ func (c *controller) supportView(ctx *ui.Context) {
 	ctx.SetTheme(tokens.Theme())
 	defer ctx.Root().Background(tokens.PageBackground(ctx.Vibrancy()))
 	ui.Column(ctx).Fill().Padding(32).Gap(14).Justify(ui.Center).Children(func() {
-		ui.Text(ctx, c.text("支持 Tinycast", "Support Tinycast")).FontSize(24).Bold().Role(ui.RoleHeading)
+		ui.Text(ctx, c.text("支持 Wincast", "Support Wincast")).FontSize(24).Bold().Role(ui.RoleHeading)
 		ui.Text(ctx, c.text("一个小启动器。你的支持让它保持独立。", "A small launcher. Support keeps it independent.")).
 			FontSize(theme.SectionFont).TextColor(tokens.TextSecondary)
-		if ui.PrimaryButton(ctx, c.text("在 Polar 支持", "Support on Polar")).Clicked() {
+		if ui.PrimaryButton(ctx, c.text("在 GitHub 支持", "Support on GitHub")).Clicked() {
 			if err := openExternalURL(supportCheckoutURL); err != nil {
-				log.Printf("support checkout failed: %v", err)
+				log.Printf("support link failed: %v", err)
 			}
 		}
 		components.FormRow(ctx, tokens, c.text("支持提醒", "Support reminders"), func() {

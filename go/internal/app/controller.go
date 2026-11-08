@@ -291,7 +291,7 @@ func newController(started time.Time, profile profile) *controller {
 	c.clipboardEnabled.Store(true)
 	c.notesRoot = filepath.Join(profile.data, "notes")
 	if roaming, err := os.UserConfigDir(); err == nil {
-		c.migrationSource = filepath.Join(roaming, storage.DailyID)
+		c.migrationSource = filepath.Join(roaming, storage.LegacyID)
 	}
 	c.notes = storage.NewFileNotes(c.notesRoot)
 	c.aiKeys = aifeature.OpenKeyStore(profile.settings)
@@ -399,7 +399,7 @@ func newController(started time.Time, profile profile) *controller {
 
 func (c *controller) ready(command windows.Activation, hidden bool) {
 	c.panel = c.newMaterialWindow(mygo.WindowOptions{
-		Title: "Tinycast", Panel: true, Hidden: true, Frameless: true,
+		Title: "Wincast", Panel: true, Hidden: true, Frameless: true,
 		Width: int(theme.PanelWidth), Height: c.panelHeight(), DisableResize: true,
 		Content: ui.View(c.view.Render),
 	})
@@ -436,6 +436,11 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 		// startup entry (for example the daily copy) must survive a preview run.
 		if err := windows.ApplyLaunchAtLogin(settings.LaunchAtLoginKey, false); err != nil {
 			log.Printf("launch at login removal failed: %v", err)
+		}
+	}
+	if !c.launchAtLogin || windows.LaunchAtLoginMatches(settings.LaunchAtLoginKey) {
+		if err := windows.RemovePreviousLaunchAtLogin(); err != nil {
+			log.Printf("previous startup entry removal failed: %v", err)
 		}
 	}
 	if c.showInTray {
@@ -712,7 +717,7 @@ func (c *controller) menu() {
 	components.Menu(actions).Popup(c.panel)
 }
 
-// appMenu holds commands that belong to Tinycast itself rather than to the
+// appMenu holds commands that belong to Wincast itself rather than to the
 // highlighted row: refreshing the catalog, feature screens, settings and quit.
 func (c *controller) appMenu() {
 	if c.closing || c.menuOpen {
@@ -941,14 +946,14 @@ func (c *controller) ownsForeground() bool {
 }
 
 func (c *controller) setupTray() error {
-	tray, err := mygo.NewTray(mygo.TrayOptions{ID: previewID, Icon: trayIcon(), ToolTip: "Tinycast"})
+	tray, err := mygo.NewTray(mygo.TrayOptions{ID: appID, Icon: trayIcon(), ToolTip: "Wincast"})
 	if err != nil {
 		return fmt.Errorf("create tray: %w", err)
 	}
 	c.tray = tray
 	tray.OnClick(c.show)
 	tray.SetMenu(components.Menu([]components.MenuAction{
-		{Label: c.view.Text("打开 Tinycast", "Open Tinycast"), Accelerator: c.hotkey, Click: c.show},
+		{Label: c.view.Text("打开 Wincast", "Open Wincast"), Accelerator: c.hotkey, Click: c.show},
 		{Separator: true},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("笔记…", "Notes…"), Click: c.openEditor},

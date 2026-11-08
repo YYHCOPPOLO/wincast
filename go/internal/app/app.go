@@ -17,7 +17,7 @@ import (
 // from the legacy application, including when this is run outside the packager.
 func Run() (runErr error) {
 	started := time.Now()
-	p, err := previewProfile()
+	p, err := appProfile()
 	if err != nil {
 		return err
 	}
@@ -26,7 +26,7 @@ func Run() (runErr error) {
 	mygo.App.SetPath(mygo.PathCache, p.cache)
 	mygo.App.SetPath(mygo.PathLogs, p.logs)
 	command := activationCommand(os.Args[1:])
-	instance, first, err := windows.AcquireInstance(previewID, p.cache)
+	instance, first, err := windows.AcquireInstance(appID, p.cache)
 	if err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ func Run() (runErr error) {
 		// Release our reference before rechecking identity: if the first
 		// process exited during startup, its kernel object can now disappear.
 		// A still-running owner never permits a second writer or IPC listener.
-		instance, first, err = windows.AcquireInstance(previewID, p.cache)
+		instance, first, err = windows.AcquireInstance(appID, p.cache)
 		if err != nil {
 			return err
 		}

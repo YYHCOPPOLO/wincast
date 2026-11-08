@@ -137,7 +137,7 @@ func (h *MessageHost) run() {
 	defer runtime.UnlockOSThread()
 	defer close(h.done)
 	instance, _, _ := getModuleHandle.Call(0)
-	name, err := syscall.UTF16PtrFromString(fmt.Sprintf("TinycastMessageHost%d", messageHostSequence.Add(1)))
+	name, err := syscall.UTF16PtrFromString(fmt.Sprintf("WincastMessageHost%d", messageHostSequence.Add(1)))
 	if err != nil {
 		h.startErr = err
 		close(h.ready)

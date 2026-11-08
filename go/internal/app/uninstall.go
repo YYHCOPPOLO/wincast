@@ -60,7 +60,7 @@ func (c *controller) scanUninstall() {
 			}
 			switch {
 			case errors.Is(err, uninstallfeature.ErrSelf):
-				c.view.SetUninstallResults(nil, c.text("Tinycast 不能卸载自身", "Tinycast cannot uninstall itself"))
+				c.view.SetUninstallResults(nil, c.text("Wincast 不能卸载自身", "Wincast cannot uninstall itself"))
 			case err != nil:
 				log.Printf("uninstall scan failed: %v", err)
 				c.view.SetUninstallResults(nil, c.text("查找应用文件失败", "Could not find application files"))

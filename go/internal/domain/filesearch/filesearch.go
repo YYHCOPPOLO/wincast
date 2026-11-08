@@ -69,7 +69,7 @@ func IsExcludedPath(path string, ignore IgnoreList) bool {
 	return ignore.Drops(path)
 }
 
-// Rank keeps the Rust ordering: the whole query's fuzzy score first, then the
+// Rank orders by the whole query's fuzzy score first, then the
 // sum of per-token scores, then filename and path alphabetically.
 func Rank(hits []Hit, query string, ignore IgnoreList) []Hit {
 	terms := Tokens(query)

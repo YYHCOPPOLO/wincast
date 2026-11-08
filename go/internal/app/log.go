@@ -9,13 +9,13 @@ import (
 // Logs are bounded across normal starts. Rotation owns only these two fixed
 // files inside this preview's resolved log directory, never a directory tree.
 func openLog(directory string) (*os.File, error) {
-	path := filepath.Join(directory, "tinycast.log")
+	path := filepath.Join(directory, "wincast.log")
 	info, err := os.Stat(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 	if err == nil && info.Size() >= 2*1024*1024 {
-		previous := filepath.Join(directory, "tinycast.previous.log")
+		previous := filepath.Join(directory, "wincast.previous.log")
 		if err := os.Remove(previous); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}

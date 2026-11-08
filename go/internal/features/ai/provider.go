@@ -89,9 +89,9 @@ func (p *Provider) Stream(ctx context.Context, req domainai.Request, sink func(d
 		}
 		switch p.Kind {
 		case domainai.ProviderGemini:
-			request.Header.Set("x-goog-api-client", "tinycast-oai/0.10.2")
+			request.Header.Set("x-goog-api-client", "wincast/0.2.0")
 		case domainai.ProviderOpenRouter:
-			request.Header.Set("X-OpenRouter-Title", "Tinycast")
+			request.Header.Set("X-OpenRouter-Title", "Wincast")
 		}
 	}
 	response, err := httpClient.Do(request)

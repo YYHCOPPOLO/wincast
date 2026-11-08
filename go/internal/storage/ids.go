@@ -29,7 +29,7 @@ func NewID() (string, error) {
 }
 
 // ValidID reports whether text is a canonical lowercase UUID v4. Stored
-// identifiers from the Rust application use this shape.
+// identifiers from earlier application versions use this shape.
 func ValidID(text string) bool {
 	if len(text) != 36 {
 		return false

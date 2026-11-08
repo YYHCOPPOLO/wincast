@@ -27,7 +27,7 @@ func (c *controller) showOnboardingIfNeeded() {
 		return
 	}
 	if legacy, err := os.UserConfigDir(); err == nil {
-		if _, err := os.Stat(filepath.Join(legacy, storage.DailyID, onboardingDoneFile)); err == nil {
+		if _, err := os.Stat(filepath.Join(legacy, storage.LegacyID, onboardingDoneFile)); err == nil {
 			c.finishOnboarding()
 			return
 		}
@@ -42,7 +42,7 @@ func (c *controller) showOnboarding() {
 	}
 	c.onboardingStep = 0
 	c.onboarding = c.newMaterialWindow(mygo.WindowOptions{
-		Title: c.text("欢迎使用 Tinycast", "Welcome to Tinycast"),
+		Title: c.text("欢迎使用 Wincast", "Welcome to Wincast"),
 		Width: 520, Height: 400, Hidden: true, DisableResize: true,
 		BackgroundColor: "light-dark(#f4f4f6, #1a1a1e)",
 		Content:         ui.View(c.onboardingView),
@@ -74,8 +74,8 @@ func (c *controller) onboardingView(ctx *ui.Context) {
 				c.setHotkey(c.hotkeyDraft)
 			}
 		case 1:
-			ui.Text(ctx, c.text("Tinycast 使用 UI Automation 把内容粘贴回前台应用。Windows 不会在启动时弹出权限提示。",
-				"Tinycast uses UI Automation to paste back into the frontmost app. Windows does not prompt at launch.")).
+			ui.Text(ctx, c.text("Wincast 使用 UI Automation 把内容粘贴回前台应用。Windows 不会在启动时弹出权限提示。",
+				"Wincast uses UI Automation to paste back into the frontmost app. Windows does not prompt at launch.")).
 				FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 			if ui.Button(ctx, c.text("打开权限设置", "Open permission settings")).Clicked() {
 				c.openPermissionSettings("ms-settings:privacy-general")
@@ -123,7 +123,7 @@ func onboardingTitle(step int, zh bool) string {
 	if zh {
 		switch step {
 		case 0:
-			return "欢迎使用 Tinycast"
+			return "欢迎使用 Wincast"
 		case 1:
 			return "允许粘贴"
 		case 2:
@@ -134,7 +134,7 @@ func onboardingTitle(step int, zh bool) string {
 	}
 	switch step {
 	case 0:
-		return "Welcome to Tinycast"
+		return "Welcome to Wincast"
 	case 1:
 		return "Enable Pasting"
 	case 2:
@@ -150,21 +150,21 @@ func onboardingSubtitle(step int, zh bool) string {
 		case 0:
 			return "设置快捷键，从任意位置呼出启动器。"
 		case 1:
-			return "允许 Tinycast 把内容粘贴回你刚才使用的应用。"
+			return "允许 Wincast 把内容粘贴回你刚才使用的应用。"
 		case 2:
 			return "带上你的快捷键、收藏和剪贴板历史。"
 		default:
-			return "Tinycast 已就绪。随时按快捷键开始。"
+			return "Wincast 已就绪。随时按快捷键开始。"
 		}
 	}
 	switch step {
 	case 0:
 		return "Set a shortcut to summon the launcher from anywhere."
 	case 1:
-		return "Let Tinycast paste items back into the app you were using."
+		return "Let Wincast paste items back into the app you were using."
 	case 2:
 		return "Bring your shortcuts, favorites and clipboard history along."
 	default:
-		return "Tinycast is ready. Press your shortcut anytime to start."
+		return "Wincast is ready. Press your shortcut anytime to start."
 	}
 }

@@ -115,7 +115,7 @@ func ReadClipboardSnapshot(maxTextBytes int, acceptSource func(string) bool) (Cl
 
 func clipboardFormats() (internal, pngFormat, mimeFormat uint32) {
 	clipboardFormatOnce.Do(func() {
-		clipboardInternalF = registerFormat("com.tinycast.win.internal")
+		clipboardInternalF = registerFormat("com.wincast.win.internal")
 		clipboardPNGF = registerFormat("PNG")
 		clipboardPNGMimeF = registerFormat("image/png")
 	})

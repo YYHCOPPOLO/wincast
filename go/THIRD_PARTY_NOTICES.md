@@ -1,6 +1,6 @@
 # Third-party notices
 
-Tinycast for Windows is an independent MIT-licensed rewrite. The Go build in
+Wincast is an independent MIT-licensed rewrite. The Go build in
 `go/` bundles the following runtime modules. Versions are pinned by `go.mod`
 and `go.sum`; the release script copies each module's full license text next to
 the executable under `licenses/`.
