@@ -86,7 +86,7 @@ func Footer(c *ui.Context, tokens theme.Tokens, status, hints string, onActions,
 			ui.Text(c, hints).FontSize(theme.SectionFont).TextColor(tokens.TextTertiary).SingleLine()
 		}
 		if onActions != nil {
-			if ui.Button(c, "···").Label("Actions").Clicked() {
+			if ui.Button(c, "···").Label("Menu").Clicked() {
 				onActions()
 			}
 		}

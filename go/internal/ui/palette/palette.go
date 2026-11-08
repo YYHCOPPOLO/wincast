@@ -318,7 +318,7 @@ func (v *View) Render(c *ui.Context) {
 		if status == "" {
 			status = v.defaultStatus()
 		}
-		components.Footer(c, tokens, status, v.footerHints(), v.callbacks.Menu, v.callbacks.AppMenu)
+		components.Footer(c, tokens, status, v.footerHints(), v.callbacks.AppMenu, v.callbacks.AppMenu)
 	})
 	if v.PendingToast != "" {
 		c.Toast(v.PendingToast)

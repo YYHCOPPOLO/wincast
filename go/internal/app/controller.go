@@ -684,6 +684,7 @@ func (c *controller) menu() {
 	}
 	application, ok := c.selected()
 	if !ok {
+		c.popupAppMenu()
 		return
 	}
 	actions := []components.MenuAction{
