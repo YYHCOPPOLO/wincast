@@ -4,7 +4,7 @@ Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测�
 
 **简体中文** | [English](README.en.md)
 
-从 [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) 下载。
+当前 `mygo` 分支的 Go 重写尚未对外发布；已有 [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) 是上一代 Rust + Slint 版本。Go 版请从源码构建（见下），产物为 `Tinycast.exe` 或 `Tinycast Setup 0.2.0 amd64.exe`。
 
 ## 功能
 
@@ -25,8 +25,8 @@ Windows 11 上的原生启动器。单个 exe，无 Electron / WebView / 遥测�
 
 ## 安装
 
-1. 从 [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) 下载 `tinycast-*-windows-x64.zip`，解压到任意目录。
-2. 运行 `tinycast.exe`，程序常驻托盘。
+1. 构建或取得 Go 产物后，复制到任意目录；路径可以包含空格和中文。
+2. 运行 `Tinycast.exe`，程序常驻托盘。
 3. 按 **Alt+Space** 唤出。
 
 需要 **Windows 11 24H2（build 26100）及以上**，x64。

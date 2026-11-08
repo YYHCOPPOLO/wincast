@@ -5,7 +5,6 @@
 # publish, upload, sign, or replace the daily installation; tools/update-local.ps1
 # owns the machine-local delivery path.
 param(
-    [string]$Version = "",
     [switch]$SkipBuild
 )
 
@@ -14,7 +13,8 @@ $Root = Split-Path -Parent $PSScriptRoot
 $GoRoot = Join-Path $Root "go"
 $ConfigPath = Join-Path $GoRoot "mygo.json"
 $Config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
-if (-not $Version) { $Version = $Config.version }
+$Version = $Config.version
+if (-not $Version) { throw "mygo.json has no version" }
 if (-not $Config.name) { throw "mygo.json has no name" }
 
 $env:GOTOOLCHAIN = "local"

@@ -952,7 +952,7 @@ func (c *controller) setupTray() error {
 	c.tray = tray
 	tray.OnClick(c.show)
 	tray.SetMenu(components.Menu([]components.MenuAction{
-		{Label: c.view.Text("打开 Tinycast", "Open Tinycast"), Accelerator: defaultShortcut, Click: c.show},
+		{Label: c.view.Text("打开 Tinycast", "Open Tinycast"), Accelerator: c.hotkey, Click: c.show},
 		{Separator: true},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("笔记…", "Notes…"), Click: c.openEditor},

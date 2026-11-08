@@ -97,7 +97,7 @@ func (c *controller) diagnosticsView(ctx *ui.Context) {
 		})
 		ui.Divider(ctx)
 		ui.Row(ctx).Padding(12, 20).Gap(12).Children(func() {
-			ui.Text(ctx, c.view.Text("Alt+Space 唤出 · Tab 切换词典", "Alt+Space opens the panel · Tab switches dictionary")).FontSize(12).TextColor(t.TextMuted).Grow(1)
+			ui.Text(ctx, c.view.Text(c.hotkey+" 唤出 · Tab 切换词典", c.hotkey+" opens the panel · Tab switches dictionary")).FontSize(12).TextColor(t.TextMuted).Grow(1)
 			if ui.Button(ctx, c.view.Text("退出", "Quit")).Clicked() {
 				mygo.App.Quit()
 			}

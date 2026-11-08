@@ -4,7 +4,7 @@ A native launcher for Windows 11. One exe, no Electron, no WebView, no telemetry
 
 [简体中文](README.md) | **English**
 
-Download from [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest).
+The Go rewrite on the `mygo` branch is not published yet; the [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) page holds the previous Rust + Slint build. Build the Go version from source (below); its artifacts are `Tinycast.exe` and `Tinycast Setup 0.2.0 amd64.exe`.
 
 ## Features
 
@@ -25,8 +25,8 @@ Off by default (enable in Settings): file search, Notes, snippets, window manage
 
 ## Install
 
-1. Download `tinycast-*-windows-x64.zip` from [Releases](https://github.com/YYHCOPPOLO/wincast/releases/latest) and unpack it anywhere.
-2. Run `tinycast.exe`. It stays in the tray.
+1. Build the Go artifacts or copy them anywhere; the path may contain spaces or non-ASCII characters.
+2. Run `Tinycast.exe`. It stays in the tray.
 3. Press **Alt+Space**.
 
 Requires **Windows 11 24H2 (build 26100) or later**, x64.

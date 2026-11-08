@@ -17,8 +17,8 @@ type profile struct {
 	dictionary string
 }
 
-// previewProfile resolves the isolated preview identity. It never falls back
-// to the daily application's writable directories; only the external
+// previewProfile resolves the product identity. It never falls back
+// to the legacy application's writable directories; only the external
 // dictionary is shared read-only.
 func previewProfile() (profile, error) {
 	roots, err := storage.ResolveRoots(storage.Preview)

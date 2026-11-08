@@ -13,8 +13,8 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// Run owns the only UI event loop. Preview paths and identity are kept apart
-// from the daily application, including when this is run outside the packager.
+// Run owns the only UI event loop. Product paths and identity are kept apart
+// from the legacy application, including when this is run outside the packager.
 func Run() (runErr error) {
 	started := time.Now()
 	p, err := previewProfile()
@@ -56,7 +56,7 @@ func Run() (runErr error) {
 	}
 	file, err := openLog(p.logs)
 	if err != nil {
-		return fmt.Errorf("open preview log: %w", err)
+		return fmt.Errorf("open application log: %w", err)
 	}
 	log.SetOutput(file)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC)
