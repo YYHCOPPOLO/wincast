@@ -424,35 +424,105 @@ func (v *View) applications(c *ui.Context, tokens theme.Tokens) {
 	}
 }
 
+// calcCard mirrors the original CalculatorCard: expression and answer as two
+// equal columns around an arrow, each with its own pill, or one warning line
+// for an error. A click chooses the card; Enter still copies it.
 func (v *View) calcCard(c *ui.Context, tokens theme.Tokens) {
 	if v.CalcResult == nil {
 		return
 	}
-	fill := ui.Transparent
-	if v.Chosen < 0 {
-		fill = tokens.Selection
-	}
 	result := v.CalcResult
-	ui.Column(c).FillWidth().Padding(8, 18).Gap(3).Radius(theme.RowRadius).
-		Background(fill).Children(func() {
-		ui.Text(c, result.Expression).FontSize(theme.TrailingFont).
-			TextColor(tokens.TextTertiary).SingleLine()
-		color := tokens.Text
-		if result.IsError() {
-			color = tokens.Destructive
+	gap := float32(0)
+	if result.IsError() {
+		gap = theme.CalcColumnGap
+	}
+	ui.Row(c).FillWidth().Padding(theme.CalcCardGapY, theme.CalcCardInset).Children(func() {
+		card := ui.Row(c).FillWidth().
+			Padding(theme.CalcCardPaddingY, theme.CalcCardPaddingX).
+			Gap(gap).AlignItems(ui.Center).Radius(theme.CalcCardRadius)
+		fill := tokens.CardFill
+		switch {
+		case v.Chosen < 0:
+			fill = tokens.Selection
+		case card.Hovered():
+			fill = tokens.CardHover
 		}
-		ui.Text(c, result.Display).FontSize(theme.HeadingFont).TextColor(color).SingleLine().Role(ui.RoleStatus)
-		if result.SourceBadge != "" || result.TargetBadge != "" {
-			ui.Row(c).Gap(8).Children(func() {
-				if result.SourceBadge != "" {
-					ui.Text(c, result.SourceBadge).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
-				}
-				if result.TargetBadge != "" {
-					ui.Text(c, "→ "+result.TargetBadge).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
-				}
-			})
+		card.Background(fill).Cursor(ui.CursorPointer).Children(func() {
+			if result.IsError() {
+				ui.Text(c, "\uE7BA").Font("Segoe Fluent Icons").FontSize(theme.RowFont).
+					TextColor(tokens.TextSecondary).Shrink(0)
+				ui.Text(c, result.Display).FontSize(theme.RowFont).TextColor(tokens.TextSecondary).
+					SingleLine().Grow(1)
+				return
+			}
+			v.calcColumn(c, tokens, result.Expression, result.SourceBadge, 500)
+			ui.Text(c, "\uE72A").Font("Segoe Fluent Icons").FontSize(theme.CalcArrowFont).
+				TextColor(tokens.TextTertiary).Shrink(0)
+			v.calcColumn(c, tokens, result.Display, result.TargetBadge, 600)
+		})
+		if card.Clicked() {
+			v.choose(-1)
 		}
 	})
+}
+
+// calcColumn is one side of the answer card: the value with its connectors
+// dimmed, and the word-name pill beneath it.
+func (v *View) calcColumn(c *ui.Context, tokens theme.Tokens, text, badge string, weight int) {
+	ui.Column(c).Grow(1).Basis(0).MinWidth(0).Padding(0, theme.CalcColumnPadding).
+		Gap(theme.CalcColumnGap).AlignItems(ui.Center).Children(func() {
+		ui.RichText(c, calcTextSpans(text, tokens)...).FontSize(theme.CalcResultFont).
+			FontWeight(weight).TextColor(tokens.Text).TextAlign(ui.Center).
+			SingleLine().FillWidth()
+		if badge == "" {
+			return
+		}
+		ui.Row(c).Padding(theme.CalcBadgePadY, theme.CalcBadgePadX).
+			Radius(theme.CalcBadgeRadius).Background(tokens.ControlSurface).Children(func() {
+			ui.Text(c, badge).FontSize(theme.CalcBadgeFont).
+				TextColor(tokens.TextSecondary).SingleLine()
+		})
+	})
+}
+
+// calcConnectors are the words and operators the original dims, so the values
+// they join read first.
+var calcConnectors = map[string]bool{
+	"to": true, "of": true, "off": true, "on": true, "as": true, "from": true,
+	"ago": true, "at": true, "tip": true, "ratio": true, "average": true,
+	"avg": true, "mean": true, "sum": true, "total": true, "round": true,
+	"nearest": true, "and": true, "is": true, "what": true, "the": true,
+	"next": true, "last": true, "+": true, "-": true, "×": true, "÷": true,
+	"^": true, "→": true, "->": true, "mod": true,
+}
+
+// calcTextSpans builds one styled paragraph, dimming connectors. `in` is a
+// unit after a value, so only the joining `in` in `10 in in cm` counts.
+func calcTextSpans(text string, tokens theme.Tokens) []ui.Span {
+	words := strings.Split(text, " ")
+	spans := make([]ui.Span, 0, len(words)*2)
+	for index, word := range words {
+		if index > 0 {
+			spans = append(spans, ui.Span{Text: " "})
+		}
+		color := tokens.Text
+		if calcConnector(word, index, words) {
+			color = tokens.TextTertiary
+		}
+		spans = append(spans, ui.Span{Text: word, Color: color})
+	}
+	return spans
+}
+
+func calcConnector(word string, index int, words []string) bool {
+	lowered := strings.ToLower(word)
+	if calcConnectors[lowered] {
+		return true
+	}
+	if lowered != "in" || index == 0 || index+1 >= len(words) {
+		return false
+	}
+	return strings.ToLower(words[index+1]) != "in"
 }
 
 func (v *View) calculatorHistoryBody(c *ui.Context, tokens theme.Tokens) {

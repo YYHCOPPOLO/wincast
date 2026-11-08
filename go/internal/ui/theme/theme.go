@@ -39,39 +39,57 @@ const (
 	KeyCapFont    float32 = 10
 	HeadingFont   float32 = 26
 	FormLabelFont float32 = 12
+
+	// Calculator answer card, from the original CalculatorCard and LeadCard.
+	CalcResultFont    float32 = 22
+	CalcBadgeFont     float32 = 10
+	CalcArrowFont     float32 = 15
+	CalcCardRadius    float32 = 10
+	CalcCardInset     float32 = 8
+	CalcCardGapY      float32 = 4
+	CalcCardPaddingY  float32 = 28
+	CalcCardPaddingX  float32 = 12
+	CalcColumnPadding float32 = 8
+	CalcColumnGap     float32 = 8
+	CalcBadgePadX     float32 = 6
+	CalcBadgePadY     float32 = 2
+	CalcBadgeRadius   float32 = 6
 )
 
 // Tokens is one appearance. Build it with For, Light or Dark, never by hand.
 type Tokens struct {
 	Dark bool
 
-	Page          ui.Color
-	Surface       ui.Color
-	SurfaceHover  ui.Color
-	SurfacePress  ui.Color
-	Border        ui.Color
-	Line          ui.Color
-	Line2         ui.Color
-	Card2         ui.Color
-	Muted         ui.Color
-	Text          ui.Color
-	TextSecondary ui.Color
-	TextTertiary  ui.Color
-	Fg2           ui.Color
-	Faint         ui.Color
-	CtlFg         ui.Color
-	Accent        ui.Color
-	AccentSoft    ui.Color
-	AccentText    ui.Color
-	Selection     ui.Color
-	PillHover     ui.Color
-	Destructive   ui.Color
-	Success       ui.Color
-	GreenSoft     ui.Color
-	RedSoft       ui.Color
-	Amber         ui.Color
-	AmberSoft     ui.Color
-	Scrim         ui.Color
+	Page           ui.Color
+	Surface        ui.Color
+	SurfaceHover   ui.Color
+	SurfacePress   ui.Color
+	Border         ui.Color
+	Line           ui.Color
+	Line2          ui.Color
+	Card2          ui.Color
+	CardFill       ui.Color
+	CardHover      ui.Color
+	ControlSurface ui.Color
+	Muted          ui.Color
+	Text           ui.Color
+	TextSecondary  ui.Color
+	TextTertiary   ui.Color
+	Fg2            ui.Color
+	Faint          ui.Color
+	CtlFg          ui.Color
+	Accent         ui.Color
+	AccentSoft     ui.Color
+	AccentText     ui.Color
+	Selection      ui.Color
+	PillHover      ui.Color
+	Destructive    ui.Color
+	Success        ui.Color
+	GreenSoft      ui.Color
+	RedSoft        ui.Color
+	Amber          ui.Color
+	AmberSoft      ui.Color
+	Scrim          ui.Color
 }
 
 func For(dark bool) Tokens {
@@ -83,66 +101,72 @@ func For(dark bool) Tokens {
 
 func Light() Tokens {
 	return Tokens{
-		Page:          ui.Hex("#f4f4f6"),
-		Surface:       ui.Hex("#ffffff"),
-		SurfaceHover:  ui.Hex("#f1f1f4"),
-		SurfacePress:  ui.Hex("#e9e9ee"),
-		Border:        ui.Hex("#e3e3e8"),
-		Line:          ui.Hex("#e3e3e8"),
-		Line2:         ui.Hex("#ececf0"),
-		Card2:         ui.Hex("#f9f9fb"),
-		Muted:         ui.Hex("#f1f1f4"),
-		Text:          ui.Hex("#1c1c21"),
-		TextSecondary: ui.Hex("#63636b"),
-		TextTertiary:  ui.Hex("#85858d"),
-		Fg2:           ui.Hex("#4b4b53"),
-		Faint:         ui.Hex("#b9b9c2"),
-		CtlFg:         ui.Hex("#63636b"),
-		Accent:        ui.Hex("#4f46e5"),
-		AccentSoft:    ui.Hex("#eeedfd"),
-		AccentText:    ui.Hex("#ffffff"),
-		Selection:     ui.Hex("#ecebfb"),
-		PillHover:     ui.Hex("#e9e9ee"),
-		Destructive:   ui.Hex("#d64545"),
-		Success:       ui.Hex("#189a58"),
-		GreenSoft:     ui.Hex("#e4f6ec"),
-		RedSoft:       ui.Hex("#fbe9e9"),
-		Amber:         ui.Hex("#b45309"),
-		AmberSoft:     ui.Hex("#fbf0df"),
-		Scrim:         ui.RGBA(255, 255, 255, 0.55),
+		Page:           ui.Hex("#f4f4f6"),
+		Surface:        ui.Hex("#ffffff"),
+		SurfaceHover:   ui.Hex("#f1f1f4"),
+		SurfacePress:   ui.Hex("#e9e9ee"),
+		Border:         ui.Hex("#e3e3e8"),
+		Line:           ui.Hex("#e3e3e8"),
+		Line2:          ui.Hex("#ececf0"),
+		Card2:          ui.Hex("#f9f9fb"),
+		CardFill:       ui.Hex("#f5f5f5"),
+		CardHover:      ui.Hex("#eaeaea"),
+		ControlSurface: ui.Hex("#ebebeb"),
+		Muted:          ui.Hex("#f1f1f4"),
+		Text:           ui.Hex("#1c1c21"),
+		TextSecondary:  ui.Hex("#63636b"),
+		TextTertiary:   ui.Hex("#85858d"),
+		Fg2:            ui.Hex("#4b4b53"),
+		Faint:          ui.Hex("#b9b9c2"),
+		CtlFg:          ui.Hex("#63636b"),
+		Accent:         ui.Hex("#4f46e5"),
+		AccentSoft:     ui.Hex("#eeedfd"),
+		AccentText:     ui.Hex("#ffffff"),
+		Selection:      ui.Hex("#ecebfb"),
+		PillHover:      ui.Hex("#e9e9ee"),
+		Destructive:    ui.Hex("#d64545"),
+		Success:        ui.Hex("#189a58"),
+		GreenSoft:      ui.Hex("#e4f6ec"),
+		RedSoft:        ui.Hex("#fbe9e9"),
+		Amber:          ui.Hex("#b45309"),
+		AmberSoft:      ui.Hex("#fbf0df"),
+		Scrim:          ui.RGBA(255, 255, 255, 0.55),
 	}
 }
 
 func Dark() Tokens {
 	return Tokens{
-		Dark:          true,
-		Page:          ui.Hex("#1a1a1e"),
-		Surface:       ui.Hex("#232327"),
-		SurfaceHover:  ui.Hex("#2d2d33"),
-		SurfacePress:  ui.Hex("#36363d"),
-		Border:        ui.Hex("#333339"),
-		Line:          ui.Hex("#333339"),
-		Line2:         ui.Hex("#2c2c32"),
-		Card2:         ui.Hex("#1f1f23"),
-		Muted:         ui.Hex("#2d2d33"),
-		Text:          ui.Hex("#ededf1"),
-		TextSecondary: ui.Hex("#a1a1aa"),
-		TextTertiary:  ui.Hex("#8b8b94"),
-		Fg2:           ui.Hex("#b9b9c1"),
-		Faint:         ui.Hex("#56565f"),
-		CtlFg:         ui.Hex("#a1a1aa"),
-		Accent:        ui.Hex("#a5b4fc"),
-		AccentSoft:    ui.Hex("#2b2c47"),
-		AccentText:    ui.Hex("#14142a"),
-		Selection:     ui.Hex("#33345a"),
-		PillHover:     ui.Hex("#36363d"),
-		Destructive:   ui.Hex("#f28b82"),
-		Success:       ui.Hex("#6fd99b"),
-		GreenSoft:     ui.Hex("#1e3a2b"),
-		RedSoft:       ui.Hex("#45272a"),
-		Amber:         ui.Hex("#f2b544"),
-		AmberSoft:     ui.Hex("#3f3220"),
-		Scrim:         ui.RGBA(0, 0, 0, 0.40),
+		Dark:           true,
+		Page:           ui.Hex("#1a1a1e"),
+		Surface:        ui.Hex("#232327"),
+		SurfaceHover:   ui.Hex("#2d2d33"),
+		SurfacePress:   ui.Hex("#36363d"),
+		Border:         ui.Hex("#333339"),
+		Line:           ui.Hex("#333339"),
+		Line2:          ui.Hex("#2c2c32"),
+		Card2:          ui.Hex("#1f1f23"),
+		CardFill:       ui.Hex("#2e2e32"),
+		CardHover:      ui.Hex("#38383c"),
+		ControlSurface: ui.Hex("#39393d"),
+		Muted:          ui.Hex("#2d2d33"),
+		Text:           ui.Hex("#ededf1"),
+		TextSecondary:  ui.Hex("#a1a1aa"),
+		TextTertiary:   ui.Hex("#8b8b94"),
+		Fg2:            ui.Hex("#b9b9c1"),
+		Faint:          ui.Hex("#56565f"),
+		CtlFg:          ui.Hex("#a1a1aa"),
+		Accent:         ui.Hex("#a5b4fc"),
+		AccentSoft:     ui.Hex("#2b2c47"),
+		AccentText:     ui.Hex("#14142a"),
+		Selection:      ui.Hex("#33345a"),
+		PillHover:      ui.Hex("#36363d"),
+		Destructive:    ui.Hex("#f28b82"),
+		Success:        ui.Hex("#6fd99b"),
+		GreenSoft:      ui.Hex("#1e3a2b"),
+		RedSoft:        ui.Hex("#45272a"),
+		Amber:          ui.Hex("#f2b544"),
+		AmberSoft:      ui.Hex("#3f3220"),
+		Scrim:          ui.RGBA(0, 0, 0, 0.40),
 	}
 }
 
