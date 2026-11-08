@@ -119,14 +119,23 @@ type MenuAction struct {
 	Accelerator string
 	Disabled    bool
 	Separator   bool
+	Submenu     []MenuAction
 	Click       func()
 }
 
 func Menu(actions []MenuAction) *mygo.Menu {
+	return mygo.NewMenu(buildMenuItems(actions))
+}
+
+func buildMenuItems(actions []MenuAction) []*mygo.MenuItem {
 	items := make([]*mygo.MenuItem, 0, len(actions))
 	for _, action := range actions {
 		if action.Separator {
 			items = append(items, mygo.Separator())
+			continue
+		}
+		if len(action.Submenu) > 0 {
+			items = append(items, &mygo.MenuItem{Label: action.Label, Submenu: buildMenuItems(action.Submenu)})
 			continue
 		}
 		click := action.Click
@@ -139,5 +148,5 @@ func Menu(actions []MenuAction) *mygo.Menu {
 			},
 		})
 	}
-	return mygo.NewMenu(items)
+	return items
 }

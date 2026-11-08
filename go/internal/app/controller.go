@@ -14,6 +14,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
 	calcservice "github.com/YYHCOPPOLO/wincast/go/internal/features/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
@@ -149,6 +150,8 @@ type controller struct {
 	fileSearchIgnores        []string
 	fileSearchScopesDraft    string
 	fileSearchIgnoresDraft   string
+	systemConfirming         systemaction.ID
+	volumeLoading            bool
 	commandsShowInLauncher   bool
 	quicklinksShowInLauncher bool
 	snippetsShowInLauncher   bool
@@ -231,6 +234,8 @@ func newController(started time.Time, profile profile) *controller {
 		OpenFile:              c.openFileHit,
 		RevealFile:            c.revealFileHit,
 		CopyFilePath:          c.copyFileHitPath,
+		ApplyVolume:           c.applyVolume,
+		CloseVolume:           c.closeVolumeDialog,
 	})
 	c.applyViewAppearance()
 	c.view.Expanded = !c.compactMode
@@ -435,6 +440,11 @@ func (c *controller) open(application domain.Application) {
 	case domain.KindFileSearch:
 		c.openFileSearch()
 		return
+	case domain.KindSystemAction:
+		if id, ok := systemaction.FromEntryID(application.ID); ok {
+			c.runSystemAction(id)
+		}
+		return
 	}
 	c.hide()
 	if err := mygo.Shell.LaunchApp(mygo.InstalledApp{ID: application.ID, Name: application.Name, Path: application.Path}); err != nil {
@@ -498,6 +508,7 @@ func (c *controller) menu() {
 		{Label: c.view.Text("计算器历史…", "Calculator history…"), Click: c.openCalculatorHistory},
 		{Label: c.view.Text("Emoji 与符号…", "Emoji & Symbols…"), Click: c.openEmoji},
 		{Label: c.view.Text("搜索文件…", "Search files…"), Disabled: !c.featureFileSearch, Click: c.openFileSearch},
+		{Label: c.view.Text("系统操作", "System actions"), Submenu: c.systemActionMenu()},
 		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},
 		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
 		{Label: c.view.Text("笔记…", "Notes…"), Disabled: !c.featureNotes, Click: c.openEditor},

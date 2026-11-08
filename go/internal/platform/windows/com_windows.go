@@ -75,11 +75,15 @@ func coInitialize() (uintptr, bool) {
 }
 
 func coCreateInstance(clsid, iid *guid) (uintptr, error) {
+	return coCreateInstanceCtx(clsid, iid, clsctxInprocServer)
+}
+
+func coCreateInstanceCtx(clsid, iid *guid, context uint32) (uintptr, error) {
 	var out uintptr
 	hr, _, _ := coCreateInstanceProc.Call(
 		uintptr(unsafe.Pointer(clsid)),
 		0,
-		clsctxInprocServer,
+		uintptr(context),
 		uintptr(unsafe.Pointer(iid)),
 		uintptr(unsafe.Pointer(&out)),
 	)

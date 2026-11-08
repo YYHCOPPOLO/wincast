@@ -9,6 +9,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/quicklink"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/snippet"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/template"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
@@ -63,6 +64,11 @@ func (c *controller) refreshExtras() {
 	if c.featureFileSearch {
 		extras = append(extras, domain.Application{
 			ID: "file-search", Name: c.text("搜索文件…", "Search Files…"), Kind: domain.KindFileSearch,
+		})
+	}
+	for _, id := range systemaction.All {
+		extras = append(extras, domain.Application{
+			ID: id.EntryID(), Name: id.Name(c.language == "zh"), Kind: domain.KindSystemAction,
 		})
 	}
 	c.launcher.SetExtras(extras, keywords)

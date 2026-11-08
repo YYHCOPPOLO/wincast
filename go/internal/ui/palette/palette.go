@@ -72,6 +72,9 @@ type Callbacks struct {
 	OpenFile     func(filesearch.Hit)
 	RevealFile   func(filesearch.Hit)
 	CopyFilePath func(filesearch.Hit)
+
+	ApplyVolume func(float64)
+	CloseVolume func()
 }
 
 // View is UI-thread-owned display state. Callbacks send user intent back to
@@ -133,6 +136,9 @@ type View struct {
 	FileSearchState files.State
 	FileSearchError string
 	fileSearchList  ui.ListState
+
+	VolumeOpen  bool
+	VolumeValue float64
 }
 
 func New(chinese bool, callbacks Callbacks) *View {
@@ -169,6 +175,7 @@ func (v *View) Render(c *ui.Context) {
 	}
 	c.OnShortcut(0, ui.KeyEnter, v.open)
 	v.renderAlias(c, tokens)
+	v.renderVolume(c, tokens)
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Height(theme.HeaderHeight+2*theme.HeaderPadding).
 			Padding(theme.HeaderPadding, 20).Gap(14).AlignItems(ui.Center).Children(func() {
@@ -286,6 +293,34 @@ func (v *View) footerHints() string {
 			return v.Text("Enter 复制答案  ↑↓ 选择", "Enter Copy answer  ↑↓ Select")
 		}
 		return v.Text("Tab 词典   ↑↓ 选择", "Tab Dictionary   ↑↓ Select")
+	}
+}
+
+func (v *View) renderVolume(c *ui.Context, tokens theme.Tokens) {
+	if !v.VolumeOpen {
+		return
+	}
+	components.Dialog(c, &v.VolumeOpen, func() {
+		ui.Text(c, v.Text("设置音量", "Set volume")).FontSize(16).Bold().Role(ui.RoleHeading)
+		ui.Text(c, fmt.Sprintf("%.0f%%", v.VolumeValue*100)).FontSize(theme.SectionFont).TextColor(tokens.TextSecondary)
+		ui.Slider(c, &v.VolumeValue, 0, 1).Grow(1).Label(v.Text("音量", "Volume"))
+		ui.Row(c).Gap(8).Children(func() {
+			if ui.Button(c, v.Text("应用", "Apply")).Clicked() {
+				if v.callbacks.ApplyVolume != nil {
+					v.callbacks.ApplyVolume(v.VolumeValue)
+				}
+				v.VolumeOpen = false
+			}
+			if ui.Button(c, v.Text("取消", "Cancel")).Clicked() {
+				if v.callbacks.CloseVolume != nil {
+					v.callbacks.CloseVolume()
+				}
+				v.VolumeOpen = false
+			}
+		})
+	})
+	if !v.VolumeOpen && v.callbacks.CloseVolume != nil {
+		v.callbacks.CloseVolume()
 	}
 }
 
@@ -520,6 +555,8 @@ func (v *View) entryFallback(application domain.Application) string {
 		return v.Text("片段", "SNIP")
 	case domain.KindFileSearch:
 		return v.Text("文件", "FILE")
+	case domain.KindSystemAction:
+		return v.Text("系统", "SYS")
 	}
 	return application.Name
 }
