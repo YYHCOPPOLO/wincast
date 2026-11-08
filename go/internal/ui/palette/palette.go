@@ -10,6 +10,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	filesearch "github.com/YYHCOPPOLO/wincast/go/internal/domain/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/meeting"
+	domainuninstall "github.com/YYHCOPPOLO/wincast/go/internal/domain/uninstall"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
@@ -28,6 +29,7 @@ const (
 	ModeArguments
 	ModeFileSearch
 	ModeSchedule
+	ModeUninstall
 )
 
 // Callbacks are the user's intent. The view never performs I/O and never
@@ -77,6 +79,10 @@ type Callbacks struct {
 
 	JoinMeeting     func(meeting.Event)
 	CopyMeetingLink func(meeting.Event)
+
+	ConfirmUninstall    func()
+	CopyUninstallPath   func(string)
+	RevealUninstallPath func(string)
 
 	ApplyVolume func(float64)
 	CloseVolume func()
@@ -148,6 +154,13 @@ type View struct {
 	ScheduleError   string
 	scheduleList    ui.ListState
 
+	UninstallTarget  string
+	UninstallAll     []domainuninstall.Candidate
+	UninstallItems   []domainuninstall.Candidate
+	UninstallLoading bool
+	UninstallError   string
+	uninstallList    ui.ListState
+
 	VolumeOpen  bool
 	VolumeValue float64
 }
@@ -209,6 +222,8 @@ func (v *View) Render(c *ui.Context) {
 				placeholder = v.Text("搜索文件和文件夹…", "Search files and folders…")
 			case ModeSchedule:
 				placeholder = v.Text("搜索日程…", "Search schedule…")
+			case ModeUninstall:
+				placeholder = v.Text("搜索卸载项…", "Search items…")
 			case ModeArguments:
 				if current := v.argumentCurrent(); current != nil {
 					placeholder = current.Name
@@ -242,6 +257,8 @@ func (v *View) Render(c *ui.Context) {
 			v.fileSearchBody(c, tokens)
 		case ModeSchedule:
 			v.scheduleBody(c, tokens)
+		case ModeUninstall:
+			v.uninstallBody(c, tokens)
 		case ModeArguments:
 			v.argumentsBody(c, tokens)
 		default:
@@ -292,6 +309,15 @@ func (v *View) defaultStatus() string {
 			return v.Text("正在读取日历…", "Loading calendar…")
 		}
 		return v.Text("我的日程", "My schedule")
+	case ModeUninstall:
+		if v.UninstallError != "" {
+			return v.UninstallError
+		}
+		if v.UninstallLoading {
+			return v.Text("正在查找应用文件…", "Finding application files…")
+		}
+		selected := domainuninstall.SelectedCount(v.UninstallAll)
+		return fmt.Sprintf(v.Text("已选择 %d / %d 项", "%d of %d selected"), selected, len(v.UninstallAll))
 	case ModeArguments:
 		return v.Text("填写模板参数", "Template arguments")
 	default:
@@ -311,6 +337,8 @@ func (v *View) footerHints() string {
 		return v.Text("Enter 打开  Ctrl+Shift+C 复制路径  Esc 返回", "Enter Open  Ctrl+Shift+C Copy path  Esc Back")
 	case ModeSchedule:
 		return v.Text("Enter 入会  Ctrl+Shift+C 复制链接  Esc 返回", "Enter Join  Ctrl+Shift+C Copy link  Esc Back")
+	case ModeUninstall:
+		return v.Text("Enter 卸载  Ctrl+Enter 选择  Ctrl+Shift+C 复制路径  Esc 返回", "Enter Uninstall  Ctrl+Enter Select  Ctrl+Shift+C Copy path  Esc Back")
 	case ModeArguments:
 		return v.Text("Enter 确认  Backspace 上一步  Esc 取消", "Enter Confirm  Backspace Back  Esc Cancel")
 	default:
@@ -645,6 +673,156 @@ func (v *View) filterSchedule(reset bool) {
 	}
 }
 
+func (v *View) uninstallBody(c *ui.Context, tokens theme.Tokens) {
+	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
+		label := v.Text("卸载", "Uninstall")
+		if v.UninstallTarget != "" {
+			label += " · " + v.UninstallTarget
+		}
+		ui.Text(c, label).FontSize(theme.SectionFont).
+			TextColor(tokens.TextTertiary).Grow(1).SingleLine().Role(ui.RoleHeading)
+		if v.UninstallLoading {
+			ui.Text(c, v.Text("正在扫描…", "Scanning…")).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+		}
+	})
+	v.uninstallList.Selected = &v.Chosen
+	v.uninstallList.Key = func(i int) any { return v.UninstallItems[i].ID }
+	v.uninstallList.Label = func(i int) string { return v.UninstallItems[i].Name }
+	list := components.ResultList(c, tokens, &v.uninstallList, len(v.UninstallItems), func(i int) {
+		item := v.UninstallItems[i]
+		fill := ui.Transparent
+		if i == v.Chosen {
+			fill = tokens.Selection
+		}
+		row := ui.Row(c).Height(theme.RowHeight).Padding(6, 10).Gap(12).AlignItems(ui.Center).
+			Radius(theme.RowRadius).Background(fill).Children(func() {
+			checked := item.Selected
+			ui.Checkbox(c, &checked, "").Label(item.Name).Disabled(!item.Removable)
+			if checked != item.Selected {
+				v.setUninstallSelected(i, checked)
+			}
+			ui.Column(c).Grow(1).Gap(1).Children(func() {
+				color := tokens.Text
+				if !item.Removable {
+					color = tokens.TextTertiary
+				}
+				ui.Text(c, item.Name).FontSize(theme.RowFont).TextColor(color).SingleLine()
+				ui.Text(c, item.DisplayPath).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary).SingleLine()
+			})
+			reason := item.Error
+			if reason == "" {
+				reason = item.LockReason
+			}
+			if reason != "" {
+				ui.Text(c, reason).FontSize(theme.KeyCapFont).TextColor(tokens.Destructive).SingleLine()
+			}
+		})
+		if row.RowDoubleClicked() {
+			v.setUninstallSelected(i, !item.Selected)
+		}
+	}).Grow(1).Padding(0, 8).Label(v.Text("卸载项目", "Uninstall items"))
+	if list.Submitted() {
+		if v.callbacks.ConfirmUninstall != nil {
+			v.callbacks.ConfirmUninstall()
+		}
+	}
+	if len(v.UninstallItems) == 0 {
+		message := v.Text("没有可卸载的项目", "Nothing to remove")
+		switch {
+		case v.UninstallError != "":
+			message = v.UninstallError
+		case v.UninstallLoading:
+			message = v.Text("正在查找应用文件…", "Finding application files…")
+		case strings.TrimSpace(v.Query) != "":
+			message = v.Text("没有匹配的项目", "No matching items")
+		}
+		ui.Text(c, message).TextColor(tokens.TextTertiary).Padding(20)
+	}
+}
+
+func (v *View) ToggleUninstall(index int) {
+	if index < 0 || index >= len(v.UninstallItems) {
+		return
+	}
+	v.setUninstallSelected(index, !v.UninstallItems[index].Selected)
+}
+
+func (v *View) setUninstallSelected(index int, selected bool) {
+	if index < 0 || index >= len(v.UninstallItems) || !v.UninstallItems[index].Removable {
+		return
+	}
+	id := v.UninstallItems[index].ID
+	v.UninstallItems[index].Selected = selected
+	for i := range v.UninstallAll {
+		if v.UninstallAll[i].ID == id {
+			v.UninstallAll[i].Selected = selected
+		}
+	}
+}
+
+// UninstallSelection returns the checked rows from the unfiltered snapshot.
+func (v *View) UninstallSelection() []domainuninstall.Candidate {
+	return domainuninstall.Selected(v.UninstallAll)
+}
+
+func (v *View) filterUninstall(reset bool) {
+	selected := ""
+	if !reset && v.Chosen >= 0 && v.Chosen < len(v.UninstallItems) {
+		selected = v.UninstallItems[v.Chosen].ID
+	}
+	items := domainuninstall.Filter(v.UninstallAll, v.Query)
+	v.UninstallItems = items
+	v.Chosen = -1
+	if selected != "" {
+		for index, item := range items {
+			if item.ID == selected {
+				v.Chosen = index
+				break
+			}
+		}
+	}
+	if v.Chosen < 0 && len(items) > 0 {
+		v.Chosen = 0
+	}
+	if v.Chosen >= 0 {
+		v.uninstallList.ScrollIntoView(v.Chosen)
+	}
+}
+
+func (v *View) SetModeUninstall(target string) {
+	v.SetExpanded(true)
+	if v.Mode == ModeUninstall {
+		v.Input.Focus()
+		return
+	}
+	if v.Mode == ModeLauncher {
+		v.launcherQuery = v.Query
+	}
+	v.Mode = ModeUninstall
+	v.Query = ""
+	v.inputText.Set("")
+	v.Chosen = -1
+	v.CalcResult = nil
+	v.CalcHistory = nil
+	v.EmojiItems = nil
+	v.FileSearchItems = nil
+	v.ScheduleItems = nil
+	v.UninstallTarget = target
+	v.UninstallAll = nil
+	v.UninstallItems = nil
+	v.UninstallError = ""
+	v.UninstallLoading = true
+	v.Filter()
+	v.Input.Focus()
+}
+
+func (v *View) SetUninstallResults(items []domainuninstall.Candidate, errText string) {
+	v.UninstallAll = items
+	v.UninstallError = errText
+	v.UninstallLoading = false
+	v.filterUninstall(true)
+}
+
 func (v *View) cycleEmojiTone() {
 	if v.callbacks.CycleEmojiTone == nil {
 		return
@@ -777,12 +955,22 @@ func (v *View) textKey(key ui.TextKey) bool {
 		}
 		return true
 	}
+	if key.Mods == ui.Ctrl|ui.Shift && key.Key == ui.KeyC && v.Mode == ModeUninstall {
+		if v.Chosen >= 0 && v.Chosen < len(v.UninstallItems) && v.callbacks.CopyUninstallPath != nil {
+			v.callbacks.CopyUninstallPath(v.UninstallItems[v.Chosen].Path)
+		}
+		return true
+	}
 	if key.Mods == ui.Ctrl|ui.Shift && (key.Key == ui.KeyEnter || key.Key == ui.KeyC) {
 		v.syncQuery(key.Text())
 		v.callbacks.CopyText(v.CopyText(), key.Key == ui.KeyEnter)
 		return true
 	}
 	if key.Mods == ui.Ctrl {
+		if v.Mode == ModeUninstall && key.Key == ui.KeyEnter {
+			v.ToggleUninstall(v.Chosen)
+			return true
+		}
 		if v.Mode == ModeClipboard {
 			switch key.Key {
 			case ui.KeyP:
@@ -888,7 +1076,7 @@ func (v *View) escape() {
 	}
 	if v.Query == "" {
 		switch v.Mode {
-		case ModeClipboard, ModeDictionary, ModeCalculatorHistory, ModeEmoji, ModeFileSearch, ModeSchedule:
+		case ModeClipboard, ModeDictionary, ModeCalculatorHistory, ModeEmoji, ModeFileSearch, ModeSchedule, ModeUninstall:
 			v.SetModeLauncher()
 			return
 		}
@@ -960,6 +1148,11 @@ func (v *View) open() {
 	case ModeSchedule:
 		if v.Chosen >= 0 && v.Chosen < len(v.ScheduleItems) && v.callbacks.JoinMeeting != nil {
 			v.callbacks.JoinMeeting(v.ScheduleItems[v.Chosen])
+		}
+		return
+	case ModeUninstall:
+		if v.callbacks.ConfirmUninstall != nil {
+			v.callbacks.ConfirmUninstall()
 		}
 		return
 	}
@@ -1063,6 +1256,14 @@ func (v *View) choose(i int) {
 		v.Chosen = max(0, min(i, len(v.ScheduleItems)-1))
 		v.scheduleList.ScrollIntoView(v.Chosen)
 		return
+	case ModeUninstall:
+		if len(v.UninstallItems) == 0 {
+			v.Chosen = -1
+			return
+		}
+		v.Chosen = max(0, min(i, len(v.UninstallItems)-1))
+		v.uninstallList.ScrollIntoView(v.Chosen)
+		return
 	}
 	minimum := 0
 	if v.CalcResult != nil {
@@ -1144,6 +1345,14 @@ func (v *View) Filter() {
 		v.EmojiItems = nil
 		v.FileSearchItems = nil
 		v.filterSchedule(true)
+		return
+	case ModeUninstall:
+		v.CalcResult = nil
+		v.CalcHistory = nil
+		v.EmojiItems = nil
+		v.FileSearchItems = nil
+		v.ScheduleItems = nil
+		v.filterUninstall(true)
 		return
 	}
 	if v.OnLookup != nil {

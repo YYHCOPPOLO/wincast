@@ -24,6 +24,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/quicklinks"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/snippets"
+	uninstallfeature "github.com/YYHCOPPOLO/wincast/go/internal/features/uninstall"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/windowmanagement"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
@@ -165,6 +166,11 @@ type controller struct {
 	calendarRevision         uint64
 	calendarTickerStarted    bool
 	autoJoinBusy             bool
+	uninstall                *uninstallfeature.Scanner
+	uninstallTarget          domain.Application
+	uninstallRevision        uint64
+	uninstallConfirm         bool
+	uninstallBusy            bool
 	systemConfirming         systemaction.ID
 	volumeLoading            bool
 	featureWindowManagement  bool
@@ -205,6 +211,7 @@ func newController(started time.Time, profile profile) *controller {
 	c.fileSearch = files.New()
 	c.fileSearch.Apply(c.fileSearchScopes, c.fileSearchIgnores)
 	c.calendar = calendar.New(c.joinWindowMinutes)
+	c.uninstall = uninstallfeature.New()
 	c.windowManager = windowmanagement.New()
 	c.fileSearchScopesDraft = strings.Join(c.fileSearchScopes, "; ")
 	c.fileSearchIgnoresDraft = strings.Join(c.fileSearchIgnores, "; ")
@@ -258,6 +265,9 @@ func newController(started time.Time, profile profile) *controller {
 		CopyFilePath:          c.copyFileHitPath,
 		JoinMeeting:           c.joinMeeting,
 		CopyMeetingLink:       c.copyMeetingLink,
+		ConfirmUninstall:      c.confirmUninstall,
+		CopyUninstallPath:     c.copyUninstallPath,
+		RevealUninstallPath:   c.revealUninstallPath,
 		ApplyVolume:           c.applyVolume,
 		CloseVolume:           c.closeVolumeDialog,
 	})
@@ -524,6 +534,12 @@ func (c *controller) menu() {
 		c.scheduleMenu()
 		return
 	}
+	if c.view.Mode == palette.ModeUninstall {
+		c.uninstallMenu()
+		return
+	}
+	application, applicationSelected := c.selected()
+	canUninstall := applicationSelected && application.Kind == domain.KindApplication
 	menu := components.Menu([]components.MenuAction{
 		{Label: c.view.Text("打开选中应用", "Open selected application"), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: func() {
 			if c.view.Chosen >= 0 && c.view.Chosen < len(c.view.Results) {
@@ -534,6 +550,7 @@ func (c *controller) menu() {
 		{Separator: true},
 		{Label: c.favoriteLabel(), Accelerator: "Ctrl+D", Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: c.toggleFavorite},
 		{Label: c.view.Text("设置别名…", "Set alias…"), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: c.openAliasDialog},
+		{Label: c.view.Text("卸载应用…", "Uninstall application…"), Disabled: !canUninstall, Click: c.openUninstallSelected},
 		{Label: c.hideLabel(), Disabled: c.view.Mode == palette.ModeDictionary || c.view.Chosen < 0, Click: c.toggleSelectedHidden},
 		{Label: c.showHiddenLabel(), Click: c.toggleShowHidden},
 		{Label: c.expandLabel(), Accelerator: "Ctrl+E", Click: c.toggleExpanded},
