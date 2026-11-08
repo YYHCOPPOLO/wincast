@@ -14,8 +14,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
@@ -40,7 +40,7 @@ jobs:
             if ($env:GITHUB_REF_NAME -ne "v$($config.version)") { throw 'Tag and mygo.json version differ' }
             if (-not (Test-Path "releases/$env:GITHUB_REF_NAME.md")) { throw 'Write user-facing release notes before tagging' }
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: wincast-windows-x64
           path: go/build/release/*.zip
@@ -51,8 +51,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: wincast-windows-x64
           path: release
