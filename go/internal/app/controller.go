@@ -130,6 +130,9 @@ type controller struct {
 	clipboardImages              map[string]*ui.Bitmap
 	clipboardImageBytes          int64
 	clipboardPending             map[string]bool
+	clipboardThumbnails          map[string]*ui.Bitmap
+	clipboardThumbBytes          int64
+	clipboardThumbPending        map[string]bool
 	clipboardImageRequests       chan clipboardImageRequest
 	clipboardEvents              atomic.Uint64
 	editor                       *notesWindow
@@ -278,7 +281,8 @@ func newController(started time.Time, profile profile) *controller {
 		settingsWrites: make(chan settingsWrite, 1), rankingWrites: make(chan []byte, 1),
 		clipboardRequests: make(chan struct{}, 1),
 		clipboardImages:   make(map[string]*ui.Bitmap), clipboardPending: make(map[string]bool),
-		clipboardImageRequests: make(chan clipboardImageRequest, 16),
+		clipboardThumbnails: make(map[string]*ui.Bitmap), clipboardThumbPending: make(map[string]bool),
+		clipboardImageRequests: make(chan clipboardImageRequest, 32),
 		systemDark:             windows.SystemDark(), appearance: "system", language: defaultLanguage(),
 		featureDictionary: true, featureNotes: true, itemHotkeys: make(map[string]bool),
 		backupSettings: true, backupClipboard: true, backupSnippets: true,
@@ -342,6 +346,7 @@ func newController(started time.Time, profile profile) *controller {
 		ClipboardPin:          c.toggleClipboardPin,
 		ClipboardDelete:       c.deleteClipboardItem,
 		ClipboardImage:        c.clipboardBitmap,
+		ClipboardThumbnail:    c.clipboardThumbnail,
 		ClipboardPinned:       c.pasteClipboardSlot,
 		SetClipboardFilter:    c.setClipboardFilter,
 		Calculate:             c.calculate,
@@ -601,10 +606,13 @@ func (c *controller) open(application domain.Application) {
 		c.queueRankingSave()
 	}
 	switch application.Kind {
-	case domain.KindAI, domain.KindQuickAction:
+	case domain.KindQuickAction:
 		c.routeAIEntry(application)
 		return
 	case domain.KindCommand:
+		if c.runBuiltinCommand(application.ID) {
+			return
+		}
 		c.startCommand(application)
 		return
 	case domain.KindQuicklink:
@@ -612,12 +620,6 @@ func (c *controller) open(application domain.Application) {
 		return
 	case domain.KindSnippet:
 		c.startSnippet(application)
-		return
-	case domain.KindFileSearch:
-		c.openFileSearch()
-		return
-	case domain.KindCalendar:
-		c.openSchedule()
 		return
 	case domain.KindSystemAction:
 		if id, ok := systemaction.FromEntryID(application.ID); ok {
@@ -787,12 +789,6 @@ func (c *controller) openLabel(application domain.Application) string {
 		return c.view.Text("打开链接", "Open Quicklink")
 	case domain.KindSnippet:
 		return c.view.Text("展开片段", "Expand Snippet")
-	case domain.KindFileSearch:
-		return c.view.Text("搜索文件…", "Search Files…")
-	case domain.KindCalendar:
-		return c.view.Text("打开日程", "Open Schedule")
-	case domain.KindAI:
-		return c.view.Text("打开 AI 对话", "Open AI Chat")
 	case domain.KindQuickAction:
 		return c.view.Text("运行快捷操作", "Run Quick Action")
 	case domain.KindSystemAction:

@@ -17,6 +17,10 @@ type Application struct {
 	Name string
 	Path string
 	Kind Kind
+	// AlternateNames are extra search names that rank below the display name,
+	// like the original AppEntry.alternateNames: today the other UI language's
+	// title for a built-in command.
+	AlternateNames []string
 }
 
 // Kind distinguishes catalog entries that are not installed applications.
@@ -27,12 +31,9 @@ const (
 	KindCommand        Kind = "command"
 	KindQuicklink      Kind = "quicklink"
 	KindSnippet        Kind = "snippet"
-	KindFileSearch     Kind = "file-search"
 	KindSystemAction   Kind = "system-action"
 	KindSystemSettings Kind = "system-settings"
 	KindWindowCommand  Kind = "window-command"
-	KindCalendar       Kind = "calendar"
-	KindAI             Kind = "ai"
 	KindQuickAction    Kind = "quick-action"
 )
 

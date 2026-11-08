@@ -487,6 +487,7 @@ func (c *controller) setLanguage(value string) {
 	if c.view != nil {
 		c.refreshAIChatView()
 	}
+	c.refreshExtras()
 	if c.settingsDocument != nil && c.settingsWritable {
 		_ = c.settingsDocument.Set("language", value)
 	}
@@ -559,7 +560,8 @@ func (c *controller) setFeature(key string, enabled bool) {
 	}
 	c.queueSettingsSave()
 	if key == "commandsEnabled" || key == "quicklinksEnabled" || key == "snippetsEnabled" ||
-		key == "commandsShowInLauncher" || key == "quicklinksShowInLauncher" || key == "snippetsShowInLauncher" {
+		key == "commandsShowInLauncher" || key == "quicklinksShowInLauncher" || key == "snippetsShowInLauncher" ||
+		key == "notesEnabled" || key == "clipboardMonitorEnabled" {
 		c.refreshExtras()
 	}
 	if key == "commandsEnabled" || key == "quicklinksEnabled" || key == "snippetsEnabled" {

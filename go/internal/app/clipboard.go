@@ -229,9 +229,18 @@ func (c *controller) openClipboard() {
 	c.showPanel(false)
 }
 
+const (
+	// The preview keeps enough pixels for a large pane; the list tile only
+	// needs one square row icon, matching the original's 64 px thumbnail.
+	clipboardPreviewPixel   = 900
+	clipboardThumbnailPixel = 64
+)
+
 type clipboardImageRequest struct {
-	id   string
-	path string
+	id        string
+	path      string
+	maxPixel  int
+	thumbnail bool
 }
 
 func (c *controller) startClipboardImages() {
@@ -246,9 +255,9 @@ func (c *controller) startClipboardImages() {
 				if c.ctx.Err() != nil {
 					return
 				}
-				bitmap, err := loadClipboardPreview(request.path)
+				bitmap, err := loadClipboardBitmap(request.path, request.maxPixel)
 				if err != nil {
-					log.Printf("clipboard preview unavailable: %v", err)
+					log.Printf("clipboard image unavailable: %v", err)
 				}
 				if c.ctx.Err() != nil {
 					return
@@ -257,8 +266,21 @@ func (c *controller) startClipboardImages() {
 					if c.closing {
 						return
 					}
-					delete(c.clipboardPending, request.id)
 					bytes := clipboardBitmapBytes(bitmap)
+					if request.thumbnail {
+						delete(c.clipboardThumbPending, request.id)
+						for len(c.clipboardThumbnails) >= 64 || c.clipboardThumbBytes+bytes > 8*1024*1024 {
+							for old := range c.clipboardThumbnails {
+								c.clipboardThumbBytes -= clipboardBitmapBytes(c.clipboardThumbnails[old])
+								delete(c.clipboardThumbnails, old)
+								break
+							}
+						}
+						c.clipboardThumbnails[request.id] = bitmap
+						c.clipboardThumbBytes += bytes
+						return
+					}
+					delete(c.clipboardPending, request.id)
 					for len(c.clipboardImages) >= 32 || c.clipboardImageBytes+bytes > 48*1024*1024 {
 						for old := range c.clipboardImages {
 							c.clipboardImageBytes -= clipboardBitmapBytes(c.clipboardImages[old])
@@ -283,7 +305,9 @@ func (c *controller) clipboardBitmap(item clipboard.Item) (*ui.Bitmap, bool) {
 	}
 	if !c.clipboardPending[item.ID] {
 		select {
-		case c.clipboardImageRequests <- clipboardImageRequest{id: item.ID, path: item.ImagePath}:
+		case c.clipboardImageRequests <- clipboardImageRequest{
+			id: item.ID, path: item.ImagePath, maxPixel: clipboardPreviewPixel,
+		}:
 			c.clipboardPending[item.ID] = true
 		default:
 		}
@@ -291,9 +315,30 @@ func (c *controller) clipboardBitmap(item clipboard.Item) (*ui.Bitmap, bool) {
 	return nil, true
 }
 
-// Preview thumbnails are independent of the original PNG used for copying.
-// Bound compressed bytes and decoded pixels before allocating an image.
-func loadClipboardPreview(path string) (*ui.Bitmap, error) {
+// clipboardThumbnail is the list tile's own cache. Scaling the 900 px preview
+// down every row would waste tens of megabytes and steal its cache slots.
+func (c *controller) clipboardThumbnail(item clipboard.Item) (*ui.Bitmap, bool) {
+	if item.Kind != clipboard.KindImage || item.ImagePath == "" {
+		return nil, false
+	}
+	if bitmap, ok := c.clipboardThumbnails[item.ID]; ok {
+		return bitmap, false
+	}
+	if !c.clipboardThumbPending[item.ID] {
+		select {
+		case c.clipboardImageRequests <- clipboardImageRequest{
+			id: item.ID, path: item.ImagePath, maxPixel: clipboardThumbnailPixel, thumbnail: true,
+		}:
+			c.clipboardThumbPending[item.ID] = true
+		default:
+		}
+	}
+	return nil, true
+}
+
+// Preview bitmaps decode off the UI thread. Bound compressed bytes and
+// decoded pixels before allocating an image.
+func loadClipboardBitmap(path string, maxPixel int) (*ui.Bitmap, error) {
 	const maxBytes = 64 * 1024 * 1024
 	file, err := os.Open(path)
 	if err != nil {
@@ -324,13 +369,16 @@ func loadClipboardPreview(path string) (*ui.Bitmap, error) {
 		return nil, err
 	}
 	width, height := config.Width, config.Height
-	if max(width, height) <= 900 {
+	if maxPixel <= 0 {
+		maxPixel = clipboardPreviewPixel
+	}
+	if max(width, height) <= maxPixel {
 		return ui.NewBitmap(source), nil
 	}
 	if width >= height {
-		height, width = max(1, height*900/width), 900
+		height, width = max(1, height*maxPixel/width), maxPixel
 	} else {
-		width, height = max(1, width*900/height), 900
+		width, height = max(1, width*maxPixel/height), maxPixel
 	}
 	thumbnail := image.NewRGBA(image.Rect(0, 0, width, height))
 	imagedraw.CatmullRom.Scale(thumbnail, thumbnail.Bounds(), source, source.Bounds(), imagedraw.Src, nil)

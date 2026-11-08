@@ -967,12 +967,9 @@ func checkedAccelerator(current, choice *domainai.ModelSelection) string {
 	return ""
 }
 
-// routeAIEntry opens an AI Chat or Quick Action launcher row.
+// routeAIEntry opens a Quick Action launcher row.
 func (c *controller) routeAIEntry(application domain.Application) bool {
 	switch application.Kind {
-	case domain.KindAI:
-		c.openAIChat()
-		return true
 	case domain.KindQuickAction:
 		if action, ok := domainai.QuickActionFromEntry(application.ID); ok {
 			c.runQuickAction(action)

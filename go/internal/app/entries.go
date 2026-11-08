@@ -64,21 +64,6 @@ func (c *controller) refreshExtras() {
 			keywords[entry.ID] = record.Keyword
 		}
 	}
-	if c.featureFileSearch {
-		extras = append(extras, domain.Application{
-			ID: "file-search", Name: c.text("搜索文件…", "Search Files…"), Kind: domain.KindFileSearch,
-		})
-	}
-	if c.featureCalendar && c.calendarShowInLauncher {
-		extras = append(extras, domain.Application{
-			ID: "schedule", Name: c.text("我的日程…", "My Schedule…"), Kind: domain.KindCalendar,
-		})
-	}
-	if c.aiEnabled {
-		extras = append(extras, domain.Application{
-			ID: "ai-chat", Name: c.text("AI 对话…", "AI Chat…"), Kind: domain.KindAI,
-		})
-	}
 	if c.quickActionsEnabled {
 		for _, action := range domainai.AllQuickActions() {
 			extras = append(extras, domain.Application{
@@ -103,6 +88,9 @@ func (c *controller) refreshExtras() {
 			})
 		}
 	}
+	// The original appends its built-in commands after every other slice, so
+	// they share the same ranking without living in a separate search pass.
+	extras = append(extras, c.builtinEntries()...)
 	c.launcher.SetExtras(extras, keywords)
 	if c.view.Mode == palette.ModeLauncher {
 		c.view.Filter()

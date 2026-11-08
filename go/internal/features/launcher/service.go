@@ -31,8 +31,9 @@ func New(prefs *Preferences) *Service {
 func (s *Service) SetApplicationsEnabled(enabled bool) { s.showApps = enabled }
 
 // SetExtras replaces the command, quicklink and snippet entries that share
-// the launcher's ranking. keywords carries a snippet's keyword, the only
-// extra searchable word. Callers provide the display order.
+// the launcher's ranking. keywords carries a snippet's keyword; AlternateNames
+// supplies the other UI language's built-in command title. Callers provide the
+// display order.
 func (s *Service) SetExtras(extras []domain.Application, keywords map[string]string) {
 	s.extras = append([]domain.Application(nil), extras...)
 	s.extraFields = make(map[string]domain.SearchFields, len(extras))
@@ -40,6 +41,7 @@ func (s *Service) SetExtras(extras []domain.Application, keywords map[string]str
 		s.extraFields[entry.ID] = domain.SearchFields{
 			Alias:       s.prefs.Alias(entry.ID),
 			Display:     entry.Name,
+			Alternate:   entry.AlternateNames,
 			SnippetWord: keywords[entry.ID],
 		}
 	}

@@ -15,14 +15,17 @@ func Section(c *ui.Context, tokens theme.Tokens, label string) {
 }
 
 // Row is one application result. Icon is drawn at the row's pixel size; when
-// it is not ready yet the avatar keeps the row stable.
+// it is not ready yet the avatar keeps the row stable. IconRadius and IconFit
+// let image thumbnails crop to a rounded tile while app icons stay whole.
 type Row struct {
-	Icon     *ui.Bitmap
-	Fallback string
-	Title    string
-	Subtitle string
-	Trailing string
-	Selected bool
+	Icon       *ui.Bitmap
+	IconRadius float32
+	IconFit    ui.Fit
+	Fallback   string
+	Title      string
+	Subtitle   string
+	Trailing   string
+	Selected   bool
 }
 
 // ResultList leaves selection painting to ResultRow. MyGo's default list
@@ -47,7 +50,11 @@ func ResultRow(c *ui.Context, tokens theme.Tokens, row Row) {
 	ui.Row(c).Height(theme.RowHeight).Padding(6, 10).Gap(12).AlignItems(ui.Center).
 		Radius(theme.RowRadius).Background(fill).Children(func() {
 		if row.Icon != nil {
-			ui.Image(c, row.Icon).Size(theme.ResultRowIcon, theme.ResultRowIcon).Role(ui.RoleNone)
+			icon := ui.Image(c, row.Icon).Size(theme.ResultRowIcon, theme.ResultRowIcon).
+				Fit(row.IconFit).Role(ui.RoleNone)
+			if row.IconRadius > 0 {
+				icon.Radius(row.IconRadius)
+			}
 		} else {
 			ui.Avatar(c, row.Fallback, nil).Size(theme.ResultRowIcon, theme.ResultRowIcon).Role(ui.RoleNone)
 		}

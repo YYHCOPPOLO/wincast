@@ -63,6 +63,7 @@ type Callbacks struct {
 	ClipboardPin       func(clipboard.Item)
 	ClipboardDelete    func(clipboard.Item)
 	ClipboardImage     func(clipboard.Item) (*ui.Bitmap, bool)
+	ClipboardThumbnail func(clipboard.Item) (*ui.Bitmap, bool)
 	ClipboardPinned    func(byte)
 	SetClipboardFilter func(clipboard.Filter)
 
@@ -144,6 +145,7 @@ type View struct {
 	ClipboardAvailable bool
 	ClipboardError     string
 	ClipboardChosen    int
+	ClipboardZoomOpen  bool
 	clipboardList      ui.ListState
 	clipboardPreview   ui.ScrollState
 	clipboardPreviewID string
@@ -233,6 +235,7 @@ func (v *View) Render(c *ui.Context) {
 	}
 	v.renderAlias(c, tokens)
 	v.renderVolume(c, tokens)
+	v.renderClipboardZoom(c, tokens)
 	ui.Column(c).Fill().Children(func() {
 		if v.Draggable && v.Mode == ModeLauncher {
 			ui.Row(c).FillWidth().Height(6).DragWindow()
@@ -1059,14 +1062,10 @@ func (v *View) entryFallback(application domain.Application) string {
 		return v.Text("链接", "LINK")
 	case domain.KindSnippet:
 		return v.Text("片段", "SNIP")
-	case domain.KindFileSearch:
-		return v.Text("文件", "FILE")
 	case domain.KindSystemAction:
 		return v.Text("系统", "SYS")
 	case domain.KindWindowCommand:
 		return v.Text("窗口", "WIN")
-	case domain.KindCalendar:
-		return v.Text("日程", "CAL")
 	}
 	return application.Name
 }
@@ -1644,6 +1643,7 @@ func (v *View) SetModeLauncher() {
 	v.inputText.Set(v.launcherQuery)
 	v.launcherQuery = ""
 	v.Chosen, v.ClipboardChosen, v.EmojiChosen = -1, -1, -1
+	v.ClipboardZoomOpen = false
 	v.CalcHistory = nil
 	v.EmojiItems = nil
 	v.Filter()
@@ -1936,6 +1936,7 @@ func (v *View) SetModeClipboard() {
 	v.Query = ""
 	v.inputText.Set("")
 	v.ClipboardChosen = -1
+	v.ClipboardZoomOpen = false
 	v.CalcResult = nil
 	v.CalcHistory = nil
 	v.EmojiItems = nil
@@ -2195,33 +2196,83 @@ func (v *View) clipboardPreviewBody(c *ui.Context, tokens theme.Tokens) {
 		v.clipboardPreviewID = id
 		v.clipboardPreview.X, v.clipboardPreview.Y = 0, 0
 	}
+	if id == "" {
+		ui.Column(c).Grow(1).FillHeight().Padding(16, 18).Children(func() {
+			ui.Text(c, v.Text("选择一条记录查看完整内容", "Select an entry to preview its full contents")).
+				TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
+		})
+		return
+	}
+	item := v.ClipboardItems[v.ClipboardChosen]
+	if item.Kind == clipboard.KindImage {
+		v.clipboardImagePreview(c, tokens, item)
+		return
+	}
 	ui.Scroll(c).Grow(1).FillHeight().TrackScroll(&v.clipboardPreview).Children(func() {
 		ui.Column(c).FillWidth().Padding(16, 18).Gap(12).Children(func() {
-			if id == "" {
-				ui.Text(c, v.Text("选择一条记录查看完整内容", "Select an entry to preview its full contents")).
-					TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
-				return
-			}
-			item := v.ClipboardItems[v.ClipboardChosen]
-			if item.Kind == clipboard.KindImage {
-				var bitmap *ui.Bitmap
-				loading := false
-				if v.callbacks.ClipboardImage != nil {
-					bitmap, loading = v.callbacks.ClipboardImage(item)
-				}
-				if bitmap != nil {
-					ui.Image(c, bitmap).Size(360, 240).Fit(ui.Contain).Label(v.Text("剪贴板图片预览", "Clipboard image preview"))
-				} else {
-					message := v.Text("无法加载图片预览", "Image preview unavailable")
-					if loading {
-						message = v.Text("正在加载图片预览…", "Loading image preview…")
-					}
-					ui.Text(c, message).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
-				}
-				return
-			}
 			ui.Text(c, item.Text).FillWidth().FontSize(theme.RowFont).TextColor(tokens.TextSecondary).Selectable()
 		})
+	})
+}
+
+// clipboardImagePreview gives the image the whole preview pane, as the
+// original's ClipboardPreview does with scaledToFit. A click opens the same
+// bitmap over the panel; the modal keeps the image's aspect ratio.
+func (v *View) clipboardImagePreview(c *ui.Context, tokens theme.Tokens, item clipboard.Item) {
+	ui.Column(c).Grow(1).FillHeight().Padding(12).Children(func() {
+		var bitmap *ui.Bitmap
+		loading := false
+		if v.callbacks.ClipboardImage != nil {
+			bitmap, loading = v.callbacks.ClipboardImage(item)
+		}
+		if bitmap != nil {
+			ui.Image(c, bitmap).FillWidth().Grow(1).Fit(ui.Contain).
+				Radius(theme.CardRadius).Cursor(ui.CursorPointer).
+				Label(v.Text("剪贴板图片预览", "Clipboard image preview")).
+				OnClick(func() { v.ClipboardZoomOpen = true })
+			return
+		}
+		message := v.Text("无法加载图片预览", "Image preview unavailable")
+		if loading {
+			message = v.Text("正在加载图片预览…", "Loading image preview…")
+		}
+		ui.Text(c, message).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
+	})
+}
+
+// renderClipboardZoom shows the selected image over the panel. The original
+// has no zoom affordance; this is a Windows adaptation of its preview, so the
+// same image can be inspected without leaving the clipboard screen.
+func (v *View) renderClipboardZoom(c *ui.Context, tokens theme.Tokens) {
+	if !v.ClipboardZoomOpen || v.Mode != ModeClipboard {
+		return
+	}
+	id := v.selectedClipboardID()
+	if id == "" {
+		v.ClipboardZoomOpen = false
+		return
+	}
+	item := v.ClipboardItems[v.ClipboardChosen]
+	if item.Kind != clipboard.KindImage {
+		v.ClipboardZoomOpen = false
+		return
+	}
+	var bitmap *ui.Bitmap
+	loading := false
+	if v.callbacks.ClipboardImage != nil {
+		bitmap, loading = v.callbacks.ClipboardImage(item)
+	}
+	ui.Modal(c, &v.ClipboardZoomOpen, func() {
+		if bitmap != nil {
+			ui.Image(c, bitmap).Size(theme.PanelWidth-100, theme.PanelHeight-140).
+				Fit(ui.Contain).Label(v.Text("剪贴板图片预览", "Clipboard image preview"))
+			return
+		}
+		message := v.Text("无法加载图片预览", "Image preview unavailable")
+		if loading {
+			message = v.Text("正在加载图片预览…", "Loading image preview…")
+		}
+		ui.Text(c, message).FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary).Role(ui.RoleStatus)
 	})
 }
 
@@ -2231,11 +2282,18 @@ func (v *View) clipboardRow(c *ui.Context, i int, tokens theme.Tokens) {
 	if item.Pinned() {
 		trailing = v.Text("置顶", "Pinned")
 	}
+	var thumbnail *ui.Bitmap
+	if item.Kind == clipboard.KindImage && v.callbacks.ClipboardThumbnail != nil {
+		thumbnail, _ = v.callbacks.ClipboardThumbnail(item)
+	}
 	components.ResultRow(c, tokens, components.Row{
-		Fallback: clipboardRowFallback(item, v.Chinese),
-		Title:    clipboardRowTitle(item, v.Chinese),
-		Trailing: trailing,
-		Selected: i == v.ClipboardChosen,
+		Icon:       thumbnail,
+		IconRadius: theme.KeyCapRadius,
+		IconFit:    ui.Cover,
+		Fallback:   clipboardRowFallback(item, v.Chinese),
+		Title:      clipboardRowTitle(item, v.Chinese),
+		Trailing:   trailing,
+		Selected:   i == v.ClipboardChosen,
 	})
 }
 
