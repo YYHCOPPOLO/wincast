@@ -348,24 +348,16 @@ func (c *controller) scheduleMenu() {
 	menu.Popup(c.panel)
 }
 
-func (c *controller) cycleJoinWindow() {
-	switch c.joinWindowMinutes {
-	case 1:
-		c.joinWindowMinutes = 2
-	case 2:
-		c.joinWindowMinutes = 5
-	case 5:
-		c.joinWindowMinutes = 10
-	case 10:
-		c.joinWindowMinutes = 15
-	default:
-		c.joinWindowMinutes = 1
-	}
+// joinWindowPresets is the order the join-window menu lists, in minutes.
+var joinWindowPresets = []int64{1, 2, 5, 10, 15}
+
+func (c *controller) setJoinWindow(minutes int64) {
+	c.joinWindowMinutes = minutes
 	if c.calendar != nil {
-		c.calendar.SetLeadMinutes(c.joinWindowMinutes)
+		c.calendar.SetLeadMinutes(minutes)
 	}
 	if c.settingsDocument != nil && c.settingsWritable {
-		_ = c.settingsDocument.Set("joinWindowMinutes", c.joinWindowMinutes)
+		_ = c.settingsDocument.Set("joinWindowMinutes", minutes)
 	}
 	c.queueSettingsSave()
 	c.refreshSettingsWindow()

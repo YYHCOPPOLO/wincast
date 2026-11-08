@@ -57,31 +57,27 @@ func (c *controller) setShowInTray(enabled bool) {
 	c.settingsStatus = c.text("托盘图标已更新", "Tray icon updated")
 }
 
-func (c *controller) cyclePopToRoot() {
-	presets := []int64{0, 5, 15, 30, 60, 90}
-	next := int64(0)
-	for index, preset := range presets {
-		if preset == c.popToRootTimeout {
-			next = presets[(index+1)%len(presets)]
-			break
-		}
-	}
-	c.popToRootTimeout = next
+// popToRootPresets is the order the pop-to-root menu lists.
+var popToRootPresets = []int64{0, 5, 15, 30, 60, 90}
+
+func (c *controller) setPopToRoot(timeout int64) {
+	c.popToRootTimeout = timeout
 	if c.settingsDocument != nil && c.settingsWritable {
-		_ = c.settingsDocument.Set("popToRootTimeout", next)
+		_ = c.settingsDocument.Set("popToRootTimeout", timeout)
 	}
 	c.queueSettingsSave()
 	c.refreshSettingsWindow()
 }
 
 func (c *controller) popToRootLabel() string {
-	switch c.popToRootTimeout {
-	case 0:
+	return c.popToRootChoiceLabel(c.popToRootTimeout)
+}
+
+func (c *controller) popToRootChoiceLabel(timeout int64) string {
+	if timeout <= 0 {
 		return c.text("立即", "Immediately")
-	case 5, 15, 30, 60, 90:
-		return c.text(fmt.Sprintf("关闭后 %d 秒", c.popToRootTimeout), fmt.Sprintf("After %d s", c.popToRootTimeout))
 	}
-	return c.text("立即", "Immediately")
+	return c.text(fmt.Sprintf("关闭后 %d 秒", timeout), fmt.Sprintf("After %d s", timeout))
 }
 
 func (c *controller) setShowFavoritesInCompact(enabled bool) {

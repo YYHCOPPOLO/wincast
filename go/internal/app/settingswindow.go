@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemsettings"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/settings"
@@ -216,9 +217,13 @@ func (c *controller) generalSettingsPage(ctx *ui.Context, tokens theme.Tokens, z
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("返回根搜索", "Pop to Root Search"), func() {
-			if ui.Button(ctx, c.popToRootLabel()).AlignSelf(ui.Start).Clicked() {
-				c.cyclePopToRoot()
-			}
+			ui.MenuButton(ctx, c.popToRootLabel(), func(m *ui.Menu) {
+				for _, preset := range popToRootPresets {
+					if m.Item(c.popToRootChoiceLabel(preset)).Checked(c.popToRootTimeout == preset).Chosen() {
+						c.setPopToRoot(preset)
+					}
+				}
+			}).AlignSelf(ui.Start)
 		})
 		components.FormRow(ctx, tokens, c.text("双击修饰键", "Double-tap modifier"), func() {
 			selected := doubleTapIndex(c.doubleTap)
@@ -593,9 +598,13 @@ func (c *controller) windowSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("窗口间距", "Window gap"), func() {
-			if ui.Button(ctx, fmt.Sprintf("%d DIP", c.windowGap)).AlignSelf(ui.Start).Clicked() {
-				c.cycleWindowGap()
-			}
+			ui.MenuButton(ctx, fmt.Sprintf("%d DIP", c.windowGap), func(m *ui.Menu) {
+				for _, gap := range windowGapPresets {
+					if m.Item(fmt.Sprintf("%d DIP", gap)).Checked(c.windowGap == gap).Chosen() {
+						c.setWindowGap(gap)
+					}
+				}
+			}).AlignSelf(ui.Start)
 		})
 	})
 }
@@ -612,18 +621,14 @@ func (c *controller) clipboardSettingsPage(ctx *ui.Context, tokens theme.Tokens,
 			}
 		})
 		components.FormRow(ctx, tokens, c.text("保留时间", "Retention"), func() {
-			if ui.Button(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention)).AlignSelf(ui.Start).Clicked() {
-				c.setClipboardRetention(cycleClipboardRetention(c.clipboardRetention))
-			}
-		})
-		components.FormRow(ctx, tokens, c.text("排除应用", "Excluded apps"), func() {
-			ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.TextInput(ctx, &c.clipboardDisabledDraft).Grow(1).
-					Label(c.text("按可执行文件名排除，用分号分隔", "Excluded executable names, separated by semicolons"))
-				if ui.Button(ctx, c.text("应用", "Apply")).Clicked() {
-					c.setClipboardDisabledApps(c.clipboardDisabledDraft)
+			ui.MenuButton(ctx, clipboardRetentionLabel(c.language, c.clipboardRetention), func(m *ui.Menu) {
+				for _, days := range clipboardRetentionPresets {
+					label := clipboardRetentionLabel(c.language, days)
+					if m.Item(label).Checked(c.clipboardRetention == days).Chosen() {
+						c.setClipboardRetention(days)
+					}
 				}
-			})
+			}).AlignSelf(ui.Start)
 		})
 		components.FormRow(ctx, tokens, c.text("剪贴板历史", "Clipboard history"), func() {
 			if ui.Button(ctx, c.text("清空历史", "Clear history")).AlignSelf(ui.Start).Clicked() {
@@ -634,6 +639,33 @@ func (c *controller) clipboardSettingsPage(ctx *ui.Context, tokens theme.Tokens,
 			}
 		})
 	})
+
+	components.Card(ctx, tokens, func() {
+		ui.Text(ctx, c.text("排除应用", "Excluded apps")).FontSize(theme.SectionFont).
+			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
+		ui.Text(ctx, c.text("来自这些应用的复制内容不会被记录。",
+			"Copies from these applications are not recorded.")).
+			FontSize(theme.TrailingFont).TextColor(tokens.TextTertiary)
+		for _, stem := range c.clipboardDisabled {
+			stem := stem
+			ui.Row(ctx).FillWidth().Padding(4, 8).Gap(8).AlignItems(ui.Center).Children(func() {
+				title := c.clipboardExclusionTitle(stem)
+				ui.Column(ctx).Grow(1).Gap(1).Children(func() {
+					ui.Text(ctx, title).FontSize(theme.RowFont).TextColor(tokens.Text).SingleLine()
+					if !strings.EqualFold(title, stem) {
+						ui.Text(ctx, stem).FontSize(theme.TrailingFont).
+							TextColor(tokens.TextTertiary).SingleLine()
+					}
+				})
+				if ui.Button(ctx, c.text("移除", "Remove")).Clicked() {
+					c.removeClipboardExcludedApp(stem)
+				}
+			})
+		}
+		if ui.Button(ctx, c.text("添加应用…", "Add Application…")).AlignSelf(ui.Start).Clicked() {
+			c.pickClipboardExcludedApp()
+		}
+	})
 }
 
 func (c *controller) emojiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
@@ -641,9 +673,13 @@ func (c *controller) emojiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh 
 		ui.Text(ctx, c.text("表情与符号", "Emoji & Symbols")).FontSize(theme.SectionFont).
 			TextColor(tokens.TextTertiary).Role(ui.RoleHeading)
 		components.FormRow(ctx, tokens, c.text("肤色", "Skin tone"), func() {
-			if ui.Button(ctx, c.view.EmojiTone.Label()).AlignSelf(ui.Start).Clicked() {
-				c.cycleEmojiTone()
-			}
+			ui.MenuButton(ctx, c.view.EmojiTone.Label(), func(m *ui.Menu) {
+				for _, tone := range emoji.AllTones {
+					if m.Item(tone.Label()).Checked(c.view.EmojiTone == tone).Chosen() {
+						c.setEmojiTone(tone)
+					}
+				}
+			}).AlignSelf(ui.Start)
 		})
 	})
 }
@@ -675,9 +711,14 @@ func (c *controller) calendarSettingsPage(ctx *ui.Context, tokens theme.Tokens, 
 				}
 			})
 			components.FormRow(ctx, tokens, c.text("提前量", "Join window"), func() {
-				if ui.Button(ctx, fmt.Sprintf(c.text("%d 分钟", "%d min"), c.joinWindowMinutes)).AlignSelf(ui.Start).Clicked() {
-					c.cycleJoinWindow()
-				}
+				ui.MenuButton(ctx, fmt.Sprintf(c.text("%d 分钟", "%d min"), c.joinWindowMinutes), func(m *ui.Menu) {
+					for _, minutes := range joinWindowPresets {
+						label := fmt.Sprintf(c.text("%d 分钟", "%d min"), minutes)
+						if m.Item(label).Checked(c.joinWindowMinutes == minutes).Chosen() {
+							c.setJoinWindow(minutes)
+						}
+					}
+				}).AlignSelf(ui.Start)
 			})
 			components.FormRow(ctx, tokens, c.text("启动器显示", "Show in launcher"), func() {
 				enabled := c.calendarShowInLauncher

@@ -372,31 +372,58 @@ func clipboardRetentionLabel(language string, days int64) string {
 	}
 }
 
-func cycleClipboardRetention(days int64) int64 {
-	presets := []int64{1, 7, 30, 90, 180, 365, -1}
-	for index, preset := range presets {
-		if preset == days {
-			return presets[(index+1)%len(presets)]
+// clipboardRetentionPresets is the order the retention menu lists.
+var clipboardRetentionPresets = []int64{1, 7, 30, 90, 180, 365, -1}
+
+// clipboardExclusionTitle names an excluded executable: the catalog's app
+// name when one matches its stem, the stem itself otherwise.
+func (c *controller) clipboardExclusionTitle(stem string) string {
+	normalized := clipboardExecutableStem(stem)
+	for _, app := range c.catalog {
+		if strings.EqualFold(app.Name, normalized) {
+			return app.Name
+		}
+		path := strings.TrimSpace(app.Path)
+		if strings.HasSuffix(strings.ToLower(path), ".exe") &&
+			clipboardExecutableStem(filepath.Base(path)) == normalized {
+			return app.Name
 		}
 	}
-	return 90
+	return stem
 }
 
-func (c *controller) setClipboardDisabledApps(text string) {
-	var apps []string
-	seen := make(map[string]bool)
-	for _, part := range strings.FieldsFunc(text, func(r rune) bool {
-		return r == ';' || r == '\n' || r == '\r'
-	}) {
-		part = strings.TrimSpace(part)
-		if part == "" || seen[strings.ToLower(part)] {
-			continue
-		}
-		seen[strings.ToLower(part)] = true
-		apps = append(apps, part)
+// clipboardExecutableStem is the key an exclusion is stored under.
+func clipboardExecutableStem(name string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), ".exe"))
+}
+
+func (c *controller) addClipboardExcludedApp(stem string) {
+	stem = strings.TrimSpace(stem)
+	if stem == "" {
+		return
 	}
+	for _, existing := range c.clipboardDisabled {
+		if clipboardExecutableStem(existing) == clipboardExecutableStem(stem) {
+			return
+		}
+	}
+	c.setClipboardExcludedApps(append(append([]string(nil), c.clipboardDisabled...), stem))
+}
+
+func (c *controller) removeClipboardExcludedApp(stem string) {
+	apps := make([]string, 0, len(c.clipboardDisabled))
+	for _, existing := range c.clipboardDisabled {
+		if clipboardExecutableStem(existing) != clipboardExecutableStem(stem) {
+			apps = append(apps, existing)
+		}
+	}
+	c.setClipboardExcludedApps(apps)
+}
+
+// setClipboardExcludedApps stores the exclusion list and applies it to capture
+// immediately; matching stays a case-insensitive executable stem comparison.
+func (c *controller) setClipboardExcludedApps(apps []string) {
 	c.clipboardDisabled = apps
-	c.clipboardDisabledDraft = strings.Join(apps, "; ")
 	if c.settingsDocument != nil && c.settingsWritable {
 		_ = c.settingsDocument.Set("clipboardDisabledApps", apps)
 	}
@@ -404,7 +431,45 @@ func (c *controller) setClipboardDisabledApps(text string) {
 	if c.clipboard != nil {
 		c.clipboard.SetDisabledApps(apps)
 	}
-	c.settingsStatus = c.text("排除列表已更新", "Excluded apps updated")
+	c.settingsStatus = c.text("排除列表已更新", "Excluded applications updated")
+	c.refreshSettingsWindow()
+}
+
+// pickClipboardExcludedApp asks for the executable to exclude. The original
+// lists installed apps by bundle id; Windows identifies a clipboard owner by
+// its executable, so the picker saves the chosen .exe's stem.
+func (c *controller) pickClipboardExcludedApp() {
+	if c.clipboardExcludePicking {
+		return
+	}
+	c.clipboardExcludePicking = true
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Parent: c.settings,
+			Title:  c.text("添加排除的应用", "Add an Excluded Application"),
+			Filters: []mygo.FileFilter{{
+				Name:       c.text("应用程序", "Applications"),
+				Extensions: []string{"exe"},
+			}},
+		})
+		c.updateUI(func() {
+			if c.closing {
+				return
+			}
+			c.clipboardExcludePicking = false
+			if err != nil {
+				log.Printf("excluded application picker failed: %v", err)
+				return
+			}
+			if len(paths) == 0 {
+				return
+			}
+			stem := strings.TrimSuffix(filepath.Base(paths[0]), filepath.Ext(paths[0]))
+			c.addClipboardExcludedApp(stem)
+		})
+	}()
 }
 
 func (c *controller) setAppearance(value string) {
@@ -553,21 +618,16 @@ func userHomeDirectory() string {
 	return home
 }
 
-func (c *controller) cycleWindowGap() {
-	switch c.windowGap {
-	case 0:
-		c.windowGap = 8
-	case 8:
-		c.windowGap = 16
-	case 16:
-		c.windowGap = 24
-	default:
-		c.windowGap = 0
-	}
+// windowGapPresets is the order the window-gap menu lists, in DIP.
+var windowGapPresets = []int{0, 8, 16, 24}
+
+func (c *controller) setWindowGap(gap int) {
+	c.windowGap = gap
 	if c.settingsDocument != nil && c.settingsWritable {
-		_ = c.settingsDocument.Set("windowManagementGap", c.windowGap)
+		_ = c.settingsDocument.Set("windowManagementGap", gap)
 	}
 	c.queueSettingsSave()
+	c.refreshSettingsWindow()
 }
 
 func (c *controller) setCompact(enabled bool) {

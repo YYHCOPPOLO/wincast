@@ -58,20 +58,13 @@ func (p ProviderKind) Valid() bool {
 	return false
 }
 
-// CycleProvider follows the settings editor's provider order.
-func CycleProvider(p ProviderKind) ProviderKind {
-	switch p {
-	case ProviderOpenAI:
-		return ProviderAnthropic
-	case ProviderAnthropic:
-		return ProviderGemini
-	case ProviderGemini:
-		return ProviderOpenRouter
-	case ProviderOpenRouter:
-		return ProviderOpenAICompatible
-	default:
-		return ProviderOpenAI
-	}
+// Providers lists the providers the connection editor offers, in menu order.
+var Providers = []ProviderKind{
+	ProviderOpenAI,
+	ProviderAnthropic,
+	ProviderGemini,
+	ProviderOpenRouter,
+	ProviderOpenAICompatible,
 }
 
 // Connection is one saved API endpoint. ID is the DPAPI entropy and key file

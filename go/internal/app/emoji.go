@@ -5,6 +5,7 @@ import (
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
 )
 
 func (c *controller) clampEmojiTone() {
@@ -29,14 +30,21 @@ func (c *controller) pasteEmoji(glyph string) {
 	c.pasteToRememberedTarget()
 }
 
-func (c *controller) cycleEmojiTone() emoji.SkinTone {
-	next := emoji.ToneFromRaw(c.emojiTone).Cycle()
-	c.emojiTone = next.Raw()
-	c.view.EmojiTone = next
+func (c *controller) setEmojiTone(tone emoji.SkinTone) {
+	c.emojiTone = tone.Raw()
+	c.view.EmojiTone = tone
 	if c.settingsDocument != nil && c.settingsWritable {
 		_ = c.settingsDocument.Set("emojiSkinTone", c.emojiTone)
 	}
 	c.queueSettingsSave()
+	if c.view.Mode == palette.ModeEmoji {
+		c.view.Filter()
+	}
+}
+
+func (c *controller) cycleEmojiTone() emoji.SkinTone {
+	next := emoji.ToneFromRaw(c.emojiTone).Cycle()
+	c.setEmojiTone(next)
 	return next
 }
 

@@ -126,7 +126,7 @@ type controller struct {
 	clipboardRequests            chan struct{}
 	clipboardRetention           int64
 	clipboardDisabled            []string
-	clipboardDisabledDraft       string
+	clipboardExcludePicking      bool
 	clipboardImages              map[string]*ui.Bitmap
 	clipboardImageBytes          int64
 	clipboardPending             map[string]bool
@@ -306,7 +306,6 @@ func newController(started time.Time, profile profile) *controller {
 	c.windowManager = windowmanagement.New()
 	c.fileSearchScopesDraft = strings.Join(c.fileSearchScopes, "; ")
 	c.fileSearchIgnoresDraft = strings.Join(c.fileSearchIgnores, "; ")
-	c.clipboardDisabledDraft = strings.Join(c.clipboardDisabled, "; ")
 	c.calcHistoryPath = filepath.Join(profile.settings, "calculator-history.json")
 	c.calcHistory = domaincalc.LoadHistory(c.calcHistoryPath)
 	c.calcRates = calcservice.NewRates(filepath.Join(profile.cache, "currency-rates.json"))
@@ -353,6 +352,7 @@ func newController(started time.Time, profile profile) *controller {
 		EmojiSearch:           c.emojiSearch,
 		EmojiPaste:            c.pasteEmoji,
 		CycleEmojiTone:        c.cycleEmojiTone,
+		SetEmojiTone:          c.setEmojiTone,
 		SubmitArguments:       c.submitArguments,
 		FileSearch:            c.startFileSearch,
 		OpenFile:              c.openFileHit,

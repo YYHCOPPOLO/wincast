@@ -1,6 +1,7 @@
 package app
 
 import (
+	domainai "github.com/YYHCOPPOLO/wincast/go/internal/domain/ai"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/editors"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
@@ -29,9 +30,20 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 			return
 		}
 		components.FormRow(ctx, tokens, c.text("默认模型", "Default model"), func() {
-			if ui.Button(ctx, c.aiModelLabel()).AlignSelf(ui.Start).Clicked() {
-				c.cycleAIDefaultModel()
-			}
+			ui.MenuButton(ctx, c.aiModelLabel(), func(m *ui.Menu) {
+				choices := c.aiModelChoices()
+				if len(choices) == 0 {
+					m.Item(c.text("在设置中添加连接…", "Add a connection in Settings…")).Disabled(true)
+					return
+				}
+				for _, choice := range choices {
+					selection := choice
+					if m.Item(c.aiModelChoiceLabel(selection)).
+						Checked(sameAISelection(c.aiDefaultModel, &selection)).Chosen() {
+						c.setAIDefaultModel(&selection)
+					}
+				}
+			}).AlignSelf(ui.Start)
 		})
 		components.FormRow(ctx, tokens, c.text("联网搜索", "Web search"), func() {
 			enabled := c.aiWebSearch
@@ -57,14 +69,22 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 			})
 		})
 		components.FormRow(ctx, tokens, c.text("历史保留", "History retention"), func() {
-			if ui.Button(ctx, c.aiRetentionLabel()).AlignSelf(ui.Start).Clicked() {
-				c.cycleAIRetention()
-			}
+			ui.MenuButton(ctx, c.aiRetentionLabel(), func(m *ui.Menu) {
+				for _, days := range aiRetentionPresets {
+					if m.Item(c.aiRetentionChoiceLabel(days)).Checked(c.aiRetention == days).Chosen() {
+						c.setAIRetention(days)
+					}
+				}
+			}).AlignSelf(ui.Start)
 		})
 		components.FormRow(ctx, tokens, c.text("打开方式", "Opening"), func() {
-			if ui.Button(ctx, c.aiOpensToLabel()).AlignSelf(ui.Start).Clicked() {
-				c.cycleAIOpensTo()
-			}
+			ui.MenuButton(ctx, c.aiOpensToLabel(), func(m *ui.Menu) {
+				for _, value := range []int64{0, 1} {
+					if m.Item(c.aiOpensToChoiceLabel(value)).Checked(c.aiOpensTo == value).Chosen() {
+						c.setAIOpensTo(value)
+					}
+				}
+			}).AlignSelf(ui.Start)
 		})
 		for index, connection := range c.aiConnections {
 			index, connection := index, connection
@@ -91,9 +111,13 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 		}
 		if c.aiConnEditing >= 0 {
 			components.FormRow(ctx, tokens, c.text("服务商", "Provider"), func() {
-				if ui.Button(ctx, c.aiConnDraftProvider.Title()).AlignSelf(ui.Start).Clicked() {
-					c.cycleAIConnectionProvider()
-				}
+				ui.MenuButton(ctx, c.aiConnDraftProvider.Title(), func(m *ui.Menu) {
+					for _, provider := range domainai.Providers {
+						if m.Item(provider.Title()).Checked(c.aiConnDraftProvider == provider).Chosen() {
+							c.setAIConnectionProvider(provider)
+						}
+					}
+				}).AlignSelf(ui.Start)
 			})
 			components.FormRow(ctx, tokens, c.text("服务地址", "Base URL"), func() {
 				ui.TextInput(ctx, &c.aiConnDraftURL).Grow(1).
@@ -147,14 +171,30 @@ func (c *controller) quickActionsSettingsPage(ctx *ui.Context, tokens theme.Toke
 			return
 		}
 		components.FormRow(ctx, tokens, c.text("翻译语言", "Translate to"), func() {
-			if ui.Button(ctx, c.quickActionLanguageLabel()).AlignSelf(ui.Start).Clicked() {
-				c.cycleQuickActionLanguage()
-			}
+			ui.MenuButton(ctx, c.quickActionLanguageLabel(), func(m *ui.Menu) {
+				for _, language := range quickActionLanguages {
+					if m.Item(c.quickActionLanguageChoiceLabel(language)).
+						Checked(c.quickActionLanguage == language).Chosen() {
+						c.setQuickActionLanguage(language)
+					}
+				}
+			}).AlignSelf(ui.Start)
 		})
 		components.FormRow(ctx, tokens, c.text("模型", "Model"), func() {
-			if ui.Button(ctx, c.quickActionModelLabel()).AlignSelf(ui.Start).Clicked() {
-				c.cycleQuickActionModel()
-			}
+			ui.MenuButton(ctx, c.quickActionModelLabel(), func(m *ui.Menu) {
+				if m.Item(c.text("使用默认模型", "Use default model")).
+					Checked(c.quickActionModel == nil).Chosen() {
+					c.setQuickActionModel(nil)
+				}
+				m.Separator()
+				for _, choice := range c.aiModelChoices() {
+					selection := choice
+					if m.Item(c.aiModelChoiceLabel(selection)).
+						Checked(sameAISelection(c.quickActionModel, &selection)).Chosen() {
+						c.setQuickActionModel(&selection)
+					}
+				}
+			}).AlignSelf(ui.Start)
 		})
 	})
 }

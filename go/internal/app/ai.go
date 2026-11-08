@@ -467,14 +467,26 @@ func (c *controller) aiModelLabel() string {
 	if c.aiDefaultModel == nil {
 		return c.text("选择模型", "Choose model")
 	}
-	label := c.aiDefaultModel.Model
-	if connection, ok := c.aiConnection(c.aiDefaultModel.Connection); ok {
+	return c.aiModelChoiceLabel(*c.aiDefaultModel)
+}
+
+// aiModelChoiceLabel names one saved model choice the way the settings menu
+// shows it: the connection, then the model.
+func (c *controller) aiModelChoiceLabel(selection domainai.ModelSelection) string {
+	label := selection.Model
+	if connection, ok := c.aiConnection(selection.Connection); ok {
 		label = connection.Title() + " · " + label
 	}
-	if c.aiDefaultModel.Kind == domainai.SelectionChatGPT {
+	if selection.Kind == domainai.SelectionChatGPT {
 		label = "ChatGPT · " + label
 	}
 	return label
+}
+
+// sameAISelection reports whether two choices name the same saved model.
+func sameAISelection(a, b *domainai.ModelSelection) bool {
+	return a != nil && b != nil &&
+		a.Kind == b.Kind && a.Connection == b.Connection && a.Model == b.Model
 }
 
 func (c *controller) setAIDefaultModel(selection *domainai.ModelSelection) {
@@ -500,31 +512,6 @@ func (c *controller) refreshAIChatView() {
 	c.view.AIModelLabel = c.aiModelLabel()
 	c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
 	c.view.SetAIStreaming(c.aiStreaming)
-}
-
-func (c *controller) cycleAIDefaultModel() {
-	choices := c.aiModelChoices()
-	if len(choices) == 0 {
-		c.settingsStatus = c.text("请先添加包含模型的 AI 连接", "Add an AI connection with a model first")
-		return
-	}
-	c.setAIDefaultModel(nextAISelection(c.aiDefaultModel, choices))
-}
-
-func nextAISelection(current *domainai.ModelSelection, choices []domainai.ModelSelection) *domainai.ModelSelection {
-	if len(choices) == 0 {
-		return nil
-	}
-	if current == nil {
-		return &choices[0]
-	}
-	for index, choice := range choices {
-		if choice.Kind == current.Kind && choice.Connection == current.Connection && choice.Model == current.Model {
-			next := choices[(index+1)%len(choices)]
-			return &next
-		}
-	}
-	return &choices[0]
 }
 
 func (c *controller) setAIEnabled(enabled bool) {
@@ -570,27 +557,47 @@ func (c *controller) applyAISystemPrompt(text string) {
 	c.settingsStatus = c.text("系统提示已保存", "System prompt saved")
 }
 
-func (c *controller) cycleAIRetention() {
-	switch c.aiRetention {
+// aiRetentionPresets is the order the history-retention menu lists.
+var aiRetentionPresets = []int64{7, 30, 90, -1}
+
+func (c *controller) aiRetentionChoiceLabel(days int64) string {
+	switch days {
 	case 7:
-		c.aiRetention = 30
-	case 30:
-		c.aiRetention = 90
+		return c.text("7 天", "7 days")
 	case 90:
-		c.aiRetention = -1
+		return c.text("3 个月", "3 months")
+	case -1:
+		return c.text("永久保留", "Forever")
 	default:
-		c.aiRetention = 7
+		return c.text("30 天", "30 days")
 	}
-	c.persistAISettings()
 }
 
-func (c *controller) cycleAIOpensTo() {
-	if c.aiOpensTo == 0 {
-		c.aiOpensTo = 1
-	} else {
-		c.aiOpensTo = 0
-	}
+func (c *controller) aiRetentionLabel() string {
+	return c.aiRetentionChoiceLabel(c.aiRetention)
+}
+
+func (c *controller) setAIRetention(days int64) {
+	c.aiRetention = days
 	c.persistAISettings()
+	c.refreshSettingsWindow()
+}
+
+func (c *controller) aiOpensToChoiceLabel(value int64) string {
+	if value == 0 {
+		return c.text("继续最近的对话", "Recent conversation")
+	}
+	return c.text("总是新建对话", "A new conversation")
+}
+
+func (c *controller) aiOpensToLabel() string {
+	return c.aiOpensToChoiceLabel(c.aiOpensTo)
+}
+
+func (c *controller) setAIOpensTo(value int64) {
+	c.aiOpensTo = value
+	c.persistAISettings()
+	c.refreshSettingsWindow()
 }
 
 func (c *controller) setQuickActionsEnabled(enabled bool) {
@@ -606,46 +613,34 @@ func (c *controller) setQuickActionsEnabled(enabled bool) {
 	c.refreshSettingsWindow()
 }
 
-func (c *controller) cycleQuickActionLanguage() {
-	switch c.quickActionLanguage {
-	case "", "English":
-		c.quickActionLanguage = "Spanish"
-	case "Spanish":
-		c.quickActionLanguage = "French"
-	case "French":
-		c.quickActionLanguage = "German"
-	case "German":
-		c.quickActionLanguage = "English"
-	default:
-		c.quickActionLanguage = ""
+// quickActionLanguages is the order the translate-to menu lists. An empty
+// value keeps the built-in English prompt.
+var quickActionLanguages = []string{"", "English", "Spanish", "French", "German"}
+
+func (c *controller) quickActionLanguageChoiceLabel(value string) string {
+	if value == "" {
+		return c.text("默认（英语）", "Default (English)")
 	}
-	c.persistAISettings()
+	return value
 }
 
-func (c *controller) cycleQuickActionModel() {
-	choices := c.aiModelChoices()
-	index := -1
-	for i, choice := range choices {
-		if c.quickActionModel != nil && choice.Kind == c.quickActionModel.Kind &&
-			choice.Connection == c.quickActionModel.Connection && choice.Model == c.quickActionModel.Model {
-			index = i
-			break
-		}
-	}
-	if c.quickActionModel == nil {
-		if len(choices) == 0 {
-			c.settingsStatus = c.text("请先添加 AI 连接", "Add an AI connection first")
-			return
-		}
-		next := choices[0]
-		c.quickActionModel = &next
-	} else if index >= 0 && index+1 < len(choices) {
-		next := choices[index+1]
-		c.quickActionModel = &next
-	} else {
-		c.quickActionModel = nil
-	}
+func (c *controller) quickActionLanguageLabel() string {
+	return c.quickActionLanguageChoiceLabel(c.quickActionLanguage)
+}
+
+func (c *controller) setQuickActionLanguage(value string) {
+	c.quickActionLanguage = value
 	c.persistAISettings()
+	c.refreshSettingsWindow()
+}
+
+func (c *controller) setQuickActionModel(selection *domainai.ModelSelection) {
+	if selection != nil && !selection.Valid() {
+		return
+	}
+	c.quickActionModel = selection
+	c.persistAISettings()
+	c.refreshSettingsWindow()
 }
 
 // persistAISettings writes scalar keys always. Structured values are skipped
@@ -707,13 +702,14 @@ func (c *controller) cancelAIConnectionEdit() {
 	c.aiConnDraftErr = ""
 }
 
-func (c *controller) cycleAIConnectionProvider() {
-	c.aiConnDraftProvider = domainai.CycleProvider(c.aiConnDraftProvider)
+func (c *controller) setAIConnectionProvider(provider domainai.ProviderKind) {
+	c.aiConnDraftProvider = provider
 	if strings.TrimSpace(c.aiConnDraftURL) == "" ||
 		strings.HasSuffix(strings.TrimRight(c.aiConnDraftURL, "/"), "/chat/completions") ||
 		strings.HasSuffix(strings.TrimRight(c.aiConnDraftURL, "/"), "/messages") {
-		c.aiConnDraftURL = c.aiConnDraftProvider.DefaultBaseURL()
+		c.aiConnDraftURL = provider.DefaultBaseURL()
 	}
+	c.refreshSettingsWindow()
 }
 
 func (c *controller) saveAIConnection() {
@@ -821,42 +817,11 @@ func (c *controller) aiConnectionModel(connection domainai.Connection) string {
 	return strings.Join(connection.Models, ", ")
 }
 
-func (c *controller) aiRetentionLabel() string {
-	switch c.aiRetention {
-	case 7:
-		return c.text("7 天", "7 days")
-	case 90:
-		return c.text("3 个月", "3 months")
-	case -1:
-		return c.text("永久保留", "Forever")
-	default:
-		return c.text("30 天", "30 days")
-	}
-}
-
-func (c *controller) aiOpensToLabel() string {
-	if c.aiOpensTo == 0 {
-		return c.text("继续最近的对话", "Recent conversation")
-	}
-	return c.text("总是新建对话", "A new conversation")
-}
-
-func (c *controller) quickActionLanguageLabel() string {
-	if c.quickActionLanguage == "" {
-		return c.text("默认（英语）", "Default (English)")
-	}
-	return c.quickActionLanguage
-}
-
 func (c *controller) quickActionModelLabel() string {
 	if c.quickActionModel == nil {
 		return c.text("使用默认模型", "Use default model")
 	}
-	label := c.quickActionModel.Model
-	if connection, ok := c.aiConnection(c.quickActionModel.Connection); ok {
-		label = connection.Title() + " · " + label
-	}
-	return label
+	return c.aiModelChoiceLabel(*c.quickActionModel)
 }
 
 func (c *controller) endpointErrorText(err error) string {

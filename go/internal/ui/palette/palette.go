@@ -75,6 +75,7 @@ type Callbacks struct {
 	EmojiSearch    func(query string, tone emoji.SkinTone) []emoji.Emoji
 	EmojiPaste     func(string)
 	CycleEmojiTone func() emoji.SkinTone
+	SetEmojiTone   func(emoji.SkinTone)
 
 	SubmitArguments func(domain.Application, []string)
 
@@ -664,9 +665,13 @@ func (v *View) emojiBody(c *ui.Context, tokens theme.Tokens) {
 	ui.Row(c).Padding(6, 18).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, v.Text("Emoji 与符号", "Emoji & Symbols")).FontSize(theme.SectionFont).
 			TextColor(tokens.TextTertiary).Grow(1).Role(ui.RoleHeading)
-		if ui.Button(c, v.Text("肤色: ", "Skin: ")+v.EmojiTone.Label()).Clicked() {
-			v.cycleEmojiTone()
-		}
+		ui.MenuButton(c, v.Text("肤色: ", "Skin: ")+v.EmojiTone.Label(), func(m *ui.Menu) {
+			for _, tone := range emoji.AllTones {
+				if m.Item(tone.Label()).Checked(v.EmojiTone == tone).Chosen() {
+					v.setEmojiTone(tone)
+				}
+			}
+		})
 	})
 	ui.Scroll(c).Grow(1).TrackScroll(&v.emojiScroll).Children(func() {
 		ui.Column(c).FillWidth().Padding(8, 18).Gap(8).Children(func() {
@@ -1013,6 +1018,15 @@ func (v *View) SetUninstallResults(items []domainuninstall.Candidate, errText st
 	v.UninstallError = errText
 	v.UninstallLoading = false
 	v.filterUninstall(true)
+}
+
+func (v *View) setEmojiTone(tone emoji.SkinTone) {
+	if v.callbacks.SetEmojiTone == nil || v.EmojiTone == tone {
+		return
+	}
+	v.callbacks.SetEmojiTone(tone)
+	v.EmojiTone = tone
+	v.Filter()
 }
 
 func (v *View) cycleEmojiTone() {
