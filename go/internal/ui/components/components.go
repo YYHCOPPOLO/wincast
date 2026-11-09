@@ -20,11 +20,12 @@ func Hairline(c *ui.Context, tokens theme.Tokens) {
 	ui.Box(c).FillWidth().Height(1).Background(tokens.Line2)
 }
 
-// Row is one application result. Icon is drawn at the row's pixel size; when
-// it is not ready yet the avatar keeps the row stable. IconRadius and IconFit
-// let image thumbnails crop to a rounded tile while app icons stay whole.
+// Row is one application result. VectorIcon or Icon is drawn at the row's
+// size; when neither is ready the avatar keeps the row stable. IconRadius and
+// IconFit let image thumbnails crop to a rounded tile while app icons stay whole.
 type Row struct {
 	Icon           *ui.Bitmap
+	VectorIcon     *ui.SVG
 	IconRadius     float32
 	IconFit        ui.Fit
 	Fallback       string
@@ -73,8 +74,14 @@ func ResultRow(c *ui.Context, tokens theme.Tokens, row Row) {
 		fill = tokens.RowHover
 	}
 	el.Background(fill).Children(func() {
-		if row.Icon != nil {
-			icon := ui.Image(c, row.Icon).Size(theme.ResultRowIcon, theme.ResultRowIcon).
+		var source ui.ImageSource
+		if row.VectorIcon != nil {
+			source = row.VectorIcon
+		} else if row.Icon != nil {
+			source = row.Icon
+		}
+		if source != nil {
+			icon := ui.Image(c, source).Size(theme.ResultRowIcon, theme.ResultRowIcon).
 				Fit(row.IconFit).Role(ui.RoleNone)
 			if row.IconRadius > 0 {
 				icon.Radius(row.IconRadius)

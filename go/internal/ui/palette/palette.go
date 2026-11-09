@@ -17,6 +17,7 @@ import (
 	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/chat"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/components"
+	"github.com/YYHCOPPOLO/wincast/go/internal/ui/icons"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/theme"
 	"github.com/egoist/mygo/ui"
 )
@@ -1098,12 +1099,17 @@ func (v *View) cycleEmojiTone() {
 
 func (v *View) row(c *ui.Context, i int, tokens theme.Tokens) {
 	application := v.Results[i]
+	vectorIcon := icons.ForEntry(application)
+	var bitmap *ui.Bitmap
+	if vectorIcon == nil {
+		bitmap = v.callbacks.Icon(application)
+	}
 	trailing := ""
 	if digits := v.favoriteDigit(application.ID); digits != 0 {
 		trailing = string([]byte{digits})
 	}
 	components.ResultRow(c, tokens, components.Row{
-		Icon: v.callbacks.Icon(application), Fallback: v.entryFallback(application), Title: application.Name,
+		Icon: bitmap, VectorIcon: vectorIcon, Fallback: v.entryFallback(application), Title: application.Name,
 		Trailing: trailing, TrailingKeycap: trailing != "", Selected: i == v.Chosen,
 	})
 }
