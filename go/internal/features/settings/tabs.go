@@ -307,3 +307,7 @@ func (a BackupAction) Title(zh bool) string {
 
 // LaunchAtLoginKey is the HKCU Run value name this build owns.
 const LaunchAtLoginKey = "Wincast"
+
+// LegacyLaunchAtLoginKey is the HKCU Run value name the retired Windows
+// application owned; it is read only to carry that preference into this build.
+const LegacyLaunchAtLoginKey = "Tinycast"

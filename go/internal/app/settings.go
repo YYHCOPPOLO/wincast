@@ -10,6 +10,7 @@ import (
 	domainfiles "github.com/YYHCOPPOLO/wincast/go/internal/domain/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/settings"
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/YYHCOPPOLO/wincast/go/internal/storage"
 	"github.com/YYHCOPPOLO/wincast/go/internal/ui/palette"
@@ -37,7 +38,46 @@ func (c *controller) loadSettings() {
 	c.settingsDocument = document
 	c.settingsWritable = true
 	c.readSettingsDocument()
+	c.adoptLegacyLaunchAtLogin()
 	c.clampSettings()
+}
+
+// adoptLegacyLaunchAtLogin keeps the login-start preference created before
+// the product rename. The new profile and Run value name start empty, so
+// without this carry-over the first Wincast start reads the default false and
+// deletes the previous application's working startup entry.
+func (c *controller) adoptLegacyLaunchAtLogin() {
+	if c.settingsDocument.Has("launchAtLogin") {
+		return
+	}
+	enabled := legacyProfileLaunchAtLogin() ||
+		windows.LaunchAtLoginMatches(settings.LaunchAtLoginKey) ||
+		windows.LaunchAtLoginMatches(settings.LegacyLaunchAtLoginKey)
+	if !enabled {
+		return
+	}
+	c.launchAtLogin = true
+	_ = c.settingsDocument.Set("launchAtLogin", true)
+	c.queueSettingsSave()
+	log.Printf("launch at login adopted from previous identity")
+}
+
+// legacyProfileLaunchAtLogin returns the first previous profile that made an
+// explicit choice. A profile without the key carries no preference, so the
+// older profile is still consulted.
+func legacyProfileLaunchAtLogin() bool {
+	roaming, err := os.UserConfigDir()
+	if err != nil {
+		return false
+	}
+	for _, id := range []string{storage.LegacyGoID, storage.LegacyID} {
+		document, err := storage.LoadDocument(filepath.Join(roaming, id, "settings.json"))
+		if err != nil || !document.Has("launchAtLogin") {
+			continue
+		}
+		return document.Bool("launchAtLogin", false)
+	}
+	return false
 }
 
 // readSettingsDocument copies every modeled value out of the current settings
