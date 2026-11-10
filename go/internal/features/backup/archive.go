@@ -305,6 +305,7 @@ func sortedKeys[T any](values map[string]T) []string {
 var excluded = map[string]bool{
 	"snippetsEnabled":            true, // doubles as keystroke-listening consent
 	"snippetHotkeys":             true, // per-machine snippet file IDs
+	"extensionHotkeys":           true, // per-machine installed command IDs
 	"extensionsEnabled":          true, // doubles as third-party-code consent
 	"extensionPackageManager":    true,
 	"extensionRegistries":        true,
@@ -339,7 +340,9 @@ var importable = map[string]bool{
 	"openOnCursorScreen": true, "paletteDraggable": true, "popToRootTimeout": true,
 	"launchAtLogin": true, "showInMenuBar": true, "supportReminders": true,
 	"extensionsShowInLauncher": true,
+	"extensionAppearances":     true,
 	"language":                 true, "uiLanguage": true, "hotkey": true, "snippetHotkeys": true,
+	"commandHotkeys":    true,
 	"dictionaryEnabled": true, "notesEnabled": true,
 	"applicationsShowInLauncher": true, "systemSettingsShowInLauncher": true, "systemActionsShowInLauncher": true,
 	"commandsEnabled": true, "customCommandsEnabled": true,

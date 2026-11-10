@@ -358,42 +358,75 @@ func (c *controller) setSnippetFeature(enabled bool) {
 	}()
 }
 
-// reconcileItemHotkeys re-registers the per-item shortcuts of enabled
-// features. Registration failures are reported and never silently reassigned.
+// reconcileItemHotkeys re-registers the per-item and built-in command
+// shortcuts of enabled features. Registration failures are reported and never
+// silently reassigned. A settings recorder pauses every binding so the chord
+// being captured cannot run an action.
 func (c *controller) reconcileItemHotkeys() {
 	for accelerator := range c.itemHotkeys {
 		mygo.GlobalShortcut.Unregister(accelerator)
 	}
+	for _, stop := range c.shortcutHooks {
+		stop()
+	}
+	c.shortcutHooks = nil
 	c.itemHotkeys = make(map[string]bool, 8)
-	if c.panel == nil || c.closing {
+	if c.panel == nil || c.closing || c.commandShortcutRecording != "" {
 		return
 	}
-	register := func(accelerator string, entry domain.Application) {
+	register := func(accelerator, label string, run func()) {
 		accelerator = strings.TrimSpace(accelerator)
-		if accelerator == "" || c.itemHotkeys[accelerator] {
+		if accelerator == "" {
 			return
 		}
-		boundEntry := entry
-		if err := mygo.GlobalShortcut.Register(accelerator, func() {
+		key := normalizeShortcut(accelerator)
+		if key == "" || c.itemHotkeys[key] {
+			return
+		}
+		if err := c.registerShortcut(accelerator, func() {
 			c.panel.Update(func() {
 				if !c.closing {
-					c.open(boundEntry)
+					run()
 				}
 			})
 		}); err != nil {
-			log.Printf("item shortcut unavailable entry=%q error=%v", entry.Name, err)
+			log.Printf("item shortcut unavailable entry=%q shortcut=%q error=%v", label, accelerator, err)
 			return
 		}
-		c.itemHotkeys[accelerator] = true
+		c.itemHotkeys[key] = true
+	}
+	// Built-in commands come first, as in the original catalog, so their
+	// shipped shortcuts win over user items that reuse the same chord.
+	for _, command := range builtinCommands {
+		if command.visible != nil && !command.visible(c) {
+			continue
+		}
+		id := command.id
+		register(c.commandHotkey(id), c.text(command.zh, command.en), func() {
+			c.runBuiltinCommand(id)
+		})
+	}
+	if c.extensions != nil && c.extensions.Enabled() {
+		for _, entry := range c.extensions.Commands() {
+			if !entry.Command.Mode.Supported() {
+				continue
+			}
+			entryID := entry.EntryID
+			register(c.extensionHotkey(entryID), entry.Command.Title, func() {
+				c.runExtensionHotkey(entryID)
+			})
+		}
 	}
 	if c.featureCommands && c.commands != nil {
 		for _, command := range c.commands.Commands() {
-			register(command.Hotkey, domain.Application{ID: commands.EntryID(command.ID), Name: command.Name, Kind: domain.KindCommand})
+			entry := domain.Application{ID: commands.EntryID(command.ID), Name: command.Name, Kind: domain.KindCommand}
+			register(command.Hotkey, command.Name, func() { c.open(entry) })
 		}
 	}
 	if c.featureQuicklinks && c.quicklinks != nil {
 		for _, link := range c.quicklinks.Links() {
-			register(link.Hotkey, domain.Application{ID: quicklink.EntryID(link.ID), Name: link.Name, Kind: domain.KindQuicklink})
+			entry := domain.Application{ID: quicklink.EntryID(link.ID), Name: link.Name, Kind: domain.KindQuicklink}
+			register(link.Hotkey, link.Name, func() { c.open(entry) })
 		}
 	}
 	if c.featureSnippets {
@@ -401,7 +434,8 @@ func (c *controller) reconcileItemHotkeys() {
 			if !record.Enabled {
 				continue
 			}
-			register(c.snippetHotkey(record.ID), domain.Application{ID: snippet.EntryID(record.ID), Name: record.Name, Kind: domain.KindSnippet})
+			entry := domain.Application{ID: snippet.EntryID(record.ID), Name: record.Name, Kind: domain.KindSnippet}
+			register(c.snippetHotkey(record.ID), record.Name, func() { c.open(entry) })
 		}
 	}
 }

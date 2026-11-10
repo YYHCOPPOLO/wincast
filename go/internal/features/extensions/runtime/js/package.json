@@ -1,0 +1,31 @@
+{
+  "name": "wincast-raycast-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Builds Wincast's embedded Raycast-extension runtime: React + reconciler + the @raycast/api implementation and Node shims, as one IIFE JavaScriptCore/QuickJS can evaluate.",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --dev"
+  },
+  "dependencies": {
+    "assert": "^2.1.0",
+    "buffer": "^6.0.3",
+    "events": "^3.3.0",
+    "inherits": "^2.0.4",
+    "path-browserify": "^1.0.1",
+    "process": "^0.11.10",
+    "punycode": "^2.3.1",
+    "querystring-es3": "^0.2.1",
+    "react": "19.3.1",
+    "react-reconciler": "0.34.0",
+    "stream-browserify": "^3.0.0",
+    "string_decoder": "^1.3.0",
+    "url": "^0.11.4",
+    "util": "^0.12.5",
+    "whatwg-url": "^14.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

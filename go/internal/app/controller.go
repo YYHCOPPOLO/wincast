@@ -16,6 +16,7 @@ import (
 	domainai "github.com/YYHCOPPOLO/wincast/go/internal/domain/ai"
 	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/extension"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemaction"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/systemsettings"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/windowcommand"
@@ -24,6 +25,7 @@ import (
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/calendar"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/clipboard"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/commands"
+	"github.com/YYHCOPPOLO/wincast/go/internal/features/extensions"
 	files "github.com/YYHCOPPOLO/wincast/go/internal/features/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/launcher"
 	"github.com/YYHCOPPOLO/wincast/go/internal/features/migration"
@@ -95,6 +97,34 @@ type controller struct {
 	supportReminders             bool
 	extensionsEnabled            bool
 	extensionsShowInLauncher     bool
+	extensions                   *extensions.Manager
+	extensionSession             string
+	extensionEntryID             string
+	extensionMode                extension.CommandMode
+	extensionHotkeys             map[string]string
+	extensionAppearances         map[string]extensionAppearance
+	extensionImagesMu            sync.Mutex
+	extensionImages              map[string]*ui.Bitmap
+	extensionImagesTried         map[string]bool
+	extensionSettingsName        string
+	extensionSettingsCommand     string
+	extensionEnableConfirm       bool
+	extensionInstallStatus       string
+	extensionSearchOpen          bool
+	extensionSearchQuery         string
+	extensionSearchResults       []extensions.Listing
+	extensionSearchFailures      []string
+	extensionSearchBusy          bool
+	extensionUninstallConfirm    string
+	extensionPrefsName           string
+	extensionPrefsCommand        string
+	extensionPrefsText           map[string]string
+	extensionPrefsBool           map[string]bool
+	extensionPrefsStatus         string
+	extensionPrefsOpen           bool
+	extensionOAuthMu             sync.Mutex
+	extensionOAuthWait           chan map[string]string
+	extensionOAuthState          string
 	hiddenAt                     time.Time
 	backupStatus                 string
 	backupBusy                   bool
@@ -158,7 +188,9 @@ type controller struct {
 	hotkeyDraft                  string
 	hotkeyRegistered             bool
 	hotkeyOwned                  string
-	clipboardHotkeys             bool
+	commandHotkeys               map[string]string
+	commandShortcutRecording     string
+	shortcutHooks                []func()
 	customDirsDraft              string
 	compactMode                  bool
 	doubleTap                    string
@@ -331,58 +363,68 @@ func newController(started time.Time, profile profile) *controller {
 		Filtered: func(elapsed time.Duration, count int) {
 			log.Printf("filter elapsed_us=%d results=%d", elapsed.Microseconds(), count)
 		},
-		Search:                c.search,
-		Favorite:              c.openFavorite,
-		FavoriteSlot:          c.launcherPrefs.FavoriteSlot,
-		ToggleFavorite:        c.toggleFavorite,
-		ToggleExpanded:        c.toggleExpanded,
-		ExpandedChanged:       c.schedulePanelSize,
-		SaveAlias:             c.saveAlias,
-		SetHidden:             c.setHidden,
-		ToggleShowHidden:      c.toggleShowHidden,
-		ClipboardSearch:       c.clipboardSearch,
-		ClipboardPaste:        c.pasteClipboardItem,
-		ClipboardCopy:         c.copyClipboardItem,
-		ClipboardPin:          c.toggleClipboardPin,
-		ClipboardDelete:       c.deleteClipboardItem,
-		ClipboardImage:        c.clipboardBitmap,
-		ClipboardThumbnail:    c.clipboardThumbnail,
-		ClipboardPinned:       c.pasteClipboardSlot,
-		SetClipboardFilter:    c.setClipboardFilter,
-		Calculate:             c.calculate,
-		CalculatorHistory:     c.calculatorHistory,
-		CopyCalculator:        c.copyCalculatorResult,
-		CopyCalculatorHistory: c.copyCalculatorHistory,
-		OpenCalculatorHistory: c.openCalculatorHistory,
-		EmojiSearch:           c.emojiSearch,
-		EmojiPaste:            c.pasteEmoji,
-		CycleEmojiTone:        c.cycleEmojiTone,
-		SetEmojiTone:          c.setEmojiTone,
-		SubmitArguments:       c.submitArguments,
-		FileSearch:            c.startFileSearch,
-		OpenFile:              c.openFileHit,
-		RevealFile:            c.revealFileHit,
-		CopyFilePath:          c.copyFileHitPath,
-		JoinMeeting:           c.joinMeeting,
-		CopyMeetingLink:       c.copyMeetingLink,
-		AISend:                c.sendAIMessage,
-		AICancel:              c.cancelAIStream,
-		AINew:                 c.newAIChatFromMenu,
-		AIHistory:             c.aiHistorySearch,
-		AIOpen:                c.openAIConversation,
-		AIModelMenu:           c.aiModelMenu,
+		Search:                   c.search,
+		Favorite:                 c.openFavorite,
+		FavoriteSlot:             c.launcherPrefs.FavoriteSlot,
+		ToggleFavorite:           c.toggleFavorite,
+		ToggleExpanded:           c.toggleExpanded,
+		ExpandedChanged:          c.schedulePanelSize,
+		SaveAlias:                c.saveAlias,
+		SetHidden:                c.setHidden,
+		ToggleShowHidden:         c.toggleShowHidden,
+		ClipboardSearch:          c.clipboardSearch,
+		ClipboardPaste:           c.pasteClipboardItem,
+		ClipboardCopy:            c.copyClipboardItem,
+		ClipboardPin:             c.toggleClipboardPin,
+		ClipboardDelete:          c.deleteClipboardItem,
+		ClipboardImage:           c.clipboardBitmap,
+		ClipboardThumbnail:       c.clipboardThumbnail,
+		ClipboardPinned:          c.pasteClipboardSlot,
+		SetClipboardFilter:       c.setClipboardFilter,
+		Calculate:                c.calculate,
+		CalculatorHistory:        c.calculatorHistory,
+		CopyCalculator:           c.copyCalculatorResult,
+		CopyCalculatorHistory:    c.copyCalculatorHistory,
+		OpenCalculatorHistory:    c.openCalculatorHistory,
+		EmojiSearch:              c.emojiSearch,
+		EmojiPaste:               c.pasteEmoji,
+		CycleEmojiTone:           c.cycleEmojiTone,
+		SetEmojiTone:             c.setEmojiTone,
+		SubmitArguments:          c.submitArguments,
+		SubmitExtensionArguments: c.submitExtensionArguments,
+		FileSearch:               c.startFileSearch,
+		OpenFile:                 c.openFileHit,
+		RevealFile:               c.revealFileHit,
+		CopyFilePath:             c.copyFileHitPath,
+		JoinMeeting:              c.joinMeeting,
+		CopyMeetingLink:          c.copyMeetingLink,
+		AISend:                   c.sendAIMessage,
+		AICancel:                 c.cancelAIStream,
+		AINew:                    c.newAIChatFromMenu,
+		AIHistory:                c.aiHistorySearch,
+		AIOpen:                   c.openAIConversation,
+		AIModelMenu:              c.aiModelMenu,
 		AILeave: func(text string) {
 			c.aiDraft = text
 		},
-		ConfirmUninstall:    c.confirmUninstall,
-		CopyUninstallPath:   c.copyUninstallPath,
-		RevealUninstallPath: c.revealUninstallPath,
-		ApplyVolume:         c.applyVolume,
-		CloseVolume:         c.closeVolumeDialog,
+		ConfirmUninstall:     c.confirmUninstall,
+		CopyUninstallPath:    c.copyUninstallPath,
+		RevealUninstallPath:  c.revealUninstallPath,
+		ApplyVolume:          c.applyVolume,
+		CloseVolume:          c.closeVolumeDialog,
+		ExtensionStart:       c.startExtension,
+		ExtensionDispatch:    c.dispatchExtension,
+		ExtensionPop:         c.popExtension,
+		ExtensionLeave:       c.leaveExtension,
+		ExtensionClose:       c.closeExtension,
+		ExtensionPreferences: c.openExtensionPreferences,
+		ExtensionPickFiles:   c.pickExtensionFiles,
+		ExtensionImage:       c.extensionRemoteImage,
 	})
 	c.applyAppearance()
 	c.view.Expanded = !c.compactMode
 	c.view.Shortcut = c.hotkey
+	c.view.ClipboardShortcut = c.commandHotkey("command:clipboard-history")
 	c.view.AIAvailable = c.aiEnabled
 	c.view.AIModelLabel = c.aiModelLabel()
 	c.view.SetAIChat(c.aiSession.Messages, c.aiNotice, c.aiThinking, c.aiStreaming)
@@ -392,6 +434,7 @@ func newController(started time.Time, profile profile) *controller {
 	c.view.OnLookup = c.lookup
 	c.view.ShowFavoritesInCompact = c.showFavoritesInCompact
 	c.view.Draggable = c.paletteDraggable
+	c.startExtensions()
 	c.refreshExtras()
 	c.refreshCompactFavorites()
 	return c
@@ -426,7 +469,6 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 		}
 	})
 	c.logDisplays()
-	c.applyHotkey()
 	if c.launchAtLogin {
 		if err := windows.ApplyLaunchAtLogin(settings.LaunchAtLoginKey, true); err != nil {
 			log.Printf("launch at login apply failed: %v", err)
@@ -459,6 +501,7 @@ func (c *controller) ready(command windows.Activation, hidden bool) {
 	c.startClipboardImages()
 	c.startCalculatorRates()
 	c.startClipboardHost()
+	c.applyHotkey()
 	c.applyDoubleTap()
 	c.applyKeywordListener()
 	c.reconcileItemHotkeys()
@@ -645,6 +688,9 @@ func (c *controller) open(application domain.Application) {
 			c.runWindowCommand(id)
 		}
 		return
+	case domain.KindExtension:
+		c.startExtension(application.ID)
+		return
 	}
 	c.hide()
 	if err := mygo.Shell.LaunchApp(mygo.InstalledApp{ID: application.ID, Name: application.Name, Path: application.Path}); err != nil {
@@ -737,18 +783,18 @@ func (c *controller) popupAppMenu() {
 		{Label: c.view.Text("复制文本 / 词条", "Copy text / entry"), Accelerator: "Ctrl+Shift+C", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), false) }},
 		{Label: c.view.Text("粘回原窗口", "Paste to previous window"), Accelerator: "Ctrl+Shift+Enter", Disabled: c.view.Query == "", Click: func() { c.copyText(c.view.CopyText(), true) }},
 		{Separator: true},
-		{Label: c.view.Text("剪贴板历史…", "Clipboard history…"), Accelerator: "Ctrl+~", Click: c.openClipboard},
-		{Label: c.view.Text("计算器历史…", "Calculator history…"), Click: c.openCalculatorHistory},
-		{Label: c.view.Text("Emoji 与符号…", "Emoji & Symbols…"), Click: c.openEmoji},
-		{Label: c.view.Text("搜索文件…", "Search files…"), Disabled: !c.featureFileSearch, Click: c.openFileSearch},
-		{Label: c.view.Text("我的日程…", "My Schedule…"), Disabled: !c.featureCalendar, Click: c.openSchedule},
-		{Label: c.view.Text("AI 对话…", "AI Chat…"), Disabled: !c.aiEnabled, Click: c.openAIChat},
+		{Label: c.view.Text("剪贴板历史…", "Clipboard history…"), Accelerator: c.commandHotkey("command:clipboard-history"), Click: c.openClipboard},
+		{Label: c.view.Text("计算器历史…", "Calculator history…"), Accelerator: c.commandHotkey("command:calculator-history"), Click: c.openCalculatorHistory},
+		{Label: c.view.Text("Emoji 与符号…", "Emoji & Symbols…"), Accelerator: c.commandHotkey("command:search-emoji"), Click: c.openEmoji},
+		{Label: c.view.Text("搜索文件…", "Search files…"), Accelerator: c.commandHotkey("command:search-files"), Disabled: !c.featureFileSearch, Click: c.openFileSearch},
+		{Label: c.view.Text("我的日程…", "My Schedule…"), Accelerator: c.commandHotkey("command:my-schedule"), Disabled: !c.featureCalendar, Click: c.openSchedule},
+		{Label: c.view.Text("AI 对话…", "AI Chat…"), Accelerator: c.commandHotkey("command:ai-chat"), Disabled: !c.aiEnabled, Click: c.openAIChat},
 		{Label: c.view.Text("快捷操作", "Quick Actions"), Submenu: c.quickActionMenu()},
 		{Label: c.view.Text("系统操作", "System actions"), Submenu: c.systemActionMenu()},
 		{Label: c.view.Text("窗口布局", "Window layout"), Submenu: c.windowCommandMenu(), Disabled: !c.featureWindowManagement},
 		{Label: c.view.Text("词典 / 应用程序", "Dictionary / Applications"), Disabled: !c.view.DictionaryAvailable, Click: c.view.ToggleDictionary},
-		{Label: c.view.Text("设置…", "Settings…"), Click: c.openSettings},
-		{Label: c.view.Text("笔记…", "Notes…"), Disabled: !c.featureNotes, Click: c.openEditor},
+		{Label: c.view.Text("设置…", "Settings…"), Accelerator: c.commandHotkey("command:settings"), Click: c.openSettings},
+		{Label: c.view.Text("笔记…", "Notes…"), Accelerator: c.commandHotkey("command:show-notes"), Disabled: !c.featureNotes, Click: c.openEditor},
 		{Label: c.view.Text("诊断…", "Diagnostics…"), Click: c.openDiagnostics},
 		{Separator: true},
 		{Label: c.view.Text("退出", "Quit"), Click: mygo.App.Quit},
@@ -970,6 +1016,9 @@ func (c *controller) stop() {
 	}
 	c.closing = true
 	c.cancel()
+	if c.extensions != nil {
+		c.extensions.Stop()
+	}
 	if c.aiCancel != nil {
 		c.aiCancel()
 		c.aiCancel = nil

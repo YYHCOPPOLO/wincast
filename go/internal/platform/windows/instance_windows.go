@@ -33,9 +33,10 @@ const (
 	ActivateClipboard
 	ActivateCalculator
 	ActivateEmoji
+	ActivateURL
 )
 
-const activationVersion = 1
+const activationVersion = 2
 
 // Instance holds the writer identity until all application workers finish.
 // Only its first owner may publish an activation endpoint, after UI readiness.
@@ -143,7 +144,7 @@ func (i *Instance) receive(ctx context.Context, conn net.Conn, dispatch func(Act
 		return
 	}
 	command := Activation(packet[1])
-	if command < ActivatePanel || command > ActivateEmoji {
+	if command < ActivatePanel || command > ActivateURL {
 		return
 	}
 	// A quit can close activation I/O as soon as the UI takes it. Acknowledge

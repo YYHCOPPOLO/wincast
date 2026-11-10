@@ -154,6 +154,7 @@ func (c *controller) aiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh boo
 				FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
 		})
 	})
+	c.builtinCommandsCard(ctx, tokens, "command:ai-chat")
 }
 
 func (c *controller) quickActionsSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {

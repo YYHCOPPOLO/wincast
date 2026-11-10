@@ -91,6 +91,7 @@ func (c *controller) refreshExtras() {
 	// The original appends its built-in commands after every other slice, so
 	// they share the same ranking without living in a separate search pass.
 	extras = append(extras, c.builtinEntries()...)
+	extras = c.refreshExtensionExtras(extras)
 	c.launcher.SetExtras(extras, keywords)
 	if c.view.Mode == palette.ModeLauncher {
 		c.view.Filter()

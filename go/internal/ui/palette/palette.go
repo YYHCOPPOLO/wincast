@@ -10,6 +10,7 @@ import (
 	domainai "github.com/YYHCOPPOLO/wincast/go/internal/domain/ai"
 	domaincalc "github.com/YYHCOPPOLO/wincast/go/internal/domain/calculator"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/emoji"
+	"github.com/YYHCOPPOLO/wincast/go/internal/domain/extension"
 	filesearch "github.com/YYHCOPPOLO/wincast/go/internal/domain/filesearch"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain/meeting"
 	domainuninstall "github.com/YYHCOPPOLO/wincast/go/internal/domain/uninstall"
@@ -36,6 +37,7 @@ const (
 	ModeUninstall
 	ModeAI
 	ModeAIHistory
+	ModeExtension
 )
 
 // Callbacks are the user's intent. The view never performs I/O and never
@@ -79,7 +81,10 @@ type Callbacks struct {
 	CycleEmojiTone func() emoji.SkinTone
 	SetEmojiTone   func(emoji.SkinTone)
 
-	SubmitArguments func(domain.Application, []string)
+	SubmitArguments          func(domain.Application, []string)
+	SubmitExtensionArguments func(domain.Application, []string)
+	ExtensionPickFiles       func(multiple, directories, files bool) []string
+	ExtensionImage           func(url string) *ui.Bitmap
 
 	FileSearch   func(query string)
 	OpenFile     func(filesearch.Hit)
@@ -103,6 +108,13 @@ type Callbacks struct {
 
 	ApplyVolume func(float64)
 	CloseVolume func()
+
+	ExtensionStart       func(entryID string)
+	ExtensionDispatch    func(session, handler, argsJSON string)
+	ExtensionPop         func(session string) bool
+	ExtensionLeave       func()
+	ExtensionClose       func()
+	ExtensionPreferences func(extensionName, commandName string)
 }
 
 // View is UI-thread-owned display state. Callbacks send user intent back to
@@ -114,6 +126,7 @@ type View struct {
 	Loading                bool
 	Status                 string
 	Shortcut               string
+	ClipboardShortcut      string
 	Chinese                bool
 	Expanded               bool
 	ShowHidden             bool
@@ -193,6 +206,26 @@ type View struct {
 	AIHistoryChosen int
 	aiHistoryList   ui.ListState
 
+	ExtensionSession     string
+	ExtensionTree        *extension.Tree
+	ExtensionScreen      *ExtensionScreen
+	ExtensionTitle       string
+	ExtensionAssets      string
+	ExtensionLoading     bool
+	ExtensionError       string
+	ExtensionNotice      string
+	ExtensionChosen      int
+	ExtensionActions     bool
+	ExtensionActionAt    int
+	extensionList        ui.ListState
+	extensionDetail      ui.ScrollState
+	extensionForm        map[string]*extensionFieldState
+	extensionIconCache   map[string]*ui.Bitmap
+	extensionVectorCache map[string]*ui.SVG
+	extensionSplit       float32
+	extensionCloseSeen   string
+	extensionClearSeen   string
+
 	VolumeOpen  bool
 	VolumeValue float64
 }
@@ -219,11 +252,12 @@ func (v *View) Render(c *ui.Context) {
 	// ResultList scopes its widget theme with SetTheme, which also resets the
 	// root background. Restore the window surface after every child is built.
 	defer c.Root().Background(tokens.PanelBackground(c.Vibrancy()))
-	c.OnShortcut(ui.Ctrl, ui.KeyK, v.callbacks.Menu)
+	c.OnShortcut(ui.Ctrl, ui.KeyK, v.extensionMenuRequest)
 	c.OnShortcut(0, ui.KeyEscape, v.escape)
 	c.OnShortcut(0, ui.KeyDown, func() { v.moveVertical(1) })
 	c.OnShortcut(0, ui.KeyUp, func() { v.moveVertical(-1) })
-	if v.Mode == ModeEmoji {
+	if v.Mode == ModeEmoji ||
+		(v.Mode == ModeExtension && v.ExtensionScreen != nil && v.ExtensionScreen.Kind == extensionGrid) {
 		c.OnShortcut(0, ui.KeyLeft, func() { v.moveHorizontal(-1) })
 		c.OnShortcut(0, ui.KeyRight, func() { v.moveHorizontal(1) })
 	}
@@ -266,6 +300,8 @@ func (v *View) Render(c *ui.Context) {
 				placeholder = v.Text("问点什么…", "Ask anything…")
 			case ModeAIHistory:
 				placeholder = v.Text("搜索对话…", "Search chats…")
+			case ModeExtension:
+				placeholder = v.extensionPlaceholder()
 			case ModeArguments:
 				if current := v.argumentCurrent(); current != nil {
 					placeholder = current.Name
@@ -273,8 +309,15 @@ func (v *View) Render(c *ui.Context) {
 					placeholder = v.Text("填写参数…", "Enter arguments…")
 				}
 			}
-			if ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).Height(theme.HeaderHeight).FontSize(theme.SearchFont).
-				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey).Changed() {
+			field := ui.TextInputBufferBase(c, v.inputText).Bind(&v.Input).Grow(1).Height(theme.HeaderHeight).FontSize(theme.SearchFont).
+				Placeholder(placeholder).Label(placeholder).OnTextKey(v.textKey)
+			if v.Mode == ModeClipboard {
+				// Keep arrow navigation with the focused search field even when
+				// a single-line editor would otherwise leave the key unclaimed.
+				field.OnShortcut(0, ui.KeyDown, func() { v.moveVertical(1) }).
+					OnShortcut(0, ui.KeyUp, func() { v.moveVertical(-1) })
+			}
+			if field.Changed() {
 				v.syncQuery(v.inputText.String())
 			}
 			if v.Mode == ModeClipboard && v.Expanded {
@@ -282,6 +325,9 @@ func (v *View) Render(c *ui.Context) {
 			}
 			if v.Mode == ModeAI && v.Expanded {
 				v.aiModelButton(c, tokens)
+			}
+			if v.Mode == ModeExtension && v.Expanded {
+				v.extensionSearchAccessory(c, tokens)
 			}
 		})
 		if !v.Expanded {
@@ -313,6 +359,9 @@ func (v *View) Render(c *ui.Context) {
 			v.aiHistoryBody(c, tokens)
 		case ModeArguments:
 			v.argumentsBody(c, tokens)
+		case ModeExtension:
+			v.extensionBody(c, tokens)
+			v.extensionFeedback(c, tokens)
 		default:
 			v.applications(c, tokens)
 		}
@@ -325,6 +374,9 @@ func (v *View) Render(c *ui.Context) {
 		components.Footer(c, tokens, status, v.footerHints(), primary, primaryEnabled,
 			primaryDanger, v.open, v.callbacks.AppMenu)
 	})
+	if v.Mode == ModeExtension && v.ExtensionActions {
+		v.extensionActionsPanel(c, tokens)
+	}
 	if v.PendingToast != "" {
 		c.Toast(v.PendingToast)
 		v.PendingToast = ""
@@ -382,6 +434,8 @@ func (v *View) defaultStatus() string {
 		return v.Text("AI 对话", "AI Chat")
 	case ModeAIHistory:
 		return fmt.Sprintf(v.Text("%d 段对话", "%d chats"), len(v.AIHistoryItems))
+	case ModeExtension:
+		return v.extensionStatus()
 	case ModeArguments:
 		return v.Text("填写模板参数", "Template arguments")
 	default:
@@ -424,6 +478,8 @@ func (v *View) primaryAction() (label string, enabled, danger bool) {
 	case ModeAIHistory:
 		active := v.AIHistoryChosen >= 0 && v.AIHistoryChosen < len(v.AIHistoryItems)
 		return v.Text("打开", "Open"), active, false
+	case ModeExtension:
+		return v.extensionPrimary()
 	case ModeArguments:
 		return v.Text("确认", "Confirm"), true, false
 	}
@@ -455,6 +511,8 @@ func (v *View) footerHints() string {
 		return v.Text("Enter 发送  Ctrl+N 新对话  Ctrl+K 操作", "Enter Send  Ctrl+N New chat  Ctrl+K Actions")
 	case ModeAIHistory:
 		return v.Text("Enter 打开  Esc 返回", "Enter Open  Esc Back")
+	case ModeExtension:
+		return v.extensionHints()
 	case ModeDictionary:
 		return v.Text("Esc 返回", "Esc Back")
 	case ModeArguments:
@@ -480,7 +538,10 @@ func (v *View) launcherHints() string {
 	case v.AIAvailable:
 		hints = append(hints, v.Text("Tab AI", "Tab AI"))
 	}
-	hints = append(hints, v.Text("Ctrl+~ 剪贴板", "Ctrl+~ Clipboard"), "↑↓ "+v.Text("选择", "Select"))
+	if v.ClipboardShortcut != "" {
+		hints = append(hints, v.ClipboardShortcut+" "+v.Text("剪贴板", "Clipboard"))
+	}
+	hints = append(hints, "↑↓ "+v.Text("选择", "Select"))
 	return strings.Join(hints, "   ")
 }
 
@@ -1110,6 +1171,7 @@ func (v *View) row(c *ui.Context, i int, tokens theme.Tokens) {
 	}
 	components.ResultRow(c, tokens, components.Row{
 		Icon: bitmap, VectorIcon: vectorIcon, Fallback: v.entryFallback(application), Title: application.Name,
+		Symbol: extensionSymbolGlyph(application.IconSymbol), Tint: extensionTintColor(application.IconTint),
 		Trailing: trailing, TrailingKeycap: trailing != "", Selected: i == v.Chosen,
 	})
 }
@@ -1128,6 +1190,8 @@ func (v *View) entryFallback(application domain.Application) string {
 		return v.Text("系统", "SYS")
 	case domain.KindWindowCommand:
 		return v.Text("窗口", "WIN")
+	case domain.KindExtension:
+		return v.Text("扩展", "EXT")
 	}
 	return application.Name
 }
@@ -1289,6 +1353,9 @@ func (v *View) textKey(key ui.TextKey) bool {
 }
 
 func (v *View) tab(backward bool) {
+	if v.Mode == ModeExtension {
+		return
+	}
 	if v.Mode == ModeLauncher {
 		if !backward && strings.TrimSpace(v.Query) != "" && v.DictionaryAvailable {
 			v.ToggleDictionary()
@@ -1300,8 +1367,8 @@ func (v *View) tab(backward bool) {
 			}
 			v.SetModeAI("")
 		}
-		// Clipboard history has its own shortcut (Ctrl+~) and stays out of the
-		// ring, so Tab on an empty launcher leaves the list as it is.
+		// Clipboard history has its own configurable shortcut and stays out of
+		// the ring, so Tab on an empty launcher leaves the list as it is.
 		return
 	}
 	if v.Mode == ModeAI || v.Mode == ModeAIHistory {
@@ -1340,6 +1407,9 @@ func digitKey(key ui.Key) (byte, bool) {
 }
 
 func (v *View) escape() {
+	if v.Mode == ModeExtension && v.extensionEscape() {
+		return
+	}
 	if v.Mode == ModeArguments {
 		v.cancelArguments()
 		return
@@ -1374,6 +1444,10 @@ func (v *View) SetQuery(text string) {
 	if strings.TrimSpace(text) != "" {
 		v.SetExpanded(true)
 	}
+	if v.Mode == ModeExtension {
+		v.extensionSearchChanged(text)
+		return
+	}
 	v.Filter()
 }
 
@@ -1383,11 +1457,19 @@ func (v *View) syncQuery(text string) {
 		if strings.TrimSpace(text) != "" {
 			v.SetExpanded(true)
 		}
+		if v.Mode == ModeExtension {
+			v.extensionSearchChanged(text)
+			return
+		}
 		v.Filter()
 	}
 }
 
 func (v *View) open() {
+	if v.Mode == ModeExtension {
+		v.extensionOpen()
+		return
+	}
 	if v.Mode == ModeArguments {
 		v.argumentCommit()
 		return
@@ -1477,6 +1559,10 @@ func (v *View) currentChosen() int {
 }
 
 func (v *View) moveVertical(step int) {
+	if v.Mode == ModeExtension {
+		v.extensionMove(step)
+		return
+	}
 	if v.Mode == ModeArguments {
 		v.argumentMoveChoice(step)
 		return
@@ -1499,6 +1585,10 @@ func (v *View) moveVertical(step int) {
 func (v *View) moveHorizontal(step int) {
 	if v.Mode == ModeEmoji {
 		v.choose(v.EmojiChosen + step)
+		return
+	}
+	if v.Mode == ModeExtension {
+		v.extensionMoveHorizontal(step)
 	}
 }
 
@@ -2128,6 +2218,10 @@ func (v *View) backButton(c *ui.Context, tokens theme.Tokens) {
 // back leaves history to the chat and any other mode to the launcher. Leaving
 // chat remembers its draft before the mode changes.
 func (v *View) back() {
+	if v.Mode == ModeExtension {
+		v.extensionEscape()
+		return
+	}
 	switch v.Mode {
 	case ModeAIHistory:
 		v.SetModeAI(v.aiDraft)

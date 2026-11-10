@@ -8,6 +8,9 @@ the executable under `licenses/`.
 | Module | Version | License |
 | --- | --- | --- |
 | github.com/egoist/mygo | v0.6.4 | MIT |
+| github.com/fastschema/qjs | v0.0.6 | MIT |
+| github.com/tetratelabs/wazero | v1.9.0 | Apache-2.0 |
+| github.com/yuin/goldmark | v1.7.13 | MIT |
 | github.com/dustin/go-humanize | v1.1.0 | MIT |
 | github.com/ebitengine/purego | v0.11.1 | Apache-2.0 |
 | github.com/go-text/typesetting | v0.3.5 | Unlicense OR BSD-3-Clause |
@@ -26,6 +29,16 @@ the executable under `licenses/`.
 
 The Go runtime and standard library are distributed under the Go BSD-3-Clause
 license.
+
+## Bundled extension runtime
+
+`go/internal/features/extensions/runtime/RaycastRuntime.generated.js` is built
+from `github.com/BlastLauncher/blast` (MIT, Copyright 2023 Yukai Huang and
+contributors), React and react-reconciler (MIT, Meta Platforms, Inc. and
+affiliates), and browser-safe Node polyfills. Its source and build script live
+next to it under `runtime/js/`; the generated file is committed so release
+builds never need Node. The Blast license text is in
+`runtime/js/LICENSE-blast`.
 
 ## Data and behavior references
 

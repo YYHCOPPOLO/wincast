@@ -26,6 +26,8 @@ func Hairline(c *ui.Context, tokens theme.Tokens) {
 type Row struct {
 	Icon           *ui.Bitmap
 	VectorIcon     *ui.SVG
+	Symbol         string
+	Tint           ui.Color
 	IconRadius     float32
 	IconFit        ui.Fit
 	Fallback       string
@@ -86,6 +88,13 @@ func ResultRow(c *ui.Context, tokens theme.Tokens, row Row) {
 			if row.IconRadius > 0 {
 				icon.Radius(row.IconRadius)
 			}
+		} else if row.Symbol != "" {
+			ui.Column(c).Width(theme.ResultRowIcon).Height(theme.ResultRowIcon).
+				Center().Radius(6).Background(row.Tint).Role(ui.RoleNone).Children(func() {
+				ui.Text(c, row.Symbol).Font("Segoe Fluent Icons").
+					FontSize(theme.ResultRowIcon * 0.62).
+					TextColor(ui.RGBA(255, 255, 255, 255)).TextAlign(ui.Center)
+			})
 		} else {
 			ui.Avatar(c, row.Fallback, nil).Size(theme.ResultRowIcon, theme.ResultRowIcon).Role(ui.RoleNone)
 		}

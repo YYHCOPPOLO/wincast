@@ -13,12 +13,13 @@ import (
 // ArgumentForm is one captured argument prompt. Answers follow the spec order
 // and are committed one field at a time because the palette has one input.
 type ArgumentForm struct {
-	Entry   domain.Application
-	Specs   []template.Argument
-	Values  []string
-	Index   int
-	Choice  int
-	Problem string
+	Entry     domain.Application
+	Specs     []template.Argument
+	Values    []string
+	Index     int
+	Choice    int
+	Problem   string
+	Extension bool
 }
 
 // SetModeArguments starts collecting the arguments a template still needs.
@@ -97,7 +98,9 @@ func (v *View) argumentCommit() {
 	v.launcherQuery = ""
 	v.Mode = ModeLauncher
 	v.Filter()
-	if v.callbacks.SubmitArguments != nil {
+	if form.Extension && v.callbacks.SubmitExtensionArguments != nil {
+		v.callbacks.SubmitExtensionArguments(entry, values)
+	} else if v.callbacks.SubmitArguments != nil {
 		v.callbacks.SubmitArguments(entry, values)
 	}
 	v.Input.Focus()

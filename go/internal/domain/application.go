@@ -17,6 +17,12 @@ type Application struct {
 	Name string
 	Path string
 	Kind Kind
+	// IconPath is extension artwork the row draws instead of a shell icon.
+	IconPath string
+	// IconSymbol and IconTint draw an appearance override: a fluent glyph on a
+	// tinted tile, which takes precedence over IconPath.
+	IconSymbol string
+	IconTint   string
 	// AlternateNames are extra search names that rank below the display name,
 	// like the original AppEntry.alternateNames: today the other UI language's
 	// title for a built-in command.
@@ -35,6 +41,7 @@ const (
 	KindSystemSettings Kind = "system-settings"
 	KindWindowCommand  Kind = "window-command"
 	KindQuickAction    Kind = "quick-action"
+	KindExtension      Kind = "extension"
 )
 
 // Mode is the palette state that selects both the query source and the rows.

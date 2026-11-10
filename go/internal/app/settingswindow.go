@@ -41,6 +41,7 @@ func (c *controller) settingsView(ctx *ui.Context) {
 		}).Width(theme.SettingsSidebar).FillHeight()
 		if sidebar.Changed() {
 			if tab, ok := settings.TabFromID(selected); ok {
+				c.cancelCommandShortcutRecording()
 				c.settingsTab = tab
 				c.settingsScroll = ui.ScrollState{}
 				c.settingsStatus = ""
@@ -405,6 +406,7 @@ func (c *controller) commandsPage(ctx *ui.Context, tokens theme.Tokens, zh bool)
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("命令", "Commands")).FontSize(theme.SectionFont).
 			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
+		c.builtinCommandRows(ctx, tokens, "command:calculator-history", "command:settings")
 		c.workflowFeature(ctx, tokens, c.text("启用命令", "Enable commands"), c.featureCommands, func(enabled bool) {
 			c.setFeature("commandsEnabled", enabled)
 		})
@@ -547,6 +549,9 @@ func (c *controller) notesSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh 
 			})
 		})
 	})
+	if c.featureNotes {
+		c.builtinCommandsCard(ctx, tokens, "command:show-notes")
+	}
 }
 
 func (c *controller) fileSearchSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
@@ -579,6 +584,9 @@ func (c *controller) fileSearchSettingsPage(ctx *ui.Context, tokens theme.Tokens
 			})
 		})
 	})
+	if c.featureFileSearch {
+		c.builtinCommandsCard(ctx, tokens, "command:search-files")
+	}
 }
 
 func (c *controller) windowSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
@@ -618,6 +626,76 @@ func (c *controller) windowSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh
 	})
 }
 
+// builtinCommandsCard mirrors the original feature panes' Commands section:
+// one row per built-in command with its global shortcut recorder.
+func (c *controller) builtinCommandsCard(ctx *ui.Context, tokens theme.Tokens, ids ...string) {
+	if len(ids) == 0 {
+		return
+	}
+	components.Card(ctx, tokens, func() {
+		ui.Text(ctx, c.text("命令", "Commands")).FontSize(theme.SectionFont).
+			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
+		ui.Text(ctx, c.text("快捷键从任何应用运行该命令。点击快捷键后按下组合键；Esc 取消，Backspace 清除。",
+			"Shortcuts run the command from anywhere. Click the shortcut, then press a chord; Esc cancels, Backspace clears.")).
+			FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
+		c.builtinCommandRows(ctx, tokens, ids...)
+	})
+}
+
+func (c *controller) builtinCommandRows(ctx *ui.Context, tokens theme.Tokens, ids ...string) {
+	for _, id := range ids {
+		command, ok := builtinCommandByID(id)
+		if !ok {
+			continue
+		}
+		components.FormRow(ctx, tokens, c.text(command.zh, command.en), func() {
+			c.commandShortcutRecorder(ctx, tokens, command.id)
+		})
+	}
+}
+
+func (c *controller) commandShortcutRecorder(ctx *ui.Context, tokens theme.Tokens, id string) {
+	if c.commandShortcutRecording == id {
+		capture := ""
+		ui.TextInput(ctx, &capture).Grow(1).
+			Label(c.text("快捷键", "Shortcut")).
+			Placeholder(c.text("按下组合键…", "Press a shortcut…")).
+			AutoFocus().
+			OnTextKey(func(key ui.TextKey) bool {
+				if key.Mods == 0 && key.Key == ui.KeyEscape {
+					c.cancelCommandShortcutRecording()
+					return true
+				}
+				if key.Mods == 0 && key.Key == ui.KeyBackspace {
+					c.setCommandHotkey(id, "")
+					return true
+				}
+				accelerator, ok := editors.FormatAccelerator(key.Mods, key.Key)
+				if !ok {
+					return true
+				}
+				c.setCommandHotkey(id, accelerator)
+				return true
+			})
+		return
+	}
+	value := c.commandHotkey(id)
+	label := value
+	if label == "" {
+		label = c.text("设置快捷键…", "Set shortcut…")
+	}
+	ui.Row(ctx).Grow(1).Gap(8).AlignItems(ui.Center).Children(func() {
+		if ui.Button(ctx, label).Clicked() {
+			c.beginCommandShortcutRecording(id)
+		}
+		if value != "" {
+			if ui.Button(ctx, c.text("清除", "Clear")).Clicked() {
+				c.setCommandHotkey(id, "")
+			}
+		}
+	})
+}
+
 func (c *controller) clipboardSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("剪贴板", "Clipboard")).FontSize(theme.SectionFont).
@@ -648,6 +726,10 @@ func (c *controller) clipboardSettingsPage(ctx *ui.Context, tokens theme.Tokens,
 			}
 		})
 	})
+
+	if c.clipboardEnabled.Load() {
+		c.builtinCommandsCard(ctx, tokens, "command:clipboard-history")
+	}
 
 	components.Card(ctx, tokens, func() {
 		ui.Text(ctx, c.text("排除应用", "Excluded apps")).FontSize(theme.SectionFont).
@@ -691,6 +773,7 @@ func (c *controller) emojiSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh 
 			}).AlignSelf(ui.Start)
 		})
 	})
+	c.builtinCommandsCard(ctx, tokens, "command:search-emoji")
 }
 
 func (c *controller) calendarSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
@@ -745,24 +828,9 @@ func (c *controller) calendarSettingsPage(ctx *ui.Context, tokens theme.Tokens, 
 			}
 		}
 	})
-}
-
-func (c *controller) extensionsSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {
-	components.Card(ctx, tokens, func() {
-		ui.Text(ctx, c.text("扩展", "Extensions")).FontSize(theme.SectionFont).
-			TextColor(tokens.TextSecondary).Role(ui.RoleHeading)
-		ui.Text(ctx, c.text("此原生构建不运行第三方 JavaScript 扩展；扩展入口保持不可用。",
-			"This native build does not run third-party JavaScript extensions; extension entry points stay unavailable.")).
-			FontSize(theme.TrailingFont).TextColor(tokens.TextSecondary)
-		components.FormRow(ctx, tokens, c.text("启用扩展", "Enable extensions"), func() {
-			enabled := c.extensionsEnabled
-			ui.Switch(ctx, &enabled).Label(c.text("当前构建不可用", "Unavailable in this build")).Disabled(true)
-		})
-		components.FormRow(ctx, tokens, c.text("启动器显示", "Show in launcher"), func() {
-			enabled := c.extensionsShowInLauncher
-			ui.Switch(ctx, &enabled).Label(c.text("当前构建不可用", "Unavailable in this build")).Disabled(true)
-		})
-	})
+	if c.featureCalendar {
+		c.builtinCommandsCard(ctx, tokens, "command:my-schedule")
+	}
 }
 
 func (c *controller) permissionsSettingsPage(ctx *ui.Context, tokens theme.Tokens, zh bool) {

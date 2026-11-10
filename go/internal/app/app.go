@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
@@ -25,7 +27,7 @@ func Run() (runErr error) {
 	mygo.App.SetPath(mygo.PathUserData, p.settings)
 	mygo.App.SetPath(mygo.PathCache, p.cache)
 	mygo.App.SetPath(mygo.PathLogs, p.logs)
-	command := activationCommand(os.Args[1:])
+	command := activationCommand(os.Args[1:], p.cache)
 	instance, first, err := windows.AcquireInstance(appID, p.cache)
 	if err != nil {
 		return err
@@ -68,6 +70,9 @@ func Run() (runErr error) {
 		file.Close()
 	}()
 	log.Printf("startup go=%s mygo=%s profile=%s cache=%s data=%s", runtime.Version(), mygo.Version, p.settings, p.cache, p.data)
+	if err := windows.RegisterURLProtocols("raycast", "com.raycast", "wincast"); err != nil {
+		log.Printf("URL scheme registration failed: %v", err)
+	}
 	c := newController(started, p)
 	c.instance = instance
 	defer c.finish()
@@ -109,7 +114,13 @@ func Run() (runErr error) {
 }
 
 // activationCommand is shared by first-launch and single-instance forwarding.
-func activationCommand(args []string) windows.Activation {
+func activationCommand(args []string, cache string) windows.Activation {
+	if raw := windows.URLFromArgs(args); raw != "" {
+		if err := os.WriteFile(filepath.Join(cache, "url-activation.txt"), []byte(raw), 0o600); err != nil {
+			log.Printf("URL activation write failed: %v", err)
+		}
+		return windows.ActivateURL
+	}
 	for _, option := range []struct {
 		flag    string
 		command windows.Activation
@@ -145,6 +156,14 @@ func (c *controller) activate(command windows.Activation) {
 		c.openCalculatorHistory()
 	case windows.ActivateEmoji:
 		c.openEmoji()
+	case windows.ActivateURL:
+		data, err := os.ReadFile(filepath.Join(c.profile.cache, "url-activation.txt"))
+		if err == nil {
+			c.handleExtensionURL(strings.TrimSpace(string(data)))
+		}
+		if c.panel != nil && !c.panel.IsVisible() {
+			c.show()
+		}
 	case windows.ActivatePanel:
 		c.show()
 	}

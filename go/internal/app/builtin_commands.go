@@ -55,6 +55,17 @@ var builtinCommands = []builtinCommand{
 	},
 }
 
+// builtinCommandByID resolves a stable command identity for settings rows and
+// shortcut registration.
+func builtinCommandByID(id string) (builtinCommand, bool) {
+	for _, command := range builtinCommands {
+		if command.id == id {
+			return command, true
+		}
+	}
+	return builtinCommand{}, false
+}
+
 // builtinEntries builds the visible command slice. The other UI language's
 // title is searchable too, so a Chinese window still answers "clipboard" and
 // an English window still answers "剪贴板".

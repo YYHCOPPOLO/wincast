@@ -102,6 +102,14 @@ func CommandingDown() bool {
 	return false
 }
 
+// KeyDown reports the current global state of one virtual key. The message
+// host keyboard hook uses it so a fallback global shortcut sees modifiers it
+// did not observe itself.
+func KeyDown(virtualKey uint32) bool {
+	state, _, _ := getKeyState.Call(uintptr(virtualKey))
+	return uint16(state)&0x8000 != 0
+}
+
 // ResetVirtualKey reports keys that end the keyword buffer without typing.
 func ResetVirtualKey(key uint32) bool {
 	switch key {

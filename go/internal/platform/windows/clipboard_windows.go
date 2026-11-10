@@ -28,14 +28,16 @@ const (
 
 	clipboardOpenAttempts = 8
 	clipboardOpenSleep    = 8 * time.Millisecond
+	cfHDrop               = 15
 	maxClipboardTextUnits = 64 * 1024
 	maxClipboardImageSize = 64 * 1024 * 1024
 	maxDIBDimension       = 8192
 )
 
 var (
-	user32Clipboard = syscall.NewLazyDLL("user32.dll")
-	kernelClipboard = syscall.NewLazyDLL("kernel32.dll")
+	user32Clipboard  = syscall.NewLazyDLL("user32.dll")
+	kernelClipboard  = syscall.NewLazyDLL("kernel32.dll")
+	shell32Clipboard = syscall.NewLazyDLL("shell32.dll")
 
 	openClipboard           = user32Clipboard.NewProc("OpenClipboard")
 	closeClipboard          = user32Clipboard.NewProc("CloseClipboard")
@@ -50,6 +52,7 @@ var (
 	globalUnlock            = kernelClipboard.NewProc("GlobalUnlock")
 	globalSize              = kernelClipboard.NewProc("GlobalSize")
 	globalFree              = kernelClipboard.NewProc("GlobalFree")
+	dragQueryFileW          = shell32Clipboard.NewProc("DragQueryFileW")
 
 	clipboardFormatOnce sync.Once
 	clipboardAccess     sync.Mutex
@@ -173,6 +176,41 @@ func ClipboardHasInternalMarker() bool {
 
 // ReadClipboardText returns bounded UTF-16 clipboard text. It never leaves the
 // clipboard open when a handle or allocation is malformed.
+// ClipboardFilePaths reads CF_HDROP, the file list Explorer puts on the
+// clipboard for a copy or cut. It is also what Wincast offers extensions as
+// their closest Windows equivalent to a Finder selection.
+func ClipboardFilePaths() []string {
+	clipboardAccess.Lock()
+	defer clipboardAccess.Unlock()
+	if openClipboardRetry(0) != nil {
+		return nil
+	}
+	defer closeClipboardQuietly()
+	handle, _, _ := getClipboardData.Call(cfHDrop)
+	if handle == 0 {
+		return nil
+	}
+	count, _, _ := dragQueryFileW.Call(handle, 0xFFFFFFFF, 0, 0)
+	if count == 0 || count > 4096 {
+		return nil
+	}
+	paths := make([]string, 0, count)
+	for index := uintptr(0); index < count; index++ {
+		length, _, _ := dragQueryFileW.Call(handle, index, 0, 0)
+		if length == 0 {
+			continue
+		}
+		buffer := make([]uint16, length+1)
+		copied, _, _ := dragQueryFileW.Call(handle, index,
+			uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer)))
+		if copied == 0 {
+			continue
+		}
+		paths = append(paths, syscall.UTF16ToString(buffer))
+	}
+	return paths
+}
+
 func ReadClipboardText() (string, bool) {
 	clipboardAccess.Lock()
 	defer clipboardAccess.Unlock()

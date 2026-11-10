@@ -132,6 +132,7 @@ func (c *controller) setCalendarEnabled(enabled bool) {
 		}
 		c.persistBool("calendarEnabled", false)
 		c.refreshExtras()
+		c.reconcileItemHotkeys()
 		c.refreshSettingsWindow()
 		return
 	}
@@ -169,6 +170,7 @@ func (c *controller) setCalendarEnabled(enabled bool) {
 			c.persistBool("calendarEnabled", true)
 			c.startCalendarTicker()
 			c.refreshExtras()
+			c.reconcileItemHotkeys()
 			if c.autoJoin {
 				c.calendar.ArmNow(time.Now().Unix())
 			}

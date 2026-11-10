@@ -500,6 +500,7 @@ func (c *controller) applySettingsEffects() {
 	c.applyAppearance()
 	c.view.Chinese = c.language == "zh"
 	c.view.Shortcut = c.hotkey
+	c.view.ClipboardShortcut = c.commandHotkey("command:clipboard-history")
 	c.view.Expanded = !c.compactMode
 	c.view.ShowFavoritesInCompact = c.showFavoritesInCompact
 	c.view.Draggable = c.paletteDraggable

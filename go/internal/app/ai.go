@@ -537,6 +537,7 @@ func (c *controller) setAIEnabled(enabled bool) {
 	c.persistAISettings()
 	c.refreshAIChatView()
 	c.refreshExtras()
+	c.reconcileItemHotkeys()
 	c.refreshSettingsWindow()
 }
 

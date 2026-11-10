@@ -109,11 +109,20 @@ func (c *controller) setSupportReminders(enabled bool) {
 func (c *controller) setExtensionsEnabled(enabled bool) {
 	c.extensionsEnabled = enabled
 	c.setGeneralBool("extensionsEnabled", enabled, nil)
+	if c.extensions != nil {
+		c.extensions.SetEnabled(enabled)
+	}
+	c.refreshExtras()
+	c.reconcileItemHotkeys()
 }
 
 func (c *controller) setExtensionsShowInLauncher(enabled bool) {
 	c.extensionsShowInLauncher = enabled
 	c.setGeneralBool("extensionsShowInLauncher", enabled, nil)
+	if c.extensions != nil {
+		c.extensions.SetShowInLauncher(enabled)
+	}
+	c.refreshExtras()
 }
 
 func (c *controller) setApplicationsVisible(enabled bool) {

@@ -2,6 +2,8 @@ package app
 
 import (
 	"math"
+	"os"
+	"strings"
 
 	"github.com/YYHCOPPOLO/wincast/go/internal/brand"
 	"github.com/YYHCOPPOLO/wincast/go/internal/domain"
@@ -15,10 +17,14 @@ type iconKey struct {
 }
 
 func (c *controller) icon(application domain.Application) *ui.Bitmap {
-	if application.Path == "" {
+	path := application.Path
+	if application.IconPath != "" {
+		path = application.IconPath
+	}
+	if path == "" {
 		return nil
 	}
-	key := iconKey{application.Path, int(math.Ceil(28 * c.scale))}
+	key := iconKey{path, int(math.Ceil(28 * c.scale))}
 	if bitmap, ok := c.icons[key]; ok {
 		return bitmap
 	}
@@ -45,6 +51,12 @@ func (c *controller) startIcons() {
 					return
 				}
 				data, err := mygo.Shell.FileIcon(key.path, key.pixels)
+				if strings.HasSuffix(strings.ToLower(key.path), ".png") ||
+					strings.HasSuffix(strings.ToLower(key.path), ".jpg") ||
+					strings.HasSuffix(strings.ToLower(key.path), ".jpeg") ||
+					strings.HasSuffix(strings.ToLower(key.path), ".gif") {
+					data, err = os.ReadFile(key.path)
+				}
 				var bitmap *ui.Bitmap
 				if err == nil {
 					bitmap, _ = ui.DecodeBitmap(data)

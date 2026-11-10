@@ -6,3 +6,4 @@ AGENTS.md
 docs/
 /go/build/
 /go/cmd/wincast/*.syso
+/go/internal/features/extensions/runtime/js/node_modules/

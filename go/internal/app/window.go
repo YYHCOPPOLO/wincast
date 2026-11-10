@@ -3,6 +3,7 @@ package app
 import (
 	"log"
 
+	"github.com/YYHCOPPOLO/wincast/go/internal/platform/windows"
 	"github.com/egoist/mygo"
 )
 
@@ -16,6 +17,9 @@ func showWindow(window *mygo.Window) {
 		log.Printf("window show retried visible=%t", window.IsVisible())
 	}
 	window.Focus()
+	if !windows.ForceForeground(window.NativeHandle()) {
+		log.Printf("foreground activation failed hwnd=%d", window.NativeHandle())
+	}
 }
 
 // newMaterialWindow reserves a composited surface even when glass is disabled.

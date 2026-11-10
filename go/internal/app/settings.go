@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
@@ -141,12 +142,82 @@ func (c *controller) readSettingsDocument() {
 	c.clipboardEnabled.Store(document.Bool("clipboardMonitorEnabled", true))
 	c.clipboardRetention = int64(document.Int("clipboardRetentionDays", clipboard.DefaultRetentionDays))
 	c.clipboardDisabled = document.Strings("clipboardDisabledApps", clipboard.DefaultDisabledApps)
+	c.readCommandHotkeys(document)
+	c.readExtensionHotkeys(document)
+	c.readExtensionAppearances(document)
 	c.hotkey = document.String("hotkey", defaultShortcut)
 	c.hotkeyDraft = c.hotkey
 	c.doubleTap = document.String("doubleTapModifier", "none")
 	c.customDirsDraft = strings.Join(c.customDirectories(), "; ")
 	c.compactMode = document.Bool("compactMode", false)
 	c.loadAISettings()
+}
+
+// readCommandHotkeys loads the built-in command bindings. A malformed map is
+// ignored as a whole, leaving the shipped defaults rather than half a table.
+func (c *controller) readCommandHotkeys(document *storage.Document) {
+	c.commandHotkeys = make(map[string]string)
+	if document == nil {
+		return
+	}
+	raw, ok := document.Raw("commandHotkeys")
+	if !ok {
+		return
+	}
+	var stored map[string]string
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		log.Printf("command hotkeys unreadable: %v", err)
+		return
+	}
+	for id, value := range stored {
+		c.commandHotkeys[id] = strings.TrimSpace(value)
+	}
+}
+
+// readExtensionHotkeys loads per-command extension bindings. A malformed map
+// is ignored as a whole, leaving every command unbound rather than half a table.
+func (c *controller) readExtensionHotkeys(document *storage.Document) {
+	c.extensionHotkeys = make(map[string]string)
+	if document == nil {
+		return
+	}
+	raw, ok := document.Raw("extensionHotkeys")
+	if !ok {
+		return
+	}
+	var stored map[string]string
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		log.Printf("extension hotkeys unreadable: %v", err)
+		return
+	}
+	for id, value := range stored {
+		if entryID := strings.TrimSpace(id); entryID != "" {
+			c.extensionHotkeys[entryID] = strings.TrimSpace(value)
+		}
+	}
+}
+
+// readExtensionAppearances loads launcher icon overrides, keyed by manifest
+// name so a reinstall keeps the choice.
+func (c *controller) readExtensionAppearances(document *storage.Document) {
+	c.extensionAppearances = make(map[string]extensionAppearance)
+	if document == nil {
+		return
+	}
+	raw, ok := document.Raw("extensionAppearances")
+	if !ok {
+		return
+	}
+	var stored map[string]extensionAppearance
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		log.Printf("extension appearances unreadable: %v", err)
+		return
+	}
+	for name, appearance := range stored {
+		if appearance.Symbol != "" {
+			c.extensionAppearances[name] = appearance
+		}
+	}
 }
 
 func defaultLanguage() string {
@@ -294,7 +365,10 @@ func (c *controller) openSettings() {
 			BackgroundColor: "light-dark(#f4f4f6, #1a1a1e)",
 			Content:         ui.View(c.settingsView),
 		})
-		c.settings.OnClosed(func() { c.settings = nil })
+		c.settings.OnClosed(func() {
+			c.settings = nil
+			c.cancelCommandShortcutRecording()
+		})
 	}
 	showWindow(c.settings)
 	c.updateSettingsTitle()
@@ -592,7 +666,9 @@ func (c *controller) setFeature(key string, enabled bool) {
 		key == "notesEnabled" || key == "clipboardMonitorEnabled" {
 		c.refreshExtras()
 	}
-	if key == "commandsEnabled" || key == "quicklinksEnabled" || key == "snippetsEnabled" {
+	switch key {
+	case "commandsEnabled", "quicklinksEnabled", "snippetsEnabled",
+		"fileSearchEnabled", "notesEnabled", "clipboardMonitorEnabled", "calendarShowInLauncher":
 		c.reconcileItemHotkeys()
 	}
 }

@@ -75,6 +75,24 @@ func (t Target) CheckEditable() error {
 	return t.checkIntegrity()
 }
 
+// ProcessImagePath returns the executable path of a process, or "".
+func ProcessImagePath(pid uint32) string {
+	handle, err := syscall.OpenProcess(0x1000, false, pid) // QUERY_LIMITED_INFORMATION
+	if err != nil {
+		return ""
+	}
+	defer syscall.CloseHandle(handle)
+	buffer := make([]uint16, 1024)
+	size := uint32(len(buffer))
+	queryFullProcessImageName := kernel32.NewProc("QueryFullProcessImageNameW")
+	ok, _, _ := queryFullProcessImageName.Call(uintptr(handle), 0,
+		uintptr(unsafe.Pointer(&buffer[0])), uintptr(unsafe.Pointer(&size)))
+	if ok == 0 || size == 0 {
+		return ""
+	}
+	return syscall.UTF16ToString(buffer[:size])
+}
+
 func processCreation(pid uint32) (syscall.Filetime, error) {
 	handle, err := syscall.OpenProcess(0x1000, false, pid) // QUERY_LIMITED_INFORMATION
 	if err != nil {
